@@ -1,0 +1,28 @@
+[package]
+name = "rangebar-py"
+version = "0.1.0"
+edition = "2021"
+authors = ["Terry Li"]
+license = "MIT"
+description = "Python bindings for rangebar: Non-lookahead range bar construction"
+repository = "https://github.com/terrylica/rangebar-py"
+readme = "README.md"
+
+[lib]
+name = "rangebar_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Import rangebar-core from crates.io (ZERO changes to upstream)
+rangebar-core = "5.0"
+
+# PyO3 for Python bindings
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[build-dependencies]
+pyo3-build-config = "0.22"
