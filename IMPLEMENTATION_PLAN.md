@@ -111,6 +111,7 @@ pyo3-build-config = "0.22"
 ```
 
 **Note**: Check current versions:
+
 ```bash
 # Check rangebar-core version on crates.io
 cargo search rangebar-core --limit 1
@@ -316,6 +317,7 @@ fn _core(_py: Python, m: &PyModule) -> PyResult<()> {
 **Challenge**: Convert Python dicts to Rust `AggTrade` structs.
 
 **Steps**:
+
 1. Extract fields from Python dict
 2. Validate required fields exist
 3. Convert to Rust types
@@ -352,6 +354,7 @@ for (idx, trade_dict) in trades.iter().enumerate() {
 ```
 
 **Note**: Check actual `AggTrade` struct definition:
+
 ```bash
 # View rangebar-core source
 cargo doc --open
@@ -433,6 +436,7 @@ def test_process_simple_trades():
 ```
 
 **Run**:
+
 ```bash
 maturin develop
 pytest tests/test_rust_bindings.py -v
@@ -727,6 +731,7 @@ def test_backtesting_py_compatibility():
 ```
 
 **Run**:
+
 ```bash
 pip install backtesting.py
 pytest tests/test_backtesting_integration.py -v
@@ -845,11 +850,13 @@ bt.plot()
 #### 7.1: Add Comprehensive Tests
 
 **Coverage Goals**:
+
 - `src/lib.rs`: 90%+ (PyO3 bindings)
 - `python/rangebar/`: 95%+ (Python API)
 - Edge cases: Empty input, invalid data, etc.
 
 **Run coverage**:
+
 ```bash
 # Python coverage
 pip install pytest-cov
@@ -883,6 +890,7 @@ def test_process_1m_trades(benchmark):
 ```
 
 **Run**:
+
 ```bash
 pip install pytest-benchmark
 pytest tests/test_performance.py --benchmark-only
@@ -1099,17 +1107,17 @@ pytest tests/test_performance.py --benchmark-only
 
 ## Estimated Timeline
 
-| Phase | Tasks | Time | Cumulative |
-|-------|-------|------|------------|
-| 1. Scaffolding | Directory structure, Git init | 30 min | 30 min |
-| 2. Build Config | Cargo.toml, pyproject.toml | 1 hour | 1.5 hours |
-| 3. Rust Bindings | PyO3 wrapper, type conversion | 4 hours | 5.5 hours |
-| 4. Python API | Pythonic wrapper, pandas integration | 3 hours | 8.5 hours |
-| 5. Backtesting.py | Integration utilities, testing | 2 hours | 10.5 hours |
-| 6. Documentation | README, examples | 2 hours | 12.5 hours |
-| 7. Testing | Coverage, benchmarks, linting | 3 hours | 15.5 hours |
-| 8. Distribution | Build wheels, CI/CD | 2 hours | 17.5 hours |
-| 9. Release | Finalize, publish | 1 hour | 18.5 hours |
+| Phase             | Tasks                                | Time    | Cumulative |
+| ----------------- | ------------------------------------ | ------- | ---------- |
+| 1. Scaffolding    | Directory structure, Git init        | 30 min  | 30 min     |
+| 2. Build Config   | Cargo.toml, pyproject.toml           | 1 hour  | 1.5 hours  |
+| 3. Rust Bindings  | PyO3 wrapper, type conversion        | 4 hours | 5.5 hours  |
+| 4. Python API     | Pythonic wrapper, pandas integration | 3 hours | 8.5 hours  |
+| 5. Backtesting.py | Integration utilities, testing       | 2 hours | 10.5 hours |
+| 6. Documentation  | README, examples                     | 2 hours | 12.5 hours |
+| 7. Testing        | Coverage, benchmarks, linting        | 3 hours | 15.5 hours |
+| 8. Distribution   | Build wheels, CI/CD                  | 2 hours | 17.5 hours |
+| 9. Release        | Finalize, publish                    | 1 hour  | 18.5 hours |
 
 **Total**: ~19 hours (~2.5 days of focused work)
 

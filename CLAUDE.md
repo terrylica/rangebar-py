@@ -43,11 +43,13 @@ Range bars offer an alternative to time-based bars:
 ### Why PyO3 Bindings?
 
 The rangebar maintainer:
+
 - ✅ **Will maintain** the Rust crate
 - ✅ **Provides CLI tools** for command-line usage
 - ❌ **Will NOT add Python support** to the crate itself
 
 Our approach:
+
 - ✅ **Import rangebar as dependency** (from crates.io)
 - ✅ **Write PyO3 wrapper** (this project)
 - ✅ **Zero burden on maintainer** - they don't need to do anything
@@ -141,6 +143,7 @@ rangebar-py/
 ### src/lib.rs (PyO3 Bindings)
 
 **Responsibilities**:
+
 - Import `rangebar_core::RangeBarProcessor` from crates.io
 - Create `PyRangeBarProcessor` wrapper class
 - Convert Rust types to Python types:
@@ -149,13 +152,15 @@ rangebar-py/
 - Handle error conversion (Rust `Result` → Python exceptions)
 
 **Critical Requirements**:
+
 - **No lookahead bias**: Preserve temporal integrity from Rust implementation
 - **Performance**: Avoid unnecessary copies (use zero-copy where possible)
 - **Type safety**: Proper validation of Python input
 
-### python/rangebar/__init__.py (Pythonic API)
+### python/rangebar/**init**.py (Pythonic API)
 
 **Responsibilities**:
+
 - Wrap `PyRangeBarProcessor` with Pythonic interface
 - Provide `process_trades_to_dataframe()` convenience function
 - Handle pandas DataFrame conversions
@@ -163,6 +168,7 @@ rangebar-py/
 - Format output for backtesting.py compatibility
 
 **Critical Requirements**:
+
 - **OHLCV column names**: Capitalized (Open, High, Low, Close, Volume)
 - **DatetimeIndex**: Proper timestamp parsing
 - **Error messages**: User-friendly Python exceptions
@@ -170,11 +176,13 @@ rangebar-py/
 ### python/rangebar/backtesting.py (Integration Utilities)
 
 **Responsibilities**:
+
 - `load_from_binance_csv()`: Load Binance aggTrades format
 - `split_train_test()`: Train/test splitting for walk-forward validation
 - `compare_to_time_bars()`: Compare range bars vs time bars
 
 **Critical Requirements**:
+
 - **Binance format compatibility**: Handle aggTrades CSV structure
 - **Temporal alignment**: Ensure no data leakage in train/test split
 
@@ -241,6 +249,7 @@ maturin build --release --interpreter python3.9 python3.10 python3.11 python3.12
 ### Timestamp Handling
 
 **Rust Side (src/lib.rs)**:
+
 ```rust
 // rangebar uses i64 milliseconds
 let timestamp_ms: i64 = bar.timestamp_ms;
@@ -251,7 +260,8 @@ let timestamp = chrono::DateTime::from_timestamp_millis(timestamp_ms)
     .to_rfc3339();
 ```
 
-**Python Side (python/rangebar/__init__.py)**:
+**Python Side (python/rangebar/**init**.py)**:
+
 ```python
 # Parse timestamp string to DatetimeIndex
 df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -281,6 +291,7 @@ let processor = RangeBarProcessor::new(threshold_bps)
 ```
 
 **Python exception types**:
+
 - `ValueError`: Invalid input (negative threshold, missing fields)
 - `RuntimeError`: Processing errors (unsorted trades, internal failures)
 - `KeyError`: Missing required dictionary keys
@@ -322,6 +333,7 @@ def validate_for_backtesting_py(df: pd.DataFrame) -> bool:
 ## Relationship to backtesting.py Project
 
 This project is a **companion tool** for the backtesting.py fork located at:
+
 - **Path**: `~/eon/backtesting.py`
 - **Branch**: `research/compression-breakout`
 - **Status**: Research terminated after 17 failed strategies on time-based bars
@@ -329,12 +341,14 @@ This project is a **companion tool** for the backtesting.py fork located at:
 ### Integration Workflow
 
 1. **Generate range bars** (this project):
+
    ```python
    from rangebar import process_trades_to_dataframe
    data = process_trades_to_dataframe(trades, threshold_bps=250)
    ```
 
 2. **Use with backtesting.py**:
+
    ```python
    from backtesting import Backtest
    bt = Backtest(data, MyStrategy, cash=10000)
@@ -369,12 +383,14 @@ maturin publish
 ### Pre-built Wheels Strategy
 
 Use GitHub Actions to build wheels for:
+
 - **Linux**: manylinux_2_17 (x86_64, aarch64)
 - **macOS**: 11.0+ (x86_64, arm64)
 - **Windows**: (x86_64)
 - **Python**: 3.9, 3.10, 3.11, 3.12
 
 Users can install without Rust toolchain:
+
 ```bash
 pip install rangebar  # Downloads pre-built wheel
 ```
@@ -417,6 +433,7 @@ See `IMPLEMENTATION_PLAN.md` for step-by-step implementation roadmap.
 ## Contact / Maintainer
 
 This project is maintained independently of the upstream rangebar Rust crate. For:
+
 - **Python bindings issues**: Open issue in this repo
 - **Range bar algorithm questions**: Refer to upstream [rangebar](https://github.com/terrylica/rangebar)
 - **backtesting.py integration**: See examples in this repo

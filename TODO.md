@@ -16,6 +16,7 @@
 - [ ] Verify Python 3.9+ installed (`python --version`)
 
 **Commands**:
+
 ```bash
 cd ~/eon/rangebar-py
 mkdir -p src python/rangebar tests examples docs
@@ -35,6 +36,7 @@ git init
 - [ ] Verify import works: `python -c "import rangebar; print(rangebar.__version__)"`
 
 **Critical**: Check rangebar-core version on crates.io before adding to Cargo.toml:
+
 ```bash
 cargo search rangebar-core --limit 1
 ```
@@ -53,6 +55,7 @@ cargo search rangebar-core --limit 1
 - [ ] Test with synthetic data
 
 **Blockers to Resolve**:
+
 - [ ] Verify exact fields in `rangebar_core::AggTrade`
 - [ ] Verify exact fields in `rangebar_core::RangeBar`
 - [ ] Verify `FixedPoint` API (how to convert to/from f64)
@@ -101,6 +104,7 @@ cargo search rangebar-core --limit 1
 - [ ] Format with black
 
 **Commands**:
+
 ```bash
 pytest tests/ --cov=python/rangebar --cov-report=html
 pytest tests/test_performance.py --benchmark-only
@@ -139,7 +143,9 @@ black python/
 **Goal**: Understand the exact API before writing bindings.
 
 **Steps**:
+
 1. Clone rangebar repository or check docs:
+
    ```bash
    git clone https://github.com/terrylica/rangebar /tmp/rangebar
    cd /tmp/rangebar
@@ -163,6 +169,7 @@ black python/
 ### System Dependencies
 
 - [ ] Rust toolchain (≥1.70)
+
   ```bash
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
   source $HOME/.cargo/env
@@ -179,21 +186,25 @@ black python/
 ### Python Dependencies
 
 - [ ] maturin (build system)
+
   ```bash
   pip install maturin
   ```
 
 - [ ] Core dependencies
+
   ```bash
   pip install pandas numpy
   ```
 
 - [ ] Testing dependencies
+
   ```bash
   pip install pytest pytest-cov pytest-benchmark
   ```
 
 - [ ] Quality tools
+
   ```bash
   pip install mypy black ruff
   ```
@@ -255,12 +266,12 @@ black python/
 
 ## Timeline Estimate
 
-| Phase | Time | Cumulative |
-|-------|------|------------|
-| 1-2: Setup | 1.5 hours | 1.5 hours |
-| 3-4: Core Implementation | 7 hours | 8.5 hours |
-| 5-6: Integration & Docs | 4 hours | 12.5 hours |
-| 7-9: Testing & Release | 6 hours | 18.5 hours |
+| Phase                    | Time      | Cumulative |
+| ------------------------ | --------- | ---------- |
+| 1-2: Setup               | 1.5 hours | 1.5 hours  |
+| 3-4: Core Implementation | 7 hours   | 8.5 hours  |
+| 5-6: Integration & Docs  | 4 hours   | 12.5 hours |
+| 7-9: Testing & Release   | 6 hours   | 18.5 hours |
 
 **Total**: ~19 hours (~2.5 days)
 **MVP (Phases 1-5)**: ~11 hours (~1.5 days)
@@ -295,6 +306,7 @@ python -c "from rangebar import __version__; print(__version__)"
 ## Next Action
 
 **When ready to start**:
+
 ```bash
 cd ~/eon/rangebar-py
 # Read CLAUDE.md for full context
@@ -302,6 +314,7 @@ cd ~/eon/rangebar-py
 ```
 
 **First command to run**:
+
 ```bash
 mkdir -p src python/rangebar tests examples docs
 ```
