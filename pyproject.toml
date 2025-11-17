@@ -125,7 +125,7 @@ version_toml = [
     "pyproject.toml:project.version",
     "Cargo.toml:package.version"
 ]
-build_command = "pip install maturin && maturin build --release"
+build_command = "pip install build && python -m build --sdist"
 commit_parser = "conventional"
 tag_format = "v{version}"
 allow_zero_version = true
