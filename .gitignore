@@ -75,3 +75,7 @@ Thumbs.db
 examples/data/
 *.csv
 *.parquet
+
+# Link checker cache
+.lychee*
+.lycheecache

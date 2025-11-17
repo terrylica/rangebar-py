@@ -1,0 +1,3 @@
+tests/fixtures/*.zip
+tests/fixtures/*.csv
+!tests/fixtures/*-sample-*.csv

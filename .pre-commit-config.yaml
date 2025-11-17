@@ -1,0 +1,58 @@
+# Pre-commit hooks for rangebar-py
+# ADR-005: Automated Release Management
+#
+# Install: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Conventional commit message enforcement
+  - repo: https://github.com/compwa/commitizen
+    rev: 0.20.0
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
+  # Python code formatting
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3.9
+        args: [--line-length=88]
+
+  # Python linting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+
+  # Rust formatting
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+      - id: fmt
+        args: [--manifest-path=Cargo.toml, --]
+
+  # Rust linting (clippy)
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+      - id: clippy
+        args: [--manifest-path=Cargo.toml, --, -D, warnings]
+
+  # YAML validation
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+        args: [--maxkb=1024]  # Prevent committing files >1MB
+
+  # TOML validation
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-toml

@@ -214,4 +214,48 @@ mod tests {
         let processor = PyRangeBarProcessor::new(200_000);
         assert!(processor.is_err());
     }
+
+    #[test]
+    fn test_f64_to_fixed_point_extremes() {
+        // Test zero
+        let fp_zero = f64_to_fixed_point(0.0);
+        assert_eq!(fp_zero.to_f64(), 0.0);
+
+        // Test negative values
+        let fp_neg = f64_to_fixed_point(-42000.12345678);
+        assert_eq!(fp_neg.to_f64(), -42000.12345678);
+
+        // Test very small values (precision boundary)
+        let fp_small = f64_to_fixed_point(0.00000001);
+        assert_eq!(fp_small.to_f64(), 0.00000001);
+
+        // Test very large values
+        let fp_large = f64_to_fixed_point(1_000_000.12345678);
+        assert_eq!(fp_large.to_f64(), 1_000_000.12345678);
+
+        // Test maximum precision (8 decimal places)
+        let fp_precision = f64_to_fixed_point(123.45678901);
+        // Should round to 8 decimal places
+        let rounded = fp_precision.to_f64();
+        assert!((rounded - 123.45678901).abs() < 0.000001);
+    }
+
+    #[test]
+    fn test_processor_boundary_thresholds() {
+        // Test minimum valid threshold (1 = 0.1 basis points)
+        let processor_min = PyRangeBarProcessor::new(1);
+        assert!(processor_min.is_ok());
+        assert_eq!(processor_min.unwrap().threshold_bps, 1);
+
+        // Test maximum valid threshold (100_000 = 10,000 basis points = 100%)
+        let processor_max = PyRangeBarProcessor::new(100_000);
+        assert!(processor_max.is_ok());
+        assert_eq!(processor_max.unwrap().threshold_bps, 100_000);
+
+        // Test common valid thresholds
+        for threshold in [10, 100, 250, 500, 1000, 10_000] {
+            let processor = PyRangeBarProcessor::new(threshold);
+            assert!(processor.is_ok(), "Threshold {} should be valid", threshold);
+        }
+    }
 }

@@ -1,0 +1,207 @@
+openapi: 3.1.0
+info:
+  title: Phase 8 - CI/CD Architecture Implementation Plan
+  version: 1.0.0
+  x-adr-id: "0004"
+  description: |
+    Implementation plan for ADR-004: CI/CD Multi-Platform Wheel Building.
+    Automated releases with semantic-release and multi-platform builds.
+
+components:
+  schemas:
+    Platform:
+      type: object
+      required:
+        - os
+        - arch
+        - runner
+        - coverage
+      properties:
+        os:
+          type: string
+          enum: [linux, macos, windows]
+        arch:
+          type: string
+          enum: [x86_64, aarch64]
+        runner:
+          type: string
+        coverage:
+          type: number
+          description: "Percentage of Python developers using this platform"
+
+    WorkflowJob:
+      type: object
+      required:
+        - name
+        - trigger
+        - runtime
+        - steps
+      properties:
+        name:
+          type: string
+        trigger:
+          type: string
+        runtime:
+          type: string
+        steps:
+          type: array
+          items:
+            type: string
+
+paths:
+  /phase8/tasks:
+    get:
+      summary: Get Phase 8 implementation tasks
+      responses:
+        '200':
+          description: Task list for Phase 8
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      example:
+                        - id: "8.1"
+                          description: "Copy .github/workflows/ci-test-build.yml from /tmp"
+                          estimatedHours: 0.5
+                          sourceFile: "/tmp/rangebar-phases-7-9/cicd/.github/workflows/ci-test-build.yml"
+                          validation: "gh workflow validate .github/workflows/ci-test-build.yml"
+                        - id: "8.2"
+                          description: "Copy .github/workflows/release.yml from /tmp"
+                          estimatedHours: 0.5
+                          sourceFile: "/tmp/rangebar-phases-7-9/cicd/.github/workflows/release.yml"
+                          validation: "gh workflow validate .github/workflows/release.yml"
+                        - id: "8.3"
+                          description: "Add [tool.semantic_release] to pyproject.toml"
+                          estimatedHours: 1.0
+                          dependencies: []
+                          validation: "semantic-release --noop version succeeds"
+                        - id: "8.4"
+                          description: "Create .pre-commit-config.yaml with commitizen"
+                          estimatedHours: 0.5
+                          dependencies: []
+                          validation: "pre-commit run --all-files succeeds"
+                        - id: "8.5"
+                          description: "Configure PyPI Trusted Publisher"
+                          estimatedHours: 1.0
+                          dependencies: []
+                          validation: "Trusted Publisher configured in PyPI settings"
+                        - id: "8.6"
+                          description: "Test workflow syntax and dry-run"
+                          estimatedHours: 1.0
+                          dependencies: ["8.1", "8.2", "8.3"]
+                          validation: "Workflows pass syntax validation"
+
+  /phase8/platforms:
+    get:
+      summary: Get target platform matrix
+      responses:
+        '200':
+          description: Platforms for wheel building
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Platform'
+              example:
+                - os: "linux"
+                  arch: "x86_64"
+                  runner: "ubuntu-22.04"
+                  coverage: 55
+                - os: "macos"
+                  arch: "aarch64"
+                  runner: "macos-14"
+                  coverage: 30
+
+  /phase8/workflows:
+    get:
+      summary: Get workflow specifications
+      responses:
+        '200':
+          description: CI/CD workflow definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkflowJob'
+              example:
+                - name: "ci-test-build.yml"
+                  trigger: "Every push to main, all PRs"
+                  runtime: "~8 minutes"
+                  steps:
+                    - "Checkout code"
+                    - "Test matrix: Python 3.9-3.12"
+                    - "Rust tests: cargo test"
+                    - "Build wheels: Linux x86_64, macOS ARM64"
+                - name: "release.yml"
+                  trigger: "Push to main only"
+                  runtime: "~12 minutes (if released)"
+                  steps:
+                    - "semantic-release: version bump, tag, CHANGELOG"
+                    - "Build wheels: all platforms"
+                    - "Publish to PyPI"
+                    - "Create GitHub Release"
+
+x-slo:
+  availability:
+    description: "CI completes within 10 minutes (p95)"
+    target: "p95 < 10 minutes"
+    measurement: "GitHub Actions execution time"
+  correctness:
+    description: "Version synchronization verified before release"
+    validation: |
+      # Check version match
+      python -c "import toml; assert toml.load('pyproject.toml')['project']['version'] == toml.load('Cargo.toml')['package']['version']"
+  observability:
+    description: "GitHub Actions UI provides full build/release audit trail"
+    artifacts:
+      - "GitHub Actions logs"
+      - "Built wheels in artifacts"
+      - "Published packages on PyPI"
+  maintainability:
+    description: "Workflows use maintained GitHub Actions"
+    actions:
+      - "PyO3/maturin-action@v1"
+      - "python-semantic-release/python-semantic-release@v10"
+      - "pypa/gh-action-pypi-publish@release/v1"
+
+x-error-handling:
+  policy: "fail-loudly-no-partial-publishes"
+  examples:
+    - condition: "Test failure in CI"
+      action: "Fail workflow, block merge, visible red X"
+    - condition: "Version sync mismatch"
+      action: "Fail before build, raise error"
+    - condition: "PyPI upload failure"
+      action: "Prevent GitHub Release creation (atomic)"
+  no-fallbacks:
+    - "No 'publish to PyPI even if tests fail'"
+    - "No 'create release even if version sync broken'"
+    - "No 'silent retry on upload failure'"
+
+x-dependencies:
+  oss-actions:
+    - name: "PyO3/maturin-action"
+      purpose: "Build multi-platform wheels"
+      alternative-rejected: "custom build scripts"
+    - name: "python-semantic-release"
+      purpose: "Automated version management"
+      alternative-rejected: "manual versioning"
+    - name: "pypa/gh-action-pypi-publish"
+      purpose: "PyPI publishing"
+      alternative-rejected: "manual twine upload"
+
+x-validation:
+  pre-deployment:
+    - description: "Validate workflow syntax"
+      command: "gh workflow validate .github/workflows/ci-test-build.yml"
+    - description: "Dry-run semantic-release"
+      command: "semantic-release --noop version"
+    - description: "Test local wheel build"
+      command: "maturin build --release"
