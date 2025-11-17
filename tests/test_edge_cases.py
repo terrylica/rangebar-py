@@ -42,8 +42,8 @@ class TestErrorHandling:
         assert processor.threshold_bps == 100_000
 
     def test_negative_threshold(self):
-        """Test negative threshold (should fail)."""
-        with pytest.raises(ValueError):
+        """Test negative threshold (should fail with OverflowError from Rust u32)."""
+        with pytest.raises(OverflowError):
             RangeBarProcessor(threshold_bps=-1)
 
     def test_zero_threshold(self):
