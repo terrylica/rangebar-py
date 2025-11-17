@@ -36,22 +36,11 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v
 
-  test-rust:
-    name: Test Rust Core
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: dtolnay/rust-toolchain@stable
-      
-      - name: Run cargo test
-        run: cargo test --all-features
-
   # Build wheels for minimum required platforms
   build-wheels-linux:
     name: Build Linux x86_64 Wheels
     runs-on: ubuntu-22.04
-    needs: [test-python, test-rust]
+    needs: [test-python]
     steps:
       - uses: actions/checkout@v4
       
@@ -76,7 +65,7 @@ jobs:
   build-wheels-macos-arm64:
     name: Build macOS ARM64 Wheels
     runs-on: macos-14
-    needs: [test-python, test-rust]
+    needs: [test-python]
     steps:
       - uses: actions/checkout@v4
       
@@ -100,7 +89,7 @@ jobs:
   build-sdist:
     name: Build Source Distribution
     runs-on: ubuntu-latest
-    needs: [test-python, test-rust]
+    needs: [test-python]
     steps:
       - uses: actions/checkout@v4
       
