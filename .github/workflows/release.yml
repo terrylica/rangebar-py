@@ -86,6 +86,9 @@ jobs:
     needs: [release, build-wheels]
     if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/rangebar/
     permissions:
       id-token: write
     steps:
