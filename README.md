@@ -3,7 +3,7 @@
 **Python bindings for [rangebar](https://github.com/terrylica/rangebar) - High-performance range bar construction for cryptocurrency trading**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python Version](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 ## Status: ✅ Production Ready (v0.1.0)
 
@@ -88,7 +88,7 @@ pip install rangebar
 Pre-built wheels available for:
 - **Linux**: x86_64 (manylinux)
 - **macOS**: ARM64 (Apple Silicon)
-- **Python**: 3.9, 3.10, 3.11, 3.12
+- **Python**: 3.10, 3.11, 3.12
 
 ### From Source (Development)
 
@@ -281,7 +281,7 @@ python examples/validate_output.py
 
 ### Runtime
 
-- Python ≥ 3.9
+- Python ≥ 3.10
 - pandas ≥ 2.0
 - numpy ≥ 1.24
 
@@ -364,7 +364,7 @@ maturin develop
 maturin build --release
 
 # Build for multiple Python versions
-maturin build --release --interpreter python3.9 python3.10 python3.11 python3.12
+maturin build --release --interpreter python3.10 python3.11 python3.12
 
 # Check wheels
 ls target/wheels/
