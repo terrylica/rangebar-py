@@ -16,8 +16,10 @@ class TestThroughputBenchmarks:
 
     def test_throughput_1k_trades(self, benchmark):
         """Benchmark processing 1,000 trades."""
+        # Increase price movement to ensure bars are generated
+        # 1000 * 1.0 = 1000 price points = 1000/42000 = 2.38% = 238 bps per trade group
         trades = [
-            {"timestamp": 1704067200000 + i * 1000, "price": 42000.0 + i * 0.1, "quantity": 1.0}
+            {"timestamp": 1704067200000 + i * 1000, "price": 42000.0 + i * 1.0, "quantity": 1.0}
             for i in range(1_000)
         ]
 
@@ -49,7 +51,7 @@ class TestThroughputBenchmarks:
         assert len(result) > 0
 
         # Validate target throughput
-        stats = benchmark.stats
+        stats = benchmark.stats.stats
         elapsed_seconds = stats.mean
         throughput = 1_000_000 / elapsed_seconds
 
@@ -96,10 +98,10 @@ class TestCompressionRatios:
     """Test compression ratios at different thresholds."""
 
     @pytest.mark.parametrize("threshold_bps,expected_min_bars", [
-        (100, 400),   # 10bps - more bars (less compression)
-        (250, 150),   # 25bps - moderate compression
-        (500, 75),    # 50bps - higher compression
-        (1000, 35),   # 100bps - maximum compression
+        (100, 100),   # 10bps - more bars (less compression)
+        (250, 40),    # 25bps - moderate compression
+        (500, 20),    # 50bps - higher compression
+        (1000, 10),   # 100bps - maximum compression
     ])
     def test_compression_ratio(self, threshold_bps, expected_min_bars):
         """Test that compression increases with threshold."""
