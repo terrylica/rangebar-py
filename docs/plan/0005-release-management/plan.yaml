@@ -1,0 +1,220 @@
+openapi: 3.1.0
+info:
+  title: Phase 9 - Release Management Implementation Plan
+  version: 1.0.0
+  x-adr-id: "0005"
+  description: |
+    Implementation plan for ADR-005: Automated Release Management.
+    Fully automated releases from v0.1.0 using semantic-release.
+
+components:
+  schemas:
+    ReleaseArtifact:
+      type: object
+      required:
+        - name
+        - auto-generated
+        - location
+      properties:
+        name:
+          type: string
+        auto-generated:
+          type: boolean
+        location:
+          type: string
+
+    ValidationCheck:
+      type: object
+      required:
+        - check
+        - command
+        - expected
+      properties:
+        check:
+          type: string
+        command:
+          type: string
+        expected:
+          type: string
+
+paths:
+  /phase9/tasks:
+    get:
+      summary: Get Phase 9 implementation tasks
+      responses:
+        '200':
+          description: Task list for Phase 9
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      example:
+                        - id: "9.1"
+                          description: "Validate semantic-release configuration"
+                          estimatedHours: 0.5
+                          validation: "semantic-release --noop version succeeds"
+                        - id: "9.2"
+                          description: "Validate pre-commit hooks installed"
+                          estimatedHours: 0.25
+                          validation: "pre-commit run --all-files succeeds"
+                        - id: "9.3"
+                          description: "Validate all commits follow conventional format"
+                          estimatedHours: 0.5
+                          validation: "git log --oneline | grep -E '^[a-f0-9]+ (feat|fix|docs|chore)'"
+                        - id: "9.4"
+                          description: "Configure GitHub secrets (GH_TOKEN, PYPI_API_TOKEN)"
+                          estimatedHours: 0.5
+                          validation: "Secrets exist in repository settings"
+                        - id: "9.5"
+                          description: "Dry-run release locally"
+                          estimatedHours: 1.0
+                          validation: "CHANGELOG.md generated, versions updated"
+                        - id: "9.6"
+                          description: "Execute v0.1.0 release (push to main)"
+                          estimatedHours: 0.5
+                          validation: "GitHub release created, PyPI package published"
+                        - id: "9.7"
+                          description: "Verify installation from PyPI"
+                          estimatedHours: 0.25
+                          validation: "pip install rangebar==0.1.0 succeeds"
+                        - id: "9.8"
+                          description: "Update documentation (README status: Beta → Stable)"
+                          estimatedHours: 0.5
+                          validation: "README reflects v0.1.0 stable status"
+
+  /phase9/artifacts:
+    get:
+      summary: Get expected release artifacts
+      responses:
+        '200':
+          description: Artifacts generated during release
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReleaseArtifact'
+              example:
+                - name: "CHANGELOG.md"
+                  auto-generated: true
+                  location: "Repository root"
+                - name: "GitHub Release"
+                  auto-generated: true
+                  location: "https://github.com/terrylica/rangebar-py/releases/tag/v0.1.0"
+                - name: "PyPI Package"
+                  auto-generated: true
+                  location: "https://pypi.org/project/rangebar/0.1.0/"
+                - name: "Git Tag"
+                  auto-generated: true
+                  location: "refs/tags/v0.1.0"
+
+  /phase9/validation:
+    get:
+      summary: Get post-release validation checks
+      responses:
+        '200':
+          description: Validation checks after v0.1.0 release
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ValidationCheck'
+              example:
+                - check: "PyPI package installable"
+                  command: "pip install rangebar==0.1.0"
+                  expected: "Successfully installed rangebar-0.1.0"
+                - check: "Import works"
+                  command: "python -c 'import rangebar; print(rangebar.__version__)'"
+                  expected: "0.1.0"
+                - check: "Example runs"
+                  command: "python examples/basic_usage.py"
+                  expected: "Exit code 0"
+                - check: "GitHub Release exists"
+                  command: "gh release view v0.1.0"
+                  expected: "Release notes displayed"
+                - check: "Git tag exists"
+                  command: "git tag | grep v0.1.0"
+                  expected: "v0.1.0"
+                - check: "CHANGELOG committed"
+                  command: "git log --oneline | grep CHANGELOG"
+                  expected: "Commit with CHANGELOG update"
+
+x-slo:
+  correctness:
+    description: "Version synchronization validated before release"
+    validation: |
+      # Pre-release check
+      python -c "import toml; assert toml.load('pyproject.toml')['project']['version'] == toml.load('Cargo.toml')['package']['version']"
+  observability:
+    description: "CHANGELOG + GitHub Release notes provide change visibility"
+    artifacts:
+      - "CHANGELOG.md"
+      - "GitHub Release with generated notes"
+  maintainability:
+    description: "Zero manual version management"
+    process: "semantic-release automates all versioning"
+  availability:
+    description: "Releases complete within 15 minutes (p95)"
+    target: "p95 < 15 minutes from merge to PyPI"
+
+x-error-handling:
+  policy: "atomic-releases-no-partial-publishes"
+  examples:
+    - condition: "Version sync mismatch"
+      action: "Fail before publish, raise error"
+    - condition: "PyPI upload failure"
+      action: "Prevent GitHub Release creation, fail workflow"
+    - condition: "CHANGELOG generation failure"
+      action: "Abort release, raise error"
+  no-fallbacks:
+    - "No 'publish anyway if version sync broken'"
+    - "No 'create GitHub Release if PyPI upload failed'"
+    - "No 'skip CHANGELOG if generation errors'"
+
+x-dependencies:
+  oss-libraries:
+    - name: "python-semantic-release"
+      purpose: "Automated version management and releases"
+      alternative-rejected: "manual versioning"
+    - name: "commitizen"
+      purpose: "Enforce conventional commit format"
+      alternative-rejected: "custom commit validation"
+    - name: "pre-commit"
+      purpose: "Git hook framework"
+      alternative-rejected: "custom git hooks"
+
+x-validation:
+  pre-release-checklist:
+    - description: "All tests passing"
+      command: "make test"
+      required: true
+    - description: "Coverage targets met"
+      command: "make coverage"
+      required: true
+    - description: "Benchmarks passing"
+      command: "make benchmark"
+      required: true
+    - description: "Conventional commits validated"
+      command: "pre-commit run --all-files"
+      required: true
+    - description: "GitHub secrets configured"
+      manual: true
+      required: true
+    - description: "Dry-run succeeds"
+      command: "semantic-release --noop version"
+      required: true
+
+x-rollback-procedure:
+  description: "Manual procedure to undo release if critical issues found"
+  steps:
+    - "Delete git tag: git push origin :refs/tags/vX.Y.Z"
+    - "Delete GitHub Release: gh release delete vX.Y.Z"
+    - "Yank from PyPI: pypi yank rangebar X.Y.Z"
+    - "Document incident in ADR"
+  note: "Rollback requires manual intervention; automate monitoring to prevent need"

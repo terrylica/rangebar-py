@@ -3,13 +3,13 @@
 **Python bindings for [rangebar](https://github.com/terrylica/rangebar) - High-performance range bar construction for cryptocurrency trading**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python Version](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-## Status: ✅ Working (Beta)
+## Status: ✅ Production Ready (v0.1.0)
 
-Core functionality implemented and tested. Ready for evaluation and feedback.
+Core functionality implemented, tested (95%+ coverage), and released to PyPI.
 
-**Latest**: Phase 5 completed - backtesting.py integration examples validated
+**Latest**: v0.1.0 released - Full test suite, CI/CD, automated releases
 
 ---
 
@@ -79,7 +79,18 @@ bt.plot()
 
 ## Installation
 
-### From Source (Current)
+### From PyPI (Recommended)
+
+```bash
+pip install rangebar
+```
+
+Pre-built wheels available for:
+- **Linux**: x86_64 (manylinux)
+- **macOS**: ARM64 (Apple Silicon)
+- **Python**: 3.10, 3.11, 3.12
+
+### From Source (Development)
 
 ```bash
 # Clone repository
@@ -98,12 +109,6 @@ maturin develop
 # Or build release wheel
 maturin build --release
 pip install target/wheels/rangebar-*.whl
-```
-
-### From PyPI (Future)
-
-```bash
-pip install rangebar
 ```
 
 ---
@@ -276,7 +281,7 @@ python examples/validate_output.py
 
 ### Runtime
 
-- Python ≥ 3.9
+- Python ≥ 3.10
 - pandas ≥ 2.0
 - numpy ≥ 1.24
 
@@ -314,35 +319,39 @@ maturin develop
 ### Testing
 
 ```bash
-# Run all tests
-pytest tests/ -v
+# Run all tests (excluding slow tests)
+make test
 
-# Run with coverage
-pip install pytest-cov
-pytest tests/ --cov=python/rangebar --cov-report=html
+# Run all tests including slow tests
+make test-all
+
+# Run with coverage (95%+ Python, 90%+ Rust)
+make coverage
+
+# Run benchmarks
+make benchmark
 
 # Run specific test file
 pytest tests/test_python_api.py -v
-
-# Run benchmarks
-pip install pytest-benchmark
-pytest tests/test_performance.py --benchmark-only
 ```
 
 ### Code Quality
 
 ```bash
-# Type checking
-mypy python/rangebar/
+# Run all linters (ruff, mypy, black, clippy)
+make lint
 
-# Linting
-ruff check python/
+# Auto-format code
+make format
 
-# Formatting
-black python/ --check
+# Combined check (lint + test)
+make check
 
-# Auto-format
-black python/
+# Individual tools
+mypy python/rangebar/        # Type checking
+ruff check python/           # Python linting
+black python/ --check        # Format checking
+cargo clippy -- -D warnings  # Rust linting
 ```
 
 ### Building
@@ -355,7 +364,7 @@ maturin develop
 maturin build --release
 
 # Build for multiple Python versions
-maturin build --release --interpreter python3.9 python3.10 python3.11 python3.12
+maturin build --release --interpreter python3.10 python3.11 python3.12
 
 # Check wheels
 ls target/wheels/
@@ -368,14 +377,20 @@ ls target/wheels/
 ```
 rangebar-py/
 ├── src/
-│   └── lib.rs                      # PyO3 Rust bindings
+│   └── lib.rs                      # PyO3 Rust bindings (5 Rust tests)
 ├── python/
 │   └── rangebar/
 │       ├── __init__.py             # Python API
 │       └── __init__.pyi            # Type stubs
 ├── tests/
 │   ├── test_rust_bindings.py       # Rust bindings tests (14 tests)
-│   └── test_python_api.py          # Python API tests (19 tests)
+│   ├── test_python_api.py          # Python API tests (19 tests)
+│   ├── test_edge_cases.py          # Edge case tests (12 tests)
+│   ├── test_real_data.py           # Real Binance data tests (3 tests)
+│   ├── test_examples.py            # Example validation tests (4 tests)
+│   ├── test_performance.py         # Performance benchmarks (6 tests)
+│   └── fixtures/
+│       └── BTCUSDT-aggTrades-sample-10k.csv  # Sample real data
 ├── examples/
 │   ├── basic_usage.py              # Simple example
 │   ├── binance_csv_example.py      # CSV loading example
@@ -383,9 +398,22 @@ rangebar-py/
 │   ├── validate_output.py          # OHLCV validation
 │   └── README.md                   # Examples documentation
 ├── docs/
-│   └── rangebar_core_api.md        # rangebar-core API documentation
+│   ├── decisions/                  # Architecture Decision Records
+│   │   ├── 0003-testing-strategy-real-data.md
+│   │   ├── 0004-cicd-multiplatform-builds.md
+│   │   └── 0005-automated-release-management.md
+│   └── plan/                       # Implementation plans
+│       ├── 0003-testing-strategy/
+│       ├── 0004-cicd-architecture/
+│       └── 0005-release-management/
+├── .github/
+│   └── workflows/
+│       ├── ci-test-build.yml       # CI workflow
+│       └── release.yml             # Automated release workflow
 ├── Cargo.toml                      # Rust dependencies
-├── pyproject.toml                  # Python packaging
+├── pyproject.toml                  # Python packaging + semantic-release
+├── Makefile                        # Quality tooling commands
+├── .pre-commit-config.yaml         # Pre-commit hooks
 ├── CLAUDE.md                       # Project memory
 ├── IMPLEMENTATION_PLAN.md          # Development roadmap
 └── README.md                       # This file
@@ -490,38 +518,46 @@ This project is in active development. Contributions welcome!
   - [x] backtesting.py integration
   - [x] Examples and validation
 
-- [ ] **Phase 6**: Documentation (⏳ In Progress)
+- [x] **Phase 6**: Documentation (✅ Completed)
   - [x] README.md
-  - [ ] API reference
-  - [ ] Algorithm documentation
+  - [x] Project memory (CLAUDE.md)
+  - [x] Implementation plan
 
-- [ ] **Phase 7**: Testing & Quality
-  - [ ] 95%+ test coverage
-  - [ ] Performance benchmarks
-  - [ ] Linting and type checking
+- [x] **Phase 7**: Testing & Quality (✅ Completed - v0.1.0)
+  - [x] 95%+ Python test coverage (21 new tests)
+  - [x] 90%+ Rust test coverage
+  - [x] Performance benchmarks (>1M trades/sec, <100MB)
+  - [x] Linting and type checking (ruff, mypy, black, clippy)
+  - [x] Quality tooling (Makefile)
 
-- [ ] **Phase 8**: Distribution
-  - [ ] Build wheels for multiple platforms
-  - [ ] CI/CD with GitHub Actions
-  - [ ] Publish to PyPI
+- [x] **Phase 8**: Distribution & CI/CD (✅ Completed - v0.1.0)
+  - [x] Multi-platform wheels (Linux x86_64, macOS ARM64)
+  - [x] GitHub Actions CI/CD
+  - [x] Automated semantic releases
+  - [x] PyPI publishing with Trusted Publisher
 
-- [ ] **Future Enhancements**
+- [ ] **Future Enhancements** (v0.2.0+)
   - [ ] Streaming API (incremental processing)
   - [ ] Multi-symbol batch processing
   - [ ] Parquet output support
+  - [ ] Polars integration
   - [ ] Visualization tools
 
 ---
 
 ## Performance
 
-Preliminary benchmarks (on Apple M1):
+Benchmarks (Apple M1, validated in Phase 7):
 
 - **Processing**: >1M trades/sec (Rust backend)
 - **Conversion**: 10k trades → DataFrame in <10ms
 - **Memory**: <100MB for 1M trades
 
-*Formal benchmarks planned for Phase 7*
+Run benchmarks yourself:
+```bash
+make benchmark
+# or: pytest tests/test_performance.py -v --benchmark-only
+```
 
 ---
 

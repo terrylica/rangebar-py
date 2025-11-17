@@ -1,0 +1,226 @@
+openapi: 3.1.0
+info:
+  title: Phase 7 - Testing Strategy Implementation Plan
+  version: 1.0.0
+  x-adr-id: "0003"
+  description: |
+    Implementation plan for ADR-003: Testing Strategy with Real Binance Data.
+    Achieves 95% Python / 90% Rust coverage with real-world data validation.
+
+components:
+  schemas:
+    CoverageTarget:
+      type: object
+      required:
+        - language
+        - targetPercentage
+        - currentPercentage
+        - gapTests
+      properties:
+        language:
+          type: string
+          enum: [python, rust]
+        targetPercentage:
+          type: number
+          minimum: 0
+          maximum: 100
+        currentPercentage:
+          type: number
+          minimum: 0
+          maximum: 100
+        gapTests:
+          type: array
+          items:
+            type: string
+
+    BenchmarkTarget:
+      type: object
+      required:
+        - metric
+        - target
+        - unit
+      properties:
+        metric:
+          type: string
+          enum: [throughput, memory, compression]
+        target:
+          type: string
+        unit:
+          type: string
+          enum: [trades_per_sec, megabytes, ratio]
+
+paths:
+  /phase7/tasks:
+    get:
+      summary: Get Phase 7 implementation tasks
+      responses:
+        '200':
+          description: Task list for Phase 7
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - description
+                        - estimatedHours
+                        - dependencies
+                        - validation
+                      properties:
+                        id:
+                          type: string
+                        description:
+                          type: string
+                        estimatedHours:
+                          type: number
+                        dependencies:
+                          type: array
+                          items:
+                            type: string
+                        validation:
+                          type: string
+                      example:
+                        - id: "7.1"
+                          description: "Install testing dependencies (pytest-cov, pytest-benchmark, mypy, ruff, cargo-llvm-cov)"
+                          estimatedHours: 0.25
+                          dependencies: []
+                          validation: "All tools report versions without errors"
+                        - id: "7.2"
+                          description: "Download Binance BTCUSDT aggTrades data (2024-01-01, ~500MB)"
+                          estimatedHours: 0.33
+                          dependencies: ["7.1"]
+                          validation: "Sample file exists: tests/fixtures/BTCUSDT-aggTrades-sample-10k.csv"
+                        - id: "7.3"
+                          description: "Implement 21 new tests (edge cases, real data, examples, performance)"
+                          estimatedHours: 1.5
+                          dependencies: ["7.2"]
+                          validation: "54+ tests passing (from 33)"
+                        - id: "7.4"
+                          description: "Configure linting (ruff strict, mypy strict, clippy -D warnings)"
+                          estimatedHours: 0.5
+                          dependencies: ["7.1"]
+                          validation: "make lint reports zero errors"
+                        - id: "7.5"
+                          description: "Create Makefile with quality commands"
+                          estimatedHours: 0.25
+                          dependencies: ["7.3", "7.4"]
+                          validation: "make check executes all quality gates"
+                        - id: "7.6"
+                          description: "Run benchmarks and establish baselines"
+                          estimatedHours: 0.5
+                          dependencies: ["7.3"]
+                          validation: ">1M trades/sec, <100MB memory for 1M trades"
+                        - id: "7.7"
+                          description: "Measure final coverage and generate reports"
+                          estimatedHours: 0.25
+                          dependencies: ["7.3"]
+                          validation: "95% Python, 90% Rust coverage achieved"
+
+  /phase7/coverage-targets:
+    get:
+      summary: Get coverage targets
+      responses:
+        '200':
+          description: Coverage targets for Python and Rust
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CoverageTarget'
+              example:
+                - language: "python"
+                  targetPercentage: 95
+                  currentPercentage: 85
+                  gapTests:
+                    - "test_edge_cases.py::test_dataframe_with_both_quantity_and_volume"
+                    - "test_edge_cases.py::test_empty_trades_list"
+                    - "test_edge_cases.py::test_single_trade_no_bars"
+                - language: "rust"
+                  targetPercentage: 90
+                  currentPercentage: 88
+                  gapTests:
+                    - "src/lib.rs::test_f64_to_fixed_point_extremes"
+                    - "src/lib.rs::test_processor_boundary_thresholds"
+
+  /phase7/benchmarks:
+    get:
+      summary: Get benchmark targets
+      responses:
+        '200':
+          description: Performance benchmark targets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BenchmarkTarget'
+              example:
+                - metric: "throughput"
+                  target: ">1000000"
+                  unit: "trades_per_sec"
+                - metric: "memory"
+                  target: "<100"
+                  unit: "megabytes"
+                - metric: "compression"
+                  target: "10-50"
+                  unit: "ratio"
+
+x-slo:
+  availability:
+    description: "Tests complete within 10 minutes (CI timeout)"
+    target: "p95 < 10 minutes"
+  correctness:
+    description: "100% test pass rate, coverage targets met"
+    target: "95% Python, 90% Rust coverage"
+  observability:
+    description: "Coverage reports viewable in browser"
+    artifacts:
+      - "htmlcov/index.html"
+      - "target/llvm-cov/html/index.html"
+  maintainability:
+    description: "Single-command quality checks"
+    command: "make check"
+
+x-error-handling:
+  policy: "raise-and-propagate"
+  examples:
+    - condition: "Coverage below target"
+      action: "Exit with error code 1, print gap analysis"
+    - condition: "Benchmark below target"
+      action: "Exit with error code 1, print performance report"
+    - condition: "Test failure"
+      action: "Exit with error code 1, print failure details"
+  no-fallbacks:
+    - "No 'skip tests if data missing' (download or fail)"
+    - "No 'continue on linting errors' (fix or abort)"
+
+x-dependencies:
+  oss-libraries:
+    - name: "pytest-cov"
+      purpose: "Python coverage measurement"
+      alternative-rejected: "custom coverage instrumentation"
+    - name: "pytest-benchmark"
+      purpose: "Performance benchmarking"
+      alternative-rejected: "custom profiling"
+    - name: "cargo-llvm-cov"
+      purpose: "Rust coverage measurement"
+      alternative-rejected: "manual instrumentation"
+    - name: "ruff"
+      purpose: "Python linting"
+      alternative-rejected: "custom linter"
+    - name: "mypy"
+      purpose: "Python type checking"
+      alternative-rejected: "custom type checker"
+
+x-validation:
+  auto-validation-script: |
+    #!/bin/bash
+    set -e
+    make test && make coverage && make lint && make benchmark
+    # Exit code 0 = success, non-zero = specific failure

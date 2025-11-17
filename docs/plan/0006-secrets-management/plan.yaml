@@ -1,0 +1,236 @@
+openapi: 3.1.0
+info:
+  title: Secrets Management Implementation Plan
+  version: 1.0.0
+  x-adr-id: "0006"
+  description: |
+    Implementation plan for ADR-006: Secrets Management for GitHub Actions.
+    Zero-secrets architecture using GitHub built-in GITHUB_TOKEN and PyPI Trusted Publisher.
+
+components:
+  schemas:
+    SecretsInventory:
+      type: object
+      required:
+        - secret_type
+        - storage_location
+        - rotation_policy
+      properties:
+        secret_type:
+          type: string
+          enum: [github_token, pypi_credentials]
+        storage_location:
+          type: string
+          enum: [github_actions_builtin, pypi_oidc, not_stored]
+        rotation_policy:
+          type: string
+
+    ValidationCheck:
+      type: object
+      required:
+        - check
+        - command
+        - expected
+      properties:
+        check:
+          type: string
+        command:
+          type: string
+        expected:
+          type: string
+
+paths:
+  /secrets/inventory:
+    get:
+      summary: Get secrets inventory
+      responses:
+        '200':
+          description: Inventory of all secrets used in CI/CD
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SecretsInventory'
+              example:
+                - secret_type: "github_token"
+                  storage_location: "github_actions_builtin"
+                  rotation_policy: "Automatic (GitHub managed)"
+                  scope: "Repository only"
+                  permissions: "contents:write, id-token:write"
+                - secret_type: "pypi_credentials"
+                  storage_location: "pypi_oidc"
+                  rotation_policy: "Per-publish (JWT expires immediately)"
+                  scope: "rangebar package only"
+                  workflow_restriction: "release.yml only"
+
+  /setup/tasks:
+    get:
+      summary: Get setup tasks
+      responses:
+        '200':
+          description: Tasks for secrets management setup
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      example:
+                        - id: "10.1"
+                          description: "Verify GitHub Actions workflow permissions"
+                          estimatedMinutes: 2
+                          validation: "release.yml has contents:write and id-token:write"
+                        - id: "10.2"
+                          description: "Configure PyPI Trusted Publisher"
+                          estimatedMinutes: 5
+                          validation: "Publisher appears in PyPI account settings"
+                        - id: "10.3"
+                          description: "Validate release workflow (dry-run)"
+                          estimatedMinutes: 3
+                          validation: "Workflow syntax valid, no secret references"
+                        - id: "10.4"
+                          description: "Document Doppler exclusion rationale"
+                          estimatedMinutes: 2
+                          validation: "ADR-006 explains why Doppler not used for CI/CD"
+
+  /setup/validation:
+    get:
+      summary: Get post-setup validation checks
+      responses:
+        '200':
+          description: Validation checks after setup
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ValidationCheck'
+              example:
+                - check: "No API tokens in GitHub Secrets"
+                  command: "gh secret list | grep -i pypi || echo 'None found'"
+                  expected: "None found (empty list)"
+                - check: "PyPI Trusted Publisher configured"
+                  command: "Manual verification in PyPI UI"
+                  expected: "rangebar project shows pending/active publisher"
+                - check: "Workflow permissions correct"
+                  command: "grep -A2 'permissions:' .github/workflows/release.yml"
+                  expected: "contents: write, id-token: write"
+                - check: "No hardcoded credentials"
+                  command: "git grep -i 'pypi.*token\\|api.*key' .github/"
+                  expected: "No matches (exit code 1)"
+
+x-slo:
+  availability:
+    description: "Zero credential expiry events"
+    target: "100% credential availability (no manual rotation)"
+    validation: "No failed releases due to expired credentials in 12 months"
+  correctness:
+    description: "All authentication attempts succeed"
+    target: "100% authentication success rate"
+    validation: "No OIDC JWT validation failures"
+  observability:
+    description: "All authentication visible in logs"
+    artifacts:
+      - "GitHub Actions workflow logs"
+      - "PyPI audit logs (publisher authentication events)"
+  maintainability:
+    description: "Zero manual secret operations"
+    target: "No secret rotation, renewal, or update operations"
+    validation: "Zero secret-related maintenance tasks in 12 months"
+
+x-error-handling:
+  policy: "fail-fast-no-fallback-credentials"
+  examples:
+    - condition: "GITHUB_TOKEN missing permissions"
+      action: "Fail workflow with clear error message"
+      no_fallback: "Do not attempt to use cached credentials or PATs"
+    - condition: "PyPI OIDC authentication failure"
+      action: "Fail workflow, display PyPI error message"
+      no_fallback: "Do not fall back to API token authentication"
+    - condition: "Trusted Publisher not configured"
+      action: "Fail with setup instructions URL"
+      no_fallback: "Do not proceed with different authentication method"
+  no-fallbacks:
+    - "No 'use API token if OIDC fails'"
+    - "No 'skip publish if authentication fails'"
+    - "No 'use different workflow if permissions insufficient'"
+    - "No 'cache credentials for retry'"
+
+x-dependencies:
+  oss-libraries:
+    - name: "pypa/gh-action-pypi-publish"
+      purpose: "PyPI publishing with Trusted Publisher OIDC"
+      version: "release/v1"
+      alternative-rejected: "twine upload (requires API token)"
+    - name: "python-semantic-release/python-semantic-release"
+      purpose: "Automated releases with GITHUB_TOKEN"
+      version: "v10.5.2"
+      alternative-rejected: "manual gh release create (requires automation)"
+
+x-security:
+  threat-model:
+    - threat: "Leaked API token"
+      mitigation: "No API tokens used (OIDC only)"
+      residual_risk: "None"
+    - threat: "Stolen GitHub PAT"
+      mitigation: "No custom PATs (built-in GITHUB_TOKEN only)"
+      residual_risk: "None"
+    - threat: "Compromised workflow"
+      mitigation: "Trusted Publisher restricts to specific workflow file"
+      residual_risk: "Attacker must compromise repository AND workflow file"
+    - threat: "Malicious fork"
+      mitigation: "Trusted Publisher validates repository owner"
+      residual_risk: "Forks cannot publish to original PyPI package"
+
+x-compliance:
+  principle-of-least-privilege:
+    - "GITHUB_TOKEN scoped to repository only (not organization-wide)"
+    - "PyPI Trusted Publisher scoped to single workflow file"
+    - "No broad-scope credentials (no admin tokens)"
+  zero-trust-architecture:
+    - "No long-lived credentials"
+    - "Authentication per-publish (OIDC JWT)"
+    - "Credentials expire immediately after use"
+  defense-in-depth:
+    - "GitHub branch protection (main branch)"
+    - "PyPI Trusted Publisher (workflow validation)"
+    - "Workflow permissions (explicit declaration)"
+
+x-comparison:
+  alternatives:
+    custom_pat:
+      security: "Low (broad permissions, long-lived)"
+      maintainability: "Low (manual rotation)"
+      availability: "Medium (manual expiry management)"
+      complexity: "Medium (Doppler sync required)"
+      verdict: "REJECTED"
+    pypi_api_token:
+      security: "Medium (long-lived, scoped to package)"
+      maintainability: "Low (manual rotation every 90 days)"
+      availability: "Medium (expiry risk)"
+      complexity: "Medium (GitHub Secrets storage)"
+      verdict: "REJECTED"
+    github_token_oidc:
+      security: "High (automatic rotation, scoped)"
+      maintainability: "High (zero maintenance)"
+      availability: "High (no expiry)"
+      complexity: "Low (built-in)"
+      verdict: "ACCEPTED"
+
+x-rollback-procedure:
+  description: "Rollback to API token authentication (NOT RECOMMENDED)"
+  reason: "Emergency fallback if OIDC authentication breaks globally"
+  steps:
+    - "Create PyPI API token in PyPI account settings"
+    - "Store token in GitHub Secrets as PYPI_API_TOKEN"
+    - "Update .github/workflows/release.yml:"
+    - "  - Remove: uses: pypa/gh-action-pypi-publish@release/v1"
+    - "  - Add: with: password: ${{ secrets.PYPI_API_TOKEN }}"
+    - "Document incident in ADR-006 (amendment)"
+    - "Create GitHub issue to restore OIDC authentication"
+  note: "This is a TEMPORARY emergency measure. Restore OIDC authentication ASAP."
+  probability: "Extremely low (OIDC is stable, GA since 2023)"
