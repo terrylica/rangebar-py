@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.2.0 (2025-11-17)
+
+### Features
+
+- Complete release automation infrastructure
+  ([`4886cca`](https://github.com/terrylica/rangebar-py/commit/4886cca5e2a8020d066534a130cac4b40874b3b6))
+
+
 ## v0.1.1 (2025-11-17)
 
 ### Bug Fixes
