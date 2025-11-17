@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.3.0 (2025-11-17)
+
+### Features
+
+- Release v0.3.0 with complete CI/CD infrastructure
+  ([`5f6a19f`](https://github.com/terrylica/rangebar-py/commit/5f6a19f6b80c48afc278020c6689451b06250148))
+
+
 ## v0.2.0 (2025-11-17)
 
 ### Features
