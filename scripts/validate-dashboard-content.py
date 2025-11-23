@@ -78,7 +78,7 @@ class DashboardValidator:
             (r"rangebar-py Performance Dashboard", "Dashboard heading"),
             (r"Throughput Trends", "Throughput chart section"),
             (r"Memory Usage Trends", "Memory chart section"),
-            (r"dev/bench/.*\.json", "Benchmark data reference"),
+            (r"dev/bench/data\.js", "Benchmark data reference"),
         ]
 
         for pattern, description in required_elements:
