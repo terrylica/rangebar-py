@@ -9,14 +9,12 @@
 - **ci**: Add psutil dependency to workflow test environment
   ([`59f6972`](https://github.com/terrylica/rangebar-py/commit/59f6972903b7e7e4647efcec2252348b53a422ea))
 
-
 ## v1.0.1 (2025-11-23)
 
 ### Bug Fixes
 
 - **ci**: Create virtualenv before maturin develop in workflows
   ([`30c8f34`](https://github.com/terrylica/rangebar-py/commit/30c8f340b568717ed51b75199d98a6732fddf681))
-
 
 ## v1.0.0 (2025-11-23)
 
@@ -28,14 +26,12 @@
 - **perf-monitoring**: Switch to GitHub Actions deployment source
   ([`c14403f`](https://github.com/terrylica/rangebar-py/commit/c14403f25058c435db9260ecfa364da232bdf9ed))
 
-
 ## v0.3.0 (2025-11-17)
 
 ### Features
 
 - Release v0.3.0 with complete CI/CD infrastructure
   ([`5f6a19f`](https://github.com/terrylica/rangebar-py/commit/5f6a19f6b80c48afc278020c6689451b06250148))
-
 
 ## v0.2.0 (2025-11-17)
 
