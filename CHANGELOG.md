@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v1.0.0 (2025-11-23)
+
+### Features
+
+- Add daily performance monitoring with github-action-benchmark
+  ([`8140cff`](https://github.com/terrylica/rangebar-py/commit/8140cff02b6e00e8fd3e37175209bd36071389ee))
+
+- **perf-monitoring**: Switch to GitHub Actions deployment source
+  ([`c14403f`](https://github.com/terrylica/rangebar-py/commit/c14403f25058c435db9260ecfa364da232bdf9ed))
+
+
 ## v0.3.0 (2025-11-17)
 
 ### Features
