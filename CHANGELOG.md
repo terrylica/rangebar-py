@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.0.1 (2025-11-23)
+
+### Bug Fixes
+
+- **ci**: Create virtualenv before maturin develop in workflows
+  ([`30c8f34`](https://github.com/terrylica/rangebar-py/commit/30c8f340b568717ed51b75199d98a6732fddf681))
+
+
 ## v1.0.0 (2025-11-23)
 
 ### Features
