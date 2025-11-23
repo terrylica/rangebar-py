@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1763883878646,
+  "lastUpdate": 1763887089467,
   "repoUrl": "https://github.com/terrylica/rangebar-py",
   "entries": {
     "Python API Benchmarks": [
@@ -41,6 +41,49 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.0018462249357303292",
             "extra": "mean: 480.46418040000276 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "terrylica",
+            "username": "terrylica",
+            "email": "terry@eonlabs.com"
+          },
+          "committer": {
+            "name": "terrylica",
+            "username": "terrylica",
+            "email": "terry@eonlabs.com"
+          },
+          "id": "f5b5d364a0188e76553ce53b94129271d2d80e84",
+          "message": "chore(adr-0007): mark all phases complete and configure semantic-release\n\nPhase completion status:\n\n- Phase 1-4: All tasks completed\n\n- Phase 5: Auto-completed via existing release workflow\n\n- Releases: v1.0.0, v1.0.1, v1.0.2 created automatically\n\n- PyPI: v1.0.2 published 2025-11-23T07:43:15\n\nConfigured semantic-release for future manual releases:\n\n- package.json with Node.js dependencies\n\n- .releaserc.yml with pyproject.toml version updates\n\n- Backup option for manual control if needed\n\nCurrent automation via .github/workflows/release.yml working perfectly.\n\nManual semantic-release not required but available as alternative.",
+          "timestamp": "2025-11-23T08:11:51Z",
+          "url": "https://github.com/terrylica/rangebar-py/commit/f5b5d364a0188e76553ce53b94129271d2d80e84"
+        },
+        "date": 1763887089021,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_performance.py::TestThroughputBenchmarks::test_throughput_1k_trades",
+            "value": 597.7908776069254,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000024136508910130986",
+            "extra": "mean: 1.6728257948719405 msec\nrounds: 624"
+          },
+          {
+            "name": "tests/test_performance.py::TestThroughputBenchmarks::test_throughput_100k_trades",
+            "value": 20.847330557843662,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0016486482683645504",
+            "extra": "mean: 47.96777204761868 msec\nrounds: 21"
+          },
+          {
+            "name": "tests/test_performance.py::TestThroughputBenchmarks::test_throughput_1m_trades",
+            "value": 2.0846051378991843,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0016095081178224221",
+            "extra": "mean: 479.70715499999983 msec\nrounds: 5"
           }
         ]
       }
