@@ -70,7 +70,7 @@
     <div class="info">
         <p><strong>Automated Performance Monitoring</strong></p>
         <p>This dashboard displays daily performance benchmarks for rangebar-py, updated automatically via GitHub Actions.</p>
-        <p>📊 <a href="dev/bench/python-bench.json">View Raw Data (JSON)</a></p>
+        <p>📊 <a href="dev/bench/data.js">View Raw Data</a> | <a href="dev/bench/index.html">Detailed Charts</a></p>
     </div>
 
     <div class="metrics" id="metrics">
@@ -93,13 +93,22 @@
     </footer>
 
     <script>
-        // Load benchmark data
-        fetch('dev/bench/python-bench.json')
+        // Load benchmark data from data.js (JavaScript format created by github-action-benchmark)
+        fetch('dev/bench/data.js')
             .then(response => {
                 if (!response.ok) {
                     throw new Error('Benchmark data not yet available. Run the workflow first.');
                 }
-                return response.json();
+                return response.text();
+            })
+            .then(jsContent => {
+                // Extract JSON from JavaScript wrapper (window.BENCHMARK_DATA = {...})
+                const jsonMatch = jsContent.match(/window\.BENCHMARK_DATA\s*=\s*({[\s\S]*})/);
+                if (!jsonMatch) {
+                    throw new Error('Failed to parse benchmark data');
+                }
+                const data = JSON.parse(jsonMatch[1]);
+                return data;
             })
             .then(data => {
                 if (!data.entries || Object.keys(data.entries).length === 0) {
@@ -107,30 +116,36 @@
                     return;
                 }
 
-                // Process benchmark data
-                const benchmarks = data.entries;
+                // github-action-benchmark format: entries["Python API Benchmarks"] = [{benches: [...]}]
+                const pythonBenchmarks = data.entries["Python API Benchmarks"];
+                if (!pythonBenchmarks || pythonBenchmarks.length === 0) {
+                    document.getElementById('metrics').innerHTML = '<p>No benchmark data available.</p>';
+                    return;
+                }
 
-                // Display latest metrics
-                const metricsHtml = Object.keys(benchmarks).map(name => {
-                    const points = benchmarks[name];
-                    const latest = points[points.length - 1];
+                // Get latest run
+                const latestRun = pythonBenchmarks[pythonBenchmarks.length - 1];
 
+                // Display latest metrics from latest run
+                const metricsHtml = latestRun.benches.map(bench => {
+                    const name = bench.name.split('::').pop(); // Get test name
                     let value, unit;
+
                     if (name.includes('throughput')) {
-                        value = (latest.value / 1e6).toFixed(2);
-                        unit = 'M trades/sec';
+                        value = bench.value.toFixed(2);
+                        unit = bench.unit;
                     } else if (name.includes('memory')) {
-                        value = (latest.value / 1024 / 1024).toFixed(1);
+                        value = (bench.value / 1024 / 1024).toFixed(1);
                         unit = 'MB';
                     } else {
-                        value = latest.value.toFixed(2);
-                        unit = '';
+                        value = bench.value.toFixed(2);
+                        unit = bench.unit || '';
                     }
 
                     return `
                         <div class="metric-card">
                             <div class="metric-value">${value} ${unit}</div>
-                            <div class="metric-label">${name}</div>
+                            <div class="metric-label">${name.replace('test_', '').replace(/_/g, ' ')}</div>
                         </div>
                     `;
                 }).join('');
@@ -138,11 +153,11 @@
                 document.getElementById('metrics').innerHTML = metricsHtml;
 
                 // Update timestamp
-                const latestDate = new Date(data.lastUpdate || Date.now());
+                const latestDate = new Date(data.lastUpdate);
                 document.getElementById('lastUpdated').textContent = latestDate.toLocaleString();
 
-                // Create charts
-                createCharts(benchmarks);
+                // Create charts with historical data
+                createCharts(pythonBenchmarks);
             })
             .catch(error => {
                 console.error('Error loading benchmark data:', error);
@@ -155,40 +170,70 @@
             });
 
         function createCharts(benchmarks) {
-            // Throughput chart
-            const throughputData = Object.keys(benchmarks)
-                .filter(name => name.includes('throughput'))
-                .map(name => ({
-                    label: name,
-                    data: benchmarks[name].map(p => ({ x: new Date(p.commit.timestamp), y: p.value / 1e6 })),
-                    borderColor: getColor(name),
-                    tension: 0.1
-                }));
+            // benchmarks is an array of runs: [{commit: {...}, benches: [...]}, ...]
+            // We need to extract unique benchmark names and their historical values
 
-            new Chart(document.getElementById('throughputChart'), {
-                type: 'line',
-                data: { datasets: throughputData },
-                options: {
-                    responsive: true,
-                    scales: {
-                        x: { type: 'time', title: { display: true, text: 'Date' } },
-                        y: { title: { display: true, text: 'Million Trades/sec' } }
-                    },
-                    plugins: {
-                        legend: { position: 'top' }
-                    }
-                }
+            // Get unique benchmark names from the latest run
+            if (benchmarks.length === 0) return;
+            const latestRun = benchmarks[benchmarks.length - 1];
+            const benchNames = latestRun.benches.map(b => b.name);
+
+            // Create datasets for throughput benchmarks
+            const throughputNames = benchNames.filter(name => name.includes('throughput'));
+            const throughputData = throughputNames.map(benchName => {
+                const dataPoints = benchmarks.map(run => {
+                    const bench = run.benches.find(b => b.name === benchName);
+                    if (!bench) return null;
+                    return {
+                        x: new Date(run.commit.timestamp),
+                        y: bench.value
+                    };
+                }).filter(p => p !== null);
+
+                return {
+                    label: benchName.split('::').pop().replace('test_', '').replace(/_/g, ' '),
+                    data: dataPoints,
+                    borderColor: getColor(benchName),
+                    tension: 0.1
+                };
             });
 
-            // Memory chart
-            const memoryData = Object.keys(benchmarks)
-                .filter(name => name.includes('memory'))
-                .map(name => ({
-                    label: name,
-                    data: benchmarks[name].map(p => ({ x: new Date(p.commit.timestamp), y: p.value / 1024 / 1024 })),
-                    borderColor: getColor(name),
+            if (throughputData.length > 0) {
+                new Chart(document.getElementById('throughputChart'), {
+                    type: 'line',
+                    data: { datasets: throughputData },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            x: { type: 'time', title: { display: true, text: 'Date' } },
+                            y: { title: { display: true, text: 'Trades/sec' } }
+                        },
+                        plugins: {
+                            legend: { position: 'top' }
+                        }
+                    }
+                });
+            }
+
+            // Create datasets for memory benchmarks
+            const memoryNames = benchNames.filter(name => name.includes('memory'));
+            const memoryData = memoryNames.map(benchName => {
+                const dataPoints = benchmarks.map(run => {
+                    const bench = run.benches.find(b => b.name === benchName);
+                    if (!bench) return null;
+                    return {
+                        x: new Date(run.commit.timestamp),
+                        y: bench.value / 1024 / 1024  // Convert to MB
+                    };
+                }).filter(p => p !== null);
+
+                return {
+                    label: benchName.split('::').pop().replace('test_', '').replace(/_/g, ' '),
+                    data: dataPoints,
+                    borderColor: getColor(benchName),
                     tension: 0.1
-                }));
+                };
+            });
 
             if (memoryData.length > 0) {
                 new Chart(document.getElementById('memoryChart'), {
