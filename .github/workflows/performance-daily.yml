@@ -39,7 +39,7 @@ jobs:
         run: |
           source .venv/bin/activate
           pip install --upgrade pip
-          pip install maturin pytest pytest-benchmark pandas numpy
+          pip install maturin pytest pytest-benchmark pandas numpy psutil
 
       - name: Build rangebar-py (release mode)
         run: |
