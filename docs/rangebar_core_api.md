@@ -25,6 +25,7 @@ pub struct AggTrade {
 ```
 
 **Critical Details**:
+
 - `timestamp` is in **microseconds** (1/1,000,000 second), NOT milliseconds
 - `price` and `volume` use `FixedPoint` type (8 decimal precision)
 - Binance aggTrades from CSV are typically in milliseconds → must convert to microseconds
@@ -69,6 +70,7 @@ pub struct RangeBar {
 ```
 
 **For backtesting.py compatibility**, we need:
+
 - Convert `open_time`/`close_time` from microseconds → Python datetime
 - Convert `open/high/low/close/volume` from FixedPoint → f64
 - Capitalize column names: `Open`, `High`, `Low`, `Close`, `Volume`
@@ -102,6 +104,7 @@ impl RangeBarProcessor {
 ```
 
 **Threshold Units**:
+
 - **v3.0.0+ uses 0.1 basis point units**
 - `250` = 25 bps = 0.25% price movement
 - `100` = 10 bps = 0.10% price movement
@@ -123,6 +126,7 @@ impl FixedPoint {
 ```
 
 **Conversion**:
+
 - Internal: `i64` with 8 decimal places (multiply by 100,000,000)
 - Example: `42000.5` → `FixedPoint(4200050000000)`
 - Python → Rust: Use `FixedPoint::from_str()` or construct from f64
@@ -139,6 +143,7 @@ pub enum ProcessingError {
 ```
 
 **Python Mapping**:
+
 - All errors → `PyValueError` or `PyRuntimeError`
 - Include detailed error messages with context
 
@@ -147,6 +152,7 @@ pub enum ProcessingError {
 ### Input: Python → Rust AggTrade
 
 Python input format:
+
 ```python
 {
     "timestamp": 1704067200000,      # Milliseconds (Binance format)
@@ -161,6 +167,7 @@ Python input format:
 ```
 
 Rust conversion:
+
 ```rust
 AggTrade {
     agg_trade_id: trade_dict.get("agg_trade_id").unwrap_or(0),
@@ -177,6 +184,7 @@ AggTrade {
 ### Output: Rust RangeBar → Python dict
 
 Rust output → Python conversion:
+
 ```rust
 {
     "timestamp": RFC3339_string,     // Convert microseconds → datetime → ISO8601
@@ -197,11 +205,13 @@ Rust output → Python conversion:
 ### 1. Timestamp Conversion
 
 **Binance CSV → rangebar-core:**
+
 - Binance aggTrades CSV: **milliseconds** (13 digits, e.g., `1704067200000`)
 - rangebar-core expects: **microseconds** (16 digits, e.g., `1704067200000000`)
 - **Conversion**: `timestamp_us = timestamp_ms * 1000`
 
 **rangebar-core → Python:**
+
 - Output: microseconds i64
 - Convert to Python datetime: `datetime.fromtimestamp(timestamp_us / 1_000_000)`
 - Or RFC3339 string for pandas: `chrono::DateTime::from_timestamp_micros()`

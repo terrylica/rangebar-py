@@ -29,17 +29,20 @@ python examples/validate_output.py
 **Purpose**: Demonstrates the most straightforward use case
 
 **What it does**:
+
 - Creates synthetic trade data (100 trades)
 - Converts to range bars using `process_trades_to_dataframe()`
 - Displays results and statistics
 - Validates OHLCV invariants
 
 **Run**:
+
 ```bash
 python examples/basic_usage.py
 ```
 
 **Output**:
+
 - Console output with range bar statistics
 - OHLCV invariant checks
 - Temporal distribution analysis
@@ -53,12 +56,14 @@ python examples/basic_usage.py
 **Purpose**: Load and convert Binance aggTrades CSV files
 
 **What it does**:
+
 - Loads Binance aggTrades CSV format
 - Validates required columns
 - Converts to range bars
 - Saves output CSV
 
 **Run**:
+
 ```bash
 # With your own Binance CSV
 python examples/binance_csv_example.py path/to/BTCUSDT-aggTrades-2024-01.csv
@@ -68,16 +73,19 @@ python examples/binance_csv_example.py
 ```
 
 **Binance CSV Format**:
+
 ```
 agg_trade_id,price,quantity,first_trade_id,last_trade_id,timestamp,is_buyer_maker,is_best_match
 1000000,42000.50,1.234,2000000,2000009,1704067200000,true,true
 ```
 
 **Download Binance Data**:
+
 - https://data.binance.vision/?prefix=data/spot/monthly/aggTrades/
 - https://data.binance.vision/?prefix=data/futures/um/monthly/aggTrades/
 
 **Output**:
+
 - `range_bars_output.csv` - OHLCV data ready for backtesting
 
 **Use this when**: You have real Binance historical data to convert.
@@ -89,6 +97,7 @@ agg_trade_id,price,quantity,first_trade_id,last_trade_id,timestamp,is_buyer_make
 **Purpose**: Complete backtesting.py integration example
 
 **What it does**:
+
 - Generates realistic synthetic trade data (10,000 trades)
 - Converts to range bars
 - Defines MA crossover strategy
@@ -97,6 +106,7 @@ agg_trade_id,price,quantity,first_trade_id,last_trade_id,timestamp,is_buyer_make
 - Opens interactive plot in browser
 
 **Run**:
+
 ```bash
 # Install backtesting.py first
 pip install backtesting.py
@@ -106,15 +116,18 @@ python examples/backtesting_integration.py
 ```
 
 **Strategy**: Moving Average Crossover on Range Bars
+
 - **Buy**: When fast MA (20) crosses above slow MA (50)
 - **Sell**: When fast MA crosses below slow MA
 
 **Output**:
+
 - Backtest statistics (return, Sharpe ratio, drawdown, etc.)
 - `backtest_stats.csv` - Saved statistics
 - Interactive plot (opens in browser)
 
 **Key Metrics Displayed**:
+
 - Total Return
 - Buy & Hold Return
 - Sharpe Ratio
@@ -131,12 +144,14 @@ python examples/backtesting_integration.py
 **Purpose**: Validate OHLCV format for backtesting.py compatibility
 
 **What it does**:
+
 - Runs comprehensive validation checks
 - Tests with valid data
 - Tests with intentionally invalid data
 - Reports errors and warnings
 
 **Validation Checks**:
+
 1. ✅ DatetimeIndex
 2. ✅ Column names: `[Open, High, Low, Close, Volume]`
 3. ✅ Numeric data types
@@ -147,11 +162,13 @@ python examples/backtesting_integration.py
 8. ✅ Precision preservation
 
 **Run**:
+
 ```bash
 python examples/validate_output.py
 ```
 
 **Output**:
+
 - Validation results (pass/fail)
 - Error details (if any)
 - Warning messages
@@ -209,14 +226,15 @@ df = processor.to_dataframe(bars)
 
 ## Threshold Selection Guide
 
-| threshold_bps | Percentage | Use Case |
-|---------------|------------|----------|
-| 100 | 0.1% | High-frequency, scalping |
-| 250 | 0.25% | **Default**, general purpose |
-| 500 | 0.5% | Swing trading |
-| 1000 | 1.0% | Position trading |
+| threshold_bps | Percentage | Use Case                     |
+| ------------- | ---------- | ---------------------------- |
+| 100           | 0.1%       | High-frequency, scalping     |
+| 250           | 0.25%      | **Default**, general purpose |
+| 500           | 0.5%       | Swing trading                |
+| 1000          | 1.0%       | Position trading             |
 
 **Recommendation**: Start with `threshold_bps=250` (0.25%) and adjust based on:
+
 - Market volatility
 - Trading timeframe
 - Strategy requirements
@@ -228,6 +246,7 @@ df = processor.to_dataframe(bars)
 **Cause**: Trade dict missing required fields
 
 **Fix**:
+
 ```python
 # Ensure trades have: timestamp, price, quantity (or volume)
 trades = [
@@ -241,6 +260,7 @@ trades = [
 **Cause**: Trades not in chronological order
 
 **Fix**:
+
 ```python
 # Sort by timestamp before processing
 trades_df = trades_df.sort_values("timestamp")
@@ -252,6 +272,7 @@ df = process_trades_to_dataframe(trades_df, threshold_bps=250)
 **Cause**: DataFrame missing timestamp/price/quantity columns
 
 **Fix**:
+
 ```python
 # Rename columns if needed
 trades_df = trades_df.rename(columns={
@@ -267,6 +288,7 @@ df = process_trades_to_dataframe(trades_df, threshold_bps=250)
 **Cause**: Using process_trades() without to_dataframe()
 
 **Fix**:
+
 ```python
 # Option 1: Use convenience function (recommended)
 df = process_trades_to_dataframe(trades, threshold_bps=250)

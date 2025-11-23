@@ -1,0 +1,56 @@
+name: Daily Performance Benchmarks
+
+on:
+  schedule:
+    # 3:17 AM UTC daily (off-peak to avoid GitHub Actions congestion)
+    - cron: '17 3 * * *'
+  workflow_dispatch:  # Allow manual triggering
+
+permissions:
+  contents: write  # Required for github-action-benchmark to push to gh-pages
+
+jobs:
+  benchmark-python:
+    name: Python API Benchmarks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install maturin and test dependencies
+        run: |
+          pip install --upgrade pip
+          pip install maturin pytest pytest-benchmark pandas numpy
+
+      - name: Build rangebar-py (release mode)
+        run: maturin develop --release
+
+      - name: Run Python benchmarks
+        run: |
+          pytest tests/test_performance.py \
+            --benchmark-only \
+            --benchmark-json=python-bench.json \
+            --benchmark-warmup=on \
+            --benchmark-min-rounds=5
+
+      - name: Store Python benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Python API Benchmarks
+          tool: 'pytest'
+          output-file-path: python-bench.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '150%'
+          comment-on-alert: false
+          fail-on-alert: false
+          summary-always: true

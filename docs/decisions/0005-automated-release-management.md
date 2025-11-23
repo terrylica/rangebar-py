@@ -11,6 +11,7 @@
 ## Context
 
 rangebar-py follows semantic versioning and conventional commits. Manual release process requires:
+
 1. Manually increment version in `pyproject.toml` and `Cargo.toml`
 2. Manually write CHANGELOG.md entries
 3. Manually create git tag
@@ -42,6 +43,7 @@ Implement fully automated release management using python-semantic-release from 
 **Trigger**: Push to `main` branch with conventional commits
 
 **Automation steps**:
+
 1. **Analyze commits**: semantic-release determines version bump type (major/minor/patch)
 2. **Update versions**: Writes new version to `pyproject.toml` AND `Cargo.toml`
 3. **Generate CHANGELOG**: Extracts features/fixes from commits, updates `CHANGELOG.md`
@@ -58,6 +60,7 @@ Implement fully automated release management using python-semantic-release from 
 **Pre-commit hook**: commitizen validates commit message format before allowing commit
 
 **Valid formats**:
+
 - `feat(scope): description` - New feature
 - `fix(scope): description` - Bug fix
 - `perf(scope): description` - Performance improvement
@@ -70,6 +73,7 @@ Implement fully automated release management using python-semantic-release from 
 ### CHANGELOG Generation
 
 **Auto-excluded commit types** (not in CHANGELOG):
+
 - `chore:` - Build/dependency updates
 - `ci:` - CI configuration
 - `test:` - Test changes
@@ -77,14 +81,17 @@ Implement fully automated release management using python-semantic-release from 
 - `build(deps):` - Dependency bumps
 
 **Grouped by type**:
+
 ```markdown
 ## v0.1.0 (2024-11-16)
 
 ### Features
+
 - **core**: Add RangeBarProcessor Python bindings ([abc123])
 - **backtesting**: Add process_trades_to_dataframe helper ([def456])
 
 ### Bug Fixes
+
 - **types**: Fix timestamp conversion precision loss ([ghi789])
 ```
 
@@ -93,6 +100,7 @@ Implement fully automated release management using python-semantic-release from 
 ### Version Bump Logic
 
 **python-semantic-release configuration**:
+
 ```toml
 [tool.semantic_release]
 version_toml = [
@@ -104,6 +112,7 @@ major_on_zero = true  # 0.x treats breaking changes as minor
 ```
 
 **Bump rules** (pre-1.0):
+
 - `feat:` → 0.1.0 → 0.2.0 (minor)
 - `fix:` → 0.1.0 → 0.1.1 (patch)
 - `BREAKING CHANGE:` → 0.1.0 → 0.2.0 (minor, not major)
@@ -115,6 +124,7 @@ major_on_zero = true  # 0.x treats breaking changes as minor
 **Fallback**: Personal Access Token (`secrets.GH_TOKEN`) if branch protection requires
 
 **Permissions required**:
+
 - `contents: write` - Push commits, tags
 - `id-token: write` - Trusted Publisher for PyPI
 
@@ -171,17 +181,20 @@ major_on_zero = true  # 0.x treats breaking changes as minor
 ## Compliance
 
 **SLO**:
+
 - **Correctness**: Version sync validated before publish (fail if mismatch)
 - **Observability**: CHANGELOG + GitHub Release notes provide change visibility
 - **Maintainability**: Zero manual version management
 - **Availability**: Releases complete within 15 minutes (p95)
 
 **Error Handling**:
+
 - Release fails loudly if version sync breaks (no partial release)
 - PyPI upload failure prevents GitHub Release creation (atomic)
 - No silent fallbacks (conventional commit validation strict)
 
 **OSS Dependencies**:
+
 - python-semantic-release (not custom versioning)
 - commitizen (not custom commit validation)
 - pre-commit (not custom git hooks)
@@ -191,12 +204,14 @@ major_on_zero = true  # 0.x treats breaking changes as minor
 ## Validation Plan
 
 **Pre-v0.1.0 validation**:
+
 1. Dry-run: `semantic-release --noop version` (verify version detection)
 2. Test in `/tmp` mock project (verify CHANGELOG generation)
 3. Verify version sync: `grep version pyproject.toml Cargo.toml`
 4. Test pre-commit hook: Invalid commit rejected
 
 **Post-v0.1.0 validation**:
+
 1. Verify PyPI package: `pip install rangebar==0.1.0`
 2. Verify GitHub Release created with CHANGELOG excerpt
 3. Verify `CHANGELOG.md` committed to repository
@@ -213,6 +228,7 @@ major_on_zero = true  # 0.x treats breaking changes as minor
 ---
 
 **Related**:
+
 - ADR-003: Testing Strategy
 - ADR-004: CI/CD Multi-Platform Builds
 - Plan: `docs/plan/0005-release-management/plan.yaml`

@@ -34,6 +34,7 @@ Use GitHub Actions with PyO3/maturin-action for automated multi-platform wheel b
 ### Platform Matrix
 
 **Required platforms** (minimum):
+
 - Linux x86_64 (manylinux2014) - `ubuntu-22.04` runner
 - macOS ARM64 (M1/M2/M3) - `macos-14` runner
 - Source distribution (sdist) - fallback for unsupported platforms
@@ -45,6 +46,7 @@ Use GitHub Actions with PyO3/maturin-action for automated multi-platform wheel b
 ### CI Workflow Architecture
 
 **Workflow 1**: `ci-test-build.yml`
+
 - **Trigger**: Every push to main, all pull requests
 - **Jobs**:
   - Test matrix: Python 3.9-3.12 on ubuntu-latest
@@ -53,6 +55,7 @@ Use GitHub Actions with PyO3/maturin-action for automated multi-platform wheel b
 - **Runtime**: ~8 minutes (parallel execution)
 
 **Workflow 2**: `release.yml`
+
 - **Trigger**: Push to main branch only
 - **Jobs**:
   - Semantic-release: version bump, tag, CHANGELOG
@@ -82,17 +85,19 @@ version_toml = [
 **Enforcement**: Pre-commit hooks validate commit message format
 
 **Mapping to versions**:
+
 - `feat:` → minor bump (0.1.0 → 0.2.0)
 - `fix:` → patch bump (0.1.0 → 0.1.1)
-- `BREAKING CHANGE:` → major bump (0.1.0 → 1.0.0)*
+- `BREAKING CHANGE:` → major bump (0.1.0 → 1.0.0)\*
 
-*Note: `major_on_zero = true` means breaking changes bump minor for 0.x versions
+\*Note: `major_on_zero = true` means breaking changes bump minor for 0.x versions
 
 ### PyPI Publishing
 
 **Method**: Trusted Publisher (OpenID Connect)
 
 **Rationale**:
+
 - No long-lived API tokens (security)
 - Automatic credential rotation
 - Scoped to specific GitHub workflow
@@ -153,6 +158,7 @@ version_toml = [
 ## Compliance
 
 **SLO**:
+
 - **Availability**: CI completes within 10 minutes (p95)
 - **Correctness**: Version sync validated before release
 - **Observability**: GitHub Actions UI + logs provide visibility
@@ -161,6 +167,7 @@ version_toml = [
 **Error Handling**: Workflows fail loudly on errors (no partial publishes)
 
 **OSS Dependencies**:
+
 - PyO3/maturin-action (not custom build scripts)
 - python-semantic-release (not custom versioning)
 - pypa/gh-action-pypi-publish (not manual upload)
@@ -176,6 +183,7 @@ version_toml = [
 ---
 
 **Related**:
+
 - ADR-003: Testing Strategy
 - ADR-005: Automated Release Management
 - Plan: `docs/plan/0004-cicd-architecture/plan.yaml`

@@ -4,12 +4,13 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Performance Dashboard](https://img.shields.io/badge/performance-dashboard-brightgreen.svg)](https://terrylica.github.io/rangebar-py/)
 
-## Status: ✅ Production Ready (v0.1.0)
+## Status: ✅ Production Ready (v0.3.0)
 
 Core functionality implemented, tested (95%+ coverage), and released to PyPI.
 
-**Latest**: v0.1.0 released - Full test suite, CI/CD, automated releases
+**Latest**: v0.3.0 - Full test suite, CI/CD, automated releases, daily performance monitoring
 
 ---
 
@@ -86,6 +87,7 @@ pip install rangebar
 ```
 
 Pre-built wheels available for:
+
 - **Linux**: x86_64 (manylinux)
 - **macOS**: ARM64 (Apple Silicon)
 - **Python**: 3.10, 3.11, 3.12
@@ -230,16 +232,17 @@ class RangeBarProcessor:
 
 ## Threshold Selection Guide
 
-| threshold_bps | Percentage | Use Case                  | Bars/Day* |
-|---------------|------------|---------------------------|-----------|
-| 100           | 0.1%       | High-frequency, scalping  | ~500      |
-| 250           | 0.25%      | **Default**, general use  | ~200      |
-| 500           | 0.5%       | Swing trading             | ~100      |
-| 1000          | 1.0%       | Position trading          | ~50       |
+| threshold_bps | Percentage | Use Case                 | Bars/Day\* |
+| ------------- | ---------- | ------------------------ | ---------- |
+| 100           | 0.1%       | High-frequency, scalping | ~500       |
+| 250           | 0.25%      | **Default**, general use | ~200       |
+| 500           | 0.5%       | Swing trading            | ~100       |
+| 1000          | 1.0%       | Position trading         | ~50        |
 
-*Approximate for BTC/USDT
+\*Approximate for BTC/USDT
 
 **Recommendation**: Start with `threshold_bps=250` (0.25%) and adjust based on:
+
 - Market volatility (higher volatility → higher threshold)
 - Trading timeframe (shorter timeframe → lower threshold)
 - Strategy requirements (mean reversion vs trend following)
@@ -442,7 +445,7 @@ Python users (pandas, backtesting.py)
 
 - **User Guide**: This README
 - **Examples**: [`examples/README.md`](examples/README.md)
-- **API Reference**: [`docs/api.md`](docs/api.md) *(planned)*
+- **API Reference**: [`docs/api.md`](docs/api.md) _(planned)_
 - **Project Context**: [`CLAUDE.md`](CLAUDE.md) (for contributors)
 - **Implementation Plan**: [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)
 
@@ -455,6 +458,7 @@ Python users (pandas, backtesting.py)
 **Cause**: Trade dict missing required fields
 
 **Fix**:
+
 ```python
 # Ensure trades have: timestamp (ms), price, quantity
 trades = [
@@ -468,6 +472,7 @@ trades = [
 **Cause**: Trades not in chronological order
 
 **Fix**:
+
 ```python
 # Sort by timestamp before processing
 trades_df = trades_df.sort_values("timestamp")
@@ -479,6 +484,7 @@ df = process_trades_to_dataframe(trades_df, threshold_bps=250)
 **Cause**: Price movement below threshold
 
 **Fix**:
+
 - Lower `threshold_bps` (e.g., 250 → 100)
 - Use more volatile data
 - Check data covers sufficient time period
@@ -554,6 +560,7 @@ Benchmarks (Apple M1, validated in Phase 7):
 - **Memory**: <100MB for 1M trades
 
 Run benchmarks yourself:
+
 ```bash
 make benchmark
 # or: pytest tests/test_performance.py -v --benchmark-only

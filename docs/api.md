@@ -135,14 +135,17 @@ class RangeBarProcessor:
 Create a new range bar processor.
 
 **Parameters**:
+
 - **threshold_bps**: `int`
   - Range bar threshold in 0.1 basis point units
   - Must be positive (>0)
 
 **Raises**:
+
 - **ValueError**: If `threshold_bps` ≤ 0
 
 **Example**:
+
 ```python
 from rangebar import RangeBarProcessor
 
@@ -160,6 +163,7 @@ print(processor.threshold_bps)  # 250
 Process trades into range bars (intermediate format).
 
 **Parameters**:
+
 - **trades**: `List[Dict[str, Union[int, float]]]`
   - List of trade dictionaries with keys:
     - `timestamp`: Unix timestamp in milliseconds (int)
@@ -167,6 +171,7 @@ Process trades into range bars (intermediate format).
     - `quantity`: Trade volume (float) - or use `volume` key
 
 **Returns**:
+
 - **List[Dict[str, float]]**
   - List of range bar dictionaries with keys:
     - `timestamp`: RFC3339 timestamp string
@@ -177,11 +182,13 @@ Process trades into range bars (intermediate format).
     - `volume`: Bar total volume
 
 **Raises**:
+
 - **ValueError**: If trades empty or missing required fields
 - **RuntimeError**: If processing fails
 - **KeyError**: If trade missing required keys
 
 **Example**:
+
 ```python
 processor = RangeBarProcessor(threshold_bps=250)
 
@@ -207,16 +214,19 @@ print(bars[0])
 Convert range bars to backtesting.py-compatible DataFrame.
 
 **Parameters**:
+
 - **bars**: `List[Dict[str, float]]`
   - List of range bar dictionaries (from `process_trades()`)
 
 **Returns**:
+
 - **pd.DataFrame**
   - OHLCV DataFrame with DatetimeIndex
   - Columns: `["Open", "High", "Low", "Close", "Volume"]`
   - Empty DataFrame if `bars` is empty
 
 **Example**:
+
 ```python
 processor = RangeBarProcessor(threshold_bps=250)
 bars = processor.process_trades(trades)
@@ -237,6 +247,7 @@ Reset processor state (clears internal bar accumulation).
 **Returns**: `None`
 
 **Example**:
+
 ```python
 processor = RangeBarProcessor(threshold_bps=250)
 
@@ -261,6 +272,7 @@ bars2 = processor.process_trades(trades2)
 The threshold value in 0.1 basis point units.
 
 **Example**:
+
 ```python
 processor = RangeBarProcessor(threshold_bps=250)
 print(processor.threshold_bps)  # 250
@@ -297,6 +309,7 @@ pd.DataFrame({
 ```
 
 **Field Requirements**:
+
 - `timestamp`:
   - Must be Unix timestamp in milliseconds (int)
   - Or pandas datetime (auto-converted)
@@ -323,6 +336,7 @@ timestamp
 ```
 
 **Properties**:
+
 - **Index**: `pd.DatetimeIndex`
   - Timezone-naive UTC timestamps
   - Monotonically increasing
@@ -344,12 +358,14 @@ timestamp
 ### ValueError
 
 **Causes**:
+
 - Empty trades list
 - Invalid threshold_bps (≤0)
 - Missing required columns/keys
 - Negative price/quantity
 
 **Example**:
+
 ```python
 # Empty trades
 process_trades_to_dataframe([])
@@ -369,11 +385,13 @@ process_trades_to_dataframe([{"timestamp": 123, "price": 42000}])
 ### RuntimeError
 
 **Causes**:
+
 - Trades not sorted chronologically
 - Internal processing error
 - Rust-level failure
 
 **Example**:
+
 ```python
 # Unsorted trades
 trades = [
@@ -385,6 +403,7 @@ process_trades_to_dataframe(trades)
 ```
 
 **Fix**: Sort trades before processing:
+
 ```python
 df = df.sort_values("timestamp")
 trades = sorted(trades, key=lambda t: t["timestamp"])
@@ -395,9 +414,11 @@ trades = sorted(trades, key=lambda t: t["timestamp"])
 ### KeyError
 
 **Causes**:
+
 - Trade dict missing required keys (`timestamp`, `price`, `quantity`)
 
 **Example**:
+
 ```python
 trades = [{"timestamp": 123, "price": 42000}]  # Missing 'quantity'
 process_trades_to_dataframe(trades)
@@ -521,6 +542,7 @@ def process_trades_to_dataframe(
 ```
 
 IDE support:
+
 - PyCharm: Full autocomplete
 - VS Code: Full IntelliSense
 - mypy: Type checking passes
@@ -553,12 +575,14 @@ IDE support:
 ### vs Time-Based Bars
 
 **Range Bars**:
+
 - ✅ Market-adaptive (bars form based on volatility)
 - ✅ No lookahead bias
 - ✅ Equal information per bar (fixed price movement)
 - ❌ Variable time intervals (harder to align with external events)
 
 **Time Bars**:
+
 - ✅ Fixed time intervals (easy to align with news, etc.)
 - ❌ Variable information per bar (volatile periods compressed)
 - ❌ Potential lookahead bias (if not careful)
@@ -567,11 +591,13 @@ IDE support:
 ### vs Tick Bars
 
 **Range Bars**:
+
 - ✅ Filters noise (only price movements matter)
 - ✅ Fewer bars (more efficient)
 - ✅ Better for trend-following strategies
 
 **Tick Bars**:
+
 - ✅ Fixed number of trades per bar
 - ❌ Ignores price movement (1 cent move = 10% move)
 - ❌ More bars (slower backtests)
@@ -579,10 +605,12 @@ IDE support:
 ### vs Volume Bars
 
 **Range Bars**:
+
 - ✅ Focus on price movement (more intuitive for trading)
 - ✅ Works well with MA crossover strategies
 
 **Volume Bars**:
+
 - ✅ Fixed volume per bar
 - ❌ Ignores price movement (large volume with small price change)
 
@@ -593,6 +621,7 @@ IDE support:
 ### Q: What threshold should I use?
 
 **A**: Start with `threshold_bps=250` (0.25%). This generates ~200 bars/day for BTC/USDT, similar to 1-hour time bars. Adjust based on:
+
 - Higher volatility → higher threshold (avoid too many bars)
 - Lower volatility → lower threshold (avoid too few bars)
 - Shorter strategies → lower threshold (more bars)
@@ -601,6 +630,7 @@ IDE support:
 ### Q: Why are no range bars generated?
 
 **A**: Price movement is below threshold. Either:
+
 1. Lower threshold (e.g., 250 → 100)
 2. Use more volatile data
 3. Check data timespan (need sufficient trades)
@@ -608,6 +638,7 @@ IDE support:
 ### Q: Can I use this with live trading?
 
 **A**: rangebar-py is designed for backtesting, not live trading. For live trading, you'd need:
+
 - Streaming API (process trades incrementally)
 - Real-time bar completion detection
 - State persistence (recover from failures)

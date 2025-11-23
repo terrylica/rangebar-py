@@ -5,6 +5,7 @@
 **Time Required**: ~5 minutes
 
 **Prerequisites**:
+
 - PyPI account with owner/maintainer access
 - GitHub repository: `terrylica/rangebar-py`
 - Workflow file: `.github/workflows/release.yml` (already created ✅)
@@ -39,16 +40,18 @@ Package Published (rangebar v0.1.0)
 
 ```yaml
 permissions:
-  contents: write      # Create releases, push tags
-  id-token: write      # PyPI Trusted Publisher OIDC
+  contents: write # Create releases, push tags
+  id-token: write # PyPI Trusted Publisher OIDC
 ```
 
 **Validation**:
+
 ```bash
 grep -A2 "permissions:" .github/workflows/release.yml
 ```
 
 **Expected Output**:
+
 ```yaml
 permissions:
   contents: write
@@ -73,15 +76,16 @@ permissions:
 
 **Form Fields** (based on screenshot provided):
 
-| Field | Value | Notes |
-|-------|-------|-------|
-| **PyPI Project Name** | `rangebar` | Must match `pyproject.toml` name |
-| **Owner** | `terrylica` | GitHub username (NOT organization) |
-| **Repository name** | `rangebar-py` | GitHub repo name |
-| **Workflow name** | `release.yml` | Filename in `.github/workflows/` |
-| **Environment name** | `pypi` | Optional but STRONGLY recommended |
+| Field                 | Value         | Notes                              |
+| --------------------- | ------------- | ---------------------------------- |
+| **PyPI Project Name** | `rangebar`    | Must match `pyproject.toml` name   |
+| **Owner**             | `terrylica`   | GitHub username (NOT organization) |
+| **Repository name**   | `rangebar-py` | GitHub repo name                   |
+| **Workflow name**     | `release.yml` | Filename in `.github/workflows/`   |
+| **Environment name**  | `pypi`        | Optional but STRONGLY recommended  |
 
 **Screenshot Reference**:
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │ PyPI Project Name (required)                        │
@@ -144,11 +148,13 @@ workflows/release.yml
    - ✅ Deployment branches (main only)
 
 **Our Configuration** (minimal, solo developer):
+
 - Name: `pypi`
 - Protection rules: None (trust semantic-release automation)
 - Deployment branches: `main` branch only
 
 **Why Optional**: The Trusted Publisher configuration already restricts to:
+
 - Specific repository (`terrylica/rangebar-py`)
 - Specific workflow (`release.yml`)
 - Specific GitHub owner (`terrylica`)
@@ -162,6 +168,7 @@ Environment adds: Manual approval gates, deployment delays
 ### 4.1 Check No API Tokens in GitHub Secrets
 
 **Command**:
+
 ```bash
 gh secret list --repo terrylica/rangebar-py | grep -i pypi || echo "✅ No PyPI tokens found (correct)"
 ```
@@ -173,31 +180,36 @@ gh secret list --repo terrylica/rangebar-py | grep -i pypi || echo "✅ No PyPI 
 ### 4.2 Verify Workflow File
 
 **Command**:
+
 ```bash
 cat .github/workflows/release.yml | grep -A10 "pypa/gh-action-pypi-publish"
 ```
 
 **Expected** (no `password` or `api_token` field):
+
 ```yaml
 - uses: pypa/gh-action-pypi-publish@release/v1
   # No 'with:' block needed - OIDC authentication automatic
 ```
 
 **Incorrect Example** (do NOT use):
+
 ```yaml
 - uses: pypa/gh-action-pypi-publish@release/v1
   with:
-    password: ${{ secrets.PYPI_API_TOKEN }}  # ❌ Wrong! Delete this
+    password: ${{ secrets.PYPI_API_TOKEN }} # ❌ Wrong! Delete this
 ```
 
 ### 4.3 Verify Semantic Release Configuration
 
 **Command**:
+
 ```bash
 grep -A5 "\[tool.semantic_release\]" pyproject.toml
 ```
 
 **Expected**:
+
 ```toml
 [tool.semantic_release]
 version_toml = [
@@ -224,6 +236,7 @@ tag_format = "v{version}"
 ### 5.2 Trigger Release
 
 **Method 1: Merge PR to main** (recommended)
+
 ```bash
 # Create feature branch
 git checkout -b chore/prepare-v0.1.0
@@ -250,6 +263,7 @@ gh pr merge --squash --auto
 ```
 
 **Method 2: Direct push to main** (for solo developers)
+
 ```bash
 git checkout main
 git add .
@@ -267,11 +281,13 @@ git push origin main
 ### 5.3 Monitor Release Workflow
 
 **GitHub Actions URL**:
+
 ```
 https://github.com/terrylica/rangebar-py/actions/workflows/release.yml
 ```
 
 **Expected Workflow Steps**:
+
 1. ✅ Checkout code
 2. ✅ Setup Python
 3. ✅ Run semantic-release (analyzes commits)
@@ -289,6 +305,7 @@ https://github.com/terrylica/rangebar-py/actions/workflows/release.yml
 ### 5.4 Validate Release Success
 
 **Check 1: PyPI Package Published**
+
 ```bash
 pip install --upgrade rangebar==0.1.0
 python -c "import rangebar; print(rangebar.__version__)"
@@ -296,12 +313,14 @@ python -c "import rangebar; print(rangebar.__version__)"
 ```
 
 **Check 2: GitHub Release Created**
+
 ```bash
 gh release view v0.1.0
 # Expected: Release notes with CHANGELOG excerpt
 ```
 
 **Check 3: CHANGELOG Generated**
+
 ```bash
 cat CHANGELOG.md | head -20
 # Expected:
@@ -314,6 +333,7 @@ cat CHANGELOG.md | head -20
 ```
 
 **Check 4: Git Tag Created**
+
 ```bash
 git tag | grep v0.1.0
 # Expected: v0.1.0
@@ -328,6 +348,7 @@ git tag | grep v0.1.0
 **Cause**: Publisher not configured or misconfigured
 
 **Fix**:
+
 1. Verify publisher in PyPI: https://pypi.org/manage/account/publishing/
 2. Check values match exactly:
    - Owner: `terrylica`
@@ -336,6 +357,7 @@ git tag | grep v0.1.0
 3. Check workflow file has `permissions.id-token: write`
 
 **Validation Command**:
+
 ```bash
 curl -s https://pypi.org/pypi/rangebar/json | jq -r '.info.name'
 # Expected: rangebar (if package exists)
@@ -347,10 +369,11 @@ curl -s https://pypi.org/pypi/rangebar/json | jq -r '.info.name'
 **Cause**: Missing `contents: write` permission
 
 **Fix**:
+
 ```yaml
 # .github/workflows/release.yml
 permissions:
-  contents: write      # Add this line
+  contents: write # Add this line
   id-token: write
 ```
 
@@ -369,6 +392,7 @@ permissions:
 **Fix**: Ensure at least one commit with `feat:` or `fix:` or `BREAKING CHANGE:`
 
 **Example**:
+
 ```bash
 git commit --allow-empty -m "feat: initial release"
 git push origin main
@@ -381,6 +405,7 @@ git push origin main
 ### What Gets Published
 
 **Public Information** (visible on PyPI):
+
 - Package name: `rangebar`
 - Version: `0.1.0`
 - Metadata: `pyproject.toml` contents
@@ -388,6 +413,7 @@ git push origin main
 - Source distribution: Full source code
 
 **Private Information** (NOT published):
+
 - GitHub secrets
 - Workflow environment variables
 - Build logs (only in GitHub Actions)
@@ -396,6 +422,7 @@ git push origin main
 ### Trusted Publisher Security Model
 
 **Trust Chain**:
+
 1. ✅ PyPI trusts GitHub's OIDC identity provider
 2. ✅ GitHub validates workflow identity (repo + workflow file)
 3. ✅ GitHub issues short-lived JWT token
@@ -403,6 +430,7 @@ git push origin main
 5. ✅ PyPI authorizes publish (workflow matches publisher config)
 
 **Attack Scenarios Prevented**:
+
 - ❌ Malicious fork cannot publish (owner mismatch)
 - ❌ Different workflow cannot publish (workflow name mismatch)
 - ❌ Stolen JWT cannot be reused (expires in seconds)
@@ -441,13 +469,13 @@ After first successful release:
 
 ## Quick Reference
 
-| Component | Configuration | Location |
-|-----------|---------------|----------|
-| GitHub Token | Automatic (`GITHUB_TOKEN`) | GitHub Actions built-in |
-| PyPI Auth | Trusted Publisher (OIDC) | https://pypi.org/manage/account/publishing/ |
-| Workflow Permissions | `contents: write`, `id-token: write` | `.github/workflows/release.yml` |
-| Release Trigger | Conventional commit to main | Any commit with `feat:`, `fix:`, `BREAKING CHANGE:` |
-| Version Bump | Semantic (conventional commits) | python-semantic-release analyzes commits |
-| CHANGELOG | Auto-generated | python-semantic-release generates from commits |
+| Component            | Configuration                        | Location                                            |
+| -------------------- | ------------------------------------ | --------------------------------------------------- |
+| GitHub Token         | Automatic (`GITHUB_TOKEN`)           | GitHub Actions built-in                             |
+| PyPI Auth            | Trusted Publisher (OIDC)             | https://pypi.org/manage/account/publishing/         |
+| Workflow Permissions | `contents: write`, `id-token: write` | `.github/workflows/release.yml`                     |
+| Release Trigger      | Conventional commit to main          | Any commit with `feat:`, `fix:`, `BREAKING CHANGE:` |
+| Version Bump         | Semantic (conventional commits)      | python-semantic-release analyzes commits            |
+| CHANGELOG            | Auto-generated                       | python-semantic-release generates from commits      |
 
 **Ready to release?** Follow Step 5 above to trigger your first v0.1.0 release! 🚀

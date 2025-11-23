@@ -9,11 +9,12 @@ repository = "https://github.com/terrylica/rangebar-py"
 readme = "README.md"
 
 [lib]
-name = "rangebar_core"
-crate-type = ["cdylib"]
+name = "rangebar_py"  # Renamed to avoid conflict with upstream rangebar-core
+crate-type = ["cdylib"]  # Python extension module only
 
 [dependencies]
 # Import rangebar-core from crates.io (ZERO changes to upstream)
+# Note: The dependency name uses hyphens, resolved as rangebar_core in Rust code
 rangebar-core = "5.0"
 
 # PyO3 for Python bindings
@@ -26,6 +27,13 @@ serde_json = "1.0"
 
 [build-dependencies]
 pyo3-build-config = "0.22"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "core"
+harness = false
 
 [lints.clippy]
 # Treat all clippy warnings as errors (ADR-003)

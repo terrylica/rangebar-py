@@ -362,6 +362,87 @@ This project is a **companion tool** for the backtesting.py fork located at:
 
 **Research Question**: Do mean reversion / trend-following strategies perform better on range bars than time bars?
 
+## Daily Performance Monitoring
+
+**Decision**: ADR-0007 - Daily Performance Monitoring on CI/CD
+
+### Overview
+
+Automated daily benchmarks run on GitHub Actions to track performance metrics over time, generating observable files for both humans (HTML dashboard) and AI agents (JSON files).
+
+### Observable Files
+
+**Machine-Readable** (AI agents):
+
+- JSON files: `gh-pages:/dev/bench/python-bench.json` (pytest-benchmark output)
+- Committed daily to `gh-pages` branch
+- Historical data with unlimited retention
+
+**Human-Readable** (developers):
+
+- Dashboard: https://terrylica.github.io/rangebar-py/ (live after GitHub Pages enabled)
+- Chart.js trend visualization
+- Regression detection with 150% threshold (non-blocking warnings)
+
+### Daily Viability Metrics
+
+**Python API Layer** (pytest-benchmark):
+
+- Throughput: 1K, 100K, 1M trades/sec (target: >1M trades/sec)
+- Memory: Peak usage for 1M trades (target: <350MB)
+- Compression: Ratio for 100/250/500/1000 bps thresholds
+
+**Rust Core Layer** (Criterion.rs):
+
+- Throughput: 1M trades/sec without PyO3 overhead
+- Latency: P50/P95/P99 percentiles
+- PyO3 overhead: Calculated as (Python throughput - Rust throughput)
+
+### Execution Schedule
+
+- **Daily**: 3:17 AM UTC (off-peak, automated via cron)
+- **Manual**: On-demand via `gh workflow run performance-daily.yml`
+- **Weekly**: Sunday 2:00 AM UTC (comprehensive benchmarks, extended rounds)
+
+### Interpretation (AI Agents)
+
+**Query JSON files for viability checks**:
+
+```bash
+# Fetch latest benchmark results
+git fetch origin gh-pages
+git checkout gh-pages
+cat dev/bench/python-bench.json | jq '.benchmarks[] | {name: .name, mean: .stats.mean}'
+```
+
+**Viability criteria**:
+
+- `test_throughput_1m_trades`: mean < 1.0 second (target: >1M trades/sec)
+- `test_memory_1m_trades`: peak_memory < 350MB
+- `test_compression_ratio`: bars_count > 0 for all thresholds
+
+**Regression detection**:
+
+- Alert if throughput degrades >50% vs previous run
+- Alert if memory increases >50% vs previous run
+- Warnings logged but workflow continues (non-blocking)
+
+### Implementation Details
+
+- **Workflows**: `.github/workflows/performance-daily.yml`, `.github/workflows/performance-weekly.yml`
+- **Benchmarks**: `benches/core.rs` (Rust), `tests/test_performance.py` (Python)
+- **Visualization**: github-action-benchmark (auto-push to gh-pages)
+- **Documentation**: `docs/decisions/0007-daily-performance-monitoring.md` (ADR), `docs/plan/0007-daily-performance-monitoring/plan.md` (plan)
+
+### Why Non-Blocking?
+
+**Philosophy** (from ADR-0007, aligns with global ADR-0007 GitHub Actions policy):
+
+- Trend monitoring, not gating
+- Performance regressions caught early via dashboard
+- Never blocks development workflow
+- Complements local benchmarking (instant feedback loop)
+
 ## Package Distribution
 
 ### PyPI Release Workflow

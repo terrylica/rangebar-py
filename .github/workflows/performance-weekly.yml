@@ -1,0 +1,74 @@
+name: Weekly Comprehensive Performance Benchmarks
+
+on:
+  schedule:
+    # 2:00 AM UTC every Sunday (weekly comprehensive benchmarks)
+    - cron: '0 2 * * 0'
+  workflow_dispatch:  # Allow manual triggering
+
+permissions:
+  contents: write  # Required for github-action-benchmark to push to gh-pages
+
+jobs:
+  benchmark-comprehensive:
+    name: Comprehensive Python + Rust Benchmarks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install maturin and test dependencies
+        run: |
+          pip install --upgrade pip
+          pip install maturin pytest pytest-benchmark pandas numpy
+
+      - name: Build rangebar-py (release mode)
+        run: maturin develop --release
+
+      - name: Run Python benchmarks (extended rounds)
+        run: |
+          pytest tests/test_performance.py \
+            --benchmark-only \
+            --benchmark-json=python-bench-weekly.json \
+            --benchmark-warmup=on \
+            --benchmark-min-rounds=10 \
+            --benchmark-disable-gc
+
+      - name: Store Python benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Python API Benchmarks (Weekly)
+          tool: 'pytest'
+          output-file-path: python-bench-weekly.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '150%'
+          comment-on-alert: false
+          fail-on-alert: false
+          summary-always: true
+
+      - name: Run Rust benchmarks (if available)
+        run: |
+          if [ -d "benches" ]; then
+            cargo criterion --bench core --message-format json > rust-bench-weekly.json || true
+          else
+            echo "Rust benchmarks not yet implemented (deferred to Phase 2)"
+          fi
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-benchmarks
+          path: |
+            python-bench-weekly.json
+            rust-bench-weekly.json
+          retention-days: 90

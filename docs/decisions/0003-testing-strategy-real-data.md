@@ -36,6 +36,7 @@ Use real Binance historical aggTrades data for testing while maintaining fast CI
 **Primary data source**: Binance Data Vision (https://data.binance.vision/)
 
 **Downloaded files**:
+
 - BTCUSDT-aggTrades-2024-01-01.csv.zip (~500MB) - Stored in `tests/fixtures/`, gitignored
 - BTCUSDT-aggTrades-sample-10k.csv (~1MB) - 10,000 row sample, committed to repository
 
@@ -44,6 +45,7 @@ Use real Binance historical aggTrades data for testing while maintaining fast CI
 ### Coverage Strategy
 
 **Additional test files** (21 new tests):
+
 1. `test_edge_cases.py` (12 tests) - Error handling, boundary conditions, type validation
 2. `test_real_data.py` (3 tests) - Binance data format, OHLC invariants, threshold variations
 3. `test_examples.py` (4 tests) - Automated verification all examples execute successfully
@@ -56,6 +58,7 @@ Use real Binance historical aggTrades data for testing while maintaining fast CI
 **Tooling**: pytest-benchmark for Python, cargo-llvm-cov for Rust
 
 **Targets** (Apple M1 baseline):
+
 - Throughput: >1M trades/sec (batch processing)
 - Memory: <100MB peak RSS for 1M trades
 - Compression: 10-50x ratio (trades → bars) depending on threshold
@@ -117,6 +120,7 @@ Use real Binance historical aggTrades data for testing while maintaining fast CI
 ## Compliance
 
 **SLO**:
+
 - **Correctness**: 95%/90% coverage ensures code correctness
 - **Observability**: Coverage reports + benchmark baselines provide visibility
 - **Maintainability**: Real data tests document expected behavior
@@ -136,5 +140,6 @@ Use real Binance historical aggTrades data for testing while maintaining fast CI
 ---
 
 **Related**:
+
 - ADR-004: CI/CD Multi-Platform Builds
 - Plan: `docs/plan/0003-testing-strategy/plan.yaml`
