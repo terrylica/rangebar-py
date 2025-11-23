@@ -186,6 +186,7 @@ criterion = "0.5"
 **Decision**: Switch from "Deploy from branch" to "GitHub Actions" deployment source
 
 **Rationale**:
+
 - Modern approach recommended by GitHub
 - Explicit deployment control
 - Better observability in workflow logs
@@ -193,23 +194,24 @@ criterion = "0.5"
 
 **Tasks**:
 
-- [ ] **1.5.1**: Update performance-daily.yml
+- [x] **1.5.1**: Update performance-daily.yml (COMPLETED - commit c467aa5)
   - Add `pages: write` and `id-token: write` permissions
   - Add `actions/upload-pages-artifact@v3` step
   - Add `actions/deploy-pages@v4` step
   - Configure environment: `github-pages`
-- [ ] **1.5.2**: Update performance-weekly.yml
+- [x] **1.5.2**: Update performance-weekly.yml (COMPLETED - commit c467aa5)
   - Same permissions and deployment steps
-- [ ] **1.5.3**: Update ADR-0007
+- [x] **1.5.3**: Update ADR-0007 (COMPLETED - commit c467aa5)
   - Document deployment method decision
   - Explain rationale for Actions over branch deployment
-- [ ] **1.5.4**: Update GITHUB_PAGES_SETUP.md
+- [x] **1.5.4**: Update GITHUB_PAGES_SETUP.md (COMPLETED - commit c467aa5)
   - Change instructions to "GitHub Actions" source
   - Update troubleshooting for Actions deployment
-- [ ] **1.5.5**: Configure GitHub Pages
+- [ ] **1.5.5**: Configure GitHub Pages (MANUAL - user action required)
   - Set source: "GitHub Actions" (not "Deploy from a branch")
+  - URL: https://github.com/terrylica/rangebar-py/settings/pages
   - Verify dashboard URL: https://terrylica.github.io/rangebar-py/
-- [ ] **1.5.6**: Validate workflow execution
+- [ ] **1.5.6**: Validate workflow execution (PENDING - after 1.5.5)
   - Trigger manual run: `gh workflow run performance-daily.yml`
   - Check logs: `gh run list --workflow=performance-daily.yml`
   - Verify Pages deployment in Actions tab

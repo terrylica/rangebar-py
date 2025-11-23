@@ -111,9 +111,9 @@ The rangebar-py project requires **tangible observable performance metrics** on 
 
 ```yaml
 permissions:
-  contents: write  # github-action-benchmark pushes data
-  pages: write     # Deploy to Pages
-  id-token: write  # OIDC token for Pages deployment
+  contents: write # github-action-benchmark pushes data
+  pages: write # Deploy to Pages
+  id-token: write # OIDC token for Pages deployment
 
 jobs:
   benchmark:
@@ -127,7 +127,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .  # github-action-benchmark stores files in repo root
+          path: . # github-action-benchmark stores files in repo root
 
       - name: Deploy to GitHub Pages
         id: deployment

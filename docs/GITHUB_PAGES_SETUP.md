@@ -115,9 +115,9 @@ This will:
 
    ```yaml
    permissions:
-     contents: write  # Required for github-action-benchmark
-     pages: write     # Required for GitHub Pages deployment
-     id-token: write  # Required for OIDC token
+     contents: write # Required for github-action-benchmark
+     pages: write # Required for GitHub Pages deployment
+     id-token: write # Required for OIDC token
    ```
 
 2. Check workflow logs for "Deploy to GitHub Pages" step errors
