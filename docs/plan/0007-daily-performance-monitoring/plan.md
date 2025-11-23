@@ -4,7 +4,7 @@
 
 **Status**: In Progress
 
-**Last Updated**: 2025-11-22 22:39:29 UTC
+**Last Updated**: 2025-11-23 06:52:00 UTC
 
 ---
 
@@ -99,6 +99,7 @@ Implement automated daily performance monitoring for rangebar-py to generate tan
 **Metrics Tracked** (Phase 1):
 
 **Python API (8 existing)**:
+
 - `test_throughput_1k_trades`: 1K trades/sec
 - `test_throughput_100k_trades`: 100K trades/sec
 - `test_throughput_1m_trades`: 1M trades/sec (target: >1M/sec)
@@ -109,6 +110,7 @@ Implement automated daily performance monitoring for rangebar-py to generate tan
 - `test_compression_ratio[1000]`: Compression at 1000 bps
 
 **Rust Core (6 new)**:
+
 - `bench_process_1m_trades`: Throughput without PyO3 overhead
 - `bench_latency_p50`: P50 latency per bar
 - `bench_latency_p95`: P95 latency per bar
@@ -165,24 +167,52 @@ criterion = "0.5"
 
 ## (c) Task List
 
-### Phase 1: Daily Python Benchmarks
+### Phase 1: Daily Python Benchmarks (COMPLETED)
 
 - [x] **1.1**: Create ADR-0007 (docs/decisions/0007-daily-performance-monitoring.md)
 - [x] **1.2**: Create plan document (docs/plan/0007-daily-performance-monitoring/plan.md)
-- [ ] **1.3**: Create workflow file (.github/workflows/performance-daily.yml)
+- [x] **1.3**: Create workflow file (.github/workflows/performance-daily.yml)
   - Daily cron: `17 3 * * *`
   - Manual trigger: `workflow_dispatch`
   - Python 3.12 setup
   - pytest-benchmark execution
   - JSON output: `python-bench.json`
-- [ ] **1.4**: Configure GitHub Pages
-  - Enable gh-pages branch
-  - Set source: Deploy from branch (gh-pages, root)
+- [x] **1.4**: Create Rust benchmarks (benches/core.rs)
+- [x] **1.5**: Update documentation (CLAUDE.md, README.md)
+- [x] **1.6**: Validate build (no errors)
+
+### Phase 1.5: GitHub Actions Deployment (IN PROGRESS)
+
+**Decision**: Switch from "Deploy from branch" to "GitHub Actions" deployment source
+
+**Rationale**:
+- Modern approach recommended by GitHub
+- Explicit deployment control
+- Better observability in workflow logs
+- Consistent with CI/CD best practices
+
+**Tasks**:
+
+- [ ] **1.5.1**: Update performance-daily.yml
+  - Add `pages: write` and `id-token: write` permissions
+  - Add `actions/upload-pages-artifact@v3` step
+  - Add `actions/deploy-pages@v4` step
+  - Configure environment: `github-pages`
+- [ ] **1.5.2**: Update performance-weekly.yml
+  - Same permissions and deployment steps
+- [ ] **1.5.3**: Update ADR-0007
+  - Document deployment method decision
+  - Explain rationale for Actions over branch deployment
+- [ ] **1.5.4**: Update GITHUB_PAGES_SETUP.md
+  - Change instructions to "GitHub Actions" source
+  - Update troubleshooting for Actions deployment
+- [ ] **1.5.5**: Configure GitHub Pages
+  - Set source: "GitHub Actions" (not "Deploy from a branch")
   - Verify dashboard URL: https://terrylica.github.io/rangebar-py/
-- [ ] **1.5**: Validate workflow execution
+- [ ] **1.5.6**: Validate workflow execution
   - Trigger manual run: `gh workflow run performance-daily.yml`
   - Check logs: `gh run list --workflow=performance-daily.yml`
-  - Verify JSON output in gh-pages branch
+  - Verify Pages deployment in Actions tab
   - Verify dashboard renders correctly
 
 ### Phase 2: Rust Core Benchmarks

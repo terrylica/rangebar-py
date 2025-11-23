@@ -79,3 +79,4 @@ examples/data/
 # Link checker cache
 .lychee*
 .lycheecache
+logs/

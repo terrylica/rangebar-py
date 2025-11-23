@@ -431,8 +431,9 @@ cat dev/bench/python-bench.json | jq '.benchmarks[] | {name: .name, mean: .stats
 
 - **Workflows**: `.github/workflows/performance-daily.yml`, `.github/workflows/performance-weekly.yml`
 - **Benchmarks**: `benches/core.rs` (Rust), `tests/test_performance.py` (Python)
-- **Visualization**: github-action-benchmark (auto-push to gh-pages)
-- **Documentation**: `docs/decisions/0007-daily-performance-monitoring.md` (ADR), `docs/plan/0007-daily-performance-monitoring/plan.md` (plan)
+- **Visualization**: github-action-benchmark (generates HTML/JSON)
+- **Deployment**: GitHub Actions (via `actions/deploy-pages@v4`, not branch-based)
+- **Documentation**: `docs/decisions/0007-daily-performance-monitoring.md` (ADR), `docs/plan/0007-daily-performance-monitoring/plan.md` (plan), `docs/GITHUB_PAGES_SETUP.md` (setup guide)
 
 ### Why Non-Blocking?
 

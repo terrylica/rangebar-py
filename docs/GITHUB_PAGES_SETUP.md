@@ -20,16 +20,17 @@
 
 1. Navigate to: https://github.com/terrylica/rangebar-py/settings/pages
 2. Under "Build and deployment":
-   - **Source**: Deploy from a branch
-   - **Branch**: `gh-pages`
-   - **Folder**: `/ (root)`
+   - **Source**: GitHub Actions
 3. Click **Save**
+
+**Note**: The workflow will handle deployment automatically via `actions/deploy-pages@v4`. No need to configure branch or folder.
 
 ### Step 2: Verify Configuration
 
 After the first workflow run (either manual trigger or daily cron):
 
 1. Check `gh-pages` branch exists:
+
    ```bash
    git fetch origin gh-pages
    git checkout gh-pages
@@ -37,6 +38,7 @@ After the first workflow run (either manual trigger or daily cron):
    ```
 
 2. Verify JSON files:
+
    ```bash
    cat dev/bench/python-bench.json | jq '.benchmarks[] | {name: .name, mean: .stats.mean}'
    ```
@@ -68,13 +70,16 @@ This will:
 
 ### Dashboard shows "404 Not Found"
 
-**Cause**: GitHub Pages not enabled or wrong branch selected
+**Cause**: GitHub Pages not enabled or workflow hasn't deployed yet
 
 **Fix**:
 
 1. Go to: https://github.com/terrylica/rangebar-py/settings/pages
-2. Verify "Source" is set to "Deploy from a branch"
-3. Verify "Branch" is `gh-pages` and folder is `/ (root)`
+2. Verify "Source" is set to "GitHub Actions"
+3. Check workflow has run successfully:
+   ```bash
+   gh run list --workflow=performance-daily.yml
+   ```
 4. Check "Pages" section shows: "Your site is live at https://terrylica.github.io/rangebar-py/"
 
 ### `gh-pages` branch doesn't exist
@@ -84,11 +89,13 @@ This will:
 **Fix**:
 
 1. Manually trigger workflow:
+
    ```bash
    gh workflow run performance-daily.yml
    ```
 
 2. Check workflow logs:
+
    ```bash
    gh run list --workflow=performance-daily.yml
    gh run view --log
@@ -96,24 +103,34 @@ This will:
 
 3. Look for errors in "Store Python benchmark results" step
 
+**Note**: With GitHub Actions deployment, the `gh-pages` branch is still created by github-action-benchmark for data storage, but deployment is handled by the workflow explicitly.
+
 ### Workflow runs but dashboard not updated
 
-**Cause**: Permission error or `GITHUB_TOKEN` missing `contents: write`
+**Cause**: Permission error or deployment step failed
 
 **Fix**:
 
-1. Verify workflow has permissions:
+1. Verify workflow has all required permissions:
+
    ```yaml
    permissions:
-     contents: write  # Required for github-action-benchmark to push to gh-pages
+     contents: write  # Required for github-action-benchmark
+     pages: write     # Required for GitHub Pages deployment
+     id-token: write  # Required for OIDC token
    ```
 
-2. Check workflow logs for errors like:
-   ```
-   remote: Permission to terrylica/rangebar-py.git denied
+2. Check workflow logs for "Deploy to GitHub Pages" step errors
+
+3. Verify environment is configured:
+
+   ```yaml
+   environment:
+     name: github-pages
+     url: ${{ steps.deployment.outputs.page_url }}
    ```
 
-3. If error persists, check repository settings:
+4. If error persists, check repository settings:
    - Settings → Actions → General → Workflow permissions
    - Ensure "Read and write permissions" is selected
 
@@ -137,12 +154,14 @@ This will:
 
 After setup, verify:
 
-- [  ] GitHub Pages enabled at https://github.com/terrylica/rangebar-py/settings/pages
-- [  ] `gh-pages` branch exists and has commits
-- [  ] Dashboard accessible at https://terrylica.github.io/rangebar-py/
-- [  ] Chart.js graphs render correctly
-- [  ] Benchmark data points visible in graphs
-- [  ] JSON files accessible (e.g., https://terrylica.github.io/rangebar-py/dev/bench/python-bench.json)
+- [ ] GitHub Pages source set to "GitHub Actions" at https://github.com/terrylica/rangebar-py/settings/pages
+- [ ] Workflow has run successfully (check Actions tab)
+- [ ] `gh-pages` branch exists and has commits (data storage)
+- [ ] Dashboard accessible at https://terrylica.github.io/rangebar-py/
+- [ ] Deployment appears in Actions tab under "pages build and deployment"
+- [ ] Chart.js graphs render correctly
+- [ ] Benchmark data points visible in graphs
+- [ ] JSON files accessible (e.g., https://terrylica.github.io/rangebar-py/dev/bench/python-bench.json)
 
 ---
 

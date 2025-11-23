@@ -8,11 +8,17 @@ on:
 
 permissions:
   contents: write  # Required for github-action-benchmark to push to gh-pages
+  pages: write     # Required for GitHub Pages deployment
+  id-token: write  # Required for OIDC token for Pages deployment
 
 jobs:
   benchmark-comprehensive:
     name: Comprehensive Python + Rust Benchmarks
     runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout repository
@@ -72,3 +78,18 @@ jobs:
             python-bench-weekly.json
             rust-bench-weekly.json
           retention-days: 90
+
+      - name: Checkout gh-pages branch for deployment
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages-deploy
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: gh-pages-deploy
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

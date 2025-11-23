@@ -82,26 +82,78 @@ The rangebar-py project requires **tangible observable performance metrics** on 
 - Accessible to both humans and AI agents
 - Historical trend visualization
 
+### Deployment Method
+
+**Decision**: Use GitHub Actions as deployment source (not "Deploy from a branch")
+
+**GitHub Pages Configuration**:
+
+- Source: **GitHub Actions**
+- Deployment: via `actions/deploy-pages@v4` in workflow
+- Artifacts: Uploaded via `actions/upload-pages-artifact@v3`
+
+**Rationale**:
+
+- ✅ **Modern approach**: Recommended by GitHub for CI/CD pipelines
+- ✅ **Explicit control**: Deployment step visible in workflow
+- ✅ **Better observability**: Deployment logs in Actions tab
+- ✅ **Consistent with CI/CD**: All automation in workflows (no branch-based auto-deploy)
+- ✅ **Environment protection**: Can add deployment protection rules (optional)
+
+**Alternative Rejected**: Deploy from a branch
+
+- ❌ Less explicit (auto-deploys on push to gh-pages)
+- ❌ Deployment not visible in workflow logs
+- ✅ Simpler for github-action-benchmark (designed for branch-based)
+- ✅ Well-tested and documented
+
+**Implementation**:
+
+```yaml
+permissions:
+  contents: write  # github-action-benchmark pushes data
+  pages: write     # Deploy to Pages
+  id-token: write  # OIDC token for Pages deployment
+
+jobs:
+  benchmark:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      # ... benchmark steps ...
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .  # github-action-benchmark stores files in repo root
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+```
+
 ### Scheduling Strategy
 
 **Daily Benchmarks**:
 
 ```yaml
 schedule:
-  - cron: '17 3 * * *'  # 3:17 AM UTC (off-peak)
+  - cron: "17 3 * * *" # 3:17 AM UTC (off-peak)
 ```
 
 **Manual Trigger**:
 
 ```yaml
-workflow_dispatch:  # Allow on-demand execution
+workflow_dispatch: # Allow on-demand execution
 ```
 
 **Weekly Comprehensive** (optional enhancement):
 
 ```yaml
 schedule:
-  - cron: '0 2 * * 0'  # 2:00 AM UTC Sunday
+  - cron: "0 2 * * 0" # 2:00 AM UTC Sunday
 ```
 
 ### Regression Detection
@@ -126,12 +178,12 @@ schedule:
 
 **Error Scenarios**:
 
-| Error                       | Action                          | No Fallback                       |
-| --------------------------- | ------------------------------- | --------------------------------- |
-| Benchmark execution failure | Fail workflow, raise error      | No "skip failed benchmarks"       |
-| JSON generation failure     | Fail workflow, raise error      | No "use previous run's JSON"      |
-| GitHub Pages deploy failure | Fail workflow, raise error      | No "store in artifacts instead"   |
-| Regression detection error  | Fail workflow, raise error      | No "disable alerts on error"      |
+| Error                       | Action                     | No Fallback                     |
+| --------------------------- | -------------------------- | ------------------------------- |
+| Benchmark execution failure | Fail workflow, raise error | No "skip failed benchmarks"     |
+| JSON generation failure     | Fail workflow, raise error | No "use previous run's JSON"    |
+| GitHub Pages deploy failure | Fail workflow, raise error | No "store in artifacts instead" |
+| Regression detection error  | Fail workflow, raise error | No "disable alerts on error"    |
 
 **No Fallbacks**:
 
@@ -192,11 +244,13 @@ schedule:
 **Metrics Tracked** (Phase 1):
 
 **Python API (8 existing metrics)**:
+
 - Throughput: 1K, 100K, 1M trades/sec
 - Memory: Peak usage for 1M trades
 - Compression: Ratio for 100/250/500/1000 bps
 
 **Rust Core (6 new metrics)**:
+
 - Throughput: 1M trades/sec (Rust-only)
 - Latency: P50, P95, P99
 - Memory: Rust allocations only
@@ -222,7 +276,7 @@ name: Daily Performance Benchmarks
 
 on:
   schedule:
-    - cron: '17 3 * * *'  # 3:17 AM UTC
+    - cron: "17 3 * * *" # 3:17 AM UTC
   workflow_dispatch:
 
 jobs:
@@ -232,17 +286,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
       - run: pip install maturin pytest pytest-benchmark
       - run: maturin develop --release
       - run: pytest tests/test_performance.py --benchmark-json=python-bench.json
       - uses: benchmark-action/github-action-benchmark@v1
         with:
-          tool: 'pytest'
+          tool: "pytest"
           output-file-path: python-bench.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
-          alert-threshold: '150%'
+          alert-threshold: "150%"
           comment-on-alert: false
           fail-on-alert: false
 ```
@@ -353,11 +407,11 @@ open https://terrylica.github.io/rangebar-py/
 
 **Error Scenarios**:
 
-| Error                      | Cause                   | Action                           |
-| -------------------------- | ----------------------- | -------------------------------- |
-| Benchmark timeout          | Infinite loop in code   | Fail workflow, raise error       |
-| JSON parse error           | Malformed pytest output | Fail workflow, raise error       |
-| GitHub Pages deploy failed | gh-pages branch missing | Fail workflow, raise error       |
+| Error                      | Cause                   | Action                               |
+| -------------------------- | ----------------------- | ------------------------------------ |
+| Benchmark timeout          | Infinite loop in code   | Fail workflow, raise error           |
+| JSON parse error           | Malformed pytest output | Fail workflow, raise error           |
+| GitHub Pages deploy failed | gh-pages branch missing | Fail workflow, raise error           |
 | Regression alert triggered | Performance degraded    | Log warning, continue (non-blocking) |
 
 **No Fallbacks**:
