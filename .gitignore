@@ -80,3 +80,4 @@ examples/data/
 .lychee*
 .lycheecache
 logs/
+node_modules/

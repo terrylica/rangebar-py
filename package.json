@@ -1,0 +1,26 @@
+{
+  "name": "rangebar-py",
+  "version": "0.0.0-development",
+  "description": "Python bindings for rangebar - High-performance range bar construction",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/terrylica/rangebar-py.git"
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "scripts": {
+    "release": "semantic-release",
+    "release:dry": "semantic-release --dry-run"
+  },
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.0",
+    "@semantic-release/exec": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^11.0.1",
+    "@semantic-release/release-notes-generator": "^14.0.1",
+    "semantic-release": "^25.0.2"
+  },
+  "private": true
+}
