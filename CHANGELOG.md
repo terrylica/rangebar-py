@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.0.2 (2025-11-23)
+
+### Bug Fixes
+
+- **ci**: Add psutil dependency to workflow test environment
+  ([`59f6972`](https://github.com/terrylica/rangebar-py/commit/59f6972903b7e7e4647efcec2252348b53a422ea))
+
+
 ## v1.0.1 (2025-11-23)
 
 ### Bug Fixes
