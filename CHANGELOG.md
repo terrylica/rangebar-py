@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.0.3 (2025-11-23)
+
+### Bug Fixes
+
+- **validation**: Update pattern to match data.js instead of .json
+  ([`d71b5a0`](https://github.com/terrylica/rangebar-py/commit/d71b5a0e7cee86d1f1dcf5d426f6d789eba981d8))
+
+
 ## v1.0.2 (2025-11-23)
 
 ### Bug Fixes
