@@ -2,6 +2,18 @@
 
 <!-- version list -->
 
+## v2.0.0 (2025-11-27)
+
+### Bug Fixes
+
+- **readme**: Publish AOD/IOI/DRY-aligned documentation to PyPI
+  ([`422b50c`](https://github.com/terrylica/rangebar-py/commit/422b50c40782f9662355d44c806f0c14516f1007))
+
+### Breaking Changes
+
+- **readme**: None
+
+
 ## v1.0.3 (2025-11-23)
 
 ### Bug Fixes
