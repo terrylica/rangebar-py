@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-backtesting = ["backtesting.py>=0.3"]
+backtesting = ["backtesting>=0.3"]
 dev = [
     "pytest>=7.0",
     "pytest-benchmark>=4.0",
@@ -144,3 +144,9 @@ exclude_commit_patterns = [
 [tool.semantic_release.branches.main]
 match = "(main|master)"
 prerelease = false
+
+[dependency-groups]
+dev = [
+    "psutil>=7.2.1",
+    "pytest-cov>=7.0.0",
+]

@@ -3,24 +3,24 @@ use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::types::PyDict;
 use rangebar_core::{AggTrade, FixedPoint, RangeBar, RangeBarProcessor};
 
-/// Convert f64 to FixedPoint (8 decimal precision)
+/// Convert f64 to `FixedPoint` (8 decimal precision)
 fn f64_to_fixed_point(value: f64) -> FixedPoint {
     // FixedPoint uses i64 with 8 decimal places (scale = 100_000_000)
     let scaled = (value * 100_000_000.0).round() as i64;
     FixedPoint(scaled)
 }
 
-/// Convert Python dict to Rust AggTrade
+/// Convert Python dict to Rust `AggTrade`
 fn dict_to_agg_trade(py: Python, trade_dict: &Bound<PyDict>, index: usize) -> PyResult<AggTrade> {
     // Extract required fields
     let timestamp_value: PyObject = trade_dict
         .get_item("timestamp")?
-        .ok_or_else(|| PyKeyError::new_err(format!("Trade {}: missing 'timestamp'", index)))?
+        .ok_or_else(|| PyKeyError::new_err(format!("Trade {index}: missing 'timestamp'")))?
         .extract()?;
 
     let price_value: PyObject = trade_dict
         .get_item("price")?
-        .ok_or_else(|| PyKeyError::new_err(format!("Trade {}: missing 'price'", index)))?
+        .ok_or_else(|| PyKeyError::new_err(format!("Trade {index}: missing 'price'")))?
         .extract()?;
 
     // Extract as i64/f64
@@ -34,8 +34,7 @@ fn dict_to_agg_trade(py: Python, trade_dict: &Bound<PyDict>, index: usize) -> Py
             .get_item("volume")?
             .ok_or_else(|| {
                 PyKeyError::new_err(format!(
-                    "Trade {}: missing 'quantity' or 'volume'",
-                    index
+                    "Trade {index}: missing 'quantity' or 'volume'"
                 ))
             })?
             .extract()?,
@@ -77,7 +76,7 @@ fn dict_to_agg_trade(py: Python, trade_dict: &Bound<PyDict>, index: usize) -> Py
     })
 }
 
-/// Convert Rust RangeBar to Python dict
+/// Convert Rust `RangeBar` to Python dict
 fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject> {
     let dict = PyDict::new_bound(py);
 
@@ -106,7 +105,7 @@ fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject> {
     Ok(dict.into())
 }
 
-/// Python-exposed RangeBarProcessor
+/// Python-exposed `RangeBarProcessor`
 #[pyclass(name = "PyRangeBarProcessor")]
 struct PyRangeBarProcessor {
     processor: RangeBarProcessor,
@@ -118,14 +117,14 @@ impl PyRangeBarProcessor {
     /// Create new processor
     ///
     /// Args:
-    ///     threshold_bps: Threshold in 0.1 basis point units (250 = 25bps = 0.25%)
+    ///     `threshold_bps`: Threshold in 0.1 basis point units (250 = 25bps = 0.25%)
     ///
     /// Raises:
-    ///     ValueError: If threshold is out of range [1, 100_000]
+    ///     `ValueError`: If threshold is out of range [1, `100_000`]
     #[new]
     fn new(threshold_bps: u32) -> PyResult<Self> {
         let processor = RangeBarProcessor::new(threshold_bps).map_err(|e| {
-            PyValueError::new_err(format!("Failed to create processor: {}", e))
+            PyValueError::new_err(format!("Failed to create processor: {e}"))
         })?;
 
         Ok(Self {
@@ -143,8 +142,8 @@ impl PyRangeBarProcessor {
     ///     List of range bar dicts with OHLCV data
     ///
     /// Raises:
-    ///     KeyError: If required trade fields are missing
-    ///     RuntimeError: If trade processing fails (e.g., unsorted trades)
+    ///     `KeyError`: If required trade fields are missing
+    ///     `RuntimeError`: If trade processing fails (e.g., unsorted trades)
     fn process_trades(&mut self, py: Python, trades: Vec<Bound<PyDict>>) -> PyResult<Vec<PyObject>> {
         if trades.is_empty() {
             return Ok(Vec::new());
@@ -162,7 +161,7 @@ impl PyRangeBarProcessor {
             .processor
             .process_agg_trade_records(&agg_trades)
             .map_err(|e| {
-                PyRuntimeError::new_err(format!("Processing failed: {}", e))
+                PyRuntimeError::new_err(format!("Processing failed: {e}"))
             })?;
 
         // Convert RangeBars to Python dicts
@@ -173,7 +172,7 @@ impl PyRangeBarProcessor {
 
     /// Get threshold value
     #[getter]
-    fn threshold_bps(&self) -> u32 {
+    const fn threshold_bps(&self) -> u32 {
         self.threshold_bps
     }
 }
