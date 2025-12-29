@@ -682,15 +682,15 @@ df = process_trades_to_dataframe(trades, threshold_bps=250)
 
 ## Changelog
 
-See [CHANGELOG.md](../CHANGELOG.md) for version history.
+See [CHANGELOG.md](/CHANGELOG.md) for version history.
 
 ---
 
 ## See Also
 
-- [README.md](../README.md) - User guide and quick start
-- [examples/README.md](../examples/README.md) - Usage examples
-- [rangebar_core_api.md](rangebar_core_api.md) - Rust API documentation
+- [README.md](/README.md) - User guide and quick start
+- [examples/README.md](/examples/README.md) - Usage examples
+- [rangebar_core_api.md](/docs/rangebar_core_api.md) - Rust API documentation
 - [backtesting.py docs](https://kernc.github.io/backtesting.py/) - Target framework
 
 ---
