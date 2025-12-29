@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.0.2 (2025-12-29)
+
+### Bug Fixes
+
+- Resolve validation gaps from comprehensive audit
+  ([`c6b2d08`](https://github.com/terrylica/rangebar-py/commit/c6b2d087286cda3e9904712a4e2868bf3df5958d))
+
+
 ## v2.0.1 (2025-12-29)
 
 ### Bug Fixes
