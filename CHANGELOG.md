@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.0.1 (2025-12-29)
+
+### Bug Fixes
+
+- **docs**: Convert relative links to repo-relative paths in api.md
+  ([`4d5c84d`](https://github.com/terrylica/rangebar-py/commit/4d5c84d0a223f67e38e726bc04cb7336730c9655))
+
+
 ## v2.0.0 (2025-11-27)
 
 ### Bug Fixes
