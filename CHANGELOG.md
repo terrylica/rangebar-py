@@ -1,3 +1,10 @@
+# [2.1.0](https://github.com/terrylica/rangebar-py/compare/v2.0.2...v2.1.0) (2026-01-05)
+
+
+### Features
+
+* **clickhouse:** add two-tier ClickHouse cache layer ([54a58de](https://github.com/terrylica/rangebar-py/commit/54a58def45d9f67b2665c6bf926ba9ecf7b262e2)), closes [hi#performance](https://github.com/hi/issues/performance) [hi#level](https://github.com/hi/issues/level)
+
 # CHANGELOG
 
 <!-- version list -->
