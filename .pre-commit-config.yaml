@@ -5,13 +5,6 @@
 # Run manually: pre-commit run --all-files
 
 repos:
-  # Conventional commit message enforcement
-  - repo: https://github.com/compwa/commitizen
-    rev: 0.20.0
-    hooks:
-      - id: commitizen
-        stages: [commit-msg]
-
   # Python code formatting
   - repo: https://github.com/psf/black
     rev: 24.10.0
