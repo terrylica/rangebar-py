@@ -76,6 +76,12 @@ examples/data/
 *.csv
 *.parquet
 
+# Temporary directories (visible in broot via special_paths)
+tmp/
+
+# Generated visualizations (backtesting.py Bokeh outputs)
+*.html
+
 # Link checker cache
 .lychee*
 .lycheecache
