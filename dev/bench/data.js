@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1767587692917,
+  "lastUpdate": 1767672609357,
   "repoUrl": "https://github.com/terrylica/rangebar-py",
   "entries": {
     "Python API Benchmarks": [
@@ -1890,6 +1890,49 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.010520014833386326",
             "extra": "mean: 467.9586649999692 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "terrylica",
+            "username": "terrylica",
+            "email": "terry@eonlabs.com"
+          },
+          "committer": {
+            "name": "terrylica",
+            "username": "terrylica",
+            "email": "terry@eonlabs.com"
+          },
+          "id": "4857160b9ce33a9aeef9dcebc89f3ea7a525fee1",
+          "message": "chore: add PyPI publish script and update .gitignore\n\n- Add scripts/publish-to-pypi.sh for local-only PyPI publishing\n  (ADR-0027 compliant, uses Doppler for credential management)\n- Add tmp/ to .gitignore (visible in broot via special_paths)\n- Add *.html to .gitignore (backtesting.py Bokeh outputs)",
+          "timestamp": "2026-01-05T02:52:09Z",
+          "url": "https://github.com/terrylica/rangebar-py/commit/4857160b9ce33a9aeef9dcebc89f3ea7a525fee1"
+        },
+        "date": 1767672608563,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_performance.py::TestThroughputBenchmarks::test_throughput_1k_trades",
+            "value": 640.3775799591464,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004914369854577854",
+            "extra": "mean: 1.5615787174557176 msec\nrounds: 676"
+          },
+          {
+            "name": "tests/test_performance.py::TestThroughputBenchmarks::test_throughput_100k_trades",
+            "value": 22.286745364685796,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0004320592501772713",
+            "extra": "mean: 44.8697189130423 msec\nrounds: 23"
+          },
+          {
+            "name": "tests/test_performance.py::TestThroughputBenchmarks::test_throughput_1m_trades",
+            "value": 2.206497309257495,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00036459887053055784",
+            "extra": "mean: 453.206988200003 msec\nrounds: 5"
           }
         ]
       }
