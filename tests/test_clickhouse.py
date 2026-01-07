@@ -176,6 +176,7 @@ class TestRangeBarCache:
         client.command.return_value = None
         client.query.return_value = MagicMock(result_rows=[])
         client.query_df.return_value = pd.DataFrame()
+        client.query_df_arrow.return_value = pd.DataFrame()  # Arrow-optimized
         return client
 
     @pytest.fixture
@@ -212,115 +213,9 @@ class TestRangeBarCache:
         mock_get_host.assert_called_once()
         mock_get_client.assert_called_once_with("localhost", 8123)
 
-    def test_store_raw_trades_empty(
-        self, cache: RangeBarCache, mock_client: MagicMock
-    ) -> None:
-        """Test storing empty trades DataFrame."""
-        df = pd.DataFrame()
-        result = cache.store_raw_trades("BTCUSDT", df)
-        assert result == 0
-        mock_client.insert_df.assert_not_called()
-
-    def test_store_raw_trades(
-        self, cache: RangeBarCache, mock_client: MagicMock
-    ) -> None:
-        """Test storing trades DataFrame."""
-        df = pd.DataFrame(
-            {
-                "timestamp": [1704067200000, 1704067210000],
-                "price": [42000.0, 42100.0],
-                "quantity": [1.5, 2.3],
-            }
-        )
-        result = cache.store_raw_trades("BTCUSDT", df)
-        assert result == 2
-        mock_client.insert_df.assert_called_once()
-
-        # Check the call arguments
-        call_args = mock_client.insert_df.call_args
-        assert call_args[0][0] == "rangebar_cache.raw_trades"
-
-    def test_store_raw_trades_with_volume_column(
-        self, cache: RangeBarCache, mock_client: MagicMock
-    ) -> None:
-        """Test storing trades with 'volume' instead of 'quantity'."""
-        df = pd.DataFrame(
-            {
-                "timestamp": [1704067200000],
-                "price": [42000.0],
-                "volume": [1.5],  # 'volume' instead of 'quantity'
-            }
-        )
-        result = cache.store_raw_trades("BTCUSDT", df)
-        assert result == 1
-        mock_client.insert_df.assert_called_once()
-
-    def test_store_raw_trades_datetime_timestamp(
-        self, cache: RangeBarCache, mock_client: MagicMock
-    ) -> None:
-        """Test storing trades with datetime timestamp."""
-        df = pd.DataFrame(
-            {
-                "timestamp": pd.to_datetime(
-                    ["2024-01-01 00:00:00", "2024-01-01 00:01:00"]
-                ),
-                "price": [42000.0, 42100.0],
-                "quantity": [1.5, 2.3],
-            }
-        )
-        result = cache.store_raw_trades("BTCUSDT", df)
-        assert result == 2
-
-    def test_get_raw_trades(self, cache: RangeBarCache, mock_client: MagicMock) -> None:
-        """Test retrieving raw trades."""
-        expected_df = pd.DataFrame(
-            {
-                "timestamp": [1704067200000],
-                "price": [42000.0],
-                "quantity": [1.5],
-            }
-        )
-        mock_client.query_df.return_value = expected_df
-
-        result = cache.get_raw_trades("BTCUSDT", 1704067200000, 1704153600000)
-        assert len(result) == 1
-        mock_client.query_df.assert_called_once()
-
-    def test_has_raw_trades_none(
-        self, cache: RangeBarCache, mock_client: MagicMock
-    ) -> None:
-        """Test checking for non-existent trades."""
-        mock_client.query.return_value = MagicMock(result_rows=[])
-        assert cache.has_raw_trades("BTCUSDT", 1704067200000, 1704153600000) is False
-
-    def test_has_raw_trades_empty_count(
-        self, cache: RangeBarCache, mock_client: MagicMock
-    ) -> None:
-        """Test checking when count is zero."""
-        mock_client.query.return_value = MagicMock(
-            result_rows=[(1704067200000, 1704153600000, 0)]
-        )
-        assert cache.has_raw_trades("BTCUSDT", 1704067200000, 1704153600000) is False
-
-    def test_has_raw_trades_sufficient_coverage(
-        self, cache: RangeBarCache, mock_client: MagicMock
-    ) -> None:
-        """Test checking with sufficient coverage."""
-        # 100% coverage
-        mock_client.query.return_value = MagicMock(
-            result_rows=[(1704067200000, 1704153600000, 1000)]
-        )
-        assert cache.has_raw_trades("BTCUSDT", 1704067200000, 1704153600000) is True
-
-    def test_has_raw_trades_insufficient_coverage(
-        self, cache: RangeBarCache, mock_client: MagicMock
-    ) -> None:
-        """Test checking with insufficient coverage."""
-        # Only 50% coverage (min_ts and max_ts cover half the range)
-        mock_client.query.return_value = MagicMock(
-            result_rows=[(1704067200000, 1704110400000, 1000)]  # Half the range
-        )
-        assert cache.has_raw_trades("BTCUSDT", 1704067200000, 1704153600000) is False
+    # Note: Raw trades (Tier 1) tests removed - raw tick data is now stored
+    # locally using Parquet files via rangebar.storage.TickStorage.
+    # See tests/test_storage.py for tick storage tests.
 
     def test_store_range_bars_empty(
         self, cache: RangeBarCache, mock_client: MagicMock
@@ -356,7 +251,7 @@ class TestRangeBarCache:
     ) -> None:
         """Test getting non-existent range bars."""
         key = CacheKey("BTCUSDT", 250, 1704067200000, 1704153600000)
-        mock_client.query_df.return_value = pd.DataFrame()
+        mock_client.query_df_arrow.return_value = pd.DataFrame()
 
         result = cache.get_range_bars(key)
         assert result is None
@@ -364,7 +259,7 @@ class TestRangeBarCache:
     def test_get_range_bars(self, cache: RangeBarCache, mock_client: MagicMock) -> None:
         """Test retrieving range bars."""
         key = CacheKey("BTCUSDT", 250, 1704067200000, 1704153600000)
-        mock_client.query_df.return_value = pd.DataFrame(
+        mock_client.query_df_arrow.return_value = pd.DataFrame(
             {
                 "timestamp_ms": [1704067200000],
                 "Open": [42000.0],

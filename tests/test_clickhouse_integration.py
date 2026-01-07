@@ -136,70 +136,8 @@ class TestRangeBarCacheIntegration:
         """Test that required tables are created."""
         tables = cache.client.command("SHOW TABLES FROM rangebar_cache")
 
-        # Should have both tables
-        assert "raw_trades" in tables
+        # Should have range_bars table (raw_trades moved to local Parquet storage)
         assert "range_bars" in tables
-
-
-class TestRawTradesIntegration:
-    """Integration tests for raw trades caching (Tier 1)."""
-
-    def test_store_and_retrieve_trades(
-        self, cache: RangeBarCache, sample_trades: pd.DataFrame
-    ) -> None:
-        """Test storing and retrieving raw trades."""
-        symbol = "TEST_BTCUSDT_RAW"
-
-        # Store trades
-        count = cache.store_raw_trades(symbol, sample_trades)
-        assert count == len(sample_trades)
-
-        # Retrieve trades
-        start_ts = int(sample_trades["timestamp"].min())
-        end_ts = int(sample_trades["timestamp"].max())
-
-        retrieved = cache.get_raw_trades(symbol, start_ts, end_ts)
-
-        assert len(retrieved) == len(sample_trades)
-        assert "timestamp" in retrieved.columns
-        assert "price" in retrieved.columns
-        assert "quantity" in retrieved.columns
-
-    def test_has_raw_trades(
-        self, cache: RangeBarCache, sample_trades: pd.DataFrame
-    ) -> None:
-        """Test checking for raw trade existence."""
-        symbol = "TEST_BTCUSDT_HAS"
-
-        start_ts = int(sample_trades["timestamp"].min())
-        end_ts = int(sample_trades["timestamp"].max())
-
-        # Should not have trades initially (or from previous test with different symbol)
-        # Store trades first
-        cache.store_raw_trades(symbol, sample_trades)
-
-        # Now should have trades
-        assert cache.has_raw_trades(symbol, start_ts, end_ts) is True
-
-        # Should not have trades for different symbol
-        assert cache.has_raw_trades("NONEXISTENT_SYMBOL", start_ts, end_ts) is False
-
-    def test_store_with_datetime_timestamp(self, cache: RangeBarCache) -> None:
-        """Test storing trades with datetime timestamps."""
-        symbol = "TEST_BTCUSDT_DT"
-
-        trades = pd.DataFrame(
-            {
-                "timestamp": pd.to_datetime(
-                    ["2024-01-01 00:00:00", "2024-01-01 00:00:01"]
-                ),
-                "price": [42000.0, 42010.0],
-                "quantity": [1.5, 2.0],
-            }
-        )
-
-        count = cache.store_raw_trades(symbol, trades)
-        assert count == 2
 
 
 class TestRangeBarsIntegration:
@@ -215,6 +153,12 @@ class TestRangeBarsIntegration:
             start_ts=1704067200000,
             end_ts=1704153600000,
         )
+
+        # Clean up any existing data from previous test runs
+        cache.invalidate_range_bars(key)
+        import time
+
+        time.sleep(0.5)  # Allow async mutation to complete
 
         # Store bars
         count = cache.store_range_bars(key, sample_range_bars)

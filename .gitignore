@@ -87,3 +87,16 @@ tmp/
 .lycheecache
 logs/
 node_modules/
+
+# ClickHouse server runtime data (created when running `clickhouse server` locally)
+data/
+metadata/
+store/
+preprocessed_configs/
+status
+uuid
+user_files/
+user_scripts/
+user_defined/
+format_schemas/
+access/

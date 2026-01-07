@@ -8,6 +8,57 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 **Core Principle**: The rangebar Rust crate maintainer does **ZERO** work. We handle all Python integration by importing their crate as a dependency.
 
+## AI Agent Quick Reference
+
+### Common Tasks & Entry Points
+
+| When Claude is asked to... | Primary File | Function/Class |
+|---------------------------|--------------|----------------|
+| Generate range bars (basic) | `python/rangebar/__init__.py` | `process_trades_to_dataframe()` |
+| Generate range bars (Polars) | `python/rangebar/__init__.py` | `process_trades_polars()` |
+| Process large datasets | `python/rangebar/__init__.py` | `process_trades_chunked()` |
+| Use ClickHouse cache | `python/rangebar/__init__.py` | `process_trades_to_dataframe_cached()` |
+| Debug PyO3 bindings | `src/lib.rs` | Check error handling section |
+| Read/write tick data | `python/rangebar/storage/parquet.py` | `TickStorage` class |
+
+### API Selection Guide
+
+```
+Input Data Type?
+├── pandas DataFrame → process_trades_to_dataframe()
+├── Polars DataFrame/LazyFrame → process_trades_polars() [2-3x faster]
+├── Iterator (large data) → process_trades_chunked()
+└── Need caching? → process_trades_to_dataframe_cached()
+```
+
+### File-to-Responsibility Mapping
+
+| File | Responsibility |
+|------|----------------|
+| `src/lib.rs` | PyO3 bindings (Rust→Python bridge) |
+| `python/rangebar/__init__.py` | Public Python API |
+| `python/rangebar/__init__.pyi` | Type stubs for IDE/AI |
+| `python/rangebar/storage/parquet.py` | Tier 1 cache (local Parquet) |
+| `python/rangebar/clickhouse/cache.py` | Tier 2 cache (ClickHouse) |
+| `tests/test_e2e_optimized.py` | E2E tests for optimized APIs |
+
+### Performance Optimization Checklist
+
+When optimizing data processing:
+1. Use `pl.scan_parquet()` instead of `pl.read_parquet()` (lazy loading)
+2. Apply filters on LazyFrame before `.collect()` (predicate pushdown)
+3. Select only required columns before `.to_dicts()` (minimal conversion)
+4. Use `process_trades_chunked()` for datasets >10M trades
+
+### Common Error Recovery
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `AttributeError: RangeBarProcessor has no attribute X` | Rust binding outdated | Run `maturin develop` |
+| `ValueError: Invalid threshold_bps` | Expects 0.1 basis points | Use 250 for 0.25% |
+| `AssertionError: High < Low` | OHLC invariant violation | Check input data sorting |
+| `dtype mismatch (double[pyarrow] vs float64)` | Cache retrieval issue | Fixed in v2.2.0 |
+
 ## Architecture
 
 ```

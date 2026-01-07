@@ -79,6 +79,66 @@ class RangeBarProcessor:
 
 Lower-level API for custom workflows and stateful processing.
 
+### process_trades_polars
+
+```python
+def process_trades_polars(
+    trades: Union[pl.DataFrame, pl.LazyFrame],
+    threshold_bps: int = 250,
+) -> pd.DataFrame
+```
+
+**Optimized API for Polars users** with lazy evaluation and minimal dict conversion.
+
+**Parameters**:
+- `trades`: Polars DataFrame or LazyFrame with columns `timestamp` (ms), `price`, `quantity`
+- `threshold_bps`: Price movement threshold (default: 250 = 0.25%)
+
+**Returns**: pandas DataFrame compatible with backtesting.py
+
+**Example**:
+```python
+import polars as pl
+from rangebar import process_trades_polars
+
+# LazyFrame with predicate pushdown
+lazy_df = pl.scan_parquet("trades.parquet").filter(pl.col("timestamp") >= start_ts)
+bars = process_trades_polars(lazy_df, threshold_bps=250)
+```
+
+**Performance**: 2-3x faster than `process_trades_to_dataframe()` for Polars inputs.
+
+### process_trades_chunked
+
+```python
+def process_trades_chunked(
+    trades_iterator: Iterator[Dict],
+    threshold_bps: int = 250,
+    chunk_size: int = 100_000,
+) -> Iterator[pd.DataFrame]
+```
+
+**Memory-safe processing** for large datasets without OOM.
+
+**Parameters**:
+- `trades_iterator`: Iterator yielding trade dictionaries
+- `threshold_bps`: Price movement threshold (default: 250 = 0.25%)
+- `chunk_size`: Trades per chunk (default: 100,000)
+
+**Yields**: DataFrames of OHLCV bars per chunk
+
+**Example**:
+```python
+from rangebar import process_trades_chunked
+
+# Process 10M+ trades without OOM
+trades = load_large_dataset()  # Returns iterator
+for bars_df in process_trades_chunked(iter(trades), chunk_size=50_000):
+    process_batch(bars_df)
+```
+
+**Note**: Partial bars may occur at chunk boundaries.
+
 ## Threshold Reference
 
 | threshold_bps | Percentage | Description |

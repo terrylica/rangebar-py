@@ -27,11 +27,15 @@ classifiers = [
 dependencies = [
     "pandas>=2.0",
     "numpy>=1.24",
-    "clickhouse-connect>=0.8",  # ClickHouse cache layer
+    "polars>=1.0",              # Parquet I/O for Tier 1 cache
+    "pyarrow>=14.0",            # Required by polars for to_pandas() conversion
+    "platformdirs>=4.0",        # Cross-platform cache directory
+    "clickhouse-connect>=0.8",  # ClickHouse cache layer (Tier 2)
 ]
 
 [project.optional-dependencies]
 backtesting = ["backtesting>=0.3"]
+exness = []  # Feature flag handled at Rust build level (maturin --features exness)
 dev = [
     "pytest>=7.0",
     "pytest-benchmark>=4.0",
@@ -118,8 +122,7 @@ select = [
     "RUF",  # ruff-specific rules
 ]
 ignore = [
-    "ANN101",  # Missing type annotation for self
-    "ANN102",  # Missing type annotation for cls
+    # ANN101/ANN102 removed in ruff 0.9+
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -151,6 +154,7 @@ ignore = [
 "python/rangebar/__init__.py" = [
     "F821",    # Forward references for type hints
     "SIM108",  # Ternary operator (readability preference)
+    "PLC0415", # Lazy imports for optional ClickHouse dependencies
 ]
 "python/rangebar/clickhouse/*.py" = [
     "PD901",   # Generic variable name 'df' (common in data processing)
@@ -160,6 +164,14 @@ ignore = [
     "ANN401",  # Any type in kwargs
     "PYI034",  # Self return type
     "PLR2004", # Magic values (port numbers, etc.)
+    "PLC0415", # Lazy imports for optional dependencies
+]
+"python/rangebar/exness.py" = [
+    "PD901",   # Generic variable name 'df'
+    "ANN401",  # Any type in kwargs
+    "F821",    # Forward references (ExnessInstrument placeholders)
+    "PLC0415", # Import in function (needed for optional imports)
+    "RET504",  # Unnecessary assignment before return (readability preference)
 ]
 
 [tool.semantic_release]

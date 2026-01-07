@@ -7,6 +7,36 @@
 
 # CHANGELOG
 
+## v2.2.0 (2026-01-07) - Python Pipeline Optimization
+
+### Features
+
+- **polars**: Add `process_trades_polars()` with lazy evaluation and predicate pushdown
+  - Optimized for Polars users: 2-3x faster than `process_trades_to_dataframe()`
+  - Minimal dict conversion: only required columns extracted (timestamp, price, quantity)
+  - Full LazyFrame support with predicate pushdown to I/O layer
+
+- **streaming**: Add `process_trades_chunked()` for memory-safe large dataset processing
+  - Iterator-based API avoids OOM on datasets >10M trades
+  - Configurable chunk_size (default 100K trades)
+  - Recommended: chunk_size=50K for >10M trades
+
+- **storage**: Implement lazy Parquet loading with `pl.scan_parquet()`
+  - Predicate pushdown to Parquet row groups
+  - 50% memory reduction for filtered queries
+  - 2x faster I/O for time-range queries
+
+### Bug Fixes
+
+- **cache**: Fix PyArrow dtype compatibility in range bar cache retrieval
+  - Resolve dtype mismatch when retrieving cached bars from ClickHouse
+  - Ensure pandas DataFrame dtype preservation across cache layer
+
+### Documentation
+
+- **README**: Add documentation for `process_trades_polars()` and `process_trades_chunked()`
+- **CLAUDE.md**: Add AI Agent Quick Reference section for Claude Code consumers
+
 <!-- version list -->
 
 ## v2.0.2 (2025-12-29)

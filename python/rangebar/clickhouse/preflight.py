@@ -29,6 +29,8 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Literal
 
+from .config import ConnectionMode, get_connection_mode
+
 # Loud warning message for Claude Code CLI users
 ENV_NOT_CONFIGURED_WARNING = """
 ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -189,9 +191,14 @@ def detect_clickhouse_state() -> PreflightResult:
 
 
 def get_available_clickhouse_host() -> HostConnection:
-    """Find best available ClickHouse host.
+    """Find best available ClickHouse host based on connection mode.
 
-    Priority Order:
+    Connection Mode (via RANGEBAR_MODE env var):
+    - LOCAL: Force localhost:8123 only
+    - CLOUD: Require CLICKHOUSE_HOST env var (remote only)
+    - AUTO: Try localhost first, then SSH aliases (default)
+
+    Priority Order (AUTO mode):
     1. LOCAL: localhost:8123 (if running on a GPU workstation with ClickHouse)
     2. DIRECT: Remote host:8123 over network (if exposed)
     3. SSH_TUNNEL: SSH to remote host, access localhost:8123 there
@@ -211,9 +218,46 @@ def get_available_clickhouse_host() -> HostConnection:
 
     Examples
     --------
+    >>> # Default AUTO mode
     >>> host = get_available_clickhouse_host()
     >>> print(f"Using {host.host} via {host.method}")
+
+    >>> # Force local mode
+    >>> import os
+    >>> os.environ["RANGEBAR_MODE"] = "local"
+    >>> host = get_available_clickhouse_host()  # Only checks localhost
     """
+    mode = get_connection_mode()
+
+    # LOCAL mode: Force localhost only
+    if mode == ConnectionMode.LOCAL:
+        if _is_port_open("localhost", 8123):
+            return HostConnection(host="localhost", method="local")
+        msg = (
+            "RANGEBAR_MODE=local but ClickHouse not running on localhost:8123.\n"
+            "Start ClickHouse locally or change mode to 'auto' or 'cloud'."
+        )
+        raise ClickHouseNotConfiguredError(msg)
+
+    # CLOUD mode: Require remote host only
+    if mode == ConnectionMode.CLOUD:
+        cloud_host = os.getenv("CLICKHOUSE_HOST")
+        if not cloud_host:
+            msg = (
+                "RANGEBAR_MODE=cloud but CLICKHOUSE_HOST not set.\n"
+                "Set CLICKHOUSE_HOST to your ClickHouse server address."
+            )
+            raise ClickHouseNotConfiguredError(msg)
+        cloud_port = int(os.getenv("CLICKHOUSE_PORT", "8123"))
+        if _is_port_open(cloud_host, cloud_port):
+            return HostConnection(host=cloud_host, method="direct", port=cloud_port)
+        msg = (
+            f"RANGEBAR_MODE=cloud but cannot connect to {cloud_host}:{cloud_port}.\n"
+            "Verify CLICKHOUSE_HOST and CLICKHOUSE_PORT are correct."
+        )
+        raise ClickHouseNotConfiguredError(msg)
+
+    # AUTO mode: Try localhost first, then remote hosts
     # PRIORITY 1: Always check localhost first (prefer local execution)
     if _is_port_open("localhost", 8123):
         return HostConnection(host="localhost", method="local")

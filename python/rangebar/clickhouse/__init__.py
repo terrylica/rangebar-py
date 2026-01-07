@@ -1,18 +1,23 @@
-"""ClickHouse cache layer for rangebar.
+"""ClickHouse cache layer for computed range bars.
 
-This module provides two-tier caching (raw trades + computed range bars)
-using a local ClickHouse database for high-performance repeated processing.
+This module provides caching for computed range bars (Tier 2) using ClickHouse.
+Raw tick data (Tier 1) is stored locally via `rangebar.storage.TickStorage`.
 
 Configuration
 -------------
 Set environment variables via mise (recommended) or directly:
 
-    # mise.toml or ~/.config/mise/config.toml
-    [env]
-    RANGEBAR_CH_HOSTS = "host1,host2"  # SSH aliases from ~/.ssh/config
-    RANGEBAR_CH_PRIMARY = "host1"       # Default host
+    # Connection mode (RANGEBAR_MODE)
+    export RANGEBAR_MODE=local  # Force localhost:8123 only
+    export RANGEBAR_MODE=cloud  # Require CLICKHOUSE_HOST env var
+    export RANGEBAR_MODE=auto   # Auto-detect (default)
 
-If no env vars set, falls back to localhost:8123.
+    # Host configuration (for AUTO/CLOUD modes)
+    export RANGEBAR_CH_HOSTS="host1,host2"  # SSH aliases from ~/.ssh/config
+    export RANGEBAR_CH_PRIMARY="host1"       # Default host
+    export CLICKHOUSE_HOST="localhost"       # Direct host (CLOUD mode)
+
+If no env vars set, falls back to localhost:8123 in AUTO mode.
 
 Example
 -------
@@ -25,6 +30,10 @@ Example
 >>>
 >>> # Use cached processing
 >>> df = process_trades_to_dataframe_cached(trades, symbol="BTCUSDT")
+
+See Also
+--------
+rangebar.storage.TickStorage : Local Parquet storage for raw tick data
 """
 
 from __future__ import annotations
@@ -38,7 +47,7 @@ from .client import (
     ClickHouseUnavailableError,
     get_client,
 )
-from .config import ClickHouseConfig
+from .config import ClickHouseConfig, ConnectionMode, get_connection_mode
 from .mixin import ClickHouseClientMixin
 from .preflight import (
     ClickHouseNotConfiguredError,
@@ -58,6 +67,7 @@ __all__ = [
     "ClickHouseNotConfiguredError",
     "ClickHouseQueryError",
     "ClickHouseUnavailableError",
+    "ConnectionMode",
     "HostConnection",
     "InstallationLevel",
     "PreflightResult",
@@ -66,6 +76,7 @@ __all__ = [
     "detect_clickhouse_state",
     "get_available_clickhouse_host",
     "get_client",
+    "get_connection_mode",
 ]
 
 

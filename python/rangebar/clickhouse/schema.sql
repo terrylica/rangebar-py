@@ -1,44 +1,15 @@
 -- ClickHouse schema for rangebar cache
--- Two-tier caching: raw trades (Tier 1) + computed range bars (Tier 2)
+-- Stores computed range bars (Tier 2)
+--
+-- Note: Raw tick data (Tier 1) is stored locally using Parquet files.
+-- See rangebar.storage.TickStorage for tick data caching.
 --
 -- Usage:
 --   CREATE DATABASE IF NOT EXISTS rangebar_cache;
 --   Then run this file or use RangeBarCache._ensure_schema()
 
 -- ============================================================================
--- Tier 1: Raw Trades Cache
--- ============================================================================
--- Stores original aggregated trade data from exchanges (e.g., Binance aggTrades)
--- Used to avoid re-downloading data when recomputing with different thresholds
-
-CREATE TABLE IF NOT EXISTS rangebar_cache.raw_trades (
-    -- Symbol identifier (e.g., "BTCUSDT")
-    symbol LowCardinality(String),
-
-    -- Trade timestamp in milliseconds since epoch
-    timestamp_ms Int64,
-
-    -- Price and quantity
-    price Float64,
-    quantity Float64,
-
-    -- Optional: Binance aggTrades fields
-    agg_trade_id Int64 DEFAULT 0,
-    first_trade_id Int64 DEFAULT 0,
-    last_trade_id Int64 DEFAULT 0,
-    is_buyer_maker UInt8 DEFAULT 0,
-
-    -- Metadata
-    inserted_at DateTime64(3) DEFAULT now64(3)
-)
-ENGINE = ReplacingMergeTree(inserted_at)
--- Partition by symbol and month for efficient time-range queries
-PARTITION BY (symbol, toYYYYMM(toDateTime(timestamp_ms / 1000)))
--- Order by symbol, time, trade ID for deduplication and range scans
-ORDER BY (symbol, timestamp_ms, agg_trade_id);
-
--- ============================================================================
--- Tier 2: Computed Range Bars Cache
+-- Computed Range Bars Cache (Tier 2)
 -- ============================================================================
 -- Stores computed range bars with all parameters as cache key
 -- Cache hit requires exact match on: symbol, threshold, time range

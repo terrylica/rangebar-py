@@ -39,7 +39,9 @@ fn bench_throughput_1k(c: &mut Criterion) {
     c.bench_function("process_1k_trades", |b| {
         b.iter(|| {
             let mut processor = RangeBarProcessor::new(250).unwrap(); // 250 bps = 0.25%
-            processor.process_agg_trade_records(black_box(&trades)).unwrap();
+            processor
+                .process_agg_trade_records(black_box(&trades))
+                .unwrap();
         });
     });
 }
@@ -51,7 +53,9 @@ fn bench_throughput_100k(c: &mut Criterion) {
     c.bench_function("process_100k_trades", |b| {
         b.iter(|| {
             let mut processor = RangeBarProcessor::new(250).unwrap();
-            processor.process_agg_trade_records(black_box(&trades)).unwrap();
+            processor
+                .process_agg_trade_records(black_box(&trades))
+                .unwrap();
         });
     });
 }
@@ -63,7 +67,9 @@ fn bench_throughput_1m(c: &mut Criterion) {
     c.bench_function("process_1m_trades", |b| {
         b.iter(|| {
             let mut processor = RangeBarProcessor::new(250).unwrap();
-            processor.process_agg_trade_records(black_box(&trades)).unwrap();
+            processor
+                .process_agg_trade_records(black_box(&trades))
+                .unwrap();
         });
     });
 }
@@ -78,7 +84,9 @@ fn bench_throughput_scaling(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
             b.iter(|| {
                 let mut processor = RangeBarProcessor::new(250).unwrap();
-                processor.process_agg_trade_records(black_box(&trades)).unwrap();
+                processor
+                    .process_agg_trade_records(black_box(&trades))
+                    .unwrap();
             });
         });
     }
@@ -98,7 +106,9 @@ fn bench_threshold_impact(c: &mut Criterion) {
             |b, &threshold| {
                 b.iter(|| {
                     let mut processor = RangeBarProcessor::new(threshold).unwrap();
-                    processor.process_agg_trade_records(black_box(&trades)).unwrap();
+                    processor
+                        .process_agg_trade_records(black_box(&trades))
+                        .unwrap();
                 });
             },
         );
@@ -114,7 +124,9 @@ fn bench_memory_allocations(c: &mut Criterion) {
     c.bench_function("memory_allocations_1m", |b| {
         b.iter(|| {
             let mut processor = RangeBarProcessor::new(250).unwrap();
-            let result = processor.process_agg_trade_records(black_box(&trades)).unwrap();
+            let result = processor
+                .process_agg_trade_records(black_box(&trades))
+                .unwrap();
             black_box(result); // Ensure result isn't optimized away
         });
     });

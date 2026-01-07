@@ -1,6 +1,6 @@
 [package]
 name = "rangebar-py"
-version = "2.0.2"
+version = "2.1.0"
 edition = "2021"
 authors = ["Terry Li"]
 license = "MIT"
@@ -15,7 +15,10 @@ crate-type = ["cdylib"]  # Python extension module only
 [dependencies]
 # Import rangebar-core from crates.io (ZERO changes to upstream)
 # Note: The dependency name uses hyphens, resolved as rangebar_core in Rust code
-rangebar-core = "5.0"
+rangebar-core = "5.1"
+
+# Optional: Exness forex data provider (enable with 'exness' feature)
+rangebar-providers = { version = "5.1", optional = true, default-features = false, features = ["exness"] }
 
 # PyO3 for Python bindings
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
@@ -24,6 +27,10 @@ pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+[features]
+default = []
+exness = ["rangebar-providers"]
 
 [build-dependencies]
 pyo3-build-config = "0.22"
@@ -48,3 +55,14 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 needless_pass_by_value = "allow"  # PyO3 requires owned values for Python bindings
 useless_conversion = "allow"  # PyO3 error handling patterns
+upper_case_acronyms = "allow"  # Forex pairs use industry standard names (EURUSD, GBPUSD)
+trivially_copy_pass_by_ref = "allow"  # PyO3 enum patterns
+similar_names = "allow"  # ask/agg patterns in finance
+cast_possible_truncation = "allow"  # Known-safe timestamp conversions
+cast_sign_loss = "allow"  # Known-safe timestamp conversions
+cast_precision_loss = "allow"  # Known-safe f64 timestamp conversions
+cast_possible_wrap = "allow"  # index to i64 is safe within bounds
+wildcard_imports = "allow"  # Module-level use super::* is idiomatic
+use_self = "allow"  # Explicit type names in match arms for clarity
+doc_markdown = "allow"  # Allow plain technical terms in docs
+return_self_not_must_use = "allow"  # Builder pattern returns
