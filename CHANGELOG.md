@@ -39,6 +39,18 @@
 
 <!-- version list -->
 
+## v3.0.0 (2026-01-07)
+
+### Features
+
+- **polars**: Add Python pipeline optimization with lazy evaluation
+  ([`8457a7f`](https://github.com/terrylica/rangebar-py/commit/8457a7fc596d9bd808ca2c607365e163a134a7cb))
+
+### Breaking Changes
+
+- **polars**: None - all existing APIs remain unchanged
+
+
 ## v2.0.2 (2025-12-29)
 
 ### Bug Fixes
