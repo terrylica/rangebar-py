@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1767759042813,
+  "lastUpdate": 1767845475014,
   "repoUrl": "https://github.com/terrylica/rangebar-py",
   "entries": {
     "Python API Benchmarks": [
@@ -1976,6 +1976,49 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.013495615445055292",
             "extra": "mean: 472.50652900000034 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "terrylica",
+            "username": "terrylica",
+            "email": "terry@eonlabs.com"
+          },
+          "committer": {
+            "name": "terrylica",
+            "username": "terrylica",
+            "email": "terry@eonlabs.com"
+          },
+          "id": "862fb4015c2cbf5b79ec3cff05c118cb1570b707",
+          "message": "docs: align documentation with v4.0.1 and get_range_bars() API\n\n- CHANGELOG.md: Fix header format, add v4.0.0 entry\n- CLAUDE.md: Update primary API references to get_range_bars()\n  - Common Tasks table now shows get_range_bars() as recommended\n  - API Selection Guide updated with data fetching flow\n  - Integration Workflow uses new API\n- docs/api.md: Major update from v0.1.0 to v4.0.1\n  - Add get_range_bars() as Primary API section\n  - Add Configuration Constants section\n  - Update Quick Reference to show new patterns\n  - Update version and timestamp",
+          "timestamp": "2026-01-08T03:06:31Z",
+          "url": "https://github.com/terrylica/rangebar-py/commit/862fb4015c2cbf5b79ec3cff05c118cb1570b707"
+        },
+        "date": 1767845474728,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_performance.py::TestThroughputBenchmarks::test_throughput_1k_trades",
+            "value": 600.113832302182,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000029235720263710508",
+            "extra": "mean: 1.6663505258056757 msec\nrounds: 620"
+          },
+          {
+            "name": "tests/test_performance.py::TestThroughputBenchmarks::test_throughput_100k_trades",
+            "value": 21.403168973239747,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0012607439758827196",
+            "extra": "mean: 46.722053227271815 msec\nrounds: 22"
+          },
+          {
+            "name": "tests/test_performance.py::TestThroughputBenchmarks::test_throughput_1m_trades",
+            "value": 2.0967694098704235,
+            "unit": "iter/sec",
+            "range": "stddev: 0.033563519416625186",
+            "extra": "mean: 476.92416500000263 msec\nrounds: 5"
           }
         ]
       }
