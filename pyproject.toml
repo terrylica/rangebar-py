@@ -52,7 +52,9 @@ Documentation = "https://github.com/terrylica/rangebar-py#readme"
 [tool.maturin]
 python-source = "python"
 module-name = "rangebar._core"
-features = ["pyo3/extension-module"]
+# Include data-providers for full API (get_range_bars with automatic data fetching)
+# This is now default in Cargo.toml, but explicit here for documentation
+features = ["pyo3/extension-module", "data-providers"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
