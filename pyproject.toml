@@ -150,11 +150,19 @@ ignore = [
 "python/rangebar/__init__.pyi" = [
     "PYI021",  # Docstrings in stubs (kept for documentation)
     "PYI034",  # Self return type (intentional RangeBarCache return)
+    "E501",    # Line too long (docstring examples)
 ]
 "python/rangebar/__init__.py" = [
     "F821",    # Forward references for type hints
     "SIM108",  # Ternary operator (readability preference)
     "PLC0415", # Lazy imports for optional ClickHouse dependencies
+    "PLR0912", # Too many branches (get_range_bars is comprehensive)
+    "PLR0913", # Too many arguments (get_range_bars exposes full API)
+    "PLR0915", # Too many statements (get_range_bars is entry point)
+    "F401",    # Unused imports (polars used for type hints)
+    "PD901",   # Generic variable name 'df'
+    "TRY300",  # Consider moving to else block
+    "E501",    # Line too long (docstring examples)
 ]
 "python/rangebar/clickhouse/*.py" = [
     "PD901",   # Generic variable name 'df' (common in data processing)

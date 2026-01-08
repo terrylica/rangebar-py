@@ -3,11 +3,14 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use rangebar_core::{AggTrade, FixedPoint, RangeBar, RangeBarProcessor};
 
-#[cfg(feature = "exness")]
+#[cfg(feature = "data-providers")]
 use rangebar_providers::exness::{
     ExnessInstrument, ExnessRangeBar, ExnessRangeBarBuilder, ExnessTick, SpreadStats,
     ValidationStrictness,
 };
+
+#[cfg(feature = "data-providers")]
+use rangebar_providers::binance::HistoricalDataLoader;
 
 /// Convert f64 to `FixedPoint` (8 decimal precision)
 fn f64_to_fixed_point(value: f64) -> FixedPoint {
@@ -186,7 +189,7 @@ impl PyRangeBarProcessor {
 // Exness Bindings (feature-gated)
 // ============================================================================
 
-#[cfg(feature = "exness")]
+#[cfg(feature = "data-providers")]
 mod exness_bindings {
     use super::*;
 
@@ -451,14 +454,137 @@ fn _core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRangeBarProcessor>()?;
 
     // Add Exness classes if feature enabled
-    #[cfg(feature = "exness")]
+    #[cfg(feature = "data-providers")]
     {
         m.add_class::<exness_bindings::PyExnessInstrument>()?;
         m.add_class::<exness_bindings::PyValidationStrictness>()?;
         m.add_class::<exness_bindings::PyExnessRangeBarBuilder>()?;
+        m.add_class::<binance_bindings::PyMarketType>()?;
+        m.add_function(wrap_pyfunction!(
+            binance_bindings::fetch_binance_aggtrades,
+            m
+        )?)?;
     }
 
     Ok(())
+}
+
+// ============================================================================
+// Binance Bindings (feature-gated)
+// ============================================================================
+
+#[cfg(feature = "data-providers")]
+mod binance_bindings {
+    use super::*;
+    use chrono::NaiveDate;
+
+    /// Binance market type enum
+    #[pyclass(name = "MarketType", eq, eq_int)]
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub enum PyMarketType {
+        /// Spot market (BTCUSDT on spot.binance.com)
+        Spot = 0,
+        /// USD-M Futures (perpetual, USDT-margined)
+        FuturesUM = 1,
+        /// COIN-M Futures (perpetual, coin-margined)
+        FuturesCM = 2,
+    }
+
+    impl PyMarketType {
+        fn to_market_str(self) -> &'static str {
+            match self {
+                Self::Spot => "spot",
+                Self::FuturesUM => "um",
+                Self::FuturesCM => "cm",
+            }
+        }
+    }
+
+    /// Fetch Binance aggTrades data for a symbol and date range.
+    ///
+    /// Downloads from data.binance.vision and returns as list of trade dicts.
+    /// This is an internal function - use `get_range_bars()` in Python for
+    /// the high-level API that handles caching and processing automatically.
+    ///
+    /// Args:
+    ///     symbol: Trading pair (e.g., "BTCUSDT")
+    ///     start_date: Start date as "YYYY-MM-DD"
+    ///     end_date: End date as "YYYY-MM-DD"
+    ///     market_type: Market type (Spot, FuturesUM, FuturesCM)
+    ///
+    /// Returns:
+    ///     List of trade dicts with keys: timestamp, price, quantity, agg_trade_id,
+    ///     first_trade_id, last_trade_id, is_buyer_maker
+    #[pyfunction]
+    #[pyo3(signature = (symbol, start_date, end_date, market_type = PyMarketType::Spot))]
+    pub fn fetch_binance_aggtrades(
+        py: Python,
+        symbol: &str,
+        start_date: &str,
+        end_date: &str,
+        market_type: PyMarketType,
+    ) -> PyResult<Vec<PyObject>> {
+        // Parse dates
+        let start = NaiveDate::parse_from_str(start_date, "%Y-%m-%d")
+            .map_err(|e| PyValueError::new_err(format!("Invalid start_date format: {e}")))?;
+        let end = NaiveDate::parse_from_str(end_date, "%Y-%m-%d")
+            .map_err(|e| PyValueError::new_err(format!("Invalid end_date format: {e}")))?;
+
+        if start > end {
+            return Err(PyValueError::new_err("start_date must be <= end_date"));
+        }
+
+        // Create loader with market type
+        let loader = HistoricalDataLoader::new_with_market(symbol, market_type.to_market_str());
+
+        // Create tokio runtime and fetch data
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {e}")))?;
+
+        // Load each day in the range
+        let mut all_trades = Vec::new();
+        let mut current_date = start;
+
+        while current_date <= end {
+            let day_result = rt.block_on(loader.load_single_day_trades(current_date));
+            match day_result {
+                Ok(mut day_trades) => all_trades.append(&mut day_trades),
+                Err(e) => {
+                    // Skip days with no data (weekends, holidays, etc.)
+                    eprintln!("Warning: No data for {}: {}", current_date, e);
+                }
+            }
+            current_date += chrono::Duration::days(1);
+        }
+
+        if all_trades.is_empty() {
+            return Err(PyRuntimeError::new_err(format!(
+                "No data available for {} from {} to {}",
+                symbol, start_date, end_date
+            )));
+        }
+
+        // Sort by timestamp
+        all_trades.sort_by_key(|trade| trade.timestamp);
+
+        // Convert AggTrades to Python dicts
+        let mut results = Vec::with_capacity(all_trades.len());
+        for trade in &all_trades {
+            let dict = PyDict::new_bound(py);
+            // Timestamp is already in microseconds from rangebar-core
+            // Convert to milliseconds for Python API consistency
+            dict.set_item("timestamp", trade.timestamp / 1000)?;
+            dict.set_item("price", trade.price.to_f64())?;
+            dict.set_item("quantity", trade.volume.to_f64())?;
+            dict.set_item("agg_trade_id", trade.agg_trade_id)?;
+            dict.set_item("first_trade_id", trade.first_trade_id)?;
+            dict.set_item("last_trade_id", trade.last_trade_id)?;
+            dict.set_item("is_buyer_maker", trade.is_buyer_maker)?;
+            results.push(dict.into());
+        }
+
+        Ok(results)
+    }
 }
 
 #[cfg(test)]

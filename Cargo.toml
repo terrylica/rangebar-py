@@ -15,10 +15,14 @@ crate-type = ["cdylib"]  # Python extension module only
 [dependencies]
 # Import rangebar-core from crates.io (ZERO changes to upstream)
 # Note: The dependency name uses hyphens, resolved as rangebar_core in Rust code
-rangebar-core = "5.1"
+rangebar-core = "5.2"
 
-# Optional: Exness forex data provider (enable with 'exness' feature)
-rangebar-providers = { version = "5.1", optional = true, default-features = false, features = ["exness"] }
+# Data providers: Binance (crypto) + Exness (forex)
+# all-providers feature enables both data sources
+rangebar-providers = { version = "5.2", optional = true, features = ["all-providers"] }
+
+# Async runtime for data fetching
+tokio = { version = "1.0", features = ["rt-multi-thread"], optional = true }
 
 # PyO3 for Python bindings
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
@@ -30,7 +34,11 @@ serde_json = "1.0"
 
 [features]
 default = []
-exness = ["rangebar-providers"]
+# Enable data fetching from all providers (Binance + Exness)
+data-providers = ["rangebar-providers", "tokio"]
+# Legacy feature aliases
+exness = ["data-providers"]
+binance = ["data-providers"]
 
 [build-dependencies]
 pyo3-build-config = "0.22"

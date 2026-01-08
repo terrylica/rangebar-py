@@ -1,434 +1,193 @@
-"""Type stubs for rangebar package."""
+"""Type stubs for rangebar package.
 
-from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
-from enum import Enum, IntEnum
-from typing import Literal, TypedDict
+Public API
+----------
+get_range_bars : Get range bars with automatic data fetching and caching.
+TIER1_SYMBOLS : High-liquidity symbols available on all Binance markets.
+THRESHOLD_PRESETS : Named threshold presets (micro, tight, standard, etc.).
+THRESHOLD_MIN : Minimum valid threshold (1 = 0.1bps).
+THRESHOLD_MAX : Maximum valid threshold (100,000 = 10,000bps).
+__version__ : Package version string.
+"""
+
+from typing import Literal
 
 import pandas as pd
-import polars as pl
 
 __version__: str
 
 # ============================================================================
-# Exness Types (feature-gated)
+# Configuration Constants
 # ============================================================================
 
-class ExnessInstrument(IntEnum):
-    """Exness forex instruments (Raw_Spread variant).
+TIER1_SYMBOLS: tuple[str, ...]
+"""18 high-liquidity symbols available on ALL Binance markets.
 
-    10 instruments validated against ~/eon/exness-data-preprocess (453M+ ticks).
-    """
+AAVE, ADA, AVAX, BCH, BNB, BTC, DOGE, ETH, FIL,
+LINK, LTC, NEAR, SOL, SUI, UNI, WIF, WLD, XRP
+"""
 
-    EURUSD = 0
-    GBPUSD = 1
-    USDJPY = 2
-    AUDUSD = 3
-    USDCAD = 4
-    NZDUSD = 5
-    EURGBP = 6
-    EURJPY = 7
-    GBPJPY = 8
-    XAUUSD = 9
+THRESHOLD_MIN: int
+"""Minimum valid threshold: 1 (0.1bps = 0.001%)"""
 
-    @property
-    def symbol(self) -> str: ...
-    @property
-    def raw_spread_symbol(self) -> str: ...
-    @property
-    def is_jpy_pair(self) -> bool: ...
-    @staticmethod
-    def all() -> list[ExnessInstrument]: ...
+THRESHOLD_MAX: int
+"""Maximum valid threshold: 100,000 (10,000bps = 100%)"""
 
-class ValidationStrictness(IntEnum):
-    """Validation strictness level for Exness tick processing."""
+THRESHOLD_PRESETS: dict[str, int]
+"""Named threshold presets (in 0.1bps units).
 
-    Permissive = 0  # Basic checks only (bid > 0, ask > 0, bid < ask)
-    Strict = 1  # + Spread < 10% [DEFAULT]
-    Paranoid = 2  # + Spread < 1%
-
-class SpreadStatsDict(TypedDict):
-    """Spread statistics dictionary."""
-
-    min_spread: float
-    max_spread: float
-    avg_spread: float
-    tick_count: int
-
-class ExnessRangeBarBuilder:
-    """Builder for processing Exness tick data into range bars."""
-
-    threshold_bps: int
-    instrument: ExnessInstrument
-
-    def __init__(
-        self,
-        instrument: ExnessInstrument,
-        threshold_bps: int,
-        strictness: ValidationStrictness = ...,
-    ) -> None:
-        """Initialize builder for instrument.
-
-        Parameters
-        ----------
-        instrument : ExnessInstrument
-            Exness instrument enum value
-        threshold_bps : int
-            Threshold in 0.1 basis point units (250 = 25bps = 0.25%)
-        strictness : ValidationStrictness
-            Validation strictness level (default: Strict)
-
-        Raises
-        ------
-        ValueError
-            If threshold_bps is out of valid range [1, 100_000]
-        """
-
-    def process_tick(
-        self, tick: dict[str, float | int]
-    ) -> dict[str, str | float | int | SpreadStatsDict] | None:
-        """Process a single tick.
-
-        Parameters
-        ----------
-        tick : Dict
-            Tick dictionary with keys: bid, ask, timestamp_ms
-
-        Returns
-        -------
-        Dict or None
-            Range bar dictionary if bar completed, None if still accumulating
-
-        Raises
-        ------
-        KeyError
-            If required tick fields are missing
-        RuntimeError
-            If tick validation fails (crossed market, excessive spread)
-        """
-
-    def process_ticks(
-        self, ticks: list[dict[str, float | int]]
-    ) -> list[dict[str, str | float | int | SpreadStatsDict]]:
-        """Process multiple ticks at once.
-
-        Parameters
-        ----------
-        ticks : List[Dict]
-            List of tick dictionaries with keys: bid, ask, timestamp_ms
-
-        Returns
-        -------
-        List[Dict]
-            List of completed range bar dictionaries
-        """
-
-    def get_incomplete_bar(
-        self,
-    ) -> dict[str, str | float | int | SpreadStatsDict] | None:
-        """Get incomplete bar if exists.
-
-        Returns
-        -------
-        Dict or None
-            Partial bar dictionary if bar in progress, None otherwise
-        """
-
-def process_exness_ticks_to_dataframe(
-    ticks: pd.DataFrame | Sequence[dict[str, float | int]],
-    instrument: ExnessInstrument,
-    threshold_bps: int = 250,
-    strictness: ValidationStrictness | None = None,
-) -> pd.DataFrame:
-    """Process Exness tick data to range bars DataFrame.
-
-    Parameters
-    ----------
-    ticks : pd.DataFrame or Sequence[Dict]
-        Tick data with columns/keys: bid, ask, timestamp_ms
-    instrument : ExnessInstrument
-        Exness instrument enum value
-    threshold_bps : int, default=250
-        Threshold in 0.1bps units (250 = 25bps = 0.25%)
-    strictness : ValidationStrictness, optional
-        Validation strictness level (default: Strict)
-
-    Returns
-    -------
-    pd.DataFrame
-        OHLCV DataFrame with DatetimeIndex, compatible with backtesting.py.
-        Additional column: spread_stats (dict with min/max/avg spread)
-
-    Raises
-    ------
-    ImportError
-        If Exness feature is not enabled
-    ValueError
-        If required columns are missing or threshold is invalid
-    RuntimeError
-        If tick validation fails (crossed market, excessive spread)
-    """
-
-def is_exness_available() -> bool:
-    """Check if Exness feature is available.
-
-    Returns
-    -------
-    bool
-        True if Exness bindings are available, False otherwise
-    """
+- "micro": 10 (1bps = 0.01%) - scalping
+- "tight": 50 (5bps = 0.05%) - day trading
+- "standard": 100 (10bps = 0.1%) - swing trading
+- "medium": 250 (25bps = 0.25%) - default
+- "wide": 500 (50bps = 0.5%) - position trading
+- "macro": 1000 (100bps = 1%) - long-term
+"""
 
 # ============================================================================
-# ClickHouse Cache Types
+# Main API
 # ============================================================================
 
-class ConnectionMode(str, Enum):
-    """Connection mode for ClickHouse cache."""
-
-    LOCAL = "local"
-    CLOUD = "cloud"
-    AUTO = "auto"
-
-def get_connection_mode() -> ConnectionMode:
-    """Get the connection mode from RANGEBAR_MODE environment variable."""
-
-class InstallationLevel(IntEnum):
-    """ClickHouse installation state levels."""
-
-    ENV_NOT_CONFIGURED = -1
-    NOT_INSTALLED = 0
-    INSTALLED_NOT_RUNNING = 1
-    RUNNING_NO_SCHEMA = 2
-    FULLY_CONFIGURED = 3
-
-@dataclass
-class PreflightResult:
-    """Result of preflight detection."""
-
-    level: InstallationLevel
-    version: str | None = None
-    binary_path: str | None = None
-    message: str = ""
-    action_required: str | None = None
-
-@dataclass
-class HostConnection:
-    """Connection details for a ClickHouse host."""
-
-    host: str
-    method: Literal["local", "direct", "ssh_tunnel"]
-    port: int = 8123
-
-@dataclass(frozen=True)
-class CacheKey:
-    """Cache key for range bar lookups."""
-
-    symbol: str
-    threshold_bps: int
-    start_ts: int
-    end_ts: int
-
-    @property
-    def hash_key(self) -> str: ...
-
-class ClickHouseNotConfiguredError(RuntimeError):
-    """Raised when no ClickHouse hosts configured and localhost unavailable."""
-
-    def __init__(self, message: str | None = None) -> None: ...
-
-class RangeBarCache:
-    """ClickHouse cache for computed range bars.
-
-    For raw tick data storage, use `rangebar.storage.TickStorage` instead.
-    """
-
-    def __init__(self, client: object | None = None) -> None:
-        """Initialize cache with ClickHouse connection."""
-
-    def close(self) -> None:
-        """Close client and tunnel if owned."""
-
-    def store_range_bars(
-        self, key: CacheKey, bars: pd.DataFrame, version: str = ""
-    ) -> int:
-        """Store computed range bars in cache."""
-
-    def get_range_bars(self, key: CacheKey) -> pd.DataFrame | None:
-        """Get cached range bars."""
-
-    def has_range_bars(self, key: CacheKey) -> bool:
-        """Check if range bars exist in cache."""
-
-    def invalidate_range_bars(self, key: CacheKey) -> int:
-        """Invalidate (delete) cached range bars."""
-
-    def __enter__(self) -> RangeBarCache: ...
-    def __exit__(self, *args: object) -> None: ...
-
-def detect_clickhouse_state() -> PreflightResult:
-    """Detect ClickHouse installation state on localhost."""
-
-def get_available_clickhouse_host() -> HostConnection:
-    """Find best available ClickHouse host."""
-
-class RangeBarProcessor:
-    """Process tick-level trade data into range bars."""
-
-    threshold_bps: int
-
-    def __init__(self, threshold_bps: int) -> None:
-        """Initialize processor with given threshold.
-
-        Parameters
-        ----------
-        threshold_bps : int
-            Threshold in 0.1 basis point units (250 = 25bps = 0.25%)
-
-        Raises
-        ------
-        ValueError
-            If threshold_bps is out of valid range [1, 100_000]
-        """
-
-    def process_trades(
-        self, trades: list[dict[str, int | float]]
-    ) -> list[dict[str, str | float | int]]:
-        """Process trades into range bars.
-
-        Parameters
-        ----------
-        trades : List[Dict]
-            List of trade dictionaries with required keys:
-            timestamp, price, quantity (or volume)
-
-        Returns
-        -------
-        List[Dict]
-            List of range bar dictionaries
-
-        Raises
-        ------
-        KeyError
-            If required trade fields are missing
-        RuntimeError
-            If trades are not sorted chronologically
-        """
-
-    def to_dataframe(self, bars: list[dict[str, str | float | int]]) -> pd.DataFrame:
-        """Convert range bars to pandas DataFrame.
-
-        Parameters
-        ----------
-        bars : List[Dict]
-            List of range bar dictionaries from process_trades()
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with DatetimeIndex and OHLCV columns
-        """
-
-def process_trades_to_dataframe(
-    trades: list[dict[str, int | float]] | pd.DataFrame,
-    threshold_bps: int = 250,
-) -> pd.DataFrame:
-    """Convenience function to process trades directly to DataFrame.
-
-    Parameters
-    ----------
-    trades : List[Dict] or pd.DataFrame
-        Trade data with columns/keys: timestamp, price, quantity
-    threshold_bps : int, default=250
-        Threshold in 0.1bps units (250 = 25bps = 0.25%)
-
-    Returns
-    -------
-    pd.DataFrame
-        OHLCV DataFrame ready for backtesting.py
-
-    Raises
-    ------
-    ValueError
-        If required columns are missing or threshold is invalid
-    RuntimeError
-        If trades are not sorted chronologically
-    """
-
-def process_trades_to_dataframe_cached(
-    trades: list[dict[str, int | float]] | pd.DataFrame,
+def get_range_bars(
     symbol: str,
-    threshold_bps: int = 250,
-    cache: RangeBarCache | None = None,
+    start_date: str,
+    end_date: str,
+    threshold_bps: (
+        int | Literal["micro", "tight", "standard", "medium", "wide", "macro"]
+    ) = 250,
+    *,
+    # Data source configuration
+    source: Literal["binance", "exness"] = "binance",
+    market: Literal["spot", "futures-um", "futures-cm", "um", "cm"] = "spot",
+    # Exness-specific options
+    validation: Literal["permissive", "strict", "paranoid"] = "strict",
+    # Processing options
+    include_incomplete: bool = False,
+    include_microstructure: bool = False,
+    # Caching options
+    use_cache: bool = True,
+    cache_dir: str | None = None,
 ) -> pd.DataFrame:
-    """Process trades to DataFrame with two-tier ClickHouse caching.
+    """Get range bars for a symbol with automatic data fetching and caching.
+
+    This is the single entry point for all range bar generation. It supports
+    multiple data sources (Binance crypto, Exness forex), all market types,
+    and exposes the full configurability of the underlying Rust engine.
 
     Parameters
     ----------
-    trades : List[Dict] or pd.DataFrame
-        Trade data with columns/keys: timestamp, price, quantity
     symbol : str
-        Trading symbol (e.g., "BTCUSDT"). Used as cache key.
-    threshold_bps : int, default=250
-        Threshold in 0.1bps units (250 = 25bps = 0.25%)
-    cache : RangeBarCache | None
-        External cache instance. If None, creates one (preflight runs).
+        Trading symbol (uppercase).
+        - Binance: "BTCUSDT", "ETHUSDT", etc.
+        - Exness: "EURUSD", "GBPUSD", "XAUUSD", etc.
+    start_date : str
+        Start date in YYYY-MM-DD format.
+    end_date : str
+        End date in YYYY-MM-DD format.
+    threshold_bps : int or str, default=250
+        Threshold in 0.1bps units. Can be:
+        - Integer: Direct value (250 = 25bps = 0.25%)
+        - String preset: "micro" (1bps), "tight" (5bps), "standard" (10bps),
+          "medium" (25bps), "wide" (50bps), "macro" (100bps)
+        Valid range: 1-100,000 (0.001% to 100%)
+
+    source : str, default="binance"
+        Data source: "binance" or "exness"
+    market : str, default="spot"
+        Market type (Binance only):
+        - "spot": Spot market
+        - "futures-um" or "um": USD-M perpetual futures
+        - "futures-cm" or "cm": COIN-M perpetual futures
+    validation : str, default="strict"
+        Validation strictness (Exness only):
+        - "permissive": Basic checks (bid > 0, ask > 0, bid < ask)
+        - "strict": + Spread < 10% (catches obvious errors)
+        - "paranoid": + Spread < 1% (flags suspicious data)
+    include_incomplete : bool, default=False
+        Include the final incomplete bar (useful for analysis).
+        If False (default), only completed bars are returned.
+    include_microstructure : bool, default=False
+        Include market microstructure columns:
+        - buy_volume, sell_volume: Volume by aggressor side
+        - vwap: Volume-weighted average price
+        - trade_count: Number of trades in bar
+        - (Exness) spread_min, spread_max, spread_avg: Spread statistics
+    use_cache : bool, default=True
+        Cache tick data locally in Parquet format.
+    cache_dir : str or None, default=None
+        Custom cache directory. If None, uses platform default:
+        - macOS: ~/Library/Caches/rangebar/
+        - Linux: ~/.cache/rangebar/
+        - Windows: %LOCALAPPDATA%/terrylica/rangebar/Cache/
 
     Returns
     -------
     pd.DataFrame
-        OHLCV DataFrame ready for backtesting.py
+        OHLCV DataFrame ready for backtesting.py, with:
+        - DatetimeIndex (timestamp)
+        - Columns: Open, High, Low, Close, Volume
+        - (if include_microstructure) Additional columns
 
     Raises
     ------
-    ClickHouseNotConfiguredError
-        If no ClickHouse hosts available
     ValueError
-        If required columns are missing or threshold is invalid
+        - Invalid threshold (outside 1-100,000 range)
+        - Invalid dates or date format
+        - Unknown source, market, or validation level
+        - Unknown threshold preset name
     RuntimeError
-        If trades are not sorted chronologically
-    """
+        - Data fetching failed
+        - No data available for date range
+        - Feature not enabled (e.g., Exness without exness feature)
 
-# ============================================================================
-# Optimized Processing APIs
-# ============================================================================
+    Examples
+    --------
+    Basic usage - Binance spot:
 
-def process_trades_chunked(
-    trades_iterator: Iterator[dict[str, int | float]],
-    threshold_bps: int = 250,
-    chunk_size: int = 100_000,
-) -> Iterator[pd.DataFrame]:
-    """Process trades in chunks to avoid memory spikes.
+    >>> from rangebar import get_range_bars
+    >>> df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
 
-    Parameters
-    ----------
-    trades_iterator : Iterator[Dict]
-        Iterator yielding trade dicts with keys: timestamp, price, quantity
-    threshold_bps : int, default=250
-        Threshold in 0.1bps units (250 = 25bps = 0.25%)
-    chunk_size : int, default=100_000
-        Number of trades per chunk
+    Using threshold presets:
 
-    Yields
-    ------
-    pd.DataFrame
-        OHLCV bars for each chunk (partial bars may occur at boundaries)
-    """
+    >>> df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", threshold_bps="tight")
 
-def process_trades_polars(
-    trades: pl.DataFrame | pl.LazyFrame,
-    threshold_bps: int = 250,
-) -> pd.DataFrame:
-    """Process trades from Polars DataFrame (optimized pipeline).
+    Binance USD-M Futures:
 
-    Parameters
-    ----------
-    trades : polars.DataFrame or polars.LazyFrame
-        Trade data with columns: timestamp (int64 ms), price, quantity
-    threshold_bps : int, default=250
-        Threshold in 0.1bps units (250 = 25bps = 0.25%)
+    >>> df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", market="futures-um")
 
-    Returns
-    -------
-    pd.DataFrame
-        OHLCV DataFrame ready for backtesting.py
+    Exness forex with spread monitoring:
+
+    >>> df = get_range_bars(
+    ...     "EURUSD", "2024-01-01", "2024-01-31",
+    ...     source="exness",
+    ...     threshold_bps="standard",
+    ...     include_microstructure=True,
+    ... )
+
+    Use with backtesting.py:
+
+    >>> from backtesting import Backtest, Strategy
+    >>> df = get_range_bars("BTCUSDT", "2024-01-01", "2024-12-31")
+    >>> bt = Backtest(df, MyStrategy, cash=10000, commission=0.0002)
+    >>> stats = bt.run()
+
+    Notes
+    -----
+    Threshold units (0.1bps):
+        The threshold is specified in tenths of basis points for precision.
+        Common conversions:
+        - 10 = 1bps = 0.01%
+        - 100 = 10bps = 0.1%
+        - 250 = 25bps = 0.25%
+        - 1000 = 100bps = 1%
+
+    Tier-1 symbols:
+        18 high-liquidity symbols available on ALL Binance markets:
+        AAVE, ADA, AVAX, BCH, BNB, BTC, DOGE, ETH, FIL,
+        LINK, LTC, NEAR, SOL, SUI, UNI, WIF, WLD, XRP
+
+    Non-lookahead guarantee:
+        - Threshold computed from bar OPEN price only
+        - Breaching trade included in closing bar
+        - No future information used in bar construction
     """

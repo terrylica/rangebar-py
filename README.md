@@ -35,68 +35,114 @@ Converts trade tick data into range bars for backtesting. Range bars close when 
 ## Quick Start
 
 ```python
-import pandas as pd
-from rangebar import process_trades_to_dataframe
+from rangebar import get_range_bars
 
-# Load trade data (Binance aggTrades format)
-trades = pd.read_csv("BTCUSDT-aggTrades.csv")
+# Fetch data and generate range bars in one call
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
 
-# Convert to range bars
-# threshold_bps: price movement threshold in 0.1 basis point units
-# 250 = 25 basis points = 0.25%
-data = process_trades_to_dataframe(trades, threshold_bps=250)
-
-# Output: DataFrame with Open, High, Low, Close, Volume columns
-print(data.head())
+# Use with backtesting.py
+from backtesting import Backtest, Strategy
+bt = Backtest(df, MyStrategy, cash=10000, commission=0.0002)
+stats = bt.run()
 ```
 
 ## API Reference
 
-### process_trades_to_dataframe
+### get_range_bars (Primary API)
+
+The single entry point for all range bar generation with automatic data fetching and caching.
 
 ```python
-def process_trades_to_dataframe(
-    trades: Union[List[Dict], pd.DataFrame],
-    threshold_bps: int = 250,
-) -> pd.DataFrame
+from rangebar import get_range_bars
+
+# Basic usage - Binance spot
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
+
+# Using threshold presets
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", threshold_bps="tight")
+
+# Binance USD-M Futures
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", market="futures-um")
+
+# With microstructure data (vwap, buy_volume, sell_volume)
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", include_microstructure=True)
 ```
 
 **Parameters**:
-- `trades`: Trade data with columns `timestamp` (ms), `price`, `quantity`
-- `threshold_bps`: Price movement threshold in 0.1 basis point units (default: 250 = 0.25%)
+- `symbol`: Trading symbol (e.g., "BTCUSDT", "ETHUSDT")
+- `start_date`: Start date in YYYY-MM-DD format
+- `end_date`: End date in YYYY-MM-DD format
+- `threshold_bps`: Threshold in 0.1bps units or preset name (default: 250 = 25bps = 0.25%)
+- `source`: Data source - "binance" or "exness" (default: "binance")
+- `market`: Market type - "spot", "futures-um"/"um", "futures-cm"/"cm" (default: "spot")
+- `include_microstructure`: Include vwap, buy_volume, sell_volume columns (default: False)
+- `use_cache`: Cache tick data locally (default: True)
 
 **Returns**: pandas DataFrame with DatetimeIndex and columns `Open`, `High`, `Low`, `Close`, `Volume`
 
-### RangeBarProcessor
+### Threshold Presets
+
+Use string presets for common threshold values:
+
+| Preset | Value | Percentage | Use Case |
+|--------|-------|------------|----------|
+| `"micro"` | 10 | 0.01% (1bps) | Scalping |
+| `"tight"` | 50 | 0.05% (5bps) | Day trading |
+| `"standard"` | 100 | 0.1% (10bps) | Swing trading |
+| `"medium"` | 250 | 0.25% (25bps) | Default |
+| `"wide"` | 500 | 0.5% (50bps) | Position trading |
+| `"macro"` | 1000 | 1% (100bps) | Long-term |
 
 ```python
-class RangeBarProcessor:
-    def __init__(self, threshold_bps: int) -> None
-    def process_trades(self, trades: List[Dict]) -> List[Dict]
-    def to_dataframe(self, bars: List[Dict]) -> pd.DataFrame
-    def reset(self) -> None
+from rangebar import get_range_bars, THRESHOLD_PRESETS
+
+# Using preset string
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_bps="tight")
+
+# Or numeric value
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_bps=50)
+
+# View all presets
+print(THRESHOLD_PRESETS)
+# {'micro': 10, 'tight': 50, 'standard': 100, 'medium': 250, 'wide': 500, 'macro': 1000}
 ```
 
-Lower-level API for custom workflows and stateful processing.
-
-### process_trades_polars
+### Configuration Constants
 
 ```python
-def process_trades_polars(
-    trades: Union[pl.DataFrame, pl.LazyFrame],
-    threshold_bps: int = 250,
-) -> pd.DataFrame
+from rangebar import TIER1_SYMBOLS, THRESHOLD_PRESETS, THRESHOLD_MIN, THRESHOLD_MAX
+
+# 18 high-liquidity symbols available on all Binance markets
+print(TIER1_SYMBOLS)
+# ('AAVE', 'ADA', 'AVAX', 'BCH', 'BNB', 'BTC', 'DOGE', 'ETH', 'FIL',
+#  'LINK', 'LTC', 'NEAR', 'SOL', 'SUI', 'UNI', 'WIF', 'WLD', 'XRP')
+
+# Valid threshold range
+print(f"Min: {THRESHOLD_MIN}, Max: {THRESHOLD_MAX}")
+# Min: 1, Max: 100000
 ```
 
-**Optimized API for Polars users** with lazy evaluation and minimal dict conversion.
+### Advanced APIs
 
-**Parameters**:
-- `trades`: Polars DataFrame or LazyFrame with columns `timestamp` (ms), `price`, `quantity`
-- `threshold_bps`: Price movement threshold (default: 250 = 0.25%)
+For users with existing tick data (not fetching from Binance):
 
-**Returns**: pandas DataFrame compatible with backtesting.py
+#### process_trades_to_dataframe
 
-**Example**:
+```python
+import pandas as pd
+from rangebar import process_trades_to_dataframe
+
+# Load your own trade data
+trades = pd.read_csv("BTCUSDT-aggTrades.csv")
+
+# Convert to range bars
+df = process_trades_to_dataframe(trades, threshold_bps=250)
+```
+
+#### process_trades_polars
+
+Optimized for Polars users with lazy evaluation:
+
 ```python
 import polars as pl
 from rangebar import process_trades_polars
@@ -106,51 +152,21 @@ lazy_df = pl.scan_parquet("trades.parquet").filter(pl.col("timestamp") >= start_
 bars = process_trades_polars(lazy_df, threshold_bps=250)
 ```
 
-**Performance**: 2-3x faster than `process_trades_to_dataframe()` for Polars inputs.
+#### process_trades_chunked
 
-### process_trades_chunked
+Memory-safe processing for large datasets:
 
-```python
-def process_trades_chunked(
-    trades_iterator: Iterator[Dict],
-    threshold_bps: int = 250,
-    chunk_size: int = 100_000,
-) -> Iterator[pd.DataFrame]
-```
-
-**Memory-safe processing** for large datasets without OOM.
-
-**Parameters**:
-- `trades_iterator`: Iterator yielding trade dictionaries
-- `threshold_bps`: Price movement threshold (default: 250 = 0.25%)
-- `chunk_size`: Trades per chunk (default: 100,000)
-
-**Yields**: DataFrames of OHLCV bars per chunk
-
-**Example**:
 ```python
 from rangebar import process_trades_chunked
 
 # Process 10M+ trades without OOM
-trades = load_large_dataset()  # Returns iterator
 for bars_df in process_trades_chunked(iter(trades), chunk_size=50_000):
     process_batch(bars_df)
 ```
 
-**Note**: Partial bars may occur at chunk boundaries.
-
-## Threshold Reference
-
-| threshold_bps | Percentage | Description |
-|---------------|------------|-------------|
-| 100 | 0.10% | Higher sensitivity |
-| 250 | 0.25% | Default |
-| 500 | 0.50% | Lower sensitivity |
-| 1000 | 1.00% | Lowest sensitivity |
-
 ## Requirements
 
-**Runtime**: Python >= 3.10, pandas >= 2.0, numpy >= 1.24
+**Runtime**: Python >= 3.10, pandas >= 2.0, numpy >= 1.24, polars >= 1.0
 
 **Optional**: backtesting >= 0.3 (for backtesting integration)
 
@@ -174,7 +190,7 @@ Python applications
 git clone https://github.com/terrylica/rangebar-py.git
 cd rangebar-py
 pip install maturin
-maturin develop
+maturin develop --features data-providers
 pytest tests/
 ```
 
