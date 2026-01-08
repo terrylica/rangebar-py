@@ -1,31 +1,107 @@
 # rangebar-py API Reference
 
-**Version**: 0.1.0
-**Last Updated**: 2024-11-15
+**Version**: 4.0.1
+**Last Updated**: 2026-01-08
 
 ---
 
 ## Overview
 
-rangebar-py provides a high-level Python API for converting trade data to range bars, optimized for backtesting.py integration. The package offers two usage patterns:
+rangebar-py provides a high-level Python API for converting trade data to range bars, optimized for backtesting.py integration. The package offers multiple usage patterns:
 
-1. **High-level**: `process_trades_to_dataframe()` - One-step conversion
-2. **Low-level**: `RangeBarProcessor` class - More control over processing
+1. **Primary**: `get_range_bars()` - Fetch and convert in one call (recommended)
+2. **High-level**: `process_trades_to_dataframe()` - Process existing trade data
+3. **Polars-optimized**: `process_trades_polars()` - 2-3x faster with Polars
+4. **Streaming**: `process_trades_chunked()` - Memory-safe for large datasets
 
 ---
 
 ## Quick Reference
 
 ```python
-from rangebar import process_trades_to_dataframe, RangeBarProcessor
+from rangebar import get_range_bars, process_trades_to_dataframe
 
-# Quick conversion
+# Primary API - fetch and convert in one call
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
+
+# With preset threshold
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30", threshold_bps="tight")
+
+# Using existing trade data
 df = process_trades_to_dataframe(trades, threshold_bps=250)
+```
 
-# Custom processing
-processor = RangeBarProcessor(threshold_bps=250)
-bars = processor.process_trades(trades)
-df = processor.to_dataframe(bars)
+---
+
+## Configuration Constants
+
+```python
+from rangebar import TIER1_SYMBOLS, THRESHOLD_PRESETS, THRESHOLD_MIN, THRESHOLD_MAX
+
+# 18 high-liquidity symbols available on all Binance markets
+TIER1_SYMBOLS  # ('AAVE', 'ADA', 'AVAX', 'BCH', 'BNB', 'BTC', ...)
+
+# Named threshold presets (in 0.1bps units)
+THRESHOLD_PRESETS  # {'micro': 10, 'tight': 50, 'standard': 100, 'medium': 250, 'wide': 500, 'macro': 1000}
+
+# Valid threshold range
+THRESHOLD_MIN  # 1 (0.001%)
+THRESHOLD_MAX  # 100000 (100%)
+```
+
+---
+
+## Primary API: `get_range_bars()`
+
+**The recommended single entry point for all range bar generation.**
+
+```python
+def get_range_bars(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    threshold_bps: int | str = 250,
+    *,
+    source: str = "binance",
+    market: str = "spot",
+    include_microstructure: bool = False,
+    use_cache: bool = True,
+) -> pd.DataFrame
+```
+
+### Parameters
+
+- **symbol**: Trading symbol (e.g., "BTCUSDT", "ETHUSDT")
+- **start_date**: Start date in YYYY-MM-DD format
+- **end_date**: End date in YYYY-MM-DD format
+- **threshold_bps**: Threshold in 0.1bps units or preset name (default: 250)
+  - Integer: `250` = 25bps = 0.25%
+  - Preset: `"micro"`, `"tight"`, `"standard"`, `"medium"`, `"wide"`, `"macro"`
+- **source**: Data source - `"binance"` or `"exness"` (default: `"binance"`)
+- **market**: Market type - `"spot"`, `"futures-um"`, `"futures-cm"` (default: `"spot"`)
+- **include_microstructure**: Include vwap, buy_volume, sell_volume (default: False)
+- **use_cache**: Cache tick data locally (default: True)
+
+### Returns
+
+- **pd.DataFrame**: OHLCV DataFrame with DatetimeIndex and columns `Open`, `High`, `Low`, `Close`, `Volume`
+
+### Example
+
+```python
+from rangebar import get_range_bars
+
+# Basic usage
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
+
+# Using preset threshold
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", threshold_bps="tight")
+
+# Binance USD-M Futures
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", market="futures-um")
+
+# With microstructure data
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", include_microstructure=True)
 ```
 
 ---
@@ -695,6 +771,6 @@ See [CHANGELOG.md](/CHANGELOG.md) for version history.
 
 ---
 
-**Last Updated**: 2024-11-15
-**API Version**: 0.1.0
+**Last Updated**: 2026-01-08
+**API Version**: 4.0.1
 **License**: MIT

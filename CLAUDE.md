@@ -14,21 +14,21 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 | When Claude is asked to... | Primary File | Function/Class |
 |---------------------------|--------------|----------------|
-| Generate range bars (basic) | `python/rangebar/__init__.py` | `process_trades_to_dataframe()` |
+| Generate range bars (recommended) | `python/rangebar/__init__.py` | `get_range_bars()` |
+| Generate range bars (existing data) | `python/rangebar/__init__.py` | `process_trades_to_dataframe()` |
 | Generate range bars (Polars) | `python/rangebar/__init__.py` | `process_trades_polars()` |
 | Process large datasets | `python/rangebar/__init__.py` | `process_trades_chunked()` |
-| Use ClickHouse cache | `python/rangebar/__init__.py` | `process_trades_to_dataframe_cached()` |
 | Debug PyO3 bindings | `src/lib.rs` | Check error handling section |
 | Read/write tick data | `python/rangebar/storage/parquet.py` | `TickStorage` class |
 
 ### API Selection Guide
 
 ```
-Input Data Type?
-├── pandas DataFrame → process_trades_to_dataframe()
-├── Polars DataFrame/LazyFrame → process_trades_polars() [2-3x faster]
-├── Iterator (large data) → process_trades_chunked()
-└── Need caching? → process_trades_to_dataframe_cached()
+Starting Point?
+├── Need data fetching? → get_range_bars() [PRIMARY API]
+├── Have pandas DataFrame → process_trades_to_dataframe()
+├── Have Polars DataFrame/LazyFrame → process_trades_polars() [2-3x faster]
+└── Have Iterator (large data) → process_trades_chunked()
 ```
 
 ### File-to-Responsibility Mapping
@@ -111,20 +111,29 @@ Our approach:
 ### Primary Workflow (backtesting.py integration)
 
 ```python
-import pandas as pd
 from backtesting import Backtest, Strategy
-from rangebar import process_trades_to_dataframe
+from rangebar import get_range_bars
 
-# Load tick data from Binance
-trades = pd.read_csv("BTCUSDT-aggTrades-2024-01.csv")
-
-# Convert to range bars (25 basis points = 0.25%)
-data = process_trades_to_dataframe(trades, threshold_bps=250)
+# Fetch data and generate range bars in one call
+data = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
 
 # Use directly with backtesting.py
 bt = Backtest(data, MyStrategy, cash=10000, commission=0.0002)
 stats = bt.run()
 bt.plot()
+```
+
+### Alternative: Using Pre-downloaded Data
+
+```python
+import pandas as pd
+from rangebar import process_trades_to_dataframe
+
+# Load tick data from CSV
+trades = pd.read_csv("BTCUSDT-aggTrades-2024-01.csv")
+
+# Convert to range bars (25 basis points = 0.25%)
+data = process_trades_to_dataframe(trades, threshold_bps=250)
 ```
 
 ### Output Format (backtesting.py compatible)
@@ -394,8 +403,8 @@ This project is a **companion tool** for the backtesting.py fork located at:
 1. **Generate range bars** (this project):
 
    ```python
-   from rangebar import process_trades_to_dataframe
-   data = process_trades_to_dataframe(trades, threshold_bps=250)
+   from rangebar import get_range_bars
+   data = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
    ```
 
 2. **Use with backtesting.py**:

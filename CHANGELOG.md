@@ -1,13 +1,24 @@
-## [4.0.1](https://github.com/terrylica/rangebar-py/compare/v4.0.0...v4.0.1) (2026-01-08)
+# CHANGELOG
 
+All notable changes to this project will be documented in this file.
+
+## [4.0.1](https://github.com/terrylica/rangebar-py/compare/v4.0.0...v4.0.1) (2026-01-08)
 
 ### Bug Fixes
 
 * **build:** enable data-providers by default for PyPI wheels ([ae40068](https://github.com/terrylica/rangebar-py/commit/ae40068a8932bb7d590fc012f4e32afe9c6f50b4))
 
-# CHANGELOG
+## [4.0.0](https://github.com/terrylica/rangebar-py/compare/v3.0.0...v4.0.0) (2026-01-08)
 
-All notable changes to this project will be documented in this file.
+### Breaking Changes
+
+* **api:** Simplified `__all__` exports to public API only
+  - `get_range_bars()` is now the recommended primary entry point
+  - Legacy APIs (`process_trades_to_dataframe`, `RangeBarProcessor`) still work but not exported in `__all__`
+
+### Documentation
+
+* Aligned README, examples, and API documentation with new primary API
 
 ## [3.0.0](https://github.com/terrylica/rangebar-py/compare/v2.1.0...v3.0.0) (2026-01-07)
 
