@@ -12,15 +12,18 @@ plugins:
   - - "@semantic-release/changelog"
     - changelogFile: CHANGELOG.md
 
-  # Update version in pyproject.toml
+  # Update version in pyproject.toml AND Cargo.toml (both are version SSoT)
   - - "@semantic-release/exec"
-    - prepareCmd: "sed -i.bak 's/^version = \".*\"/version = \"${nextRelease.version}\"/' pyproject.toml && rm pyproject.toml.bak"
-      publishCmd: "echo 'Version updated in pyproject.toml - use pypi-doppler skill for PyPI publishing'"
+    - prepareCmd: |
+        sed -i.bak 's/^version = ".*"/version = "${nextRelease.version}"/' pyproject.toml && rm pyproject.toml.bak
+        sed -i.bak 's/^version = ".*"/version = "${nextRelease.version}"/' Cargo.toml && rm Cargo.toml.bak
+      publishCmd: "echo 'Version updated in pyproject.toml and Cargo.toml - use pypi-doppler skill for PyPI publishing'"
 
   # Commit version changes back to repository
   - - "@semantic-release/git"
     - assets:
         - pyproject.toml
+        - Cargo.toml
         - CHANGELOG.md
       message: "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
 
