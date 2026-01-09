@@ -6,32 +6,32 @@ from rangebar._core import PyRangeBarProcessor
 
 def test_processor_creation():
     """Test basic processor creation."""
-    processor = PyRangeBarProcessor(threshold_bps=250)
-    assert processor.threshold_bps == 250
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)
+    assert processor.threshold_decimal_bps == 250
 
 
 def test_invalid_threshold_too_low():
     """Test that threshold validation rejects values that are too low."""
     with pytest.raises(ValueError, match="Invalid threshold"):
-        PyRangeBarProcessor(threshold_bps=0)
+        PyRangeBarProcessor(threshold_decimal_bps=0)
 
 
 def test_invalid_threshold_too_high():
     """Test that threshold validation rejects values that are too high."""
     with pytest.raises(ValueError, match="Invalid threshold"):
-        PyRangeBarProcessor(threshold_bps=200_000)
+        PyRangeBarProcessor(threshold_decimal_bps=200_000)
 
 
 def test_process_empty_trades():
     """Test processing empty trade list."""
-    processor = PyRangeBarProcessor(threshold_bps=250)
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)
     bars = processor.process_trades([])
     assert bars == []
 
 
 def test_process_single_trade():
     """Test processing a single trade (should return no bars - no breach)."""
-    processor = PyRangeBarProcessor(threshold_bps=250)
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)
 
     trades = [
         {"timestamp": 1704067200000, "price": 42000.0, "quantity": 1.5},
@@ -44,7 +44,7 @@ def test_process_single_trade():
 
 def test_process_trades_with_breach():
     """Test processing trades that breach threshold."""
-    processor = PyRangeBarProcessor(threshold_bps=250)  # 25bps = 0.25%
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)  # 25bps = 0.25%
 
     # Create trades where second trade breaches threshold
     # 42000 * 1.0025 = 42105 (upper breach)
@@ -76,7 +76,7 @@ def test_process_trades_with_breach():
 
 def test_process_trades_with_downward_breach():
     """Test processing trades with downward breach."""
-    processor = PyRangeBarProcessor(threshold_bps=250)  # 25bps = 0.25%
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)  # 25bps = 0.25%
 
     # Create trades where second trade breaches downward
     # 42000 * 0.9975 = 41895 (lower breach)
@@ -99,7 +99,7 @@ def test_process_trades_with_downward_breach():
 
 def test_missing_required_fields():
     """Test that missing required fields raises KeyError."""
-    processor = PyRangeBarProcessor(threshold_bps=250)
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)
 
     # Missing price
     with pytest.raises(KeyError, match="missing 'price'"):
@@ -116,7 +116,7 @@ def test_missing_required_fields():
 
 def test_volume_vs_quantity_field():
     """Test that both 'volume' and 'quantity' keys work."""
-    processor = PyRangeBarProcessor(threshold_bps=250)
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)
 
     # Test with 'quantity'
     trades_quantity = [
@@ -129,7 +129,7 @@ def test_volume_vs_quantity_field():
     assert bars_quantity[0]["volume"] == 3.0
 
     # Test with 'volume'
-    processor2 = PyRangeBarProcessor(threshold_bps=250)
+    processor2 = PyRangeBarProcessor(threshold_decimal_bps=250)
     trades_volume = [
         {"timestamp": 1704067200000, "price": 42000.0, "volume": 1.0},
         {"timestamp": 1704067210000, "price": 42105.0, "volume": 2.0},
@@ -142,11 +142,21 @@ def test_volume_vs_quantity_field():
 
 def test_microstructure_fields():
     """Test that market microstructure fields are included."""
-    processor = PyRangeBarProcessor(threshold_bps=250)
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)
 
     trades = [
-        {"timestamp": 1704067200000, "price": 42000.0, "quantity": 1.0, "is_buyer_maker": False},
-        {"timestamp": 1704067210000, "price": 42105.0, "quantity": 2.0, "is_buyer_maker": True},
+        {
+            "timestamp": 1704067200000,
+            "price": 42000.0,
+            "quantity": 1.0,
+            "is_buyer_maker": False,
+        },
+        {
+            "timestamp": 1704067210000,
+            "price": 42105.0,
+            "quantity": 2.0,
+            "is_buyer_maker": True,
+        },
     ]
 
     bars = processor.process_trades(trades)
@@ -167,12 +177,16 @@ def test_microstructure_fields():
 
 def test_unsorted_trades_error():
     """Test that unsorted trades raise RuntimeError."""
-    processor = PyRangeBarProcessor(threshold_bps=250)
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)
 
     # Trades in wrong order (timestamps not ascending)
     trades = [
         {"timestamp": 1704067210000, "price": 42000.0, "quantity": 1.0},
-        {"timestamp": 1704067200000, "price": 42100.0, "quantity": 1.0},  # Earlier timestamp!
+        {
+            "timestamp": 1704067200000,
+            "price": 42100.0,
+            "quantity": 1.0,
+        },  # Earlier timestamp!
     ]
 
     with pytest.raises(RuntimeError, match="Processing failed.*not sorted"):
@@ -180,8 +194,8 @@ def test_unsorted_trades_error():
 
 
 def test_timestamp_conversion_milliseconds_to_microseconds():
-    """Test that timestamps are correctly converted from milliseconds to microseconds."""
-    processor = PyRangeBarProcessor(threshold_bps=100)  # 10bps = 0.1%
+    """Test that timestamps are converted from milliseconds to microseconds."""
+    processor = PyRangeBarProcessor(threshold_decimal_bps=100)  # 10bps = 0.1%
 
     # Use timestamp in milliseconds (Binance format)
     trades = [
@@ -200,7 +214,7 @@ def test_timestamp_conversion_milliseconds_to_microseconds():
 
 def test_precision_preservation():
     """Test that 8 decimal precision is preserved."""
-    processor = PyRangeBarProcessor(threshold_bps=250)
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)
 
     trades = [
         {"timestamp": 1704067200000, "price": 42000.12345678, "quantity": 1.23456789},
@@ -224,13 +238,21 @@ def test_batch_vs_streaming_mode():
     The final incomplete bar is NOT returned unless using the
     _with_incomplete variant.
     """
-    processor = PyRangeBarProcessor(threshold_bps=250)  # 25bps = 0.25%
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)  # 25bps = 0.25%
 
     # Create trades where only first bar completes
     trades = [
         {"timestamp": 1704067200000, "price": 40000.0, "quantity": 1.0},
-        {"timestamp": 1704067210000, "price": 40100.0, "quantity": 0.5},  # Breaches! (+0.25%)
-        {"timestamp": 1704067220000, "price": 40150.0, "quantity": 1.5},  # Adds to bar 2 (incomplete)
+        {
+            "timestamp": 1704067210000,
+            "price": 40100.0,
+            "quantity": 0.5,
+        },  # Breaches! (+0.25%)
+        {
+            "timestamp": 1704067220000,
+            "price": 40150.0,
+            "quantity": 1.5,
+        },  # Adds to bar 2 (incomplete)
     ]
 
     bars = processor.process_trades(trades)

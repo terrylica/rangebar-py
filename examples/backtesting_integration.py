@@ -14,9 +14,10 @@ Note: This example uses synthetic data. For real backtesting, replace
 with actual Binance CSV data using binance_csv_example.py.
 """
 
-import pandas as pd
-import numpy as np
+import sys
 
+import numpy as np
+import pandas as pd
 from rangebar import process_trades_to_dataframe
 
 # Check if backtesting.py is installed
@@ -30,7 +31,7 @@ except ImportError:
     print("  pip install backtesting.py")
     print("\nOr:")
     print("  uv pip install backtesting.py")
-    exit(1)
+    sys.exit(1)
 
 
 def generate_synthetic_trades(
@@ -68,11 +69,13 @@ def generate_synthetic_trades(
     # Generate volume (correlated with volatility)
     volumes = 1.0 + np.abs(returns) * 100
 
-    df = pd.DataFrame({
-        "timestamp": timestamps,
-        "price": prices,
-        "quantity": volumes,
-    })
+    df = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "price": prices,
+            "quantity": volumes,
+        }
+    )
 
     print(f"  Price range: ${df['price'].min():.2f} → ${df['price'].max():.2f}")
     print(f"  Date range: {df['timestamp'].min()} → {df['timestamp'].max()}")
@@ -95,13 +98,13 @@ class RangeBarMACrossover(Strategy):
     fast = 20
     slow = 50
 
-    def init(self):
+    def init(self) -> None:
         """Initialize strategy indicators."""
         # Calculate moving averages on range bars
         self.sma_fast = self.I(SMA, self.data.Close, self.fast)
         self.sma_slow = self.I(SMA, self.data.Close, self.slow)
 
-    def next(self):
+    def next(self) -> None:
         """Execute on each new bar."""
         # Buy signal: Fast MA crosses above Slow MA
         if crossover(self.sma_fast, self.sma_slow):
@@ -109,12 +112,11 @@ class RangeBarMACrossover(Strategy):
                 self.buy()
 
         # Sell signal: Fast MA crosses below Slow MA
-        elif crossover(self.sma_slow, self.sma_fast):
-            if self.position:
-                self.position.close()
+        elif crossover(self.sma_slow, self.sma_fast) and self.position:
+            self.position.close()
 
 
-def main():
+def main() -> None:
     """Run backtesting.py integration example."""
     print("=" * 70)
     print("rangebar-py: backtesting.py Integration Example")
@@ -126,7 +128,7 @@ def main():
 
     # Step 2: Convert to range bars
     print("\nConverting to range bars (threshold = 25bps = 0.25%)...")
-    range_bars = process_trades_to_dataframe(trades_df, threshold_bps=250)
+    range_bars = process_trades_to_dataframe(trades_df, threshold_decimal_bps=250)
 
     print(f"  Generated {len(range_bars):,} range bars from {len(trades_df):,} trades")
     print(f"  Compression ratio: {len(trades_df) / len(range_bars):.1f}x")
@@ -134,9 +136,14 @@ def main():
     # Validate format
     print("\nValidating OHLCV format for backtesting.py...")
     assert isinstance(range_bars.index, pd.DatetimeIndex), "Index must be DatetimeIndex"
-    assert list(range_bars.columns) == ["Open", "High", "Low", "Close", "Volume"], \
-        "Columns must be [Open, High, Low, Close, Volume]"
-    assert not range_bars.isnull().any().any(), "DataFrame must have no NaN values"
+    assert list(range_bars.columns) == [
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+    ], "Columns must be [Open, High, Low, Close, Volume]"
+    assert not range_bars.isna().any().any(), "DataFrame must have no NaN values"
     print("  ✅ Format validation passed")
 
     # Step 3: Run backtest
@@ -196,7 +203,7 @@ def main():
     print("=" * 70)
 
     print("\nNext steps:")
-    print("  1. Try different threshold_bps values (100-500)")
+    print("  1. Try different threshold_decimal_bps values (100-500)")
     print("  2. Compare performance vs time-based bars")
     print("  3. Test with real Binance CSV data")
     print("  4. Experiment with different strategies")

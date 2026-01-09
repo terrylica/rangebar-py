@@ -15,11 +15,11 @@ crate-type = ["cdylib"]  # Python extension module only
 [dependencies]
 # Import rangebar-core from crates.io (ZERO changes to upstream)
 # Note: The dependency name uses hyphens, resolved as rangebar_core in Rust code
-rangebar-core = "5.2"
+rangebar-core = "6.0"
 
 # Data providers: Binance (crypto) + Exness (forex)
 # all-providers feature enables both data sources
-rangebar-providers = { version = "5.2", optional = true, features = ["all-providers"] }
+rangebar-providers = { version = "6.0", optional = true, features = ["all-providers"] }
 
 # Async runtime for data fetching
 tokio = { version = "1.0", features = ["rt-multi-thread"], optional = true }

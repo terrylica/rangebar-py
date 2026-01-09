@@ -46,8 +46,8 @@ class CacheKey:
     ----------
     symbol : str
         Trading symbol
-    threshold_bps : int
-        Threshold in 0.1 basis point units
+    threshold_decimal_bps : int
+        Threshold in decimal basis points (0.1bps = 0.001%)
     start_ts : int
         Start timestamp in milliseconds
     end_ts : int
@@ -55,7 +55,7 @@ class CacheKey:
     """
 
     symbol: str
-    threshold_bps: int
+    threshold_decimal_bps: int
     start_ts: int
     end_ts: int
 
@@ -68,7 +68,10 @@ class CacheKey:
         str
             MD5 hash of cache key components
         """
-        key_str = f"{self.symbol}_{self.threshold_bps}_{self.start_ts}_{self.end_ts}"
+        key_str = (
+            f"{self.symbol}_{self.threshold_decimal_bps}_"
+            f"{self.start_ts}_{self.end_ts}"
+        )
         return hashlib.md5(key_str.encode()).hexdigest()
 
 
@@ -224,7 +227,7 @@ class RangeBarCache(ClickHouseClientMixin):
 
         # Add cache metadata
         df["symbol"] = key.symbol
-        df["threshold_bps"] = key.threshold_bps
+        df["threshold_decimal_bps"] = key.threshold_decimal_bps
         df["cache_key"] = key.hash_key
         df["rangebar_version"] = version
         df["source_start_ts"] = key.start_ts
@@ -233,7 +236,7 @@ class RangeBarCache(ClickHouseClientMixin):
         # Select columns for insertion
         columns = [
             "symbol",
-            "threshold_bps",
+            "threshold_decimal_bps",
             "timestamp_ms",
             "open",
             "high",
@@ -291,7 +294,7 @@ class RangeBarCache(ClickHouseClientMixin):
                 volume as Volume
             FROM rangebar_cache.range_bars
             WHERE symbol = {symbol:String}
-              AND threshold_bps = {threshold_bps:UInt32}
+              AND threshold_decimal_bps = {threshold_decimal_bps:UInt32}
               AND source_start_ts = {start_ts:Int64}
               AND source_end_ts = {end_ts:Int64}
             ORDER BY timestamp_ms
@@ -301,7 +304,7 @@ class RangeBarCache(ClickHouseClientMixin):
             query,
             parameters={
                 "symbol": key.symbol,
-                "threshold_bps": key.threshold_bps,
+                "threshold_decimal_bps": key.threshold_decimal_bps,
                 "start_ts": key.start_ts,
                 "end_ts": key.end_ts,
             },
@@ -341,7 +344,7 @@ class RangeBarCache(ClickHouseClientMixin):
             SELECT count() > 0
             FROM rangebar_cache.range_bars
             WHERE symbol = {symbol:String}
-              AND threshold_bps = {threshold_bps:UInt32}
+              AND threshold_decimal_bps = {threshold_decimal_bps:UInt32}
               AND source_start_ts = {start_ts:Int64}
               AND source_end_ts = {end_ts:Int64}
             LIMIT 1
@@ -350,7 +353,7 @@ class RangeBarCache(ClickHouseClientMixin):
             query,
             parameters={
                 "symbol": key.symbol,
-                "threshold_bps": key.threshold_bps,
+                "threshold_decimal_bps": key.threshold_decimal_bps,
                 "start_ts": key.start_ts,
                 "end_ts": key.end_ts,
             },
@@ -374,7 +377,7 @@ class RangeBarCache(ClickHouseClientMixin):
         query = """
             ALTER TABLE rangebar_cache.range_bars
             DELETE WHERE symbol = {symbol:String}
-              AND threshold_bps = {threshold_bps:UInt32}
+              AND threshold_decimal_bps = {threshold_decimal_bps:UInt32}
               AND source_start_ts = {start_ts:Int64}
               AND source_end_ts = {end_ts:Int64}
         """
@@ -382,7 +385,7 @@ class RangeBarCache(ClickHouseClientMixin):
             query,
             parameters={
                 "symbol": key.symbol,
-                "threshold_bps": key.threshold_bps,
+                "threshold_decimal_bps": key.threshold_decimal_bps,
                 "start_ts": key.start_ts,
                 "end_ts": key.end_ts,
             },

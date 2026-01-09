@@ -271,19 +271,19 @@ use std::collections::HashMap;
 #[pyclass]
 struct PyRangeBarProcessor {
     processor: RangeBarProcessor,
-    threshold_bps: u32,
+    threshold_decimal_bps: u32,
 }
 
 #[pymethods]
 impl PyRangeBarProcessor {
     #[new]
-    fn new(threshold_bps: u32) -> PyResult<Self> {
-        let processor = RangeBarProcessor::new(threshold_bps)
+    fn new(threshold_decimal_bps: u32) -> PyResult<Self> {
+        let processor = RangeBarProcessor::new(threshold_decimal_bps)
             .map_err(|e| PyValueError::new_err(
                 format!("Failed to create processor: {}", e)
             ))?;
 
-        Ok(Self { processor, threshold_bps })
+        Ok(Self { processor, threshold_decimal_bps })
     }
 
     fn process_trades(&mut self, py: Python, trades: Vec<HashMap<String, PyObject>>)
@@ -299,8 +299,8 @@ impl PyRangeBarProcessor {
     }
 
     #[getter]
-    fn threshold_bps(&self) -> u32 {
-        self.threshold_bps
+    fn threshold_decimal_bps(&self) -> u32 {
+        self.threshold_decimal_bps
     }
 }
 
@@ -416,11 +416,11 @@ import pytest
 from rangebar._core import PyRangeBarProcessor
 
 def test_processor_creation():
-    processor = PyRangeBarProcessor(threshold_bps=250)
-    assert processor.threshold_bps == 250
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)
+    assert processor.threshold_decimal_bps == 250
 
 def test_process_simple_trades():
-    processor = PyRangeBarProcessor(threshold_bps=250)
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)
 
     trades = [
         {"timestamp": 1704067200000, "price": 42000.0, "quantity": 1.5},
@@ -484,22 +484,22 @@ class RangeBarProcessor:
 
     Parameters
     ----------
-    threshold_bps : int
-        Threshold in 0.1 basis point units (250 = 25bps = 0.25%)
+    threshold_decimal_bps : int
+        Threshold in decimal basis points (250 = 25bps = 0.25%)
 
     Examples
     --------
-    >>> processor = RangeBarProcessor(threshold_bps=250)
+    >>> processor = RangeBarProcessor(threshold_decimal_bps=250)
     >>> trades = [{"timestamp": 1704067200000, "price": 42000.0, "quantity": 1.5}]
     >>> bars = processor.process_trades(trades)
     >>> df = processor.to_dataframe(bars)
     """
 
-    def __init__(self, threshold_bps: int):
-        if threshold_bps <= 0:
-            raise ValueError("threshold_bps must be positive")
-        self._processor = _RangeBarProcessor(threshold_bps)
-        self.threshold_bps = threshold_bps
+    def __init__(self, threshold_decimal_bps: int):
+        if threshold_decimal_bps <= 0:
+            raise ValueError("threshold_decimal_bps must be positive")
+        self._processor = _RangeBarProcessor(threshold_decimal_bps)
+        self.threshold_decimal_bps = threshold_decimal_bps
 
     def process_trades(self, trades: List[Dict[str, Union[int, float]]]) -> List[Dict]:
         """Process trades into range bars."""
@@ -545,7 +545,7 @@ class RangeBarProcessor:
 ```python
 def process_trades_to_dataframe(
     trades: Union[List[Dict], pd.DataFrame],
-    threshold_bps: int = 250,
+    threshold_decimal_bps: int = 250,
 ) -> pd.DataFrame:
     """
     Convenience function to process trades directly to DataFrame.
@@ -554,15 +554,15 @@ def process_trades_to_dataframe(
     ----------
     trades : List[Dict] or pd.DataFrame
         Trade data with columns: timestamp, price, quantity
-    threshold_bps : int
-        Threshold in 0.1bps units (250 = 25bps = 0.25%)
+    threshold_decimal_bps : int
+        Threshold in decimal basis points (250 = 25bps = 0.25%)
 
     Returns
     -------
     pd.DataFrame
         OHLCV DataFrame ready for backtesting.py
     """
-    processor = RangeBarProcessor(threshold_bps)
+    processor = RangeBarProcessor(threshold_decimal_bps)
 
     # Convert DataFrame to list of dicts
     if isinstance(trades, pd.DataFrame):
@@ -592,15 +592,15 @@ import pandas as pd
 __version__: str
 
 class RangeBarProcessor:
-    threshold_bps: int
-    def __init__(self, threshold_bps: int) -> None: ...
+    threshold_decimal_bps: int
+    def __init__(self, threshold_decimal_bps: int) -> None: ...
     def process_trades(self, trades: List[Dict[str, Union[int, float]]]) -> List[Dict]: ...
     def to_dataframe(self, bars: List[Dict]) -> pd.DataFrame: ...
     def reset(self) -> None: ...
 
 def process_trades_to_dataframe(
     trades: Union[List[Dict], pd.DataFrame],
-    threshold_bps: int = 250,
+    threshold_decimal_bps: int = 250,
 ) -> pd.DataFrame: ...
 ```
 
@@ -618,7 +618,7 @@ def test_processor_returns_dataframe():
         {"timestamp": 1704067210000, "price": 42105.0, "quantity": 2.3},
     ]
 
-    df = process_trades_to_dataframe(trades, threshold_bps=250)
+    df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
     assert isinstance(df, pd.DataFrame)
     assert isinstance(df.index, pd.DatetimeIndex)
@@ -631,7 +631,7 @@ def test_dataframe_input():
         "quantity": [1.5] * 10,
     })
 
-    df = process_trades_to_dataframe(trades_df, threshold_bps=250)
+    df = process_trades_to_dataframe(trades_df, threshold_decimal_bps=250)
 
     assert isinstance(df, pd.DataFrame)
     assert len(df) > 0
@@ -667,7 +667,7 @@ from typing import Tuple
 import pandas as pd
 from . import process_trades_to_dataframe
 
-def load_from_binance_csv(csv_path: str, threshold_bps: int = 250) -> pd.DataFrame:
+def load_from_binance_csv(csv_path: str, threshold_decimal_bps: int = 250) -> pd.DataFrame:
     """
     Load Binance aggTrades CSV and convert to range bars.
 
@@ -676,7 +676,7 @@ def load_from_binance_csv(csv_path: str, threshold_bps: int = 250) -> pd.DataFra
     """
     df = pd.read_csv(csv_path)
     df = df.rename(columns={"timestamp": "timestamp", "price": "price", "quantity": "quantity"})
-    return process_trades_to_dataframe(df[["timestamp", "price", "quantity"]], threshold_bps)
+    return process_trades_to_dataframe(df[["timestamp", "price", "quantity"]], threshold_decimal_bps)
 
 def split_train_test(data: pd.DataFrame, train_ratio: float = 0.7) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Split range bar data into train/test sets."""
@@ -710,7 +710,7 @@ def test_backtesting_py_compatibility():
         )
     ]
 
-    df = process_trades_to_dataframe(trades, threshold_bps=250)
+    df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
     # Simple buy-and-hold strategy
     class DummyStrategy(Strategy):
@@ -777,7 +777,7 @@ trades = [
 ]
 
 # Convert to range bars
-df = process_trades_to_dataframe(trades, threshold_bps=250)
+df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
 print(f"Generated {len(df)} range bars from {len(trades)} trades")
 print("\nFirst 5 bars:")
@@ -804,7 +804,7 @@ trades_df = pd.DataFrame({
 })
 
 # Convert to range bars
-data = process_trades_to_dataframe(trades_df, threshold_bps=250)
+data = process_trades_to_dataframe(trades_df, threshold_decimal_bps=250)
 
 # Define strategy
 class RangeBarMA(Strategy):

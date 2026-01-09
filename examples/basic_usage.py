@@ -10,7 +10,7 @@ This example demonstrates the most straightforward way to use rangebar-py:
 from rangebar import process_trades_to_dataframe
 
 
-def main():
+def main() -> None:
     """Run basic usage example."""
     print("=" * 70)
     print("rangebar-py: Basic Usage Example")
@@ -31,12 +31,14 @@ def main():
 
     print(f"   Generated {len(trades)} trades")
     print(f"   Price range: ${trades[0]['price']:.2f} → ${trades[-1]['price']:.2f}")
-    print(f"   Time span: {(trades[-1]['timestamp'] - trades[0]['timestamp']) / 1000:.0f} seconds")
+    print(
+        f"   Time span: {(trades[-1]['timestamp'] - trades[0]['timestamp']) / 1000:.0f} seconds"
+    )
 
     # Convert to range bars with 0.25% threshold (25 basis points)
     print("\n2. Converting to range bars (threshold = 25bps = 0.25%)...")
 
-    df = process_trades_to_dataframe(trades, threshold_bps=250)
+    df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
     print(f"   Generated {len(df)} range bars from {len(trades)} trades")
     print(f"   Compression ratio: {len(trades) / len(df):.1f}x")

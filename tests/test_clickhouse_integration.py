@@ -149,7 +149,7 @@ class TestRangeBarsIntegration:
         """Test storing and retrieving range bars."""
         key = CacheKey(
             symbol="TEST_BTCUSDT_BARS",
-            threshold_bps=250,
+            threshold_decimal_bps=250,
             start_ts=1704067200000,
             end_ts=1704153600000,
         )
@@ -178,7 +178,7 @@ class TestRangeBarsIntegration:
         """Test checking for range bar existence."""
         key = CacheKey(
             symbol="TEST_BTCUSDT_HAS_BARS",
-            threshold_bps=250,
+            threshold_decimal_bps=250,
             start_ts=1704067200000,
             end_ts=1704153600000,
         )
@@ -192,7 +192,7 @@ class TestRangeBarsIntegration:
         # Should not have bars for different key
         other_key = CacheKey(
             symbol="NONEXISTENT",
-            threshold_bps=250,
+            threshold_decimal_bps=250,
             start_ts=1704067200000,
             end_ts=1704153600000,
         )
@@ -204,7 +204,7 @@ class TestRangeBarsIntegration:
         """Test invalidating cached range bars."""
         key = CacheKey(
             symbol="TEST_BTCUSDT_INVALIDATE",
-            threshold_bps=250,
+            threshold_decimal_bps=250,
             start_ts=1704067200000,
             end_ts=1704153600000,
         )
@@ -248,7 +248,7 @@ class TestCachedProcessingIntegration:
 
         # First run - should compute and cache
         df1 = process_trades_to_dataframe_cached(
-            trades, symbol=symbol, threshold_bps=250, cache=cache
+            trades, symbol=symbol, threshold_decimal_bps=250, cache=cache
         )
 
         assert len(df1) > 0
@@ -273,13 +273,13 @@ class TestCachedProcessingIntegration:
 
         # First run - compute and cache
         df1 = process_trades_to_dataframe_cached(
-            trades, symbol=symbol, threshold_bps=250, cache=cache
+            trades, symbol=symbol, threshold_decimal_bps=250, cache=cache
         )
 
         # Second run - should hit cache
         start = time.perf_counter()
         df2 = process_trades_to_dataframe_cached(
-            trades, symbol=symbol, threshold_bps=250, cache=cache
+            trades, symbol=symbol, threshold_decimal_bps=250, cache=cache
         )
         cache_time = time.perf_counter() - start
 
@@ -301,13 +301,13 @@ class TestCacheKeyIntegration:
         """Test that different thresholds use different cache entries."""
         key_250 = CacheKey(
             symbol="TEST_THRESHOLD",
-            threshold_bps=250,
+            threshold_decimal_bps=250,
             start_ts=1704067200000,
             end_ts=1704153600000,
         )
         key_500 = CacheKey(
             symbol="TEST_THRESHOLD",
-            threshold_bps=500,
+            threshold_decimal_bps=500,
             start_ts=1704067200000,
             end_ts=1704153600000,
         )
@@ -327,13 +327,13 @@ class TestCacheKeyIntegration:
         """Test that different symbols use different cache entries."""
         key_btc = CacheKey(
             symbol="TEST_BTCUSDT_SYM",
-            threshold_bps=250,
+            threshold_decimal_bps=250,
             start_ts=1704067200000,
             end_ts=1704153600000,
         )
         key_eth = CacheKey(
             symbol="TEST_ETHUSDT_SYM",
-            threshold_bps=250,
+            threshold_decimal_bps=250,
             start_ts=1704067200000,
             end_ts=1704153600000,
         )

@@ -79,15 +79,15 @@ pub struct RangeBar {
 
 ```rust
 pub struct RangeBarProcessor {
-    threshold_bps: u32,
+    threshold_decimal_bps: u32,
     current_bar_state: Option<RangeBarState>,
 }
 
 impl RangeBarProcessor {
     /// Create processor
-    /// threshold_bps: In 0.1 basis point units (v3.0.0+)
+    /// threshold_decimal_bps: In decimal basis point units (v3.0.0+)
     /// Example: 250 = 25bps = 0.25%
-    pub fn new(threshold_bps: u32) -> Result<Self, ProcessingError>
+    pub fn new(threshold_decimal_bps: u32) -> Result<Self, ProcessingError>
 
     /// Process batch of trades
     pub fn process_agg_trade_records(
@@ -105,7 +105,7 @@ impl RangeBarProcessor {
 
 **Threshold Units**:
 
-- **v3.0.0+ uses 0.1 basis point units**
+- **v3.0.0+ uses decimal basis point units**
 - `250` = 25 bps = 0.25% price movement
 - `100` = 10 bps = 0.10% price movement
 - `1` = 0.1 bps = 0.001% (minimum)
@@ -138,7 +138,7 @@ impl FixedPoint {
 pub enum ProcessingError {
     UnsortedTrades { ... },    // Trades not chronologically sorted
     EmptyData,                  // Empty input slice
-    InvalidThreshold { threshold_bps: u32 },  // Out of range [1, 100_000]
+    InvalidThreshold { threshold_decimal_bps: u32 },  // Out of range [1, 100_000]
 }
 ```
 
@@ -250,8 +250,8 @@ struct PyRangeBarProcessor {
 #[pymethods]
 impl PyRangeBarProcessor {
     #[new]
-    fn new(threshold_bps: u32) -> PyResult<Self> {
-        let processor = RangeBarProcessor::new(threshold_bps)
+    fn new(threshold_decimal_bps: u32) -> PyResult<Self> {
+        let processor = RangeBarProcessor::new(threshold_decimal_bps)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
                 format!("Failed to create processor: {}", e)
             ))?;
@@ -306,7 +306,7 @@ def test_backtesting_py_format():
     from rangebar import process_trades_to_dataframe
 
     trades = pd.read_csv("BTCUSDT-aggTrades-2024-01.csv")
-    df = process_trades_to_dataframe(trades, threshold_bps=250)
+    df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
     # Validate backtesting.py compatibility
     assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]

@@ -2,7 +2,6 @@
 
 import pandas as pd
 import pytest
-
 from rangebar import RangeBarProcessor, process_trades_to_dataframe
 
 
@@ -11,17 +10,17 @@ class TestRangeBarProcessor:
 
     def test_processor_creation(self):
         """Test basic processor creation."""
-        processor = RangeBarProcessor(threshold_bps=250)
-        assert processor.threshold_bps == 250
+        processor = RangeBarProcessor(threshold_decimal_bps=250)
+        assert processor.threshold_decimal_bps == 250
 
     def test_invalid_threshold(self):
         """Test that invalid thresholds raise ValueError."""
         with pytest.raises(ValueError):
-            RangeBarProcessor(threshold_bps=0)
+            RangeBarProcessor(threshold_decimal_bps=0)
 
     def test_process_trades_returns_list(self):
         """Test that process_trades returns a list of dicts."""
-        processor = RangeBarProcessor(threshold_bps=250)
+        processor = RangeBarProcessor(threshold_decimal_bps=250)
 
         trades = [
             {"timestamp": 1704067200000, "price": 42000.0, "quantity": 1.5},
@@ -36,7 +35,7 @@ class TestRangeBarProcessor:
 
     def test_to_dataframe_returns_correct_format(self):
         """Test that to_dataframe returns proper OHLCV DataFrame."""
-        processor = RangeBarProcessor(threshold_bps=250)
+        processor = RangeBarProcessor(threshold_decimal_bps=250)
 
         trades = [
             {"timestamp": 1704067200000, "price": 42000.0, "quantity": 1.5},
@@ -60,7 +59,7 @@ class TestRangeBarProcessor:
 
     def test_to_dataframe_empty_bars(self):
         """Test that to_dataframe handles empty bars correctly."""
-        processor = RangeBarProcessor(threshold_bps=250)
+        processor = RangeBarProcessor(threshold_decimal_bps=250)
 
         df = processor.to_dataframe([])
 
@@ -70,7 +69,7 @@ class TestRangeBarProcessor:
 
     def test_to_dataframe_ohlc_invariants(self):
         """Test that OHLC invariants are preserved in DataFrame."""
-        processor = RangeBarProcessor(threshold_bps=250)
+        processor = RangeBarProcessor(threshold_decimal_bps=250)
 
         trades = [
             {"timestamp": 1704067200000, "price": 42000.0, "quantity": 1.0},
@@ -97,7 +96,7 @@ class TestProcessTradesToDataframe:
             {"timestamp": 1704067210000, "price": 42105.0, "quantity": 2.3},
         ]
 
-        df = process_trades_to_dataframe(trades, threshold_bps=250)
+        df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
         assert isinstance(df, pd.DataFrame)
         assert isinstance(df.index, pd.DatetimeIndex)
@@ -114,7 +113,7 @@ class TestProcessTradesToDataframe:
             }
         )
 
-        df = process_trades_to_dataframe(trades_df, threshold_bps=250)
+        df = process_trades_to_dataframe(trades_df, threshold_decimal_bps=250)
 
         assert isinstance(df, pd.DataFrame)
         assert isinstance(df.index, pd.DatetimeIndex)
@@ -130,7 +129,7 @@ class TestProcessTradesToDataframe:
             }
         )
 
-        df = process_trades_to_dataframe(trades_df, threshold_bps=250)
+        df = process_trades_to_dataframe(trades_df, threshold_decimal_bps=250)
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) >= 0  # May or may not have bars depending on price movement
@@ -145,7 +144,7 @@ class TestProcessTradesToDataframe:
             }
         )
 
-        df = process_trades_to_dataframe(trades_df, threshold_bps=250)
+        df = process_trades_to_dataframe(trades_df, threshold_decimal_bps=250)
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) >= 0
@@ -161,16 +160,16 @@ class TestProcessTradesToDataframe:
         )
 
         with pytest.raises(ValueError, match="missing required columns"):
-            process_trades_to_dataframe(trades_df, threshold_bps=250)
+            process_trades_to_dataframe(trades_df, threshold_decimal_bps=250)
 
     def test_default_threshold(self):
-        """Test that default threshold_bps=250 is used."""
+        """Test that default threshold_decimal_bps=250 is used."""
         trades = [
             {"timestamp": 1704067200000, "price": 42000.0, "quantity": 1.5},
             {"timestamp": 1704067210000, "price": 42105.0, "quantity": 2.3},
         ]
 
-        df = process_trades_to_dataframe(trades)  # No threshold_bps specified
+        df = process_trades_to_dataframe(trades)  # No threshold_decimal_bps specified
 
         assert isinstance(df, pd.DataFrame)
 
@@ -181,10 +180,10 @@ class TestProcessTradesToDataframe:
             {"timestamp": 1704067210000, "price": 42105.0, "quantity": 2.0},
         ]
 
-        df = process_trades_to_dataframe(trades, threshold_bps=250)
+        df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
         # backtesting.py raises on NaN values
-        assert not df.isnull().any().any()
+        assert not df.isna().any().any()
 
     def test_sorted_chronologically(self):
         """Test that output DataFrame is sorted chronologically."""
@@ -194,7 +193,7 @@ class TestProcessTradesToDataframe:
             {"timestamp": 1704067220000, "price": 42210.0, "quantity": 1.5},
         ]
 
-        df = process_trades_to_dataframe(trades, threshold_bps=250)
+        df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
         # Index should be monotonic increasing
         assert df.index.is_monotonic_increasing
@@ -210,7 +209,7 @@ class TestBacktestingPyCompatibility:
             {"timestamp": 1704067210000, "price": 42105.0, "quantity": 2.0},
         ]
 
-        df = process_trades_to_dataframe(trades, threshold_bps=250)
+        df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
         # backtesting.py requires capitalized OHLCV columns
         assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
@@ -222,7 +221,7 @@ class TestBacktestingPyCompatibility:
             {"timestamp": 1704067210000, "price": 42105.0, "quantity": 2.0},
         ]
 
-        df = process_trades_to_dataframe(trades, threshold_bps=250)
+        df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
         assert isinstance(df.index, pd.DatetimeIndex)
 
@@ -233,13 +232,13 @@ class TestBacktestingPyCompatibility:
             {"timestamp": 1704067210000, "price": 42105.0, "quantity": 2.0},
         ]
 
-        df = process_trades_to_dataframe(trades, threshold_bps=250)
+        df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
         # All rows should have complete OHLCV data
         required_cols = ["Open", "High", "Low", "Close", "Volume"]
         for col in required_cols:
             assert col in df.columns
-            assert not df[col].isnull().any()
+            assert not df[col].isna().any()
 
     def test_volume_positive(self):
         """Test that volume is always positive (as expected by backtesting.py)."""
@@ -248,7 +247,7 @@ class TestBacktestingPyCompatibility:
             {"timestamp": 1704067210000, "price": 42105.0, "quantity": 2.0},
         ]
 
-        df = process_trades_to_dataframe(trades, threshold_bps=250)
+        df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
         assert (df["Volume"] > 0).all()
 
@@ -268,7 +267,7 @@ class TestBacktestingPyCompatibility:
                 }
             )
 
-        df = process_trades_to_dataframe(trades, threshold_bps=100)  # 0.1%
+        df = process_trades_to_dataframe(trades, threshold_decimal_bps=100)  # 0.1%
 
         # Validate basic structure
         assert isinstance(df, pd.DataFrame)
@@ -277,7 +276,7 @@ class TestBacktestingPyCompatibility:
         # Validate backtesting.py compatibility
         assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
         assert isinstance(df.index, pd.DatetimeIndex)
-        assert not df.isnull().any().any()
+        assert not df.isna().any().any()
         assert df.index.is_monotonic_increasing
 
 

@@ -9,6 +9,16 @@
 --   Then run this file or use RangeBarCache._ensure_schema()
 
 -- ============================================================================
+-- Migration for v5.0.0 (from v4.x)
+-- ============================================================================
+-- Run this ONCE if upgrading from rangebar-py v4.x with existing cache:
+--
+-- ALTER TABLE rangebar_cache.range_bars
+--     RENAME COLUMN threshold_bps TO threshold_decimal_bps;
+--
+-- Note: New installations do not need this migration.
+
+-- ============================================================================
 -- Computed Range Bars Cache (Tier 2)
 -- ============================================================================
 -- Stores computed range bars with all parameters as cache key
@@ -17,7 +27,7 @@
 CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
     -- Cache key components
     symbol LowCardinality(String),
-    threshold_bps UInt32,
+    threshold_decimal_bps UInt32,
 
     -- OHLCV data
     timestamp_ms Int64,
@@ -43,9 +53,9 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
 )
 ENGINE = ReplacingMergeTree(computed_at)
 -- Partition by symbol, threshold, and month
-PARTITION BY (symbol, threshold_bps, toYYYYMM(toDateTime(timestamp_ms / 1000)))
+PARTITION BY (symbol, threshold_decimal_bps, toYYYYMM(toDateTime(timestamp_ms / 1000)))
 -- Order for efficient lookups
-ORDER BY (symbol, threshold_bps, timestamp_ms);
+ORDER BY (symbol, threshold_decimal_bps, timestamp_ms);
 
 -- ============================================================================
 -- Materialized Views (Optional - for analytics)

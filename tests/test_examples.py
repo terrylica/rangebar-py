@@ -5,10 +5,11 @@ ADR-003: Testing Strategy with Real Binance Data
 Automated verification that examples execute successfully.
 """
 
-import pytest
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 EXAMPLES = [
@@ -26,19 +27,24 @@ def test_example_runs(example):
     # Run example
     result = subprocess.run(
         [sys.executable, str(example_path)],
+        check=False,
         capture_output=True,
         text=True,
         timeout=30,
     )
 
     # Should not crash
-    assert result.returncode == 0, f"Example failed: {example}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    assert (
+        result.returncode == 0
+    ), f"Example failed: {example}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
 
 
 @pytest.mark.skipif(
-    subprocess.run([sys.executable, "-c", "import backtesting"],
-                   capture_output=True).returncode != 0,
-    reason="backtesting.py not installed"
+    subprocess.run(
+        [sys.executable, "-c", "import backtesting"], check=False, capture_output=True
+    ).returncode
+    != 0,
+    reason="backtesting.py not installed",
 )
 def test_backtesting_integration_example():
     """Test backtesting integration example (requires backtesting.py)."""
@@ -46,12 +52,16 @@ def test_backtesting_integration_example():
 
     result = subprocess.run(
         [sys.executable, str(example_path)],
+        check=False,
         capture_output=True,
         text=True,
         timeout=60,
     )
 
-    assert result.returncode == 0, f"Backtesting example failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    assert result.returncode == 0, (
+        f"Backtesting example failed:\nSTDOUT:\n{result.stdout}\n"
+        f"STDERR:\n{result.stderr}"
+    )
 
 
 def test_binance_csv_example_with_sample():
@@ -61,9 +71,13 @@ def test_binance_csv_example_with_sample():
     # Run without arguments (creates sample data)
     result = subprocess.run(
         [sys.executable, str(example_path)],
+        check=False,
         capture_output=True,
         text=True,
         timeout=60,
     )
 
-    assert result.returncode == 0, f"Binance CSV example failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    assert result.returncode == 0, (
+        f"Binance CSV example failed:\nSTDOUT:\n{result.stdout}\n"
+        f"STDERR:\n{result.stderr}"
+    )

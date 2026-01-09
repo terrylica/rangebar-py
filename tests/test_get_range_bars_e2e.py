@@ -18,8 +18,8 @@ ADR: These tests serve as living documentation for downstream users.
 import pandas as pd
 import pytest
 from rangebar import (
-    THRESHOLD_MAX,
-    THRESHOLD_MIN,
+    THRESHOLD_DECIMAL_MAX,
+    THRESHOLD_DECIMAL_MIN,
     THRESHOLD_PRESETS,
     TIER1_SYMBOLS,
     get_range_bars,
@@ -47,7 +47,7 @@ TEST_END_SHORT = "2024-11-01"
 @pytest.fixture(scope="module")
 def real_btc_bars_medium():
     """Get real BTC range bars with medium threshold (cached for module)."""
-    return get_range_bars(TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=250)
+    return get_range_bars(TEST_SYMBOL, TEST_START, TEST_END, threshold_decimal_bps=250)
 
 
 # =============================================================================
@@ -64,7 +64,7 @@ class TestThresholdNumericValues:
 
     def test_threshold_micro_produces_most_bars(self):
         """Micro threshold (10 = 1bps) should produce the most bars."""
-        df = get_range_bars(TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=10)
+        df = get_range_bars(TEST_SYMBOL, TEST_START, TEST_END, threshold_decimal_bps=10)
 
         assert len(df) > 0, "Should produce at least one bar"
         assert isinstance(df.index, pd.DatetimeIndex)
@@ -75,7 +75,9 @@ class TestThresholdNumericValues:
 
     def test_threshold_macro_produces_fewest_bars(self):
         """Macro threshold (1000 = 100bps) should produce the fewest bars."""
-        df = get_range_bars(TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=1000)
+        df = get_range_bars(
+            TEST_SYMBOL, TEST_START, TEST_END, threshold_decimal_bps=1000
+        )
 
         assert len(df) > 0, "Should produce at least one bar"
         assert isinstance(df.index, pd.DatetimeIndex)
@@ -90,7 +92,7 @@ class TestThresholdNumericValues:
 
         for threshold in thresholds:
             df = get_range_bars(
-                TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=threshold
+                TEST_SYMBOL, TEST_START, TEST_END, threshold_decimal_bps=threshold
             )
             bar_counts[threshold] = len(df)
 
@@ -106,7 +108,10 @@ class TestThresholdNumericValues:
     def test_threshold_extreme_low(self):
         """Test minimum valid threshold (1 = 0.1bps)."""
         df = get_range_bars(
-            TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=THRESHOLD_MIN
+            TEST_SYMBOL,
+            TEST_START,
+            TEST_END,
+            threshold_decimal_bps=THRESHOLD_DECIMAL_MIN,
         )
 
         assert len(df) > 0, "Should produce bars even at minimum threshold"
@@ -116,7 +121,10 @@ class TestThresholdNumericValues:
     def test_threshold_extreme_high(self):
         """Test maximum valid threshold (100,000 = 10,000bps = 100%)."""
         df = get_range_bars(
-            TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=THRESHOLD_MAX
+            TEST_SYMBOL,
+            TEST_START,
+            TEST_END,
+            threshold_decimal_bps=THRESHOLD_DECIMAL_MAX,
         )
 
         # At 100% threshold, we might get 0-1 bars for a single day
@@ -126,14 +134,17 @@ class TestThresholdNumericValues:
 
     def test_threshold_invalid_below_minimum(self):
         """Threshold below minimum should raise ValueError."""
-        with pytest.raises(ValueError, match="threshold_bps must be between"):
-            get_range_bars(TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=0)
+        with pytest.raises(ValueError, match="threshold_decimal_bps must be between"):
+            get_range_bars(TEST_SYMBOL, TEST_START, TEST_END, threshold_decimal_bps=0)
 
     def test_threshold_invalid_above_maximum(self):
         """Threshold above maximum should raise ValueError."""
-        with pytest.raises(ValueError, match="threshold_bps must be between"):
+        with pytest.raises(ValueError, match="threshold_decimal_bps must be between"):
             get_range_bars(
-                TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=THRESHOLD_MAX + 1
+                TEST_SYMBOL,
+                TEST_START,
+                TEST_END,
+                threshold_decimal_bps=THRESHOLD_DECIMAL_MAX + 1,
             )
 
 
@@ -163,7 +174,7 @@ class TestThresholdPresets:
     def test_preset_produces_bars(self, preset_name, expected_bps):
         """Each preset should produce valid range bars."""
         df = get_range_bars(
-            TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=preset_name
+            TEST_SYMBOL, TEST_START, TEST_END, threshold_decimal_bps=preset_name
         )
 
         assert len(df) > 0, f"Preset '{preset_name}' should produce bars"
@@ -174,10 +185,10 @@ class TestThresholdPresets:
         """Preset should produce same result as numeric equivalent."""
         # Test "medium" preset vs numeric 250
         df_preset = get_range_bars(
-            TEST_SYMBOL, TEST_START, TEST_END, threshold_bps="medium"
+            TEST_SYMBOL, TEST_START, TEST_END, threshold_decimal_bps="medium"
         )
         df_numeric = get_range_bars(
-            TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=250
+            TEST_SYMBOL, TEST_START, TEST_END, threshold_decimal_bps=250
         )
 
         # Should produce identical bar counts
@@ -192,7 +203,9 @@ class TestThresholdPresets:
         bar_counts = {}
 
         for preset in preset_order:
-            df = get_range_bars(TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=preset)
+            df = get_range_bars(
+                TEST_SYMBOL, TEST_START, TEST_END, threshold_decimal_bps=preset
+            )
             bar_counts[preset] = len(df)
 
         # Verify decreasing bar counts
@@ -207,7 +220,10 @@ class TestThresholdPresets:
         """Invalid preset name should raise ValueError."""
         with pytest.raises(ValueError, match="Unknown threshold preset"):
             get_range_bars(
-                TEST_SYMBOL, TEST_START, TEST_END, threshold_bps="invalid_preset"
+                TEST_SYMBOL,
+                TEST_START,
+                TEST_END,
+                threshold_decimal_bps="invalid_preset",
             )
 
     def test_threshold_presets_constant_matches(self):
@@ -338,7 +354,9 @@ class TestOHLCVInvariants:
     @pytest.mark.parametrize("threshold", [50, 250, 1000])
     def test_ohlc_invariants(self, threshold):
         """High >= max(Open, Close) and Low <= min(Open, Close)."""
-        df = get_range_bars(TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=threshold)
+        df = get_range_bars(
+            TEST_SYMBOL, TEST_START, TEST_END, threshold_decimal_bps=threshold
+        )
 
         # High is highest point
         assert (df["High"] >= df["Open"]).all(), "High should be >= Open"
@@ -351,21 +369,27 @@ class TestOHLCVInvariants:
     @pytest.mark.parametrize("threshold", [50, 250, 1000])
     def test_no_nan_values(self, threshold):
         """No NaN values in output (backtesting.py requirement)."""
-        df = get_range_bars(TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=threshold)
+        df = get_range_bars(
+            TEST_SYMBOL, TEST_START, TEST_END, threshold_decimal_bps=threshold
+        )
 
         assert not df.isna().any().any(), "Should have no NaN values"
 
     @pytest.mark.parametrize("threshold", [50, 250, 1000])
     def test_chronological_order(self, threshold):
         """Bars should be in chronological order."""
-        df = get_range_bars(TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=threshold)
+        df = get_range_bars(
+            TEST_SYMBOL, TEST_START, TEST_END, threshold_decimal_bps=threshold
+        )
 
         assert df.index.is_monotonic_increasing, "Timestamps should be increasing"
 
     @pytest.mark.parametrize("threshold", [50, 250, 1000])
     def test_positive_volume(self, threshold):
         """Volume should be positive."""
-        df = get_range_bars(TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=threshold)
+        df = get_range_bars(
+            TEST_SYMBOL, TEST_START, TEST_END, threshold_decimal_bps=threshold
+        )
 
         assert (df["Volume"] > 0).all(), "All volumes should be positive"
 
@@ -395,7 +419,9 @@ class TestTier1Symbols:
     @pytest.mark.parametrize("symbol", ["BTC", "ETH", "SOL"])
     def test_tier1_symbol_works_with_usdt(self, symbol):
         """Tier-1 symbols should work with USDT pair."""
-        df = get_range_bars(f"{symbol}USDT", TEST_START, TEST_END, threshold_bps=250)
+        df = get_range_bars(
+            f"{symbol}USDT", TEST_START, TEST_END, threshold_decimal_bps=250
+        )
 
         assert len(df) > 0, f"{symbol}USDT should produce bars"
 
@@ -423,7 +449,7 @@ class TestDocumentationExamples:
     def test_preset_usage_example(self):
         """Preset usage example from docstring."""
         df = get_range_bars(
-            "BTCUSDT", "2024-01-01", "2024-01-01", threshold_bps="tight"
+            "BTCUSDT", "2024-01-01", "2024-01-01", threshold_decimal_bps="tight"
         )
 
         assert isinstance(df, pd.DataFrame)
@@ -463,10 +489,10 @@ class TestCompressionRatios:
 
         for preset_name, bps_value in THRESHOLD_PRESETS.items():
             df = get_range_bars(
-                TEST_SYMBOL, TEST_START, TEST_END, threshold_bps=preset_name
+                TEST_SYMBOL, TEST_START, TEST_END, threshold_decimal_bps=preset_name
             )
             results[preset_name] = {
-                "threshold_bps": bps_value,
+                "threshold_decimal_bps": bps_value,
                 "bar_count": len(df),
             }
 
@@ -474,7 +500,8 @@ class TestCompressionRatios:
         print("\n=== Compression Ratios (BTCUSDT, 1 day) ===")
         for preset, data in results.items():
             print(
-                f"  {preset} ({data['threshold_bps']} 0.1bps): {data['bar_count']} bars"
+                f"  {preset} ({data['threshold_decimal_bps']} decimal bps): "
+                f"{data['bar_count']} bars"
             )
 
         # Verify we got meaningful results

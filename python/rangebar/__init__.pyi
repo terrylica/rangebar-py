@@ -5,8 +5,8 @@ Public API
 get_range_bars : Get range bars with automatic data fetching and caching.
 TIER1_SYMBOLS : High-liquidity symbols available on all Binance markets.
 THRESHOLD_PRESETS : Named threshold presets (micro, tight, standard, etc.).
-THRESHOLD_MIN : Minimum valid threshold (1 = 0.1bps).
-THRESHOLD_MAX : Maximum valid threshold (100,000 = 10,000bps).
+THRESHOLD_DECIMAL_MIN : Minimum valid threshold (1 = 0.1bps).
+THRESHOLD_DECIMAL_MAX : Maximum valid threshold (100,000 = 10,000bps).
 __version__ : Package version string.
 """
 
@@ -27,10 +27,10 @@ AAVE, ADA, AVAX, BCH, BNB, BTC, DOGE, ETH, FIL,
 LINK, LTC, NEAR, SOL, SUI, UNI, WIF, WLD, XRP
 """
 
-THRESHOLD_MIN: int
+THRESHOLD_DECIMAL_MIN: int
 """Minimum valid threshold: 1 (0.1bps = 0.001%)"""
 
-THRESHOLD_MAX: int
+THRESHOLD_DECIMAL_MAX: int
 """Maximum valid threshold: 100,000 (10,000bps = 100%)"""
 
 THRESHOLD_PRESETS: dict[str, int]
@@ -52,7 +52,7 @@ def get_range_bars(
     symbol: str,
     start_date: str,
     end_date: str,
-    threshold_bps: (
+    threshold_decimal_bps: (
         int | Literal["micro", "tight", "standard", "medium", "wide", "macro"]
     ) = 250,
     *,
@@ -84,7 +84,7 @@ def get_range_bars(
         Start date in YYYY-MM-DD format.
     end_date : str
         End date in YYYY-MM-DD format.
-    threshold_bps : int or str, default=250
+    threshold_decimal_bps : int or str, default=250
         Threshold in 0.1bps units. Can be:
         - Integer: Direct value (250 = 25bps = 0.25%)
         - String preset: "micro" (1bps), "tight" (5bps), "standard" (10bps),
@@ -149,7 +149,7 @@ def get_range_bars(
 
     Using threshold presets:
 
-    >>> df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", threshold_bps="tight")
+    >>> df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", threshold_decimal_bps="tight")
 
     Binance USD-M Futures:
 
@@ -160,7 +160,7 @@ def get_range_bars(
     >>> df = get_range_bars(
     ...     "EURUSD", "2024-01-01", "2024-01-31",
     ...     source="exness",
-    ...     threshold_bps="standard",
+    ...     threshold_decimal_bps="standard",
     ...     include_microstructure=True,
     ... )
 

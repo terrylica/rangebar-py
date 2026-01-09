@@ -190,7 +190,7 @@ trades = [
     {"timestamp": 1704067210000, "price": 42105.0, "quantity": 2.3},
 ]
 
-df = process_trades_to_dataframe(trades, threshold_bps=250)
+df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 # Returns: DataFrame with columns [Open, High, Low, Close, Volume]
 ```
 
@@ -206,7 +206,7 @@ trades_df = pd.read_csv("trades.csv")
 # Convert to range bars
 df = process_trades_to_dataframe(
     trades_df[["timestamp", "price", "quantity"]],
-    threshold_bps=250
+    threshold_decimal_bps=250
 )
 ```
 
@@ -215,7 +215,7 @@ df = process_trades_to_dataframe(
 ```python
 from rangebar import RangeBarProcessor
 
-processor = RangeBarProcessor(threshold_bps=100)  # 0.1%
+processor = RangeBarProcessor(threshold_decimal_bps=100)  # 0.1%
 
 # Process trades
 bars = processor.process_trades(trades)
@@ -226,14 +226,14 @@ df = processor.to_dataframe(bars)
 
 ## Threshold Selection Guide
 
-| threshold_bps | Percentage | Use Case                     |
+| threshold_decimal_bps | Percentage | Use Case                     |
 | ------------- | ---------- | ---------------------------- |
 | 100           | 0.1%       | High-frequency, scalping     |
 | 250           | 0.25%      | **Default**, general purpose |
 | 500           | 0.5%       | Swing trading                |
 | 1000          | 1.0%       | Position trading             |
 
-**Recommendation**: Start with `threshold_bps=250` (0.25%) and adjust based on:
+**Recommendation**: Start with `threshold_decimal_bps=250` (0.25%) and adjust based on:
 
 - Market volatility
 - Trading timeframe
@@ -264,7 +264,7 @@ trades = [
 ```python
 # Sort by timestamp before processing
 trades_df = trades_df.sort_values("timestamp")
-df = process_trades_to_dataframe(trades_df, threshold_bps=250)
+df = process_trades_to_dataframe(trades_df, threshold_decimal_bps=250)
 ```
 
 ### Error: "DataFrame missing required columns"
@@ -280,7 +280,7 @@ trades_df = trades_df.rename(columns={
     "qty": "quantity",    # or use 'volume'
 })
 
-df = process_trades_to_dataframe(trades_df, threshold_bps=250)
+df = process_trades_to_dataframe(trades_df, threshold_decimal_bps=250)
 ```
 
 ### Warning: "Index must be DatetimeIndex"
@@ -291,10 +291,10 @@ df = process_trades_to_dataframe(trades_df, threshold_bps=250)
 
 ```python
 # Option 1: Use convenience function (recommended)
-df = process_trades_to_dataframe(trades, threshold_bps=250)
+df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
 # Option 2: Manual conversion
-processor = RangeBarProcessor(threshold_bps=250)
+processor = RangeBarProcessor(threshold_decimal_bps=250)
 bars = processor.process_trades(trades)
 df = processor.to_dataframe(bars)  # ✅ Converts to DatetimeIndex
 ```
@@ -309,7 +309,7 @@ df = processor.to_dataframe(bars)  # ✅ Converts to DatetimeIndex
 ## Next Steps
 
 1. **Try with real data**: Download Binance CSV and run `binance_csv_example.py`
-2. **Experiment with thresholds**: Test different `threshold_bps` values
+2. **Experiment with thresholds**: Test different `threshold_decimal_bps` values
 3. **Compare to time bars**: Run same strategy on time-based bars vs range bars
 4. **Customize strategies**: Modify `backtesting_integration.py` with your own strategy
 

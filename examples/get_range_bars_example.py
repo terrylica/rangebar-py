@@ -11,8 +11,8 @@ This is the recommended approach for most users.
 """
 
 from rangebar import (
-    THRESHOLD_MAX,
-    THRESHOLD_MIN,
+    THRESHOLD_DECIMAL_MAX,
+    THRESHOLD_DECIMAL_MIN,
     THRESHOLD_PRESETS,
     TIER1_SYMBOLS,
     get_range_bars,
@@ -30,7 +30,7 @@ def main() -> None:
     print(f"   TIER1_SYMBOLS: {len(TIER1_SYMBOLS)} symbols")
     print(f"     {TIER1_SYMBOLS[:6]}...")
     print(f"   THRESHOLD_PRESETS: {THRESHOLD_PRESETS}")
-    print(f"   Valid range: {THRESHOLD_MIN} to {THRESHOLD_MAX}")
+    print(f"   Valid range: {THRESHOLD_DECIMAL_MIN} to {THRESHOLD_DECIMAL_MAX}")
 
     # Basic usage - fetch and process in one call
     print("\n2. Basic Usage (Binance Spot):")
@@ -46,7 +46,7 @@ def main() -> None:
     print("\n3. Using Threshold Presets:")
     for preset_name in ["tight", "medium", "wide"]:
         df = get_range_bars(
-            "BTCUSDT", "2024-01-01", "2024-01-01", threshold_bps=preset_name
+            "BTCUSDT", "2024-01-01", "2024-01-01", threshold_decimal_bps=preset_name
         )
         print(f"   {preset_name} ({THRESHOLD_PRESETS[preset_name]}): {len(df)} bars")
 

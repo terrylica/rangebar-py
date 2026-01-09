@@ -99,10 +99,10 @@ fn bench_threshold_impact(c: &mut Criterion) {
     let trades = generate_trades(100_000, 42000.0, 100.0);
     let mut group = c.benchmark_group("threshold_impact");
 
-    for threshold_bps in [100, 250, 500, 1000].iter() {
+    for threshold_decimal_bps in [100, 250, 500, 1000].iter() {
         group.bench_with_input(
-            BenchmarkId::from_parameter(threshold_bps),
-            threshold_bps,
+            BenchmarkId::from_parameter(threshold_decimal_bps),
+            threshold_decimal_bps,
             |b, &threshold| {
                 b.iter(|| {
                     let mut processor = RangeBarProcessor::new(threshold).unwrap();

@@ -19,19 +19,18 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-
 from rangebar import process_trades_to_dataframe
 
 
-def load_binance_csv(csv_path: str, threshold_bps: int = 250) -> pd.DataFrame:
+def load_binance_csv(csv_path: str, threshold_decimal_bps: int = 250) -> pd.DataFrame:
     """Load Binance aggTrades CSV and convert to range bars.
 
     Parameters
     ----------
     csv_path : str
         Path to Binance aggTrades CSV file
-    threshold_bps : int
-        Range bar threshold in 0.1 basis point units (250 = 25bps = 0.25%)
+    threshold_decimal_bps : int
+        Range bar threshold in decimal basis points (250 = 25bps = 0.25%)
 
     Returns
     -------
@@ -58,22 +57,27 @@ def load_binance_csv(csv_path: str, threshold_bps: int = 250) -> pd.DataFrame:
             # Standard Binance format - already has correct names
             pass
         else:
-            raise ValueError(
+            msg = (
                 f"CSV missing required columns. "
                 f"Required: {required_cols}, Found: {set(df.columns)}"
             )
+            raise ValueError(msg)
 
     print(f"  Loaded {len(df):,} trade records")
-    print(f"  Date range: {pd.to_datetime(df['timestamp'], unit='ms').min()} → "
-          f"{pd.to_datetime(df['timestamp'], unit='ms').max()}")
+    print(
+        f"  Date range: {pd.to_datetime(df['timestamp'], unit='ms').min()} → "
+        f"{pd.to_datetime(df['timestamp'], unit='ms').max()}"
+    )
     print(f"  Price range: ${df['price'].min():.2f} → ${df['price'].max():.2f}")
 
     # Convert to range bars
-    print(f"\nConverting to range bars (threshold = {threshold_bps * 0.1:.1f}bps = {threshold_bps * 0.001:.3f}%)...")
+    print(
+        f"\nConverting to range bars (threshold = {threshold_decimal_bps * 0.1:.1f}bps = {threshold_decimal_bps * 0.001:.3f}%)..."
+    )
 
     range_bars = process_trades_to_dataframe(
         df[["timestamp", "price", "quantity"]],
-        threshold_bps=threshold_bps
+        threshold_decimal_bps=threshold_decimal_bps,
     )
 
     print(f"  Generated {len(range_bars):,} range bars")
@@ -112,16 +116,18 @@ def create_sample_csv(output_path: str = "sample_binance_aggTrades.csv") -> str:
         price_change = (i % 100 - 50) * 2.0  # ±$100 per step
         price += price_change * 0.1  # Accumulate changes
 
-        records.append({
-            "agg_trade_id": 1000000 + i,
-            "price": round(price, 2),
-            "quantity": round(1.0 + (i % 10) * 0.1, 4),
-            "first_trade_id": 2000000 + i * 10,
-            "last_trade_id": 2000000 + i * 10 + 9,
-            "timestamp": base_time + i * 60000,  # 1 minute intervals
-            "is_buyer_maker": i % 2 == 0,
-            "is_best_match": True,
-        })
+        records.append(
+            {
+                "agg_trade_id": 1000000 + i,
+                "price": round(price, 2),
+                "quantity": round(1.0 + (i % 10) * 0.1, 4),
+                "first_trade_id": 2000000 + i * 10,
+                "last_trade_id": 2000000 + i * 10 + 9,
+                "timestamp": base_time + i * 60000,  # 1 minute intervals
+                "is_buyer_maker": i % 2 == 0,
+                "is_best_match": True,
+            }
+        )
 
     df = pd.DataFrame(records)
     df.to_csv(output_path, index=False)
@@ -130,7 +136,7 @@ def create_sample_csv(output_path: str = "sample_binance_aggTrades.csv") -> str:
     return output_path
 
 
-def main():
+def main() -> None:
     """Run Binance CSV example."""
     print("=" * 70)
     print("rangebar-py: Binance CSV Loading Example")
@@ -155,11 +161,13 @@ def main():
 
     # Load and convert
     try:
-        df = load_binance_csv(csv_path, threshold_bps=250)
+        df = load_binance_csv(csv_path, threshold_decimal_bps=250)
 
         if len(df) == 0:
-            print("\n⚠️  No range bars generated. Price movement may be below threshold.")
-            print("   Try: Lower threshold_bps or use more volatile data")
+            print(
+                "\n⚠️  No range bars generated. Price movement may be below threshold."
+            )
+            print("   Try: Lower threshold_decimal_bps or use more volatile data")
             return
 
         print("\n" + "=" * 70)
@@ -187,7 +195,7 @@ def main():
 
         print("\nNext steps:")
         print("  - Use the output CSV with your backtesting framework")
-        print("  - Try different threshold_bps values (100-500 recommended)")
+        print("  - Try different threshold_decimal_bps values (100-500 recommended)")
         print("  - Compare range bars vs time-based bars")
 
     except Exception as e:

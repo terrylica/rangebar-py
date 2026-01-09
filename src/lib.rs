@@ -118,7 +118,7 @@ fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject> {
 #[pyclass(name = "PyRangeBarProcessor")]
 struct PyRangeBarProcessor {
     processor: RangeBarProcessor,
-    threshold_bps: u32,
+    threshold_decimal_bps: u32,
 }
 
 #[pymethods]
@@ -126,18 +126,18 @@ impl PyRangeBarProcessor {
     /// Create new processor
     ///
     /// Args:
-    ///     `threshold_bps`: Threshold in 0.1 basis point units (250 = 25bps = 0.25%)
+    ///     `threshold_decimal_bps`: Threshold in decimal basis points (250 = 25bps = 0.25%)
     ///
     /// Raises:
     ///     `ValueError`: If threshold is out of range [1, `100_000`]
     #[new]
-    fn new(threshold_bps: u32) -> PyResult<Self> {
-        let processor = RangeBarProcessor::new(threshold_bps)
+    fn new(threshold_decimal_bps: u32) -> PyResult<Self> {
+        let processor = RangeBarProcessor::new(threshold_decimal_bps)
             .map_err(|e| PyValueError::new_err(format!("Failed to create processor: {e}")))?;
 
         Ok(Self {
             processor,
-            threshold_bps,
+            threshold_decimal_bps,
         })
     }
 
@@ -180,8 +180,8 @@ impl PyRangeBarProcessor {
 
     /// Get threshold value
     #[getter]
-    const fn threshold_bps(&self) -> u32 {
-        self.threshold_bps
+    const fn threshold_decimal_bps(&self) -> u32 {
+        self.threshold_decimal_bps
     }
 }
 
@@ -334,7 +334,7 @@ mod exness_bindings {
     #[pyclass(name = "ExnessRangeBarBuilder")]
     pub struct PyExnessRangeBarBuilder {
         builder: ExnessRangeBarBuilder,
-        threshold_bps: u32,
+        threshold_decimal_bps: u32,
         instrument: PyExnessInstrument,
     }
 
@@ -344,25 +344,25 @@ mod exness_bindings {
         ///
         /// Args:
         ///     instrument: ExnessInstrument enum value
-        ///     threshold_bps: Threshold in 0.1 basis point units (250 = 25bps = 0.25%)
+        ///     threshold_decimal_bps: Threshold in decimal basis points (250 = 25bps = 0.25%)
         ///     strictness: ValidationStrictness enum (default: Strict)
         #[new]
-        #[pyo3(signature = (instrument, threshold_bps, strictness = PyValidationStrictness::Strict))]
+        #[pyo3(signature = (instrument, threshold_decimal_bps, strictness = PyValidationStrictness::Strict))]
         fn new(
             instrument: PyExnessInstrument,
-            threshold_bps: u32,
+            threshold_decimal_bps: u32,
             strictness: PyValidationStrictness,
         ) -> PyResult<Self> {
             let builder = ExnessRangeBarBuilder::for_instrument(
                 instrument.to_rust(),
-                threshold_bps,
+                threshold_decimal_bps,
                 strictness.to_rust(),
             )
             .map_err(|e| PyValueError::new_err(format!("Failed to create builder: {e}")))?;
 
             Ok(Self {
                 builder,
-                threshold_bps,
+                threshold_decimal_bps,
                 instrument,
             })
         }
@@ -435,8 +435,8 @@ mod exness_bindings {
 
         /// Get threshold value
         #[getter]
-        const fn threshold_bps(&self) -> u32 {
-            self.threshold_bps
+        const fn threshold_decimal_bps(&self) -> u32 {
+            self.threshold_decimal_bps
         }
 
         /// Get instrument
@@ -491,7 +491,7 @@ mod binance_bindings {
     }
 
     impl PyMarketType {
-        fn to_market_str(self) -> &'static str {
+        const fn to_market_str(self) -> &'static str {
             match self {
                 Self::Spot => "spot",
                 Self::FuturesUM => "um",
@@ -551,7 +551,7 @@ mod binance_bindings {
                 Ok(mut day_trades) => all_trades.append(&mut day_trades),
                 Err(e) => {
                     // Skip days with no data (weekends, holidays, etc.)
-                    eprintln!("Warning: No data for {}: {}", current_date, e);
+                    eprintln!("Warning: No data for {current_date}: {e}");
                 }
             }
             current_date += chrono::Duration::days(1);
@@ -559,8 +559,7 @@ mod binance_bindings {
 
         if all_trades.is_empty() {
             return Err(PyRuntimeError::new_err(format!(
-                "No data available for {} from {} to {}",
-                symbol, start_date, end_date
+                "No data available for {symbol} from {start_date} to {end_date}"
             )));
         }
 
@@ -604,7 +603,7 @@ mod tests {
     fn test_processor_creation() {
         let processor = PyRangeBarProcessor::new(250);
         assert!(processor.is_ok());
-        assert_eq!(processor.unwrap().threshold_bps, 250);
+        assert_eq!(processor.unwrap().threshold_decimal_bps, 250);
     }
 
     #[test]
@@ -646,12 +645,12 @@ mod tests {
         // Test minimum valid threshold (1 = 0.1 basis points)
         let processor_min = PyRangeBarProcessor::new(1);
         assert!(processor_min.is_ok());
-        assert_eq!(processor_min.unwrap().threshold_bps, 1);
+        assert_eq!(processor_min.unwrap().threshold_decimal_bps, 1);
 
         // Test maximum valid threshold (100_000 = 10,000 basis points = 100%)
         let processor_max = PyRangeBarProcessor::new(100_000);
         assert!(processor_max.is_ok());
-        assert_eq!(processor_max.unwrap().threshold_bps, 100_000);
+        assert_eq!(processor_max.unwrap().threshold_decimal_bps, 100_000);
 
         // Test common valid thresholds
         for threshold in [10, 100, 250, 500, 1000, 10_000] {

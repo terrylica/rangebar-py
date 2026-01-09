@@ -14,7 +14,6 @@ Validation checks:
 7. Precision preservation
 """
 
-from typing import List, Tuple
 
 import pandas as pd
 from rangebar import process_trades_to_dataframe
@@ -23,7 +22,7 @@ from rangebar import process_trades_to_dataframe
 class OHLCVValidator:
     """Validator for OHLCV DataFrame format."""
 
-    def __init__(self, strict: bool = True):
+    def __init__(self, strict: bool = True) -> None:
         """Initialize validator.
 
         Parameters
@@ -33,10 +32,10 @@ class OHLCVValidator:
             If False, collect and report all failures.
         """
         self.strict = strict
-        self.errors: List[str] = []
-        self.warnings: List[str] = []
+        self.errors: list[str] = []
+        self.warnings: list[str] = []
 
-    def validate(self, df: pd.DataFrame) -> Tuple[bool, List[str], List[str]]:
+    def validate(self, df: pd.DataFrame) -> tuple[bool, list[str], list[str]]:
         """Validate OHLCV DataFrame.
 
         Parameters
@@ -66,28 +65,27 @@ class OHLCVValidator:
 
         if self.strict and not is_valid:
             error_msg = "\n".join(self.errors)
-            raise ValueError(f"OHLCV validation failed:\n{error_msg}")
+            msg = f"OHLCV validation failed:\n{error_msg}"
+            raise ValueError(msg)
 
         return is_valid, self.errors, self.warnings
 
-    def _check_index(self, df: pd.DataFrame):
+    def _check_index(self, df: pd.DataFrame) -> None:
         """Check index is DatetimeIndex."""
         if not isinstance(df.index, pd.DatetimeIndex):
             self.errors.append(
                 f"Index must be DatetimeIndex, got {type(df.index).__name__}"
             )
 
-    def _check_columns(self, df: pd.DataFrame):
+    def _check_columns(self, df: pd.DataFrame) -> None:
         """Check column names are correct."""
         expected = ["Open", "High", "Low", "Close", "Volume"]
         actual = list(df.columns)
 
         if actual != expected:
-            self.errors.append(
-                f"Columns must be {expected}, got {actual}"
-            )
+            self.errors.append(f"Columns must be {expected}, got {actual}")
 
-    def _check_data_types(self, df: pd.DataFrame):
+    def _check_data_types(self, df: pd.DataFrame) -> None:
         """Check data types are numeric."""
         for col in ["Open", "High", "Low", "Close", "Volume"]:
             if col not in df.columns:
@@ -98,19 +96,17 @@ class OHLCVValidator:
                     f"Column '{col}' must be numeric, got {df[col].dtype}"
                 )
 
-    def _check_completeness(self, df: pd.DataFrame):
+    def _check_completeness(self, df: pd.DataFrame) -> None:
         """Check for missing values."""
-        if df.isnull().any().any():
-            null_counts = df.isnull().sum()
+        if df.isna().any().any():
+            null_counts = df.isna().sum()
             null_cols = null_counts[null_counts > 0]
-            self.errors.append(
-                f"DataFrame contains NaN values: {null_cols.to_dict()}"
-            )
+            self.errors.append(f"DataFrame contains NaN values: {null_cols.to_dict()}")
 
         if len(df) == 0:
             self.warnings.append("DataFrame is empty")
 
-    def _check_ohlc_invariants(self, df: pd.DataFrame):
+    def _check_ohlc_invariants(self, df: pd.DataFrame) -> None:
         """Check OHLC invariants."""
         if "Open" not in df.columns or "High" not in df.columns:
             return
@@ -118,35 +114,28 @@ class OHLCVValidator:
         # High must be >= Open
         if not (df["High"] >= df["Open"]).all():
             invalid = (~(df["High"] >= df["Open"])).sum()
-            self.errors.append(
-                f"High must be >= Open (violated in {invalid} rows)"
-            )
+            self.errors.append(f"High must be >= Open (violated in {invalid} rows)")
 
         # High must be >= Close
-        if "Close" in df.columns:
-            if not (df["High"] >= df["Close"]).all():
-                invalid = (~(df["High"] >= df["Close"])).sum()
-                self.errors.append(
-                    f"High must be >= Close (violated in {invalid} rows)"
-                )
+        if "Close" in df.columns and not (df["High"] >= df["Close"]).all():
+            invalid = (~(df["High"] >= df["Close"])).sum()
+            self.errors.append(f"High must be >= Close (violated in {invalid} rows)")
 
         # Low must be <= Open
-        if "Low" in df.columns:
-            if not (df["Low"] <= df["Open"]).all():
-                invalid = (~(df["Low"] <= df["Open"])).sum()
-                self.errors.append(
-                    f"Low must be <= Open (violated in {invalid} rows)"
-                )
+        if "Low" in df.columns and not (df["Low"] <= df["Open"]).all():
+            invalid = (~(df["Low"] <= df["Open"])).sum()
+            self.errors.append(f"Low must be <= Open (violated in {invalid} rows)")
 
         # Low must be <= Close
-        if "Low" in df.columns and "Close" in df.columns:
-            if not (df["Low"] <= df["Close"]).all():
-                invalid = (~(df["Low"] <= df["Close"])).sum()
-                self.errors.append(
-                    f"Low must be <= Close (violated in {invalid} rows)"
-                )
+        if (
+            "Low" in df.columns
+            and "Close" in df.columns
+            and not (df["Low"] <= df["Close"]).all()
+        ):
+            invalid = (~(df["Low"] <= df["Close"])).sum()
+            self.errors.append(f"Low must be <= Close (violated in {invalid} rows)")
 
-    def _check_temporal_ordering(self, df: pd.DataFrame):
+    def _check_temporal_ordering(self, df: pd.DataFrame) -> None:
         """Check temporal ordering."""
         if not df.index.is_monotonic_increasing:
             self.errors.append("Index must be monotonically increasing (chronological)")
@@ -155,18 +144,16 @@ class OHLCVValidator:
             dup_count = df.index.duplicated().sum()
             self.errors.append(f"Index has {dup_count} duplicate timestamps")
 
-    def _check_volume_positivity(self, df: pd.DataFrame):
+    def _check_volume_positivity(self, df: pd.DataFrame) -> None:
         """Check volume is positive."""
         if "Volume" not in df.columns:
             return
 
         if not (df["Volume"] > 0).all():
             invalid = (~(df["Volume"] > 0)).sum()
-            self.errors.append(
-                f"Volume must be > 0 (violated in {invalid} rows)"
-            )
+            self.errors.append(f"Volume must be > 0 (violated in {invalid} rows)")
 
-    def _check_precision(self, df: pd.DataFrame):
+    def _check_precision(self, df: pd.DataFrame) -> None:
         """Check precision preservation."""
         for col in ["Open", "High", "Low", "Close", "Volume"]:
             if col not in df.columns:
@@ -175,7 +162,9 @@ class OHLCVValidator:
             # Check for excessive precision loss
             # Range bar should preserve ~8 decimal places from FixedPoint
             sample = df[col].head(100)
-            decimals = sample.apply(lambda x: len(str(x).split('.')[-1]) if '.' in str(x) else 0)
+            decimals = sample.apply(
+                lambda x: len(str(x).split(".")[-1]) if "." in str(x) else 0
+            )
             avg_decimals = decimals.mean()
 
             if avg_decimals < 2:
@@ -184,7 +173,7 @@ class OHLCVValidator:
                 )
 
 
-def main():
+def main() -> None:
     """Run validation example."""
     print("=" * 70)
     print("rangebar-py: OHLCV Output Validation")
@@ -205,7 +194,7 @@ def main():
 
     # Convert to range bars
     print("\n2. Converting to range bars...")
-    df = process_trades_to_dataframe(trades, threshold_bps=250)
+    df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
     print(f"   Generated {len(df)} range bars")
 
     # Validate
@@ -239,7 +228,7 @@ def main():
     print(f"\nShape: {df.shape}")
     print(f"Index: {type(df.index).__name__}")
     print(f"Columns: {list(df.columns)}")
-    print(f"\nFirst 5 rows:")
+    print("\nFirst 5 rows:")
     print(df.head().to_string())
 
     print("\n" + "=" * 70)
@@ -257,12 +246,14 @@ def main():
     print("\n4. Creating intentionally invalid DataFrame...")
     invalid_df = df.copy()
     invalid_df.iloc[0, invalid_df.columns.get_loc("High")] = -100  # Invalid: negative
-    invalid_df.iloc[1, invalid_df.columns.get_loc("Low")] = 999999  # Invalid: Low > High
+    invalid_df.iloc[1, invalid_df.columns.get_loc("Low")] = (
+        999999  # Invalid: Low > High
+    )
     invalid_df.iloc[2, invalid_df.columns.get_loc("Volume")] = 0  # Invalid: zero volume
 
     print("\n5. Validating invalid data...")
     validator2 = OHLCVValidator(strict=False)
-    is_valid2, errors2, warnings2 = validator2.validate(invalid_df)
+    _is_valid2, errors2, _warnings2 = validator2.validate(invalid_df)
 
     print(f"\n   Detected {len(errors2)} error(s) (as expected):")
     for i, error in enumerate(errors2, 1):

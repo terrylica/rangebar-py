@@ -55,12 +55,12 @@ class TestCacheKey:
         """Test creating a cache key."""
         key = CacheKey(
             symbol="BTCUSDT",
-            threshold_bps=250,
+            threshold_decimal_bps=250,
             start_ts=1704067200000,
             end_ts=1704153600000,
         )
         assert key.symbol == "BTCUSDT"
-        assert key.threshold_bps == 250
+        assert key.threshold_decimal_bps == 250
         assert key.start_ts == 1704067200000
         assert key.end_ts == 1704153600000
 
@@ -68,7 +68,7 @@ class TestCacheKey:
         """Test hash key generation."""
         key = CacheKey(
             symbol="BTCUSDT",
-            threshold_bps=250,
+            threshold_decimal_bps=250,
             start_ts=1704067200000,
             end_ts=1704153600000,
         )

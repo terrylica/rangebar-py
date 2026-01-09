@@ -14,7 +14,7 @@ Basic usage:
 >>> trades = pd.read_csv("BTCUSDT-aggTrades-2024-01.csv")
 >>>
 >>> # Convert to range bars (25 basis points = 0.25%)
->>> df = process_trades_to_dataframe(trades, threshold_bps=250)
+>>> df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 >>>
 >>> # Use with backtesting.py
 >>> from backtesting import Backtest, Strategy
@@ -56,8 +56,8 @@ def _ensure_clickhouse_imports() -> None:
 
 
 __all__ = [
-    "THRESHOLD_MAX",
-    "THRESHOLD_MIN",
+    "THRESHOLD_DECIMAL_MAX",
+    "THRESHOLD_DECIMAL_MIN",
     "THRESHOLD_PRESETS",
     "TIER1_SYMBOLS",
     "__version__",
@@ -74,21 +74,21 @@ class RangeBarProcessor:
 
     Parameters
     ----------
-    threshold_bps : int
-        Threshold in 0.1 basis point units.
+    threshold_decimal_bps : int
+        Threshold in decimal basis points.
         Examples: 250 = 25bps = 0.25%, 100 = 10bps = 0.1%
         Valid range: [1, 100_000] (0.001% to 100%)
 
     Raises
     ------
     ValueError
-        If threshold_bps is out of valid range [1, 100_000]
+        If threshold_decimal_bps is out of valid range [1, 100_000]
 
     Examples
     --------
     Create processor and convert trades to DataFrame:
 
-    >>> processor = RangeBarProcessor(threshold_bps=250)  # 0.25%
+    >>> processor = RangeBarProcessor(threshold_decimal_bps=250)  # 0.25%
     >>> trades = [
     ...     {"timestamp": 1704067200000, "price": 42000.0, "quantity": 1.5},
     ...     {"timestamp": 1704067210000, "price": 42105.0, "quantity": 2.3},
@@ -110,17 +110,17 @@ class RangeBarProcessor:
     - Unsorted trades raise RuntimeError
     """
 
-    def __init__(self, threshold_bps: int) -> None:
+    def __init__(self, threshold_decimal_bps: int) -> None:
         """Initialize processor with given threshold.
 
         Parameters
         ----------
-        threshold_bps : int
-            Threshold in 0.1 basis point units (250 = 25bps = 0.25%)
+        threshold_decimal_bps : int
+            Threshold in decimal basis points (250 = 25bps = 0.25%)
         """
         # Validation happens in Rust layer, which raises PyValueError
-        self._processor = _PyRangeBarProcessor(threshold_bps)
-        self.threshold_bps = threshold_bps
+        self._processor = _PyRangeBarProcessor(threshold_decimal_bps)
+        self.threshold_decimal_bps = threshold_decimal_bps
 
     def process_trades(
         self, trades: list[dict[str, int | float]]
@@ -248,7 +248,7 @@ class RangeBarProcessor:
 
 def process_trades_to_dataframe(
     trades: list[dict[str, int | float]] | pd.DataFrame,
-    threshold_bps: int = 250,
+    threshold_decimal_bps: int = 250,
 ) -> pd.DataFrame:
     """Convenience function to process trades directly to DataFrame.
 
@@ -262,8 +262,8 @@ def process_trades_to_dataframe(
         - timestamp: int (milliseconds) or datetime
         - price: float
         - quantity: float (or 'volume')
-    threshold_bps : int, default=250
-        Threshold in 0.1bps units (250 = 25bps = 0.25%)
+    threshold_decimal_bps : int, default=250
+        Threshold in decimal basis points (250 = 25bps = 0.25%)
 
     Returns
     -------
@@ -288,7 +288,7 @@ def process_trades_to_dataframe(
     ...     {"timestamp": 1704067200000, "price": 42000.0, "quantity": 1.5},
     ...     {"timestamp": 1704067210000, "price": 42105.0, "quantity": 2.3},
     ... ]
-    >>> df = process_trades_to_dataframe(trades, threshold_bps=250)
+    >>> df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
     With pandas DataFrame:
 
@@ -298,18 +298,18 @@ def process_trades_to_dataframe(
     ...     "price": [42000.0 + i for i in range(100)],
     ...     "quantity": [1.5] * 100,
     ... })
-    >>> df = process_trades_to_dataframe(trades_df, threshold_bps=250)
+    >>> df = process_trades_to_dataframe(trades_df, threshold_decimal_bps=250)
 
     With Binance CSV:
 
     >>> trades_csv = pd.read_csv("BTCUSDT-aggTrades-2024-01.csv")
-    >>> df = process_trades_to_dataframe(trades_csv, threshold_bps=250)
+    >>> df = process_trades_to_dataframe(trades_csv, threshold_decimal_bps=250)
     >>> # Use with backtesting.py
     >>> from backtesting import Backtest
     >>> bt = Backtest(df, MyStrategy, cash=10000)
     >>> stats = bt.run()
     """
-    processor = RangeBarProcessor(threshold_bps)
+    processor = RangeBarProcessor(threshold_decimal_bps)
 
     # Convert DataFrame to list of dicts if needed
     if isinstance(trades, pd.DataFrame):
@@ -350,7 +350,7 @@ def process_trades_to_dataframe(
 def process_trades_to_dataframe_cached(
     trades: list[dict[str, int | float]] | pd.DataFrame,
     symbol: str,
-    threshold_bps: int = 250,
+    threshold_decimal_bps: int = 250,
     cache: RangeBarCache | None = None,
 ) -> pd.DataFrame:
     """Process trades to DataFrame with two-tier ClickHouse caching.
@@ -369,8 +369,8 @@ def process_trades_to_dataframe_cached(
         - quantity: float (or 'volume')
     symbol : str
         Trading symbol (e.g., "BTCUSDT"). Used as cache key.
-    threshold_bps : int, default=250
-        Threshold in 0.1bps units (250 = 25bps = 0.25%)
+    threshold_decimal_bps : int, default=250
+        Threshold in decimal basis points (250 = 25bps = 0.25%)
     cache : RangeBarCache | None
         External cache instance. If None, creates one (preflight runs).
 
@@ -425,7 +425,7 @@ def process_trades_to_dataframe_cached(
     # Create cache key
     key = CacheKey(
         symbol=symbol,
-        threshold_bps=threshold_bps,
+        threshold_decimal_bps=threshold_decimal_bps,
         start_ts=start_ts,
         end_ts=end_ts,
     )
@@ -442,7 +442,7 @@ def process_trades_to_dataframe_cached(
                 return cached_bars
 
         # Compute using core API
-        result = process_trades_to_dataframe(trades, threshold_bps)
+        result = process_trades_to_dataframe(trades, threshold_decimal_bps)
 
         # Store in Tier 2 cache
         if not result.empty:
@@ -462,7 +462,7 @@ def process_trades_to_dataframe_cached(
 
 def process_trades_chunked(
     trades_iterator: Iterator[dict[str, int | float]],
-    threshold_bps: int = 250,
+    threshold_decimal_bps: int = 250,
     chunk_size: int = 100_000,
 ) -> Iterator[pd.DataFrame]:
     """Process trades in chunks to avoid memory spikes.
@@ -475,8 +475,8 @@ def process_trades_chunked(
     trades_iterator : Iterator[Dict]
         Iterator yielding trade dictionaries with keys:
         timestamp, price, quantity (or volume)
-    threshold_bps : int, default=250
-        Threshold in 0.1bps units (250 = 25bps = 0.25%)
+    threshold_decimal_bps : int, default=250
+        Threshold in decimal basis points (250 = 25bps = 0.25%)
     chunk_size : int, default=100_000
         Number of trades per chunk
 
@@ -505,7 +505,7 @@ def process_trades_chunked(
     """
     from itertools import islice
 
-    processor = RangeBarProcessor(threshold_bps)
+    processor = RangeBarProcessor(threshold_decimal_bps)
 
     while True:
         chunk = list(islice(trades_iterator, chunk_size))
@@ -519,7 +519,7 @@ def process_trades_chunked(
 
 def process_trades_polars(
     trades: pl.DataFrame | pl.LazyFrame,
-    threshold_bps: int = 250,
+    threshold_decimal_bps: int = 250,
 ) -> pd.DataFrame:
     """Process trades from Polars DataFrame (optimized pipeline).
 
@@ -533,8 +533,8 @@ def process_trades_polars(
         - timestamp: int64 (milliseconds since epoch)
         - price: float
         - quantity (or volume): float
-    threshold_bps : int, default=250
-        Threshold in 0.1bps units (250 = 25bps = 0.25%)
+    threshold_decimal_bps : int, default=250
+        Threshold in decimal basis points (250 = 25bps = 0.25%)
 
     Returns
     -------
@@ -551,7 +551,7 @@ def process_trades_polars(
     >>> from rangebar import process_trades_polars
     >>> lazy_df = pl.scan_parquet("trades.parquet")
     >>> lazy_filtered = lazy_df.filter(pl.col("timestamp") >= 1704067200000)
-    >>> df = process_trades_polars(lazy_filtered, threshold_bps=250)
+    >>> df = process_trades_polars(lazy_filtered, threshold_decimal_bps=250)
 
     With DataFrame:
 
@@ -588,7 +588,7 @@ def process_trades_polars(
     trades_list = trades_minimal.to_dicts()
 
     # Process through Rust layer
-    processor = RangeBarProcessor(threshold_bps)
+    processor = RangeBarProcessor(threshold_decimal_bps)
     bars = processor.process_trades(trades_list)
 
     return processor.to_dataframe(bars)
@@ -621,10 +621,10 @@ TIER1_SYMBOLS: tuple[str, ...] = (
 )
 
 # Valid threshold range (from rangebar-core)
-THRESHOLD_MIN = 1  # 0.1bps = 0.001%
-THRESHOLD_MAX = 100_000  # 10,000bps = 100%
+THRESHOLD_DECIMAL_MIN = 1  # 1 decimal bps = 0.1bps = 0.001%
+THRESHOLD_DECIMAL_MAX = 100_000  # 10,000bps = 100%
 
-# Common threshold presets (in 0.1bps units)
+# Common threshold presets (in decimal basis points)
 THRESHOLD_PRESETS: dict[str, int] = {
     "micro": 10,  # 1bps = 0.01% (scalping)
     "tight": 50,  # 5bps = 0.05% (day trading)
@@ -639,7 +639,7 @@ def get_range_bars(
     symbol: str,
     start_date: str,
     end_date: str,
-    threshold_bps: int | str = 250,
+    threshold_decimal_bps: int | str = 250,
     *,
     # Data source configuration
     source: str = "binance",
@@ -669,8 +669,8 @@ def get_range_bars(
         Start date in YYYY-MM-DD format.
     end_date : str
         End date in YYYY-MM-DD format.
-    threshold_bps : int or str, default=250
-        Threshold in 0.1bps units. Can be:
+    threshold_decimal_bps : int or str, default=250
+        Threshold in decimal basis points. Can be:
         - Integer: Direct value (250 = 25bps = 0.25%)
         - String preset: "micro" (1bps), "tight" (5bps), "standard" (10bps),
           "medium" (25bps), "wide" (50bps), "macro" (100bps)
@@ -745,7 +745,7 @@ def get_range_bars(
     >>> df = get_range_bars(
     ...     "EURUSD", "2024-01-01", "2024-01-31",
     ...     source="exness",
-    ...     threshold_bps="standard",
+    ...     threshold_decimal_bps="standard",
     ...     include_microstructure=True,  # includes spread stats
     ... )
 
@@ -765,8 +765,8 @@ def get_range_bars(
 
     Notes
     -----
-    Threshold units (0.1bps):
-        The threshold is specified in tenths of basis points for precision.
+    Threshold units (decimal basis points):
+        The threshold is specified in decimal basis points (0.1bps) for precision.
         Common conversions:
         - 10 = 1bps = 0.01%
         - 100 = 10bps = 0.1%
@@ -798,19 +798,19 @@ def get_range_bars(
     # -------------------------------------------------------------------------
     # Resolve threshold (support presets)
     # -------------------------------------------------------------------------
-    if isinstance(threshold_bps, str):
-        if threshold_bps not in THRESHOLD_PRESETS:
+    if isinstance(threshold_decimal_bps, str):
+        if threshold_decimal_bps not in THRESHOLD_PRESETS:
             msg = (
-                f"Unknown threshold preset: {threshold_bps!r}. "
+                f"Unknown threshold preset: {threshold_decimal_bps!r}. "
                 f"Valid presets: {list(THRESHOLD_PRESETS.keys())}"
             )
             raise ValueError(msg)
-        threshold_bps = THRESHOLD_PRESETS[threshold_bps]
+        threshold_decimal_bps = THRESHOLD_PRESETS[threshold_decimal_bps]
 
-    if not THRESHOLD_MIN <= threshold_bps <= THRESHOLD_MAX:
+    if not THRESHOLD_DECIMAL_MIN <= threshold_decimal_bps <= THRESHOLD_DECIMAL_MAX:
         msg = (
-            f"threshold_bps must be between {THRESHOLD_MIN} and {THRESHOLD_MAX}, "
-            f"got {threshold_bps}"
+            f"threshold_decimal_bps must be between {THRESHOLD_DECIMAL_MIN} and {THRESHOLD_DECIMAL_MAX}, "
+            f"got {threshold_decimal_bps}"
         )
         raise ValueError(msg)
 
@@ -902,7 +902,7 @@ def get_range_bars(
         return _process_exness_ticks(
             tick_data,
             symbol,
-            threshold_bps,
+            threshold_decimal_bps,
             validation,
             include_incomplete,
             include_microstructure,
@@ -910,7 +910,7 @@ def get_range_bars(
 
     return _process_binance_trades(
         tick_data,
-        threshold_bps,
+        threshold_decimal_bps,
         include_incomplete,
         include_microstructure,
     )
@@ -967,7 +967,7 @@ def _fetch_exness(
 
 def _process_binance_trades(
     trades: pl.DataFrame,
-    threshold_bps: int,
+    threshold_decimal_bps: int,
     include_incomplete: bool,  # noqa: ARG001 - TODO: implement
     include_microstructure: bool,
 ) -> pd.DataFrame:
@@ -992,7 +992,7 @@ def _process_binance_trades(
 
     # Convert to trades list and process
     trades_list = trades_minimal.to_dicts()
-    processor = RangeBarProcessor(threshold_bps)
+    processor = RangeBarProcessor(threshold_decimal_bps)
     bars = processor.process_trades(trades_list)
 
     if not bars:
@@ -1027,7 +1027,7 @@ def _process_binance_trades(
 def _process_exness_ticks(
     ticks: pl.DataFrame,
     symbol: str,
-    threshold_bps: int,
+    threshold_decimal_bps: int,
     validation: str,
     include_incomplete: bool,  # noqa: ARG001 - TODO: implement
     include_microstructure: bool,
@@ -1072,7 +1072,7 @@ def _process_exness_ticks(
         df = process_exness_ticks_to_dataframe(
             ticks.to_pandas(),
             instrument,
-            threshold_bps,
+            threshold_decimal_bps,
             validation_enum,
         )
 

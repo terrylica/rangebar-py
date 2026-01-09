@@ -14,7 +14,7 @@ Usage:
     # Create builder for EURUSD with 25bps threshold
     builder = ExnessRangeBarBuilder(
         ExnessInstrument.EURUSD,
-        threshold_bps=250,
+        threshold_decimal_bps=250,
         strictness=ValidationStrictness.Strict,
     )
 
@@ -73,7 +73,7 @@ except ImportError:
 def process_exness_ticks_to_dataframe(
     ticks: pd.DataFrame | Sequence[dict[str, float | int]],
     instrument: ExnessInstrument,  # type: ignore[valid-type]
-    threshold_bps: int = 250,
+    threshold_decimal_bps: int = 250,
     strictness: ValidationStrictness = None,  # type: ignore[assignment]
 ) -> pd.DataFrame:
     """Process Exness tick data to range bars DataFrame.
@@ -84,8 +84,8 @@ def process_exness_ticks_to_dataframe(
         Tick data with columns/keys: bid, ask, timestamp_ms
     instrument : ExnessInstrument
         Exness instrument enum value (e.g., ExnessInstrument.EURUSD)
-    threshold_bps : int, default=250
-        Threshold in 0.1bps units (250 = 25bps = 0.25%)
+    threshold_decimal_bps : int, default=250
+        Threshold in decimal basis points (250 = 25bps = 0.25%)
     strictness : ValidationStrictness, optional
         Validation strictness level (default: Strict)
 
@@ -117,7 +117,7 @@ def process_exness_ticks_to_dataframe(
     ...     "timestamp_ms": [1600000000000, 1600001000000, 1600002000000],
     ... })
     >>> bars = process_exness_ticks_to_dataframe(
-    ...     ticks, ExnessInstrument.EURUSD, threshold_bps=250
+    ...     ticks, ExnessInstrument.EURUSD, threshold_decimal_bps=250
     ... )
     """
     _check_exness_available()
@@ -127,7 +127,7 @@ def process_exness_ticks_to_dataframe(
         strictness = ValidationStrictness.Strict  # type: ignore[attr-defined]
 
     # Create builder
-    builder = ExnessRangeBarBuilder(instrument, threshold_bps, strictness)  # type: ignore[misc]
+    builder = ExnessRangeBarBuilder(instrument, threshold_decimal_bps, strictness)  # type: ignore[misc]
 
     # Convert DataFrame to list of dicts if needed
     if isinstance(ticks, pd.DataFrame):

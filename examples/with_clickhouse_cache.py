@@ -129,7 +129,7 @@ def example_without_cache(trades: pd.DataFrame) -> tuple[pd.DataFrame, float]:
         Range bars DataFrame and processing time
     """
     start = time.perf_counter()
-    df = process_trades_to_dataframe(trades, threshold_bps=250)
+    df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
     elapsed = time.perf_counter() - start
     return df, elapsed
 
@@ -152,7 +152,9 @@ def example_with_cache_first_run(
         Range bars DataFrame and processing time
     """
     start = time.perf_counter()
-    df = process_trades_to_dataframe_cached(trades, symbol=symbol, threshold_bps=250)
+    df = process_trades_to_dataframe_cached(
+        trades, symbol=symbol, threshold_decimal_bps=250
+    )
     elapsed = time.perf_counter() - start
     return df, elapsed
 
@@ -175,7 +177,9 @@ def example_with_cache_second_run(
         Range bars DataFrame and processing time
     """
     start = time.perf_counter()
-    df = process_trades_to_dataframe_cached(trades, symbol=symbol, threshold_bps=250)
+    df = process_trades_to_dataframe_cached(
+        trades, symbol=symbol, threshold_decimal_bps=250
+    )
     elapsed = time.perf_counter() - start
     return df, elapsed
 
@@ -200,7 +204,7 @@ def example_with_shared_cache(trades: pd.DataFrame, symbol: str) -> None:
         for threshold in [100, 250, 500]:
             start = time.perf_counter()
             df = process_trades_to_dataframe_cached(
-                trades, symbol=symbol, threshold_bps=threshold, cache=cache
+                trades, symbol=symbol, threshold_decimal_bps=threshold, cache=cache
             )
             elapsed = time.perf_counter() - start
             print(

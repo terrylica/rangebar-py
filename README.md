@@ -59,7 +59,7 @@ from rangebar import get_range_bars
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
 
 # Using threshold presets
-df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", threshold_bps="tight")
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", threshold_decimal_bps="tight")
 
 # Binance USD-M Futures
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", market="futures-um")
@@ -72,7 +72,7 @@ df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", include_microstructur
 - `symbol`: Trading symbol (e.g., "BTCUSDT", "ETHUSDT")
 - `start_date`: Start date in YYYY-MM-DD format
 - `end_date`: End date in YYYY-MM-DD format
-- `threshold_bps`: Threshold in 0.1bps units or preset name (default: 250 = 25bps = 0.25%)
+- `threshold_decimal_bps`: Threshold in decimal basis points or preset name (default: 250 = 25bps = 0.25%)
 - `source`: Data source - "binance" or "exness" (default: "binance")
 - `market`: Market type - "spot", "futures-um"/"um", "futures-cm"/"cm" (default: "spot")
 - `include_microstructure`: Include vwap, buy_volume, sell_volume columns (default: False)
@@ -97,10 +97,10 @@ Use string presets for common threshold values:
 from rangebar import get_range_bars, THRESHOLD_PRESETS
 
 # Using preset string
-df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_bps="tight")
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_decimal_bps="tight")
 
 # Or numeric value
-df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_bps=50)
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_decimal_bps=50)
 
 # View all presets
 print(THRESHOLD_PRESETS)
@@ -110,7 +110,7 @@ print(THRESHOLD_PRESETS)
 ### Configuration Constants
 
 ```python
-from rangebar import TIER1_SYMBOLS, THRESHOLD_PRESETS, THRESHOLD_MIN, THRESHOLD_MAX
+from rangebar import TIER1_SYMBOLS, THRESHOLD_PRESETS, THRESHOLD_DECIMAL_MIN, THRESHOLD_DECIMAL_MAX
 
 # 18 high-liquidity symbols available on all Binance markets
 print(TIER1_SYMBOLS)
@@ -118,7 +118,7 @@ print(TIER1_SYMBOLS)
 #  'LINK', 'LTC', 'NEAR', 'SOL', 'SUI', 'UNI', 'WIF', 'WLD', 'XRP')
 
 # Valid threshold range
-print(f"Min: {THRESHOLD_MIN}, Max: {THRESHOLD_MAX}")
+print(f"Min: {THRESHOLD_DECIMAL_MIN}, Max: {THRESHOLD_DECIMAL_MAX}")
 # Min: 1, Max: 100000
 ```
 
@@ -136,7 +136,7 @@ from rangebar import process_trades_to_dataframe
 trades = pd.read_csv("BTCUSDT-aggTrades.csv")
 
 # Convert to range bars
-df = process_trades_to_dataframe(trades, threshold_bps=250)
+df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 ```
 
 #### process_trades_polars
@@ -149,7 +149,7 @@ from rangebar import process_trades_polars
 
 # LazyFrame with predicate pushdown
 lazy_df = pl.scan_parquet("trades.parquet").filter(pl.col("timestamp") >= start_ts)
-bars = process_trades_polars(lazy_df, threshold_bps=250)
+bars = process_trades_polars(lazy_df, threshold_decimal_bps=250)
 ```
 
 #### process_trades_chunked

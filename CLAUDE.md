@@ -55,7 +55,7 @@ When optimizing data processing:
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `AttributeError: RangeBarProcessor has no attribute X` | Rust binding outdated | Run `maturin develop` |
-| `ValueError: Invalid threshold_bps` | Expects 0.1 basis points | Use 250 for 0.25% |
+| `ValueError: Invalid threshold_decimal_bps` | Expects decimal basis points | Use 250 for 0.25% |
 | `AssertionError: High < Low` | OHLC invariant violation | Check input data sorting |
 | `dtype mismatch (double[pyarrow] vs float64)` | Cache retrieval issue | Fixed in v2.2.0 |
 
@@ -133,7 +133,7 @@ from rangebar import process_trades_to_dataframe
 trades = pd.read_csv("BTCUSDT-aggTrades-2024-01.csv")
 
 # Convert to range bars (25 basis points = 0.25%)
-data = process_trades_to_dataframe(trades, threshold_bps=250)
+data = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 ```
 
 ### Output Format (backtesting.py compatible)
@@ -344,7 +344,7 @@ let price_f64 = bar.open.to_f64();
 Map Rust errors to Python exceptions:
 
 ```rust
-let processor = RangeBarProcessor::new(threshold_bps)
+let processor = RangeBarProcessor::new(threshold_decimal_bps)
     .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
         format!("Failed to create processor: {}", e)
     ))?;

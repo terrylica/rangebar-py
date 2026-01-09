@@ -66,7 +66,9 @@ class TestE2EProcessTradesChunked:
 
         # Process chunked (small chunks to test)
         bars_chunks = list(
-            process_trades_chunked(iter(trades), threshold_bps=250, chunk_size=100)
+            process_trades_chunked(
+                iter(trades), threshold_decimal_bps=250, chunk_size=100
+            )
         )
 
         # Should produce bars from chunked processing
@@ -101,7 +103,7 @@ class TestE2EProcessTradesPolars:
         )
 
         # Process using optimized function
-        df = process_trades_polars(trades, threshold_bps=250)
+        df = process_trades_polars(trades, threshold_decimal_bps=250)
 
         # Verify output format
         assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
@@ -125,7 +127,7 @@ class TestE2EProcessTradesPolars:
         ).lazy()
 
         # Process using optimized function
-        df = process_trades_polars(trades_lazy, threshold_bps=250)
+        df = process_trades_polars(trades_lazy, threshold_decimal_bps=250)
 
         # Verify output format
         assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
@@ -142,7 +144,7 @@ class TestE2EProcessTradesPolars:
         )
 
         # Should handle 'volume' column
-        df = process_trades_polars(trades, threshold_bps=250)
+        df = process_trades_polars(trades, threshold_decimal_bps=250)
         assert "Volume" in df.columns
 
 
@@ -164,7 +166,7 @@ class TestE2EDictOptimization:
         )
 
         # Process - should only use timestamp, price, quantity
-        df = process_trades_polars(trades, threshold_bps=250)
+        df = process_trades_polars(trades, threshold_decimal_bps=250)
 
         # Verify processing succeeded despite extra columns
         assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
@@ -180,7 +182,7 @@ class TestE2EAPICompatibility:
             {"timestamp": 1704067210000, "price": 42110.0, "quantity": 2.0},  # Breach
         ]
 
-        df = process_trades_to_dataframe(trades, threshold_bps=250)
+        df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
         assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
         assert isinstance(df.index, pd.DatetimeIndex)
 
