@@ -1,6 +1,6 @@
 # rangebar-py API Reference
 
-**Version**: 4.0.1
+<!-- Version controlled by semantic-release via pyproject.toml -->
 **Last Updated**: 2026-01-08
 
 ---
@@ -9,20 +9,25 @@
 
 rangebar-py provides a high-level Python API for converting trade data to range bars, optimized for backtesting.py integration. The package offers multiple usage patterns:
 
-1. **Primary**: `get_range_bars()` - Fetch and convert in one call (recommended)
-2. **High-level**: `process_trades_to_dataframe()` - Process existing trade data
-3. **Polars-optimized**: `process_trades_polars()` - 2-3x faster with Polars
-4. **Streaming**: `process_trades_chunked()` - Memory-safe for large datasets
+1. **Date-bounded**: `get_range_bars()` - Fetch and convert with date range (recommended for backtesting)
+2. **Count-bounded**: `get_n_range_bars()` - Get exactly N bars (recommended for ML training)
+3. **High-level**: `process_trades_to_dataframe()` - Process existing trade data
+4. **Polars-optimized**: `process_trades_polars()` - 2-3x faster with Polars
+5. **Streaming**: `process_trades_chunked()` - Memory-safe for large datasets
 
 ---
 
 ## Quick Reference
 
 ```python
-from rangebar import get_range_bars, process_trades_to_dataframe
+from rangebar import get_range_bars, get_n_range_bars, process_trades_to_dataframe
 
-# Primary API - fetch and convert in one call
+# Date-bounded API - fetch and convert with date range
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
+
+# Count-bounded API - get exactly N bars (ML training, walk-forward)
+df = get_n_range_bars("BTCUSDT", n_bars=10000)
+assert len(df) == 10000
 
 # With preset threshold
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30", threshold_decimal_bps="tight")
@@ -103,6 +108,80 @@ df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", market="futures-um")
 # With microstructure data
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", include_microstructure=True)
 ```
+
+---
+
+## Count-Bounded API: `get_n_range_bars()`
+
+**Get exactly N range bars - useful for ML training, walk-forward optimization, and consistent backtest comparisons.**
+
+Unlike `get_range_bars()` which uses date bounds (producing variable bar counts), this function returns a deterministic number of bars.
+
+```python
+def get_n_range_bars(
+    symbol: str,
+    n_bars: int,
+    threshold_decimal_bps: int | str = 250,
+    *,
+    end_date: str | None = None,
+    source: str = "binance",
+    market: str = "spot",
+    include_microstructure: bool = False,
+    use_cache: bool = True,
+    fetch_if_missing: bool = True,
+    max_lookback_days: int = 90,
+    warn_if_fewer: bool = True,
+    cache_dir: str | None = None,
+) -> pd.DataFrame
+```
+
+### Parameters
+
+- **symbol**: Trading symbol (e.g., "BTCUSDT")
+- **n_bars**: Number of bars to retrieve (must be > 0)
+- **threshold_decimal_bps**: Threshold in decimal basis points or preset name (default: 250)
+- **end_date**: End date in YYYY-MM-DD format, or None for most recent data
+- **source**: Data source - `"binance"` or `"exness"` (default: `"binance"`)
+- **market**: Market type - `"spot"`, `"futures-um"`, `"futures-cm"` (default: `"spot"`)
+- **include_microstructure**: Include vwap, buy_volume, sell_volume (default: False)
+- **use_cache**: Use ClickHouse cache for bar retrieval/storage (default: True)
+- **fetch_if_missing**: Fetch and process new data if cache doesn't have enough bars (default: True)
+- **max_lookback_days**: Safety limit - maximum days to look back when fetching (default: 90)
+- **warn_if_fewer**: Emit UserWarning if returning fewer bars than requested (default: True)
+- **cache_dir**: Custom cache directory for tick data (default: platform-specific)
+
+### Returns
+
+- **pd.DataFrame**: OHLCV DataFrame with exactly `n_bars` rows (or fewer if insufficient data), sorted chronologically (oldest first)
+
+### Cache Behavior
+
+- **Fast path**: If ClickHouse cache has >= n_bars, returns immediately (~50ms)
+- **Slow path**: If cache has < n_bars and `fetch_if_missing=True`, fetches additional data, computes bars, stores in cache, returns
+
+### Example
+
+```python
+from rangebar import get_n_range_bars
+
+# Get last 10,000 bars for ML training
+df = get_n_range_bars("BTCUSDT", n_bars=10000)
+assert len(df) == 10000
+
+# Get 5,000 bars ending at specific date for walk-forward
+df = get_n_range_bars("BTCUSDT", n_bars=5000, end_date="2024-06-01")
+
+# With safety limit (won't fetch more than 30 days of data)
+df = get_n_range_bars("BTCUSDT", n_bars=1000, max_lookback_days=30)
+
+# Using preset threshold
+df = get_n_range_bars("BTCUSDT", n_bars=500, threshold_decimal_bps="tight")
+```
+
+### Raises
+
+- **ValueError**: If `n_bars <= 0`, invalid threshold, or invalid date format
+- **RuntimeError**: If ClickHouse not available when `use_cache=True`, or data fetching failed
 
 ---
 
@@ -772,5 +851,5 @@ See [CHANGELOG.md](/CHANGELOG.md) for version history.
 ---
 
 **Last Updated**: 2026-01-08
-**API Version**: 4.0.1
+<!-- API Version: See pyproject.toml (SSoT controlled by semantic-release) -->
 **License**: MIT

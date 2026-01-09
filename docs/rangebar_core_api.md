@@ -1,4 +1,7 @@
-# rangebar-core v5.0.0 API Reference
+# rangebar-core API Reference
+
+<!-- Note: This documents the UPSTREAM rangebar-core crate, not rangebar-py version -->
+<!-- See Cargo.toml for current dependency version: rangebar-core = "6.0" -->
 
 **Research Date**: 2025-11-15
 **Purpose**: Document rangebar-core API for PyO3 bindings implementation
@@ -316,9 +319,8 @@ def test_backtesting_py_format():
 
 ## References
 
-- **Crate location**: `/Users/terryli/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rangebar-core-5.0.0`
 - **Upstream repo**: https://github.com/terrylica/rangebar
-- **Crate version**: v5.0.0 (crates.io)
+- **Crate dependency**: See `Cargo.toml` for current version (rangebar-core = "6.0")
 - **Key modules**:
   - `src/types.rs` - AggTrade, RangeBar definitions
   - `src/processor.rs` - RangeBarProcessor implementation

@@ -14,18 +14,21 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 | When Claude is asked to... | Primary File | Function/Class |
 |---------------------------|--------------|----------------|
-| Generate range bars (recommended) | `python/rangebar/__init__.py` | `get_range_bars()` |
+| Generate range bars (date-bounded) | `python/rangebar/__init__.py` | `get_range_bars()` |
+| Generate range bars (count-bounded, ML) | `python/rangebar/__init__.py` | `get_n_range_bars()` |
 | Generate range bars (existing data) | `python/rangebar/__init__.py` | `process_trades_to_dataframe()` |
 | Generate range bars (Polars) | `python/rangebar/__init__.py` | `process_trades_polars()` |
 | Process large datasets | `python/rangebar/__init__.py` | `process_trades_chunked()` |
 | Debug PyO3 bindings | `src/lib.rs` | Check error handling section |
 | Read/write tick data | `python/rangebar/storage/parquet.py` | `TickStorage` class |
+| Bar-count cache operations | `python/rangebar/clickhouse/cache.py` | `count_bars()`, `get_n_bars()` |
 
 ### API Selection Guide
 
 ```
 Starting Point?
-├── Need data fetching? → get_range_bars() [PRIMARY API]
+├── Need data fetching (date range)? → get_range_bars() [DATE-BOUNDED]
+├── Need exactly N bars (ML/walk-forward)? → get_n_range_bars() [COUNT-BOUNDED]
 ├── Have pandas DataFrame → process_trades_to_dataframe()
 ├── Have Polars DataFrame/LazyFrame → process_trades_polars() [2-3x faster]
 └── Have Iterator (large data) → process_trades_chunked()
@@ -41,6 +44,8 @@ Starting Point?
 | `python/rangebar/storage/parquet.py` | Tier 1 cache (local Parquet) |
 | `python/rangebar/clickhouse/cache.py` | Tier 2 cache (ClickHouse) |
 | `tests/test_e2e_optimized.py` | E2E tests for optimized APIs |
+| `tests/test_get_n_range_bars.py` | Tests for count-bounded API |
+| `scripts/validate_n_range_bars.py` | Portable validation for GPU workstations |
 
 ### Performance Optimization Checklist
 
@@ -150,10 +155,10 @@ timestamp
 
 ### Rust Dependencies
 
-- **rangebar-core**: v5.0.0 (from crates.io) - Core range bar algorithm
-- **pyo3**: v0.22 - Python bindings
-- **numpy**: v0.22 - NumPy arrays support
-- **chrono**: v0.4 - Timestamp handling
+<!-- Dependency versions: See Cargo.toml for current versions -->
+- **rangebar-core**: (from crates.io) - Core range bar algorithm
+- **pyo3**: Python bindings
+- **chrono**: Timestamp handling
 
 ### Python Dependencies
 

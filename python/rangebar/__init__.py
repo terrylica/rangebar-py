@@ -61,6 +61,7 @@ __all__ = [
     "THRESHOLD_PRESETS",
     "TIER1_SYMBOLS",
     "__version__",
+    "get_n_range_bars",
     "get_range_bars",
 ]
 
@@ -1087,6 +1088,552 @@ def _process_exness_ticks(
             "Rebuild with: maturin develop --features data-providers"
         )
         raise RuntimeError(msg) from e
+
+
+# ============================================================================
+# Bar-Count-Based API
+# ============================================================================
+
+
+def get_n_range_bars(  # noqa: PLR0911
+    symbol: str,
+    n_bars: int,
+    threshold_decimal_bps: int | str = 250,
+    *,
+    end_date: str | None = None,
+    source: str = "binance",
+    market: str = "spot",
+    include_microstructure: bool = False,
+    use_cache: bool = True,
+    fetch_if_missing: bool = True,
+    max_lookback_days: int = 90,
+    warn_if_fewer: bool = True,
+    cache_dir: str | None = None,
+) -> pd.DataFrame:
+    """Get exactly N range bars ending at or before a given date.
+
+    Unlike `get_range_bars()` which uses date bounds (producing variable bar counts),
+    this function returns a deterministic number of bars. This is useful for:
+    - ML training (exactly 10,000 samples)
+    - Walk-forward optimization (fixed window sizes)
+    - Consistent backtest comparisons
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol (e.g., "BTCUSDT")
+    n_bars : int
+        Number of bars to retrieve. Must be > 0.
+    threshold_decimal_bps : int or str, default=250
+        Threshold in decimal basis points. Can be:
+        - Integer: Direct value (250 = 25bps = 0.25%)
+        - String preset: "micro", "tight", "standard", "medium", "wide", "macro"
+    end_date : str or None, default=None
+        End date in YYYY-MM-DD format. If None, uses most recent available data.
+    source : str, default="binance"
+        Data source: "binance" or "exness"
+    market : str, default="spot"
+        Market type (Binance only): "spot", "futures-um", or "futures-cm"
+    include_microstructure : bool, default=False
+        Include microstructure columns (vwap, buy_volume, sell_volume)
+    use_cache : bool, default=True
+        Use ClickHouse cache for bar retrieval/storage
+    fetch_if_missing : bool, default=True
+        Fetch and process new data if cache doesn't have enough bars
+    max_lookback_days : int, default=90
+        Safety limit: maximum days to look back when fetching missing data.
+        Prevents runaway fetches on empty caches.
+    warn_if_fewer : bool, default=True
+        Emit UserWarning if returning fewer bars than requested.
+    cache_dir : str or None, default=None
+        Custom cache directory for tick data (Tier 1).
+
+    Returns
+    -------
+    pd.DataFrame
+        OHLCV DataFrame with exactly n_bars rows (or fewer if not enough data),
+        sorted chronologically (oldest first). Columns:
+        - Open, High, Low, Close, Volume
+        - (if include_microstructure) vwap, buy_volume, sell_volume
+
+    Raises
+    ------
+    ValueError
+        - n_bars <= 0
+        - Invalid threshold
+        - Invalid date format
+    RuntimeError
+        - ClickHouse not available when use_cache=True
+        - Data fetching failed
+
+    Examples
+    --------
+    Get last 10,000 bars for ML training:
+
+    >>> from rangebar import get_n_range_bars
+    >>> df = get_n_range_bars("BTCUSDT", n_bars=10000)
+    >>> assert len(df) == 10000
+
+    Get 5,000 bars ending at specific date for walk-forward:
+
+    >>> df = get_n_range_bars("BTCUSDT", n_bars=5000, end_date="2024-06-01")
+
+    With safety limit (won't fetch more than 30 days of data):
+
+    >>> df = get_n_range_bars("BTCUSDT", n_bars=1000, max_lookback_days=30)
+
+    Notes
+    -----
+    Cache behavior:
+        - Fast path: If cache has >= n_bars, returns immediately (~50ms)
+        - Slow path: If cache has < n_bars and fetch_if_missing=True,
+          fetches additional data, computes bars, stores in cache, returns
+
+    Gap-filling algorithm:
+        Uses adaptive exponential backoff to estimate how many ticks to fetch.
+        Learns compression ratio (ticks/bar) for each (symbol, threshold) pair.
+
+    See Also
+    --------
+    get_range_bars : Date-bounded bar retrieval (variable bar count)
+    THRESHOLD_PRESETS : Named threshold values
+    """
+    import warnings
+    from datetime import datetime, timedelta
+    from pathlib import Path
+
+    import polars as pl
+
+    # -------------------------------------------------------------------------
+    # Validate parameters
+    # -------------------------------------------------------------------------
+    if n_bars <= 0:
+        msg = f"n_bars must be > 0, got {n_bars}"
+        raise ValueError(msg)
+
+    # Resolve threshold (support presets)
+    threshold: int
+    if isinstance(threshold_decimal_bps, str):
+        if threshold_decimal_bps not in THRESHOLD_PRESETS:
+            msg = (
+                f"Unknown threshold preset: {threshold_decimal_bps!r}. "
+                f"Valid presets: {list(THRESHOLD_PRESETS.keys())}"
+            )
+            raise ValueError(msg)
+        threshold = THRESHOLD_PRESETS[threshold_decimal_bps]
+    else:
+        threshold = threshold_decimal_bps
+
+    if not THRESHOLD_DECIMAL_MIN <= threshold <= THRESHOLD_DECIMAL_MAX:
+        msg = (
+            f"threshold_decimal_bps must be between {THRESHOLD_DECIMAL_MIN} and "
+            f"{THRESHOLD_DECIMAL_MAX}, got {threshold}"
+        )
+        raise ValueError(msg)
+
+    # Normalize source and market
+    source = source.lower()
+    if source not in ("binance", "exness"):
+        msg = f"Unknown source: {source!r}. Must be 'binance' or 'exness'"
+        raise ValueError(msg)
+
+    market_map = {
+        "spot": "spot",
+        "futures-um": "um",
+        "futures-cm": "cm",
+        "um": "um",
+        "cm": "cm",
+    }
+    market = market.lower()
+    if source == "binance" and market not in market_map:
+        msg = (
+            f"Unknown market: {market!r}. "
+            "Must be 'spot', 'futures-um'/'um', or 'futures-cm'/'cm'"
+        )
+        raise ValueError(msg)
+    market_normalized = market_map.get(market, market)
+
+    # Parse end_date if provided
+    end_ts: int | None = None
+    if end_date is not None:
+        try:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")  # noqa: DTZ007
+            # End of day in milliseconds
+            end_ts = int((end_dt.timestamp() + 86399) * 1000)
+        except ValueError as e:
+            msg = f"Invalid date format. Use YYYY-MM-DD: {e}"
+            raise ValueError(msg) from e
+
+    # -------------------------------------------------------------------------
+    # Try cache first (if enabled)
+    # -------------------------------------------------------------------------
+    if use_cache:
+        try:
+            from .clickhouse import RangeBarCache
+
+            with RangeBarCache() as cache:
+                # Fast path: check if cache has enough bars
+                bars_df, available_count = cache.get_n_bars(
+                    symbol=symbol,
+                    threshold_decimal_bps=threshold,
+                    n_bars=n_bars,
+                    before_ts=end_ts,
+                    include_microstructure=include_microstructure,
+                )
+
+                if bars_df is not None and len(bars_df) >= n_bars:
+                    # Cache hit - return exactly n_bars
+                    return bars_df.tail(n_bars)
+
+                # Slow path: need to fetch more data
+                if fetch_if_missing:
+                    bars_df = _fill_gap_and_cache(
+                        symbol=symbol,
+                        threshold=threshold,
+                        n_bars=n_bars,
+                        end_ts=end_ts,
+                        source=source,
+                        market=market_normalized,
+                        include_microstructure=include_microstructure,
+                        max_lookback_days=max_lookback_days,
+                        cache=cache,
+                        cache_dir=Path(cache_dir) if cache_dir else None,
+                        current_bars=bars_df,
+                        current_count=available_count,
+                    )
+
+                    if bars_df is not None and len(bars_df) >= n_bars:
+                        return bars_df.tail(n_bars)
+
+                # Return what we have (or None)
+                if bars_df is not None and len(bars_df) > 0:
+                    if warn_if_fewer and len(bars_df) < n_bars:
+                        warnings.warn(
+                            f"Returning {len(bars_df)} bars instead of requested {n_bars}. "
+                            f"Insufficient data available within max_lookback_days={max_lookback_days}.",
+                            UserWarning,
+                            stacklevel=2,
+                        )
+                    return bars_df
+
+                # Empty result
+                if warn_if_fewer:
+                    warnings.warn(
+                        f"Returning 0 bars instead of requested {n_bars}. "
+                        "No data available in cache or from source.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                return pd.DataFrame(
+                    columns=["Open", "High", "Low", "Close", "Volume"]
+                ).set_index(pd.DatetimeIndex([]))
+
+        except Exception as e:
+            # ClickHouse not available - fall through to compute-only mode
+            if "ClickHouseNotConfigured" in type(e).__name__:
+                pass  # Fall through to compute-only mode
+            else:
+                raise
+
+    # -------------------------------------------------------------------------
+    # Compute-only mode (no cache)
+    # -------------------------------------------------------------------------
+    if not fetch_if_missing:
+        if warn_if_fewer:
+            warnings.warn(
+                f"Returning 0 bars instead of requested {n_bars}. "
+                "Cache disabled and fetch_if_missing=False.",
+                UserWarning,
+                stacklevel=2,
+            )
+        return pd.DataFrame(
+            columns=["Open", "High", "Low", "Close", "Volume"]
+        ).set_index(pd.DatetimeIndex([]))
+
+    # Fetch and compute without caching
+    bars_df = _fetch_and_compute_bars(
+        symbol=symbol,
+        threshold=threshold,
+        n_bars=n_bars,
+        end_ts=end_ts,
+        source=source,
+        market=market_normalized,
+        include_microstructure=include_microstructure,
+        max_lookback_days=max_lookback_days,
+        cache_dir=Path(cache_dir) if cache_dir else None,
+    )
+
+    if bars_df is not None and len(bars_df) >= n_bars:
+        return bars_df.tail(n_bars)
+
+    if bars_df is not None and len(bars_df) > 0:
+        if warn_if_fewer:
+            warnings.warn(
+                f"Returning {len(bars_df)} bars instead of requested {n_bars}. "
+                f"Insufficient data available within max_lookback_days={max_lookback_days}.",
+                UserWarning,
+                stacklevel=2,
+            )
+        return bars_df
+
+    if warn_if_fewer:
+        warnings.warn(
+            f"Returning 0 bars instead of requested {n_bars}. "
+            "No data available from source.",
+            UserWarning,
+            stacklevel=2,
+        )
+    return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"]).set_index(
+        pd.DatetimeIndex([])
+    )
+
+
+def _fill_gap_and_cache(
+    symbol: str,
+    threshold: int,
+    n_bars: int,
+    end_ts: int | None,
+    source: str,
+    market: str,
+    include_microstructure: bool,
+    max_lookback_days: int,
+    cache: RangeBarCache,
+    cache_dir: Path | None,
+    current_bars: pd.DataFrame | None,
+    current_count: int,  # noqa: ARG001 - used for logging/debugging
+) -> pd.DataFrame | None:
+    """Fill gap in cache by fetching and processing additional data.
+
+    Uses adaptive exponential backoff algorithm to estimate fetch size.
+    """
+    from datetime import datetime, timedelta
+    from pathlib import Path
+
+    import polars as pl
+
+    from .storage.parquet import TickStorage
+
+    # Determine how many more bars we need
+    bars_needed = n_bars - (len(current_bars) if current_bars is not None else 0)
+
+    if bars_needed <= 0:
+        return current_bars
+
+    # Determine end date for fetching
+    if end_ts is not None:
+        end_dt = datetime.fromtimestamp(end_ts / 1000)  # noqa: DTZ006
+    else:
+        end_dt = datetime.now()  # noqa: DTZ005
+
+    # Get oldest bar timestamp to know where to start fetching
+    oldest_ts = cache.get_oldest_bar_timestamp(symbol, threshold)
+
+    # Estimate ticks needed using adaptive heuristic
+    # Default: ~2500 ticks per bar for medium threshold (250)
+    # Adjusted by threshold ratio
+    base_ticks_per_bar = 2500
+    threshold_ratio = 250 / max(threshold, 1)
+    estimated_ticks_per_bar = int(base_ticks_per_bar * threshold_ratio)
+
+    # Adaptive exponential backoff
+    multiplier = 2.0  # Start with 2x buffer
+    max_attempts = 5
+
+    storage = TickStorage(cache_dir=cache_dir)
+    all_bars: list[pd.DataFrame] = []
+
+    if current_bars is not None and len(current_bars) > 0:
+        all_bars.append(current_bars)
+
+    for _attempt in range(max_attempts):
+        # Estimate days to fetch
+        ticks_to_fetch = int(bars_needed * estimated_ticks_per_bar * multiplier)
+        # Rough estimate: 1M ticks per day for liquid symbols
+        days_to_fetch = max(1, ticks_to_fetch // 1_000_000)
+        days_to_fetch = min(days_to_fetch, max_lookback_days)
+
+        # Calculate fetch range
+        if oldest_ts is not None:
+            # Fetch before oldest cached bar
+            fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000)  # noqa: DTZ006
+        else:
+            # No cache, fetch before end_date
+            fetch_end_dt = end_dt
+
+        fetch_start_dt = fetch_end_dt - timedelta(days=days_to_fetch)
+
+        # Check if we've hit the lookback limit
+        if (end_dt - fetch_start_dt).days > max_lookback_days:
+            break
+
+        # Fetch tick data
+        start_date = fetch_start_dt.strftime("%Y-%m-%d")
+        end_date_str = fetch_end_dt.strftime("%Y-%m-%d")
+
+        cache_symbol = f"{source}_{market}_{symbol}".upper()
+        start_ts_fetch = int(fetch_start_dt.timestamp() * 1000)
+        end_ts_fetch = int(fetch_end_dt.timestamp() * 1000)
+
+        tick_data: pl.DataFrame
+        if storage.has_ticks(cache_symbol, start_ts_fetch, end_ts_fetch):
+            tick_data = storage.read_ticks(cache_symbol, start_ts_fetch, end_ts_fetch)
+        else:
+            if source == "binance":
+                tick_data = _fetch_binance(symbol, start_date, end_date_str, market)
+            else:
+                tick_data = _fetch_exness(symbol, start_date, end_date_str, "strict")
+
+            if not tick_data.is_empty():
+                storage.write_ticks(cache_symbol, tick_data)
+
+        if tick_data.is_empty():
+            # No more data available
+            break
+
+        # Process to bars
+        if source == "binance":
+            new_bars = _process_binance_trades(
+                tick_data, threshold, False, include_microstructure
+            )
+        else:
+            new_bars = _process_exness_ticks(
+                tick_data, symbol, threshold, "strict", False, include_microstructure
+            )
+
+        if not new_bars.empty:
+            # Store in cache
+            cache.store_bars_bulk(symbol, threshold, new_bars)
+            all_bars.insert(0, new_bars)  # Prepend (older data)
+
+            # Update oldest_ts for next iteration
+            oldest_ts = int(new_bars.index.min().timestamp() * 1000)
+
+            # Check if we have enough
+            total_bars = sum(len(df) for df in all_bars)
+            if total_bars >= n_bars:
+                break
+
+        # Exponential backoff for next attempt
+        multiplier *= 2
+
+    # Combine all bars
+    if not all_bars:
+        return None
+
+    combined = pd.concat(all_bars)
+    combined = combined.sort_index()
+
+    # Remove duplicates (by index) and return
+    return combined[~combined.index.duplicated(keep="last")]
+
+
+def _fetch_and_compute_bars(
+    symbol: str,
+    threshold: int,
+    n_bars: int,
+    end_ts: int | None,
+    source: str,
+    market: str,
+    include_microstructure: bool,
+    max_lookback_days: int,
+    cache_dir: Path | None,
+) -> pd.DataFrame | None:
+    """Fetch and compute bars without caching (compute-only mode)."""
+    from datetime import datetime, timedelta
+    from pathlib import Path
+
+    import polars as pl
+
+    from .storage.parquet import TickStorage
+
+    # Determine end date
+    if end_ts is not None:
+        end_dt = datetime.fromtimestamp(end_ts / 1000)  # noqa: DTZ006
+    else:
+        end_dt = datetime.now()  # noqa: DTZ005
+
+    # Estimate ticks needed using heuristic
+    base_ticks_per_bar = 2500
+    threshold_ratio = 250 / max(threshold, 1)
+    estimated_ticks_per_bar = int(base_ticks_per_bar * threshold_ratio)
+
+    # Adaptive exponential backoff
+    multiplier = 2.0
+    max_attempts = 5
+
+    storage = TickStorage(cache_dir=cache_dir)
+    all_bars: list[pd.DataFrame] = []
+    oldest_ts: int | None = None
+
+    for _attempt in range(max_attempts):
+        # Calculate days to fetch
+        bars_still_needed = n_bars - sum(len(df) for df in all_bars)
+        ticks_to_fetch = int(bars_still_needed * estimated_ticks_per_bar * multiplier)
+        days_to_fetch = max(1, ticks_to_fetch // 1_000_000)
+        days_to_fetch = min(days_to_fetch, max_lookback_days)
+
+        # Calculate fetch range
+        if oldest_ts is not None:
+            fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000)  # noqa: DTZ006
+        else:
+            fetch_end_dt = end_dt
+
+        fetch_start_dt = fetch_end_dt - timedelta(days=days_to_fetch)
+
+        # Check lookback limit
+        if (end_dt - fetch_start_dt).days > max_lookback_days:
+            break
+
+        # Fetch
+        start_date = fetch_start_dt.strftime("%Y-%m-%d")
+        end_date_str = fetch_end_dt.strftime("%Y-%m-%d")
+
+        cache_symbol = f"{source}_{market}_{symbol}".upper()
+        start_ts_fetch = int(fetch_start_dt.timestamp() * 1000)
+        end_ts_fetch = int(fetch_end_dt.timestamp() * 1000)
+
+        tick_data: pl.DataFrame
+        if storage.has_ticks(cache_symbol, start_ts_fetch, end_ts_fetch):
+            tick_data = storage.read_ticks(cache_symbol, start_ts_fetch, end_ts_fetch)
+        else:
+            if source == "binance":
+                tick_data = _fetch_binance(symbol, start_date, end_date_str, market)
+            else:
+                tick_data = _fetch_exness(symbol, start_date, end_date_str, "strict")
+
+            if not tick_data.is_empty():
+                storage.write_ticks(cache_symbol, tick_data)
+
+        if tick_data.is_empty():
+            break
+
+        # Process
+        if source == "binance":
+            new_bars = _process_binance_trades(
+                tick_data, threshold, False, include_microstructure
+            )
+        else:
+            new_bars = _process_exness_ticks(
+                tick_data, symbol, threshold, "strict", False, include_microstructure
+            )
+
+        if not new_bars.empty:
+            all_bars.insert(0, new_bars)
+            oldest_ts = int(new_bars.index.min().timestamp() * 1000)
+
+            total_bars = sum(len(df) for df in all_bars)
+            if total_bars >= n_bars:
+                break
+
+        multiplier *= 2
+
+    if not all_bars:
+        return None
+
+    combined = pd.concat(all_bars)
+    combined = combined.sort_index()
+    # Remove duplicates (by index) and return
+    return combined[~combined.index.duplicated(keep="last")]
 
 
 def __getattr__(name: str) -> object:

@@ -2,7 +2,8 @@
 
 Public API
 ----------
-get_range_bars : Get range bars with automatic data fetching and caching.
+get_range_bars : Get range bars with automatic data fetching and caching (date-bounded).
+get_n_range_bars : Get exactly N range bars (count-bounded, deterministic).
 TIER1_SYMBOLS : High-liquidity symbols available on all Binance markets.
 THRESHOLD_PRESETS : Named threshold presets (micro, tight, standard, etc.).
 THRESHOLD_DECIMAL_MIN : Minimum valid threshold (1 = 0.1bps).
@@ -190,4 +191,110 @@ def get_range_bars(
         - Threshold computed from bar OPEN price only
         - Breaching trade included in closing bar
         - No future information used in bar construction
+    """
+
+def get_n_range_bars(
+    symbol: str,
+    n_bars: int,
+    threshold_decimal_bps: (
+        int | Literal["micro", "tight", "standard", "medium", "wide", "macro"]
+    ) = 250,
+    *,
+    end_date: str | None = None,
+    source: Literal["binance", "exness"] = "binance",
+    market: Literal["spot", "futures-um", "futures-cm", "um", "cm"] = "spot",
+    include_microstructure: bool = False,
+    use_cache: bool = True,
+    fetch_if_missing: bool = True,
+    max_lookback_days: int = 90,
+    warn_if_fewer: bool = True,
+    cache_dir: str | None = None,
+) -> pd.DataFrame:
+    """Get exactly N range bars ending at or before a given date.
+
+    Unlike `get_range_bars()` which uses date bounds (producing variable bar counts),
+    this function returns a deterministic number of bars. This is useful for:
+    - ML training (exactly 10,000 samples)
+    - Walk-forward optimization (fixed window sizes)
+    - Consistent backtest comparisons
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol (e.g., "BTCUSDT")
+    n_bars : int
+        Number of bars to retrieve. Must be > 0.
+    threshold_decimal_bps : int or str, default=250
+        Threshold in decimal basis points. Can be:
+        - Integer: Direct value (250 = 25bps = 0.25%)
+        - String preset: "micro", "tight", "standard", "medium", "wide", "macro"
+    end_date : str or None, default=None
+        End date in YYYY-MM-DD format. If None, uses most recent available data.
+    source : str, default="binance"
+        Data source: "binance" or "exness"
+    market : str, default="spot"
+        Market type (Binance only): "spot", "futures-um", or "futures-cm"
+    include_microstructure : bool, default=False
+        Include microstructure columns (vwap, buy_volume, sell_volume)
+    use_cache : bool, default=True
+        Use ClickHouse cache for bar retrieval/storage
+    fetch_if_missing : bool, default=True
+        Fetch and process new data if cache doesn't have enough bars
+    max_lookback_days : int, default=90
+        Safety limit: maximum days to look back when fetching missing data.
+        Prevents runaway fetches on empty caches.
+    warn_if_fewer : bool, default=True
+        Emit UserWarning if returning fewer bars than requested.
+    cache_dir : str or None, default=None
+        Custom cache directory for tick data (Tier 1).
+
+    Returns
+    -------
+    pd.DataFrame
+        OHLCV DataFrame with exactly n_bars rows (or fewer if not enough data),
+        sorted chronologically (oldest first). Columns:
+        - Open, High, Low, Close, Volume
+        - (if include_microstructure) vwap, buy_volume, sell_volume
+
+    Raises
+    ------
+    ValueError
+        - n_bars <= 0
+        - Invalid threshold
+        - Invalid date format
+    RuntimeError
+        - ClickHouse not available when use_cache=True
+        - Data fetching failed
+
+    Examples
+    --------
+    Get last 10,000 bars for ML training:
+
+    >>> from rangebar import get_n_range_bars
+    >>> df = get_n_range_bars("BTCUSDT", n_bars=10000)
+    >>> assert len(df) == 10000
+
+    Get 5,000 bars ending at specific date for walk-forward:
+
+    >>> df = get_n_range_bars("BTCUSDT", n_bars=5000, end_date="2024-06-01")
+
+    With safety limit (won't fetch more than 30 days of data):
+
+    >>> df = get_n_range_bars("BTCUSDT", n_bars=1000, max_lookback_days=30)
+
+    Notes
+    -----
+    Cache behavior:
+        - Fast path: If cache has >= n_bars, returns immediately (~50ms)
+        - Slow path: If cache has < n_bars and fetch_if_missing=True,
+          fetches additional data, computes bars, stores in cache, returns
+
+    Gap-filling algorithm:
+        Uses adaptive exponential backoff to estimate how many ticks to fetch.
+        Learns compression ratio (ticks/bar) for each (symbol, threshold) pair.
+
+    See Also
+    --------
+    get_range_bars : Date-bounded bar retrieval (variable bar count)
+    THRESHOLD_PRESETS : Named threshold values
     """

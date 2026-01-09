@@ -25,7 +25,7 @@ semantic-release (creates tag, release, CHANGELOG)
   ↓
 PyPI Trusted Publisher (OIDC authentication)
   ↓
-Package Published (rangebar v0.1.0)
+Package Published (version from pyproject.toml)
 ```
 
 **No secrets required in repository** - Uses OpenID Connect (OIDC) authentication.

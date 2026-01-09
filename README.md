@@ -48,9 +48,9 @@ stats = bt.run()
 
 ## API Reference
 
-### get_range_bars (Primary API)
+### get_range_bars (Date-Bounded)
 
-The single entry point for all range bar generation with automatic data fetching and caching.
+The entry point for date-bounded range bar generation with automatic data fetching and caching.
 
 ```python
 from rangebar import get_range_bars
@@ -79,6 +79,42 @@ df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", include_microstructur
 - `use_cache`: Cache tick data locally (default: True)
 
 **Returns**: pandas DataFrame with DatetimeIndex and columns `Open`, `High`, `Low`, `Close`, `Volume`
+
+### get_n_range_bars (Count-Bounded)
+
+Get exactly N range bars - useful for ML training, walk-forward optimization, and consistent backtest comparisons.
+
+```python
+from rangebar import get_n_range_bars
+
+# Get last 10,000 bars for ML training
+df = get_n_range_bars("BTCUSDT", n_bars=10000)
+assert len(df) == 10000
+
+# Get 5,000 bars ending at specific date
+df = get_n_range_bars("BTCUSDT", n_bars=5000, end_date="2024-06-01")
+
+# With safety limit (won't fetch more than 30 days of data)
+df = get_n_range_bars("BTCUSDT", n_bars=1000, max_lookback_days=30)
+```
+
+**Parameters**:
+- `symbol`: Trading symbol (e.g., "BTCUSDT")
+- `n_bars`: Number of bars to retrieve (must be > 0)
+- `threshold_decimal_bps`: Threshold in decimal basis points or preset name (default: 250)
+- `end_date`: End date (YYYY-MM-DD) or None for most recent data
+- `source`: Data source - "binance" or "exness" (default: "binance")
+- `market`: Market type (default: "spot")
+- `use_cache`: Use ClickHouse cache (default: True)
+- `fetch_if_missing`: Fetch data if cache doesn't have enough bars (default: True)
+- `max_lookback_days`: Safety limit for data fetching (default: 90)
+- `warn_if_fewer`: Emit warning if returning fewer bars than requested (default: True)
+
+**Returns**: pandas DataFrame with exactly `n_bars` rows (or fewer if insufficient data), sorted chronologically
+
+**Cache behavior**:
+- **Fast path**: If ClickHouse cache has >= n_bars, returns immediately (~50ms)
+- **Slow path**: Fetches additional data, computes bars, stores in cache
 
 ### Threshold Presets
 
