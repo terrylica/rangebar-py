@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1767845475014,
+  "lastUpdate": 1767931889030,
   "repoUrl": "https://github.com/terrylica/rangebar-py",
   "entries": {
     "Python API Benchmarks": [
@@ -2019,6 +2019,49 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.033563519416625186",
             "extra": "mean: 476.92416500000263 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "semantic-release-bot",
+            "username": "semantic-release-bot",
+            "email": "semantic-release-bot@martynus.net"
+          },
+          "committer": {
+            "name": "semantic-release-bot",
+            "username": "semantic-release-bot",
+            "email": "semantic-release-bot@martynus.net"
+          },
+          "id": "5a9bd2ecb73a2f07f4ffe385083091677b33b27d",
+          "message": "chore(release): 5.1.0 [skip ci]\n\n# [5.1.0](https://github.com/terrylica/rangebar-py/compare/v5.0.0...v5.1.0) (2026-01-09)\n\n### Features\n\n* **api:** add get_n_range_bars() for count-bounded bar retrieval ([0e31d1f](https://github.com/terrylica/rangebar-py/commit/0e31d1f5fea08014084074fb982dfb45d2fe4b02))",
+          "timestamp": "2026-01-09T03:29:18Z",
+          "url": "https://github.com/terrylica/rangebar-py/commit/5a9bd2ecb73a2f07f4ffe385083091677b33b27d"
+        },
+        "date": 1767931888194,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_performance.py::TestThroughputBenchmarks::test_throughput_1k_trades",
+            "value": 598.3205810112951,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006412419648897992",
+            "extra": "mean: 1.6713448136946538 msec\nrounds: 628"
+          },
+          {
+            "name": "tests/test_performance.py::TestThroughputBenchmarks::test_throughput_100k_trades",
+            "value": 21.27409622697402,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0020278927896460884",
+            "extra": "mean: 47.00552208333401 msec\nrounds: 24"
+          },
+          {
+            "name": "tests/test_performance.py::TestThroughputBenchmarks::test_throughput_1m_trades",
+            "value": 2.1535508354984603,
+            "unit": "iter/sec",
+            "range": "stddev: 0.01645458194630055",
+            "extra": "mean: 464.3493821999982 msec\nrounds: 5"
           }
         ]
       }
