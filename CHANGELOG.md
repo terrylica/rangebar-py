@@ -1,3 +1,33 @@
+# [5.0.0](https://github.com/terrylica/rangebar-py/compare/v4.0.1...v5.0.0) (2026-01-09)
+
+
+* feat(api)!: rename threshold_bps to threshold_decimal_bps ([2ef2d96](https://github.com/terrylica/rangebar-py/commit/2ef2d960f80617466c05218415ca9e36d1b4f001))
+
+
+### BREAKING CHANGES
+
+* Aligns with upstream rangebar-core v6.0.0 API changes.
+
+The parameter name now accurately reflects that values are in
+decimal basis points (0.1bps = 0.001%).
+
+Affected APIs:
+- RangeBarProcessor(threshold_decimal_bps=...)
+- get_range_bars(..., threshold_decimal_bps=...)
+- process_trades_to_dataframe(..., threshold_decimal_bps=...)
+- process_trades_polars(..., threshold_decimal_bps=...)
+- process_trades_chunked(..., threshold_decimal_bps=...)
+
+Constants renamed:
+- THRESHOLD_MIN → THRESHOLD_DECIMAL_MIN
+- THRESHOLD_MAX → THRESHOLD_DECIMAL_MAX
+
+ClickHouse cache schema column renamed (migration script provided in schema.sql).
+
+Dependencies updated:
+- rangebar-core: 5.2 → 6.0
+- rangebar-providers: 5.2 → 6.0
+
 # CHANGELOG
 
 All notable changes to this project will be documented in this file.
