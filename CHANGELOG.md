@@ -1,3 +1,10 @@
+## [5.3.5](https://github.com/terrylica/rangebar-py/compare/v5.3.4...v5.3.5) (2026-01-10)
+
+
+### Bug Fixes
+
+* sort trades by (timestamp, trade_id) to prevent Rust sorting error ([a6d15c6](https://github.com/terrylica/rangebar-py/commit/a6d15c6ac57c42c67b10f241e2455af92dba839e)), closes [#13](https://github.com/terrylica/rangebar-py/issues/13)
+
 ## [5.3.4](https://github.com/terrylica/rangebar-py/compare/v5.3.3...v5.3.4) (2026-01-10)
 
 
