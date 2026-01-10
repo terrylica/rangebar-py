@@ -1,3 +1,10 @@
+# [5.4.0](https://github.com/terrylica/rangebar-py/compare/v5.3.6...v5.4.0) (2026-01-10)
+
+
+### Features
+
+* add memory efficiency validation script ([558b6b7](https://github.com/terrylica/rangebar-py/commit/558b6b7520c857e6b5d411029bd44f052d7e6aff)), closes [#12](https://github.com/terrylica/rangebar-py/issues/12) [hi#volume](https://github.com/hi/issues/volume) [#15](https://github.com/terrylica/rangebar-py/issues/15)
+
 ## [5.3.6](https://github.com/terrylica/rangebar-py/compare/v5.3.5...v5.3.6) (2026-01-10)
 
 
