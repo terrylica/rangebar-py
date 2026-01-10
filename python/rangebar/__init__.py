@@ -1566,9 +1566,14 @@ def precompute_range_bars(
                         subset=["trade_id"], maintain_order=True
                     )
 
-                # Sort by timestamp (should already be sorted, but ensure)
+                # Sort by (timestamp, trade_id) - Rust crate requires this order
                 if "timestamp" in tick_chunk.columns:
-                    tick_chunk = tick_chunk.sort("timestamp")
+                    if "agg_trade_id" in tick_chunk.columns:
+                        tick_chunk = tick_chunk.sort(["timestamp", "agg_trade_id"])
+                    elif "trade_id" in tick_chunk.columns:
+                        tick_chunk = tick_chunk.sort(["timestamp", "trade_id"])
+                    else:
+                        tick_chunk = tick_chunk.sort("timestamp")
 
                 total_ticks += len(tick_chunk)
 
@@ -1624,9 +1629,14 @@ def precompute_range_bars(
             elif "trade_id" in tick_data.columns:
                 tick_data = tick_data.unique(subset=["trade_id"], maintain_order=True)
 
-            # Sort by timestamp to ensure chronological order
+            # Sort by (timestamp, trade_id) - Rust crate requires this order
             if "timestamp" in tick_data.columns:
-                tick_data = tick_data.sort("timestamp")
+                if "agg_trade_id" in tick_data.columns:
+                    tick_data = tick_data.sort(["timestamp", "agg_trade_id"])
+                elif "trade_id" in tick_data.columns:
+                    tick_data = tick_data.sort(["timestamp", "trade_id"])
+                else:
+                    tick_data = tick_data.sort("timestamp")
 
             total_ticks += len(tick_data)
 
@@ -2414,7 +2424,14 @@ def _fill_gap_and_cache(
             return current_bars
 
         # Phase 2: Merge ALL ticks chronologically and deduplicate
-        merged_ticks = pl.concat(all_tick_data).sort("timestamp")
+        # Sort by (timestamp, trade_id) - Rust crate requires this order
+        merged_ticks = pl.concat(all_tick_data)
+        if "agg_trade_id" in merged_ticks.columns:
+            merged_ticks = merged_ticks.sort(["timestamp", "agg_trade_id"])
+        elif "trade_id" in merged_ticks.columns:
+            merged_ticks = merged_ticks.sort(["timestamp", "trade_id"])
+        else:
+            merged_ticks = merged_ticks.sort("timestamp")
 
         # Deduplicate by trade_id (Binance data may have duplicates at boundaries)
         if "agg_trade_id" in merged_ticks.columns:
@@ -2621,7 +2638,14 @@ def _fetch_and_compute_bars(
         if not all_tick_data:
             return None
 
-        merged_ticks = pl.concat(all_tick_data).sort("timestamp")
+        # Sort by (timestamp, trade_id) - Rust crate requires this order
+        merged_ticks = pl.concat(all_tick_data)
+        if "agg_trade_id" in merged_ticks.columns:
+            merged_ticks = merged_ticks.sort(["timestamp", "agg_trade_id"])
+        elif "trade_id" in merged_ticks.columns:
+            merged_ticks = merged_ticks.sort(["timestamp", "trade_id"])
+        else:
+            merged_ticks = merged_ticks.sort("timestamp")
 
         # Deduplicate by trade_id (Binance data may have duplicates at boundaries)
         if "agg_trade_id" in merged_ticks.columns:
