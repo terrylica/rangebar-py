@@ -1,3 +1,10 @@
+# [5.2.0](https://github.com/terrylica/rangebar-py/compare/v5.1.1...v5.2.0) (2026-01-10)
+
+
+### Features
+
+* **continuity:** add Checkpoint API and validate_continuity() for cross-file range bar continuity ([07fc472](https://github.com/terrylica/rangebar-py/commit/07fc47252f1e04dcd76011790ead458cc90ff8c9)), closes [#3](https://github.com/terrylica/rangebar-py/issues/3)
+
 ## [5.1.1](https://github.com/terrylica/rangebar-py/compare/v5.1.0...v5.1.1) (2026-01-09)
 
 
