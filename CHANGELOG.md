@@ -1,3 +1,10 @@
+## [5.3.6](https://github.com/terrylica/rangebar-py/compare/v5.3.5...v5.3.6) (2026-01-10)
+
+
+### Bug Fixes
+
+* fetch data day-by-day to prevent OOM during fetch phase ([7090ded](https://github.com/terrylica/rangebar-py/commit/7090dedabcc49b744da078c010f6f90643534099)), closes [hi#volume](https://github.com/hi/issues/volume) [#14](https://github.com/terrylica/rangebar-py/issues/14)
+
 ## [5.3.5](https://github.com/terrylica/rangebar-py/compare/v5.3.4...v5.3.5) (2026-01-10)
 
 
