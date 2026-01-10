@@ -1,3 +1,10 @@
+## [5.3.2](https://github.com/terrylica/rangebar-py/compare/v5.3.1...v5.3.2) (2026-01-10)
+
+
+### Bug Fixes
+
+* reduce memory usage in precompute_range_bars() to prevent OOM ([7adf579](https://github.com/terrylica/rangebar-py/commit/7adf5791186aa874962e67dc70574b3582326c4e)), closes [hi#volume](https://github.com/hi/issues/volume) [#11](https://github.com/terrylica/rangebar-py/issues/11)
+
 ## [5.3.1](https://github.com/terrylica/rangebar-py/compare/v5.3.0...v5.3.1) (2026-01-10)
 
 

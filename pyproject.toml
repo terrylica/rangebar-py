@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "rangebar"
-version = "5.3.1"
+version = "5.3.2"
 description = "Python bindings for rangebar: Non-lookahead range bar construction for cryptocurrency trading"
 readme = "README.md"
 requires-python = ">=3.10"
