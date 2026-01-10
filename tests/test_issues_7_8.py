@@ -413,3 +413,62 @@ class TestDataClasses:
         assert result.threshold_decimal_bps == 250
         assert result.total_bars == 5000
         assert result.continuity_valid is True
+
+
+# ============================================================================
+# Issue #10: Duplicate trades handling
+# ============================================================================
+
+
+class TestDuplicateTradesHandling:
+    """Tests for duplicate trades deduplication (Issue #10)."""
+
+    def test_deduplication_with_duplicate_trade_ids(self):
+        """Verify duplicate trades are deduplicated before processing."""
+        import polars as pl
+
+        # Create test data with duplicate trade IDs
+        trades = pl.DataFrame(
+            {
+                "timestamp": [1000, 1000, 2000, 3000],  # First two have same timestamp
+                "agg_trade_id": [
+                    100,
+                    100,
+                    101,
+                    102,
+                ],  # First two have same ID (duplicate)
+                "price": [42000.0, 42000.0, 42100.0, 42200.0],
+                "quantity": [1.0, 1.0, 2.0, 3.0],
+            }
+        )
+
+        # Apply the same deduplication logic used in precompute_range_bars
+        if "agg_trade_id" in trades.columns:
+            deduped = trades.unique(subset=["agg_trade_id"], maintain_order=True)
+        else:
+            deduped = trades
+
+        # Should have 3 unique trades (not 4)
+        assert len(deduped) == 3
+        assert deduped["agg_trade_id"].to_list() == [100, 101, 102]
+
+    def test_deduplication_preserves_order(self):
+        """Verify deduplication preserves chronological order."""
+        import polars as pl
+
+        trades = pl.DataFrame(
+            {
+                "timestamp": [3000, 1000, 2000, 1000],  # Unsorted, with duplicate
+                "trade_id": [103, 101, 102, 101],  # Duplicate trade_id
+                "price": [42200.0, 42000.0, 42100.0, 42000.0],
+                "quantity": [3.0, 1.0, 2.0, 1.0],
+            }
+        )
+
+        # Sort first, then deduplicate (order matters)
+        sorted_trades = trades.sort("timestamp")
+        deduped = sorted_trades.unique(subset=["trade_id"], maintain_order=True)
+
+        assert len(deduped) == 3
+        # After sorting by timestamp and deduping, order should be 101, 102, 103
+        assert deduped["trade_id"].to_list() == [101, 102, 103]

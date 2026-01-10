@@ -1544,6 +1544,17 @@ def precompute_range_bars(
         if tick_data.is_empty():
             continue
 
+        # Deduplicate trades by trade_id (Binance data may have duplicates)
+        # and ensure sorted by timestamp
+        if "agg_trade_id" in tick_data.columns:
+            tick_data = tick_data.unique(subset=["agg_trade_id"], maintain_order=True)
+        elif "trade_id" in tick_data.columns:
+            tick_data = tick_data.unique(subset=["trade_id"], maintain_order=True)
+
+        # Sort by timestamp to ensure chronological order
+        if "timestamp" in tick_data.columns:
+            tick_data = tick_data.sort("timestamp")
+
         total_ticks += len(tick_data)
 
         # Report progress - processing
@@ -2320,8 +2331,16 @@ def _fill_gap_and_cache(
         if not all_tick_data:
             return current_bars
 
-        # Phase 2: Merge ALL ticks chronologically
+        # Phase 2: Merge ALL ticks chronologically and deduplicate
         merged_ticks = pl.concat(all_tick_data).sort("timestamp")
+
+        # Deduplicate by trade_id (Binance data may have duplicates at boundaries)
+        if "agg_trade_id" in merged_ticks.columns:
+            merged_ticks = merged_ticks.unique(
+                subset=["agg_trade_id"], maintain_order=True
+            )
+        elif "trade_id" in merged_ticks.columns:
+            merged_ticks = merged_ticks.unique(subset=["trade_id"], maintain_order=True)
 
         # Phase 3: Process with SINGLE processor (guarantees continuity)
         new_bars, _ = _process_binance_trades(
@@ -2521,6 +2540,15 @@ def _fetch_and_compute_bars(
             return None
 
         merged_ticks = pl.concat(all_tick_data).sort("timestamp")
+
+        # Deduplicate by trade_id (Binance data may have duplicates at boundaries)
+        if "agg_trade_id" in merged_ticks.columns:
+            merged_ticks = merged_ticks.unique(
+                subset=["agg_trade_id"], maintain_order=True
+            )
+        elif "trade_id" in merged_ticks.columns:
+            merged_ticks = merged_ticks.unique(subset=["trade_id"], maintain_order=True)
+
         bars_df, _ = _process_binance_trades(
             merged_ticks, threshold, False, include_microstructure, symbol=symbol
         )
