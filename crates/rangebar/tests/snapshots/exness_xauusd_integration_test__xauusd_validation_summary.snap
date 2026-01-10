@@ -1,0 +1,12 @@
+---
+source: crates/rangebar/tests/exness_xauusd_integration_test.rs
+assertion_line: 143
+expression: summary
+---
+{
+  "instrument": "XAUUSD",
+  "ticks": 2660127,
+  "bars": 352691,
+  "zero_spread_pct": 99.5763360170398,
+  "all_gates_passed": true
+}

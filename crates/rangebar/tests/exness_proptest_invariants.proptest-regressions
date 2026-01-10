@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc dcfc5fc147d108e1b141501a03c7f145607f8063484c3a170b35a2a264a3a006 # shrinks to high_breach = true, low_breach = false, close_breach = false

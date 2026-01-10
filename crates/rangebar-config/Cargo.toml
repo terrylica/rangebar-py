@@ -1,0 +1,31 @@
+[package]
+name = "rangebar-config"
+publish.workspace = true  # CRITICAL: Inherits false - no crates.io publishing
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+description = "Configuration management for rangebar applications"
+keywords = ["finance", "trading", "configuration"]
+categories = ["config"]
+
+[dependencies]
+rangebar-core = { path = "../rangebar-core", version = "6.1" }
+
+# Serialization
+serde.workspace = true
+toml.workspace = true
+
+# Configuration management
+config.workspace = true
+
+# Utilities
+chrono.workspace = true
+num_cpus.workspace = true
+
+[features]
+default = []

@@ -1,0 +1,33 @@
+[package]
+name = "rangebar-batch"
+publish.workspace = true  # CRITICAL: Inherits false - no crates.io publishing
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+description = "Batch processing engine for range bar computation"
+keywords = ["finance", "trading", "batch", "processing"]
+categories = ["finance", "algorithms"]
+
+[dependencies]
+rangebar-core = { path = "../rangebar-core", version = "6.1" }
+rangebar-io = { path = "../rangebar-io", version = "6.1", features = ["parquet"] }
+
+# Data processing
+polars.workspace = true
+
+# Serialization
+serde.workspace = true
+
+# Parallel processing
+rayon.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+[features]
+default = []

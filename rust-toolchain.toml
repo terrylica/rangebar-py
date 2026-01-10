@@ -1,0 +1,7 @@
+[toolchain]
+# Pin Rust toolchain version for consistent formatting and compilation
+# across local development and CI environments
+channel = "1.90.0"
+components = ["rustfmt", "clippy", "rust-src"]
+targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"]
+profile = "default"

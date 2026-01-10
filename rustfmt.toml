@@ -1,0 +1,33 @@
+# Rust formatting configuration for rangebar project
+# Compatible with stable rustfmt - ensures consistent formatting between local and CI
+# Version consistency: rustfmt 1.8.0 (pinned via rust-toolchain.toml using Rust 1.90.0)
+
+# Basic layout settings (stable)
+edition = "2024"
+max_width = 100
+hard_tabs = false
+tab_spaces = 4
+
+# Line wrapping and width limits (stable)
+array_width = 60
+chain_width = 60
+single_line_if_else_max_width = 50
+
+# Function formatting (stable)
+fn_params_layout = "Tall"
+
+# Control structures (stable)
+newline_style = "Unix"
+use_small_heuristics = "Default"
+
+# Miscellaneous stable options
+reorder_imports = true
+reorder_modules = true
+merge_derives = true
+use_try_shorthand = false
+use_field_init_shorthand = false
+remove_nested_parens = true
+short_array_element_width_threshold = 10
+
+# These are the key stable options that should align local and CI formatting
+force_explicit_abi = true

@@ -1027,17 +1027,17 @@ mod tests {
 
     #[test]
     fn test_processor_creation() {
-        let processor = PyRangeBarProcessor::new(250);
+        let processor = PyRangeBarProcessor::new(250, None);
         assert!(processor.is_ok());
         assert_eq!(processor.unwrap().threshold_decimal_bps, 250);
     }
 
     #[test]
     fn test_invalid_threshold() {
-        let processor = PyRangeBarProcessor::new(0);
+        let processor = PyRangeBarProcessor::new(0, None);
         assert!(processor.is_err());
 
-        let processor = PyRangeBarProcessor::new(200_000);
+        let processor = PyRangeBarProcessor::new(200_000, None);
         assert!(processor.is_err());
     }
 
@@ -1069,18 +1069,18 @@ mod tests {
     #[test]
     fn test_processor_boundary_thresholds() {
         // Test minimum valid threshold (1 = 0.1 basis points)
-        let processor_min = PyRangeBarProcessor::new(1);
+        let processor_min = PyRangeBarProcessor::new(1, None);
         assert!(processor_min.is_ok());
         assert_eq!(processor_min.unwrap().threshold_decimal_bps, 1);
 
         // Test maximum valid threshold (100_000 = 10,000 basis points = 100%)
-        let processor_max = PyRangeBarProcessor::new(100_000);
+        let processor_max = PyRangeBarProcessor::new(100_000, None);
         assert!(processor_max.is_ok());
         assert_eq!(processor_max.unwrap().threshold_decimal_bps, 100_000);
 
         // Test common valid thresholds
         for threshold in [10, 100, 250, 500, 1000, 10_000] {
-            let processor = PyRangeBarProcessor::new(threshold);
+            let processor = PyRangeBarProcessor::new(threshold, None);
             assert!(processor.is_ok(), "Threshold {} should be valid", threshold);
         }
     }

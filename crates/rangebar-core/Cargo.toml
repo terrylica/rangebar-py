@@ -1,0 +1,32 @@
+[package]
+name = "rangebar-core"
+publish.workspace = true  # CRITICAL: Inherits false - no crates.io publishing
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+description = "Core range bar construction algorithm with temporal integrity guarantees"
+keywords = ["finance", "trading", "range-bars", "algorithm"]
+categories = ["algorithms", "data-structures", "finance"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+csv = { workspace = true, optional = true }
+ahash = "0.8"  # Fast, non-cryptographic hash for price window verification
+
+# Optional dependencies for future phases
+pyo3 = { version = "0.22", optional = true }
+utoipa = { version = "5.4", optional = true }
+
+[features]
+default = []
+test-utils = ["dep:csv"]  # Real data loading requires csv crate
+python = ["pyo3"]  # Python bindings via PyO3 (future phase)
+api = ["utoipa"]     # API schemas via utoipa (future phase)

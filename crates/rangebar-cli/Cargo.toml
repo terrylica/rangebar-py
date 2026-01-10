@@ -1,0 +1,94 @@
+[package]
+name = "rangebar-cli"
+publish.workspace = true  # CRITICAL: Inherits false - no crates.io publishing
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+description = "Command-line tools for range bar processing and analysis"
+keywords = ["finance", "trading", "cli", "rangebar"]
+categories = ["command-line-utilities", "finance"]
+
+[dependencies]
+# Internal crates (all previous phases)
+rangebar-core = { path = "../rangebar-core", version = "6.1", features = ["test-utils"] }
+rangebar-providers = { path = "../rangebar-providers", version = "6.1", features = ["all-providers"] }
+rangebar-config = { path = "../rangebar-config", version = "6.1" }
+rangebar-io = { path = "../rangebar-io", version = "6.1", features = ["parquet"] }
+rangebar-streaming = { path = "../rangebar-streaming", version = "6.1", features = ["all"] }
+rangebar-batch = { path = "../rangebar-batch", version = "6.1" }
+
+# CLI framework
+clap.workspace = true
+
+# Async runtime
+tokio.workspace = true
+rayon.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+
+# HTTP client
+reqwest.workspace = true
+
+# Data processing
+polars.workspace = true
+csv.workspace = true
+
+# File I/O
+zip.workspace = true
+
+# Utilities
+md5.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# Cryptography (for data-structure-validator)
+sha2 = "0.10"
+
+[features]
+default = []
+api = []  # API server feature (infrastructure not yet extracted)
+polars-io = []  # Polars I/O operations
+
+# =============================================================================
+# CLI Binaries - DISABLED for rangebar-py consolidation
+# =============================================================================
+# These binaries are kept as source code reference but not built in this repo.
+# The rangebar-py project focuses on PyPI distribution only.
+# To enable binaries, uncomment the sections below.
+
+# [[bin]]
+# name = "tier1-symbol-discovery"
+# path = "src/bin/tier1_symbol_discovery.rs"
+
+# [[bin]]
+# name = "rangebar-analyze"
+# path = "src/bin/parallel_tier1_analysis.rs"
+
+# [[bin]]
+# name = "data-structure-validator"
+# path = "src/bin/data_structure_validator.rs"
+
+# [[bin]]
+# name = "spot-tier1-processor"
+# path = "src/bin/spot_tier1_processor.rs"
+
+# [[bin]]
+# name = "polars-benchmark"
+# path = "src/bin/polars_benchmark.rs"
+
+# [[bin]]
+# name = "temporal-integrity-validator"
+# path = "src/bin/temporal_integrity_test_only.rs"
+
+# [[bin]]
+# name = "rangebar-api"
+# path = "src/bin/rangebar_api.rs"

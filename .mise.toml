@@ -1,3 +1,271 @@
 [env]
+# Existing GitHub tokens (preserve)
 GH_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/gh-token-terrylica') | trim }}"
 GITHUB_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/gh-token-terrylica') | trim }}"
+
+# Benchmark configuration
+BENCH_DATA_DIR = "{{ env.PWD }}/bench-data"
+PROFILE_DATA_DIR = "{{ env.PWD }}/profile-data"
+
+# =============================================================================
+# Tools - managed by mise (NOT separate cargo install)
+# =============================================================================
+
+[tools]
+python = "3.11"
+rust = "1.90"
+node = "22"          # Required for semantic-release
+uv = "latest"        # Required for publish workflow
+# Cargo tools installed as mise plugins
+"cargo:cargo-nextest" = "latest"
+"cargo:cargo-deny" = "latest"
+"cargo:cargo-outdated" = "latest"
+"cargo:flamegraph" = "0.6"
+"cargo:maturin" = "latest"
+
+# =============================================================================
+# Development Tasks (from Makefile)
+# =============================================================================
+
+[tasks.fmt]
+description = "Format code with cargo fmt"
+run = "cargo fmt --all"
+
+[tasks.lint]
+description = "Run clippy linting"
+run = "cargo clippy --all-targets --all-features"
+
+[tasks.test]
+description = "Run Rust tests with cargo nextest (excludes PyO3 root crate)"
+run = "cargo nextest run --workspace --exclude rangebar-py"
+
+[tasks.test-py]
+description = "Run Python tests"
+run = "pytest tests/ -v"
+
+[tasks.deny]
+description = "Run cargo deny security checks"
+run = "cargo deny check"
+
+[tasks.check]
+description = "Run all quality checks (fmt + test)"
+depends = ["fmt", "test"]
+
+[tasks.check-full]
+description = "Full quality checks including lint and deny"
+depends = ["fmt", "lint", "test", "deny"]
+
+[tasks.build]
+description = "Build Python extension (development)"
+run = "maturin develop"
+
+[tasks.build-release]
+description = "Build in release mode"
+run = "cargo build --release"
+
+[tasks.clean]
+description = "Clean build artifacts"
+run = "cargo clean && rm -rf dist/ build/ *.egg-info"
+
+[tasks.docs]
+description = "Generate documentation"
+run = "cargo doc --open --all-features"
+
+[tasks.dev]
+description = "Quick development cycle (fmt + test)"
+depends = ["fmt", "test"]
+
+# =============================================================================
+# Benchmarking Tasks (REPLACES benchmark_runner.sh)
+# =============================================================================
+
+[tasks."bench:run"]
+description = "Run performance benchmarks"
+run = "cargo bench --bench rangebar_bench"
+
+[tasks."bench:quick"]
+description = "Run quick benchmarks (reduced iterations)"
+run = "cargo bench --bench rangebar_bench -- --quick"
+
+[tasks."bench:baseline"]
+description = "Create performance baseline"
+run = """
+mkdir -p $BENCH_DATA_DIR
+cargo bench --bench rangebar_bench -- --save-baseline main
+echo "Baseline saved to $BENCH_DATA_DIR/main"
+"""
+
+[tasks."bench:compare"]
+description = "Compare current performance with baseline"
+run = "cargo bench --bench rangebar_bench -- --baseline main"
+
+[tasks."bench:validate"]
+description = "Validate performance targets (1M ticks < 100ms)"
+run = """
+echo "Running performance validation..."
+cargo bench --bench rangebar_bench -- --quick 2>&1 | tee /tmp/bench_output.txt
+if grep -q "1M.*time:.*[0-9][0-9][0-9]\\.[0-9]* ms" /tmp/bench_output.txt; then
+  echo "FAIL: 1M ticks benchmark exceeds 100ms target"
+  exit 1
+fi
+echo "PASS: Performance targets met"
+"""
+
+# =============================================================================
+# Profiling Tasks (REPLACES profiling_tools.sh for simple cases)
+# =============================================================================
+
+[tasks."prof:flamegraph"]
+description = "Generate CPU flamegraph"
+run = """
+mkdir -p $PROFILE_DATA_DIR
+cargo flamegraph --bench rangebar_bench -o $PROFILE_DATA_DIR/flamegraph-$(date +%Y%m%d-%H%M%S).svg
+echo "Flamegraph saved to $PROFILE_DATA_DIR/"
+"""
+
+[tasks."prof:build-release"]
+description = "Build with profiling symbols"
+run = "CARGO_PROFILE_RELEASE_DEBUG=true cargo build --release"
+
+# Complex profiling (platform-specific) kept in script
+[tasks."prof:full"]
+description = "Comprehensive profiling suite (uses script for platform detection)"
+run = "./scripts/profiling_tools.sh full"
+
+# =============================================================================
+# Dependency Management Tasks (PARTIAL - complex logic in script)
+# =============================================================================
+
+[tasks."deps:check"]
+description = "Check for outdated dependencies"
+run = "cargo outdated -R --color always"
+
+[tasks."deps:security"]
+description = "Run security audit on dependencies"
+run = "cargo deny check advisories && cargo deny check licenses"
+
+[tasks."deps:tree"]
+description = "Show dependency tree (depth 1)"
+run = "cargo tree --depth 1 | grep -E '^[a-z]'"
+
+[tasks."deps:update"]
+description = "Update dependencies (simple - no rollback)"
+run = """
+cargo update
+cargo nextest run --no-fail-fast
+echo "Dependencies updated and tests passed"
+"""
+
+# Complex update with rollback kept in script
+[tasks."deps:update-safe"]
+description = "Update dependencies with backup/rollback (uses script)"
+run = "./scripts/dependency_monitor.sh auto"
+
+# =============================================================================
+# Production Validation Tasks (REPLACES production_validation.sh)
+# =============================================================================
+
+[tasks."validate:security"]
+description = "Validate no privilege escalation in scripts"
+run = """
+if grep -r 'sudo' scripts/*.sh 2>/dev/null; then
+  echo "FAIL: Found sudo usage in scripts"
+  exit 1
+fi
+echo "PASS: No privilege escalation detected"
+"""
+
+[tasks."validate:injection"]
+description = "Validate command injection prevention"
+run = """
+if grep -E '\\$\\(.*\\$[A-Z]' scripts/*.sh 2>/dev/null; then
+  echo "WARN: Potential command injection pattern found"
+fi
+echo "PASS: Command injection check complete"
+"""
+
+[tasks."validate:memory"]
+description = "Validate memory efficiency for high-volume months (prevents OOM regressions)"
+run = "python scripts/validate_memory_efficiency.py"
+
+[tasks."validate:all"]
+description = "Run all production validation checks"
+depends = ["validate:security", "validate:injection", "validate:memory"]
+
+# =============================================================================
+# Release Tasks
+# =============================================================================
+
+[tasks.release]
+description = "Build all release wheels"
+run = "./scripts/build-release.sh"
+
+[tasks.publish]
+description = "Publish wheels to PyPI"
+run = "./scripts/publish-wheels.sh"
+
+[tasks."release:local"]
+description = "Build local wheel only (macOS ARM64)"
+run = "maturin build --release --profile wheel"
+
+[tasks."release:sdist"]
+description = "Build source distribution"
+run = "maturin sdist"
+
+[tasks."release:version"]
+description = "Bump version via semantic-release (requires npm install first)"
+run = """
+if [ ! -d node_modules ]; then
+  echo "Installing npm dependencies..."
+  npm install
+fi
+npm run release
+"""
+
+[tasks."release:full"]
+description = "Full release workflow: version → build → smoke → publish (dry-run)"
+run = """
+echo "=== Phase 1: Version bump (semantic-release) ==="
+mise run release:version
+
+echo ""
+echo "=== Phase 2: Build wheels ==="
+mise run release
+
+echo ""
+echo "=== Phase 3: Smoke tests ==="
+mise run smoke
+
+echo ""
+echo "=== Phase 4: Publish (dry-run) ==="
+./scripts/publish-wheels.sh --dry-run
+
+echo ""
+echo "=== Release preparation complete! ==="
+echo "To publish for real, run: mise run publish"
+"""
+
+# =============================================================================
+# Smoke Test Tasks
+# =============================================================================
+
+[tasks."smoke:import"]
+description = "Verify Python import works"
+run = "python -c 'from rangebar import RangeBarProcessor; print(\"OK: import works\")'"
+
+[tasks."smoke:process"]
+description = "Verify basic processing works"
+run = """
+python -c '
+from rangebar._core import PyRangeBarProcessor
+proc = PyRangeBarProcessor(threshold_decimal_bps=250)
+assert proc.threshold_decimal_bps == 250
+bars = proc.process_trades([])
+assert bars == []
+print("OK: basic processing works")
+'
+"""
+
+[tasks.smoke]
+description = "Run all smoke tests"
+depends = ["smoke:import", "smoke:process"]

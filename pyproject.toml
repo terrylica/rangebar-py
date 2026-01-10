@@ -55,6 +55,10 @@ module-name = "rangebar._core"
 # Include data-providers for full API (get_range_bars with automatic data fetching)
 # This is now default in Cargo.toml, but explicit here for documentation
 features = ["pyo3/extension-module", "data-providers"]
+# Force optimized wheel profile (see Cargo.toml [profile.wheel])
+profile = "wheel"
+# Strip symbols to minimize wheel size
+strip = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

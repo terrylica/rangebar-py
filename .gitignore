@@ -75,6 +75,17 @@ Thumbs.db
 examples/data/
 *.csv
 *.parquet
+*.jsonl
+
+# Exception: Include test data fixtures (overrides *.csv pattern)
+!test_data/**/*
+
+# Benchmark and profiling data (generated locally via mise tasks)
+bench-data/
+profile-data/
+
+# Crate output directories (validation data, test outputs)
+**/output/
 
 # Temporary directories (visible in broot via special_paths)
 tmp/

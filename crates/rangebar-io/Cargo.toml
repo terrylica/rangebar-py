@@ -1,0 +1,31 @@
+[package]
+name = "rangebar-io"
+publish.workspace = true  # CRITICAL: Inherits false - no crates.io publishing
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+description = "I/O operations for rangebar data (CSV, Parquet, Arrow)"
+keywords = ["finance", "trading", "io", "parquet"]
+categories = ["data-structures", "encoding"]
+
+[dependencies]
+rangebar-core = { path = "../rangebar-core", version = "6.1" }
+
+# Error handling
+thiserror.workspace = true
+
+# Data formats (optional, feature-gated)
+polars = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = "3.0"
+
+[features]
+default = []
+parquet = ["polars"]
+all = ["parquet"]

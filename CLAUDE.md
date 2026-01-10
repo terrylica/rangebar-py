@@ -4,13 +4,23 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Project Overview
 
-**rangebar-py** is a Python package providing PyO3/maturin bindings to the [rangebar](https://github.com/terrylica/rangebar) Rust crate. This enables Python users (especially those using backtesting.py) to leverage high-performance range bar construction without requiring the upstream Rust crate maintainer to add Python support.
+**rangebar-py** is a unified Rust workspace with Python bindings via PyO3/maturin. The project consolidates 8 specialized Rust crates plus Python bindings, publishing exclusively to PyPI (not crates.io).
 
-**Core Principle**: The rangebar Rust crate maintainer does **ZERO** work. We handle all Python integration by importing their crate as a dependency.
+**Architecture**: 8-crate modular Rust workspace
+- **rangebar-core** - Core algorithm (8-decimal fixed-point, non-lookahead breach detection)
+- **rangebar-providers** - Data sources (Binance spot/futures, Exness forex)
+- **rangebar-config** - Configuration management
+- **rangebar-io** - I/O operations (CSV, Parquet, Arrow IPC)
+- **rangebar-streaming** - Real-time processor (bounded memory, circuit breaker)
+- **rangebar-batch** - Batch analytics (Rayon parallel processing)
+- **rangebar-cli** - CLI tools (6 binaries, disabled for PyPI focus)
+- **rangebar** - Meta-crate (v4.0 backward compatibility)
 
-## Critical Development Principle: Upstream Rust Crate First
+**Detailed crate documentation**: See [`crates/CLAUDE.md`](/crates/CLAUDE.md)
 
-**ALWAYS leverage the upstream `rangebar-core` Rust crate for heavy lifting.**
+## Critical Development Principle: Leverage Rust Crates
+
+**ALWAYS leverage the local `rangebar-core` Rust crate (in `crates/`) for heavy lifting.**
 
 When implementing features or fixing issues:
 
@@ -97,15 +107,27 @@ When optimizing data processing:
 ## Architecture
 
 ```
-rangebar (Rust crate on crates.io) [maintained by terrylica]
-    ↓ [Cargo dependency]
-rangebar-py (This project) [our Python wrapper]
-    ├── Rust code (PyO3 bindings in src/lib.rs)
-    ├── Python helpers (python/rangebar/)
-    └── Type stubs (.pyi files)
-    ↓ [pip install]
-backtesting.py users (target audience)
+rangebar-py (Unified Workspace)
+├── crates/                          [8 Rust crates - local, NOT crates.io]
+│   ├── rangebar-core/               Core algorithm (foundation)
+│   ├── rangebar-providers/          Data sources (Binance, Exness)
+│   ├── rangebar-config/             Configuration management
+│   ├── rangebar-io/                 I/O operations (Parquet, CSV)
+│   ├── rangebar-streaming/          Real-time processing
+│   ├── rangebar-batch/              Batch analytics
+│   ├── rangebar-cli/                CLI tools (disabled for PyPI)
+│   └── rangebar/                    Meta-crate (v4.0 compat)
+├── src/lib.rs                       PyO3 bindings (imports local crates)
+├── python/rangebar/                 Python API layer
+│   ├── __init__.py                  Public API (get_range_bars, etc.)
+│   ├── clickhouse/                  Tier 2 cache (ClickHouse)
+│   └── storage/                     Tier 1 cache (Parquet)
+└── pyproject.toml                   Maturin build configuration
+    ↓ [maturin build → pip install]
+Python users (backtesting.py, ML pipelines)
 ```
+
+**Key**: All Rust crates have `publish = false` in Cargo.toml. Only Python wheels are published to PyPI.
 
 ## Why This Project Exists
 

@@ -1,0 +1,82 @@
+[package]
+name = "rangebar"
+publish.workspace = true  # CRITICAL: Inherits false - no crates.io publishing
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+description = "Non-lookahead range bar construction for cryptocurrency trading with temporal integrity guarantees"
+keywords.workspace = true
+categories.workspace = true
+documentation.workspace = true
+
+[dependencies]
+# Core is always included (non-optional)
+rangebar-core = { path = "../rangebar-core", version = "6.1" }
+
+# Optional sub-crates (enable via features)
+rangebar-providers = { path = "../rangebar-providers", version = "6.1", optional = true }
+rangebar-config = { path = "../rangebar-config", version = "6.1", optional = true }
+rangebar-io = { path = "../rangebar-io", version = "6.1", optional = true }
+rangebar-streaming = { path = "../rangebar-streaming", version = "6.1", optional = true }
+rangebar-batch = { path = "../rangebar-batch", version = "6.1", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+version-sync = { workspace = true }
+
+# Snapshot testing (SOTA 2025)
+insta = { version = "1.43", features = ["json", "yaml"] }
+
+# Property-based testing
+proptest = "1.6"
+
+# Structured logging in tests
+tracing-test = "0.2"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[features]
+default = ["core"]
+
+# Core features (always available, passed through to rangebar-core)
+core = []
+test-utils = ["rangebar-core/test-utils"]
+python = ["rangebar-core/python"]
+api = ["rangebar-core/api"]
+
+# Sub-crate features
+providers = ["rangebar-providers"]
+binance = ["providers", "rangebar-providers/binance"]
+exness = ["providers", "rangebar-providers/exness"]
+all-providers = ["providers", "rangebar-providers/all-providers"]
+
+config = ["rangebar-config"]
+
+io = ["rangebar-io"]
+parquet = ["io", "rangebar-io/parquet"]
+
+streaming = ["rangebar-streaming", "providers"]
+streaming-all = ["streaming", "rangebar-streaming/all"]
+
+batch = ["rangebar-batch", "io"]
+
+# Convenience feature to enable everything
+full = [
+    "providers",
+    "all-providers",
+    "config",
+    "io",
+    "parquet",
+    "streaming",
+    "streaming-all",
+    "batch",
+    "test-utils",
+]

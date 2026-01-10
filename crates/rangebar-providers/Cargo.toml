@@ -1,0 +1,48 @@
+[package]
+name = "rangebar-providers"
+publish.workspace = true  # CRITICAL: Inherits false - no crates.io publishing
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+description = "Data providers for rangebar: Binance, Exness"
+keywords = ["binance", "exness", "trading", "data-provider"]
+categories = ["finance", "api-bindings"]
+
+[dependencies]
+rangebar-core = { path = "../rangebar-core", version = "6.1" }
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# HTTP client
+reqwest.workspace = true
+
+# Async runtime
+tokio.workspace = true
+tokio-tungstenite = { version = "0.23", features = ["native-tls"], optional = true }
+tokio-stream = { version = "0.1", optional = true }
+futures-util = { version = "0.3", optional = true }
+
+# Data formats
+csv.workspace = true
+
+# Compression
+zip.workspace = true
+
+# Time handling
+chrono.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+[features]
+default = ["binance"]
+binance = ["tokio-tungstenite", "tokio-stream", "futures-util"]
+exness = []
+all-providers = ["binance", "exness"]

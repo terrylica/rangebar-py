@@ -1,0 +1,42 @@
+[package]
+name = "rangebar-streaming"
+publish.workspace = true  # CRITICAL: Inherits false - no crates.io publishing
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+description = "Real-time streaming engine for range bar processing"
+keywords = ["finance", "trading", "streaming", "real-time"]
+categories = ["finance", "algorithms"]
+
+[dependencies]
+rangebar-core = { path = "../rangebar-core", version = "6.1" }
+rangebar-providers = { path = "../rangebar-providers", version = "6.1", optional = true }
+
+# Async runtime
+async-trait.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+
+# Serialization
+serde.workspace = true
+chrono.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# Optional features
+rolling-stats = { workspace = true, optional = true }
+tdigests = { workspace = true, optional = true }
+
+[features]
+default = []
+binance-integration = ["rangebar-providers/binance"]
+stats = ["rolling-stats", "tdigests"]
+indicators = []
+all = ["binance-integration", "stats", "indicators"]

@@ -13,11 +13,12 @@ plugins:
     - changelogFile: CHANGELOG.md
 
   # Update version in pyproject.toml AND Cargo.toml (both are version SSoT)
+  # Uses perl for cross-platform compatibility (BSD sed vs GNU sed differ)
   - - "@semantic-release/exec"
     - prepareCmd: |
-        sed -i.bak 's/^version = ".*"/version = "${nextRelease.version}"/' pyproject.toml && rm pyproject.toml.bak
-        sed -i.bak 's/^version = ".*"/version = "${nextRelease.version}"/' Cargo.toml && rm Cargo.toml.bak
-      publishCmd: "echo 'Version updated in pyproject.toml and Cargo.toml - use pypi-doppler skill for PyPI publishing'"
+        perl -i -pe 's/^version = ".*"/version = "${nextRelease.version}"/' pyproject.toml
+        perl -i -pe 's/^version = ".*"/version = "${nextRelease.version}"/' Cargo.toml
+      publishCmd: "echo 'Version updated in pyproject.toml and Cargo.toml - use mise run publish for PyPI publishing'"
 
   # Commit version changes back to repository
   - - "@semantic-release/git"
