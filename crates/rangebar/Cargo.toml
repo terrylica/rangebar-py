@@ -16,14 +16,14 @@ documentation.workspace = true
 
 [dependencies]
 # Core is always included (non-optional)
-rangebar-core = { path = "../rangebar-core", version = "6.1" }
+rangebar-core = { path = "../rangebar-core", version = "6.0" }
 
 # Optional sub-crates (enable via features)
-rangebar-providers = { path = "../rangebar-providers", version = "6.1", optional = true }
-rangebar-config = { path = "../rangebar-config", version = "6.1", optional = true }
-rangebar-io = { path = "../rangebar-io", version = "6.1", optional = true }
-rangebar-streaming = { path = "../rangebar-streaming", version = "6.1", optional = true }
-rangebar-batch = { path = "../rangebar-batch", version = "6.1", optional = true }
+rangebar-providers = { path = "../rangebar-providers", version = "6.0", optional = true }
+rangebar-config = { path = "../rangebar-config", version = "6.0", optional = true }
+rangebar-io = { path = "../rangebar-io", version = "6.0", optional = true }
+rangebar-streaming = { path = "../rangebar-streaming", version = "6.0", optional = true }
+rangebar-batch = { path = "../rangebar-batch", version = "6.0", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
