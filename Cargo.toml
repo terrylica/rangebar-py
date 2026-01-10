@@ -1,6 +1,6 @@
 [package]
 name = "rangebar-py"
-version = "5.3.3"
+version = "5.3.4"
 edition = "2021"
 authors = ["Terry Li"]
 license = "MIT"

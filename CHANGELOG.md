@@ -1,3 +1,10 @@
+## [5.3.4](https://github.com/terrylica/rangebar-py/compare/v5.3.3...v5.3.4) (2026-01-10)
+
+
+### Bug Fixes
+
+* correct range bar continuity validation semantics ([67e5e32](https://github.com/terrylica/rangebar-py/commit/67e5e325b8f3317eae3d9d09b6d20c0ab10e49a9)), closes [#12](https://github.com/terrylica/rangebar-py/issues/12)
+
 ## [5.3.3](https://github.com/terrylica/rangebar-py/compare/v5.3.2...v5.3.3) (2026-01-10)
 
 
