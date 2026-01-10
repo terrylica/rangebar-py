@@ -1535,9 +1535,6 @@ def precompute_range_bars(
         actual_start = max(month_start, start_dt)
         actual_end = min(month_end, end_dt + pd.Timedelta(days=1))
 
-        actual_start_str = actual_start.strftime("%Y-%m-%d")
-        actual_end_str = (actual_end - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-
         # Fetch tick data for this period
         start_ts_month = int(actual_start.timestamp() * 1000)
         end_ts_month = int(actual_end.timestamp() * 1000)
@@ -1605,73 +1602,83 @@ def precompute_range_bars(
             if not month_has_data:
                 continue
         else:
-            # DATA NOT CACHED: Fetch from source and cache
-            if source == "binance":
-                tick_data = _fetch_binance(
-                    symbol, actual_start_str, actual_end_str, market_normalized
-                )
-            else:
-                tick_data = _fetch_exness(
-                    symbol, actual_start_str, actual_end_str, "strict"
-                )
+            # DATA NOT CACHED: Fetch from source day-by-day to prevent OOM
+            # Issue #14: Fetching entire month at once causes OOM for high-volume
+            # months like March 2024. Fetch day-by-day instead.
+            current_day = actual_start
+            while current_day < actual_end:
+                next_day = current_day + pd.Timedelta(days=1)
+                next_day = min(next_day, actual_end)
 
-            if not tick_data.is_empty():
-                storage.write_ticks(cache_symbol, tick_data)
+                day_start_str = current_day.strftime("%Y-%m-%d")
+                day_end_str = (next_day - pd.Timedelta(seconds=1)).strftime("%Y-%m-%d")
 
-            if tick_data.is_empty():
-                continue
-
-            # Deduplicate trades by trade_id (Binance data may have duplicates)
-            if "agg_trade_id" in tick_data.columns:
-                tick_data = tick_data.unique(
-                    subset=["agg_trade_id"], maintain_order=True
-                )
-            elif "trade_id" in tick_data.columns:
-                tick_data = tick_data.unique(subset=["trade_id"], maintain_order=True)
-
-            # Sort by (timestamp, trade_id) - Rust crate requires this order
-            if "timestamp" in tick_data.columns:
-                if "agg_trade_id" in tick_data.columns:
-                    tick_data = tick_data.sort(["timestamp", "agg_trade_id"])
-                elif "trade_id" in tick_data.columns:
-                    tick_data = tick_data.sort(["timestamp", "trade_id"])
-                else:
-                    tick_data = tick_data.sort("timestamp")
-
-            total_ticks += len(tick_data)
-
-            # Report progress - processing
-            if progress_callback:
-                progress_callback(
-                    PrecomputeProgress(
-                        phase="processing",
-                        current_month=month_str,
-                        months_completed=i,
-                        months_total=len(months),
-                        bars_generated=sum(len(b) for b in all_bars),
-                        ticks_processed=total_ticks,
-                        elapsed_seconds=time.time() - start_time,
+                if source == "binance":
+                    tick_data = _fetch_binance(
+                        symbol, day_start_str, day_end_str, market_normalized
                     )
-                )
+                else:
+                    tick_data = _fetch_exness(
+                        symbol, day_start_str, day_end_str, "strict"
+                    )
 
-            # Process fresh data with chunking for memory efficiency
-            tick_count = len(tick_data)
+                if not tick_data.is_empty():
+                    storage.write_ticks(cache_symbol, tick_data)
 
-            for chunk_start in range(0, tick_count, chunk_size):
-                chunk_end = min(chunk_start + chunk_size, tick_count)
-                chunk_df = tick_data.slice(chunk_start, chunk_end - chunk_start)
-                chunk = chunk_df.to_dicts()
+                    # Deduplicate trades by trade_id
+                    if "agg_trade_id" in tick_data.columns:
+                        tick_data = tick_data.unique(
+                            subset=["agg_trade_id"], maintain_order=True
+                        )
+                    elif "trade_id" in tick_data.columns:
+                        tick_data = tick_data.unique(
+                            subset=["trade_id"], maintain_order=True
+                        )
 
-                # Stream to Rust processor (maintains state for continuity)
-                bars = processor.process_trades(chunk)
-                if bars:
-                    bars_df = processor.to_dataframe(bars)
-                    all_bars.append(bars_df)
+                    # Sort by (timestamp, trade_id) - Rust crate requires order
+                    if "timestamp" in tick_data.columns:
+                        if "agg_trade_id" in tick_data.columns:
+                            tick_data = tick_data.sort(["timestamp", "agg_trade_id"])
+                        elif "trade_id" in tick_data.columns:
+                            tick_data = tick_data.sort(["timestamp", "trade_id"])
+                        else:
+                            tick_data = tick_data.sort("timestamp")
 
-                del chunk, chunk_df
+                    total_ticks += len(tick_data)
 
-            del tick_data
-            gc.collect()
+                    # Report progress - processing
+                    if progress_callback:
+                        progress_callback(
+                            PrecomputeProgress(
+                                phase="processing",
+                                current_month=month_str,
+                                months_completed=i,
+                                months_total=len(months),
+                                bars_generated=sum(len(b) for b in all_bars),
+                                ticks_processed=total_ticks,
+                                elapsed_seconds=time.time() - start_time,
+                            )
+                        )
+
+                    # Process with chunking for memory efficiency
+                    tick_count = len(tick_data)
+                    for chunk_start in range(0, tick_count, chunk_size):
+                        chunk_end = min(chunk_start + chunk_size, tick_count)
+                        chunk_df = tick_data.slice(chunk_start, chunk_end - chunk_start)
+                        chunk = chunk_df.to_dicts()
+
+                        # Stream to Rust processor (maintains state)
+                        bars = processor.process_trades(chunk)
+                        if bars:
+                            bars_df = processor.to_dataframe(bars)
+                            all_bars.append(bars_df)
+
+                        del chunk, chunk_df
+
+                    del tick_data
+                    gc.collect()
+
+                current_day = next_day
 
     # Combine all bars
     if all_bars:
