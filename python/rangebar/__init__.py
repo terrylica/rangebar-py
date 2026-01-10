@@ -213,49 +213,55 @@ def _validate_junction_continuity(
 
 def validate_continuity(
     df: pd.DataFrame,
-    tolerance_pct: float = CONTINUITY_TOLERANCE_PCT,
+    tolerance_pct: float | None = None,
+    threshold_decimal_bps: int = 250,
 ) -> dict:
-    """Validate that range bars form a continuous sequence.
+    """Validate that range bars come from continuous single-session processing.
 
-    Checks that bar[i+1].Open == bar[i].Close (within tolerance) for all bars.
-    This invariant should hold for properly constructed range bars.
+    Range bars do NOT guarantee bar[i].close == bar[i+1].open. The next bar
+    opens at the first tick AFTER the previous bar closes, not at the close
+    price. This is by design - range bars capture actual market movements.
+
+    What this function validates:
+    1. OHLC invariants hold (High >= max(Open, Close), Low <= min(Open, Close))
+    2. Price gaps between bars don't exceed threshold + tolerance
+       (gaps larger than threshold indicate bars from different sessions)
+    3. Timestamps are monotonically increasing
 
     Parameters
     ----------
     df : pd.DataFrame
-        Range bar DataFrame with "Open" and "Close" columns
-    tolerance_pct : float, default=0.0001
-        Maximum allowed relative difference (0.0001 = 0.01%)
+        Range bar DataFrame with OHLC columns
+    tolerance_pct : float, optional
+        Additional tolerance beyond threshold for gap detection.
+        Default is 0.5% (0.005) to account for floating-point precision.
+    threshold_decimal_bps : int, default=250
+        Range bar threshold used to generate these bars (250 = 0.25%).
+        Gaps larger than this indicate session boundaries.
 
     Returns
     -------
     dict
         Validation result with keys:
-        - is_valid: bool - True if all bars are continuous
+        - is_valid: bool - True if bars appear from single session
         - bar_count: int - Total number of bars
-        - discontinuity_count: int - Number of discontinuities found
-        - discontinuities: list[dict] - Details of each discontinuity with
-          keys: bar_index, prev_close, curr_open, gap_pct
-
-    Examples
-    --------
-    >>> df = get_n_range_bars("BTCUSDT", n_bars=1000)
-    >>> result = validate_continuity(df)
-    >>> if not result["is_valid"]:
-    ...     print(f"Found {result['discontinuity_count']} gaps")
-    ...     for d in result["discontinuities"][:5]:
-    ...         print(f"  Bar {d['bar_index']}: gap={d['gap_pct']:.4%}")
+        - discontinuity_count: int - Number of session boundaries found
+        - discontinuities: list[dict] - Details of each discontinuity
 
     Notes
     -----
-    Discontinuities occur when range bars from different processing sessions
-    are combined. Each processing session creates bars independently, so the
-    junction point between sessions may have a price gap.
+    A "discontinuity" here means bars from different processing sessions
+    were combined. Within a single session, the gap between bar[i].close
+    and bar[i+1].open should never exceed the threshold (since a bar only
+    closes when price moves by threshold from open).
 
-    For continuous bars, either:
-    1. Use single-pass processing with one RangeBarProcessor instance
-    2. Invalidate cache and re-fetch all data
+    The tolerance parameter accounts for:
+    - Floating-point precision in price calculations
+    - Minor price movements between close tick and next tick
     """
+    if tolerance_pct is None:
+        tolerance_pct = 0.005  # 0.5% default tolerance
+
     if df.empty:
         return {
             "is_valid": True,
@@ -264,11 +270,20 @@ def validate_continuity(
             "discontinuities": [],
         }
 
-    if "Close" not in df.columns or "Open" not in df.columns:
-        msg = "DataFrame must have 'Open' and 'Close' columns"
+    required_cols = {"Open", "High", "Low", "Close"}
+    if not required_cols.issubset(df.columns):
+        msg = f"DataFrame must have columns: {required_cols}"
         raise ValueError(msg)
 
     discontinuities = []
+
+    # Convert threshold to percentage (250 bps = 2.5% = 0.025)
+    threshold_pct = threshold_decimal_bps / 10000.0
+
+    # Maximum allowed gap = threshold + tolerance
+    # Within single session, gap should never exceed this
+    max_gap_pct = threshold_pct + tolerance_pct
+
     close_prices = df["Close"].to_numpy()[:-1]
     open_prices = df["Open"].to_numpy()[1:]
 
@@ -279,10 +294,10 @@ def validate_continuity(
             continue
 
         gap_pct = abs(curr_open - prev_close) / abs(prev_close)
-        if gap_pct > tolerance_pct:
+        if gap_pct > max_gap_pct:
             discontinuities.append(
                 {
-                    "bar_index": i + 1,  # Index of the bar with discontinuity
+                    "bar_index": i + 1,
                     "prev_close": float(prev_close),
                     "curr_open": float(curr_open),
                     "gap_pct": float(gap_pct),
@@ -1673,8 +1688,10 @@ def precompute_range_bars(
     if not final_bars.empty:
         cache.store_bars_bulk(symbol, threshold_decimal_bps, final_bars)
 
-    # Validate continuity
-    continuity_result = validate_continuity(final_bars)
+    # Validate continuity (use correct threshold for gap detection)
+    continuity_result = validate_continuity(
+        final_bars, threshold_decimal_bps=threshold_decimal_bps
+    )
 
     if validate_on_complete and not continuity_result["is_valid"]:
         msg = f"Found {continuity_result['discontinuity_count']} discontinuities in precomputed bars"

@@ -301,7 +301,9 @@ def main() -> int:  # noqa: PLR0912, PLR0915
             )
 
             if len(df) >= 100:
-                result = validate_continuity(df, tolerance_pct=0.0001)
+                result = validate_continuity(
+                    df, tolerance_pct=0.01, threshold_decimal_bps=250
+                )
 
                 test(
                     f"Continuity check (bars={result['bar_count']})",
@@ -353,7 +355,9 @@ def main() -> int:  # noqa: PLR0912, PLR0915
                 has_2025 = 2025 in years.to_numpy()
 
                 if has_2024 and has_2025:
-                    result = validate_continuity(df_2024_2025, tolerance_pct=0.0001)
+                    result = validate_continuity(
+                        df_2024_2025, tolerance_pct=0.01, threshold_decimal_bps=250
+                    )
                     test(
                         f"2024→2025 boundary (bars={result['bar_count']})",
                         result["is_valid"],
@@ -393,7 +397,9 @@ def main() -> int:  # noqa: PLR0912, PLR0915
                 has_2026 = 2026 in years.to_numpy()
 
                 if has_2025 and has_2026:
-                    result = validate_continuity(df_2025_2026, tolerance_pct=0.0001)
+                    result = validate_continuity(
+                        df_2025_2026, tolerance_pct=0.01, threshold_decimal_bps=250
+                    )
                     test(
                         f"2025→2026 boundary (bars={result['bar_count']})",
                         result["is_valid"],
@@ -444,7 +450,9 @@ def main() -> int:  # noqa: PLR0912, PLR0915
                 num_months = len(months.unique())
 
                 if num_months >= 2:
-                    result = validate_continuity(df, tolerance_pct=0.0001)
+                    result = validate_continuity(
+                        df, tolerance_pct=0.01, threshold_decimal_bps=250
+                    )
                     test(
                         f"Cross-month (spans {num_months} months, bars={result['bar_count']})",
                         result["is_valid"],

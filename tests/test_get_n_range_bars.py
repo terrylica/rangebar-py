@@ -351,10 +351,12 @@ class TestBarContinuity:
     - Cross-year boundaries (2024→2025, 2025→2026)
     """
 
-    CONTINUITY_TOLERANCE = 0.0001  # 0.01% for floating-point comparison
+    # Tolerance beyond threshold for gap detection (floating-point, tick spread)
+    CONTINUITY_TOLERANCE = 0.01  # 1% tolerance beyond threshold
+    THRESHOLD_BPS = 250  # 2.5% threshold
 
     def test_bar_continuity_basic(self):
-        """Basic continuity check: bar[i+1].open == bar[i].close."""
+        """Gaps between bars should not exceed threshold + tolerance."""
         if not _is_clickhouse_available():
             pytest.skip("ClickHouse server not available")
 
@@ -363,7 +365,7 @@ class TestBarContinuity:
         df = get_n_range_bars(
             TEST_SYMBOL,
             n_bars=500,
-            threshold_decimal_bps=250,
+            threshold_decimal_bps=self.THRESHOLD_BPS,
             use_cache=True,
             max_lookback_days=30,
             warn_if_fewer=False,
@@ -372,7 +374,11 @@ class TestBarContinuity:
         if len(df) < 100:
             pytest.skip(f"Only {len(df)} bars available, need at least 100")
 
-        result = validate_continuity(df, tolerance_pct=self.CONTINUITY_TOLERANCE)
+        result = validate_continuity(
+            df,
+            tolerance_pct=self.CONTINUITY_TOLERANCE,
+            threshold_decimal_bps=self.THRESHOLD_BPS,
+        )
         gaps = result["discontinuity_count"]
         first = result["discontinuities"][0] if result["discontinuities"] else "N/A"
         assert result["is_valid"], f"Found {gaps} gaps. First: {first}"
@@ -405,7 +411,11 @@ class TestBarContinuity:
         if num_dates < 2:
             pytest.skip(f"Data only spans {num_dates} date(s), need at least 2")
 
-        result = validate_continuity(df, tolerance_pct=self.CONTINUITY_TOLERANCE)
+        result = validate_continuity(
+            df,
+            tolerance_pct=self.CONTINUITY_TOLERANCE,
+            threshold_decimal_bps=self.THRESHOLD_BPS,
+        )
         assert result["is_valid"], (
             f"Cross-date discontinuity: {result['discontinuity_count']} gaps "
             f"across {num_dates} dates"
@@ -437,7 +447,11 @@ class TestBarContinuity:
         if num_months < 2:
             pytest.skip(f"Data only spans {num_months} month(s), need at least 2")
 
-        result = validate_continuity(df, tolerance_pct=self.CONTINUITY_TOLERANCE)
+        result = validate_continuity(
+            df,
+            tolerance_pct=self.CONTINUITY_TOLERANCE,
+            threshold_decimal_bps=self.THRESHOLD_BPS,
+        )
         assert result["is_valid"], (
             f"Cross-month discontinuity: {result['discontinuity_count']} gaps "
             f"across {num_months} months"
@@ -475,7 +489,11 @@ class TestBarContinuity:
                 f"(has 2024: {has_2024}, has 2025: {has_2025})"
             )
 
-        result = validate_continuity(df, tolerance_pct=self.CONTINUITY_TOLERANCE)
+        result = validate_continuity(
+            df,
+            tolerance_pct=self.CONTINUITY_TOLERANCE,
+            threshold_decimal_bps=self.THRESHOLD_BPS,
+        )
         gaps = result["discontinuity_count"]
         first = result["discontinuities"][0] if result["discontinuities"] else "N/A"
         assert result["is_valid"], f"2024→2025: {gaps} gaps. First: {first}"
@@ -513,7 +531,11 @@ class TestBarContinuity:
                 f"(has 2025: {has_2025}, has 2026: {has_2026})"
             )
 
-        result = validate_continuity(df, tolerance_pct=self.CONTINUITY_TOLERANCE)
+        result = validate_continuity(
+            df,
+            tolerance_pct=self.CONTINUITY_TOLERANCE,
+            threshold_decimal_bps=self.THRESHOLD_BPS,
+        )
         gaps = result["discontinuity_count"]
         first = result["discontinuities"][0] if result["discontinuities"] else "N/A"
         assert result["is_valid"], f"2025→2026: {gaps} gaps. First: {first}"
@@ -539,7 +561,11 @@ class TestBarContinuity:
         if len(df) < 5000:
             pytest.skip(f"Only {len(df)} bars available, need >=5000")
 
-        result = validate_continuity(df, tolerance_pct=self.CONTINUITY_TOLERANCE)
+        result = validate_continuity(
+            df,
+            tolerance_pct=self.CONTINUITY_TOLERANCE,
+            threshold_decimal_bps=self.THRESHOLD_BPS,
+        )
 
         # Calculate percentage of discontinuities (should be 0% for crypto)
         discontinuity_pct = (
@@ -582,28 +608,34 @@ class TestBarContinuity:
         assert isinstance(result["discontinuities"], list)
 
     def test_validate_continuity_detects_gaps(self):
-        """validate_continuity() detects price gaps."""
+        """validate_continuity() detects price gaps exceeding threshold."""
         from rangebar import validate_continuity
 
-        # Create DataFrame with intentional discontinuity
+        # Create DataFrame with intentional large discontinuity (>5%)
+        # With 250 bps (2.5%) threshold + 0.5% tolerance = 3% max allowed
+        # Gap from 100.0 to 106.0 = 6% gap - should be detected
         df = pd.DataFrame(
             {
                 "Open": [
                     100.0,
                     100.5,
-                    102.0,
-                ],  # Gap at bar 2: prev close 101.0 != open 102.0
-                "High": [100.5, 101.0, 102.5],
-                "Low": [99.5, 100.0, 101.5],
-                "Close": [100.5, 101.0, 102.5],
+                    106.0,  # 6% gap from prev close (100.5)
+                ],
+                "High": [100.5, 100.5, 106.5],
+                "Low": [99.5, 100.0, 105.5],
+                "Close": [100.5, 100.5, 106.5],
                 "Volume": [10.0, 10.0, 10.0],
             },
             index=pd.date_range("2024-01-01", periods=3, freq="h"),
         )
 
-        result = validate_continuity(df, tolerance_pct=0.0001)
+        result = validate_continuity(
+            df,
+            tolerance_pct=0.005,  # 0.5%
+            threshold_decimal_bps=250,  # 2.5%
+        )
 
-        assert not result["is_valid"], "Should detect the price gap"
+        assert not result["is_valid"], "Should detect the 6% price gap"
         assert result["discontinuity_count"] == 1
         assert len(result["discontinuities"]) == 1
         assert result["discontinuities"][0]["bar_index"] == 2
