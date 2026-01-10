@@ -4,6 +4,11 @@ Public API
 ----------
 get_range_bars : Get range bars with automatic data fetching and caching (date-bounded).
 get_n_range_bars : Get exactly N range bars (count-bounded, deterministic).
+precompute_range_bars : Pre-compute continuous range bars for a date range (single-pass).
+ContinuityError : Exception raised when range bar continuity is violated.
+ContinuityWarning : Warning issued when range bar discontinuities are detected.
+PrecomputeProgress : Progress update for precomputation.
+PrecomputeResult : Result of precomputation.
 TIER1_SYMBOLS : High-liquidity symbols available on all Binance markets.
 THRESHOLD_PRESETS : Named threshold presets (micro, tight, standard, etc.).
 THRESHOLD_DECIMAL_MIN : Minimum valid threshold (1 = 0.1bps).
@@ -11,9 +16,84 @@ THRESHOLD_DECIMAL_MAX : Maximum valid threshold (100,000 = 10,000bps).
 __version__ : Package version string.
 """
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Literal
 
 import pandas as pd
+
+# ============================================================================
+# Exceptions and Warnings
+# ============================================================================
+
+class ContinuityError(Exception):
+    """Raised when range bar continuity is violated.
+
+    The bar[i+1].open == bar[i].close invariant is broken, indicating
+    discontinuities in the range bar sequence.
+    """
+
+    discontinuities: list[dict]
+    """List of discontinuity details (bar_index, prev_close, next_open, gap_pct)."""
+
+    def __init__(
+        self, message: str, discontinuities: list[dict] | None = None
+    ) -> None: ...
+
+class ContinuityWarning(UserWarning):
+    """Warning issued when range bar discontinuities are detected but not fatal."""
+
+# ============================================================================
+# Data Classes
+# ============================================================================
+
+@dataclass
+class PrecomputeProgress:
+    """Progress update for precomputation.
+
+    Passed to progress_callback during precompute_range_bars() execution.
+    """
+
+    phase: Literal["fetching", "processing", "caching"]
+    """Current processing phase."""
+    current_month: str
+    """Current month being processed (YYYY-MM format)."""
+    months_completed: int
+    """Number of months already processed."""
+    months_total: int
+    """Total number of months to process."""
+    bars_generated: int
+    """Cumulative bars generated so far."""
+    ticks_processed: int
+    """Cumulative ticks processed so far."""
+    elapsed_seconds: float
+    """Seconds elapsed since precomputation started."""
+
+@dataclass
+class PrecomputeResult:
+    """Result of precomputation.
+
+    Returned by precompute_range_bars() after successful execution.
+    """
+
+    symbol: str
+    """Trading symbol that was precomputed."""
+    threshold_decimal_bps: int
+    """Threshold used for bar construction."""
+    start_date: str
+    """Start date of precomputed range (YYYY-MM-DD)."""
+    end_date: str
+    """End date of precomputed range (YYYY-MM-DD)."""
+    total_bars: int
+    """Total number of bars generated."""
+    total_ticks: int
+    """Total number of ticks processed."""
+    elapsed_seconds: float
+    """Total time taken for precomputation."""
+    continuity_valid: bool
+    """Whether all bars pass continuity validation."""
+    cache_key: str
+    """Cache key for the stored bars."""
 
 __version__: str
 
@@ -67,6 +147,7 @@ def get_range_bars(
     include_microstructure: bool = False,
     # Caching options
     use_cache: bool = True,
+    fetch_if_missing: bool = True,
     cache_dir: str | None = None,
 ) -> pd.DataFrame:
     """Get range bars for a symbol with automatic data fetching and caching.
@@ -208,6 +289,9 @@ def get_n_range_bars(
     fetch_if_missing: bool = True,
     max_lookback_days: int = 90,
     warn_if_fewer: bool = True,
+    validate_on_return: bool = False,
+    continuity_action: Literal["warn", "raise", "log"] = "warn",
+    chunk_size: int = 100_000,
     cache_dir: str | None = None,
 ) -> pd.DataFrame:
     """Get exactly N range bars ending at or before a given date.
@@ -245,6 +329,18 @@ def get_n_range_bars(
         Prevents runaway fetches on empty caches.
     warn_if_fewer : bool, default=True
         Emit UserWarning if returning fewer bars than requested.
+    validate_on_return : bool, default=False
+        If True, validate bar continuity before returning.
+        Uses continuity_action to determine behavior on failure.
+    continuity_action : str, default="warn"
+        Action when discontinuity found during validation:
+        - "warn": Log warning but return data
+        - "raise": Raise ContinuityError
+        - "log": Silent logging only
+    chunk_size : int, default=100_000
+        Number of ticks per processing chunk for memory efficiency.
+        Larger values = faster processing, more memory.
+        Default 100K = ~15MB memory overhead.
     cache_dir : str or None, default=None
         Custom cache directory for tick data (Tier 1).
 
@@ -296,5 +392,92 @@ def get_n_range_bars(
     See Also
     --------
     get_range_bars : Date-bounded bar retrieval (variable bar count)
+    precompute_range_bars : Pre-compute continuous bars for WFO workflows
     THRESHOLD_PRESETS : Named threshold values
+    """
+
+def precompute_range_bars(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    threshold_decimal_bps: (
+        int | Literal["micro", "tight", "standard", "medium", "wide", "macro"]
+    ) = 250,
+    *,
+    source: Literal["binance", "exness"] = "binance",
+    market: Literal["spot", "futures-um", "futures-cm", "um", "cm"] = "spot",
+    chunk_size: int = 100_000,
+    invalidate_existing: Literal["overlap", "full", "none", "smart"] = "smart",
+    progress_callback: Callable[[PrecomputeProgress], None] | None = None,
+    include_microstructure: bool = False,
+    validate_on_complete: bool = True,
+) -> PrecomputeResult:
+    """Precompute continuous range bars for a date range (single-pass, guaranteed continuity).
+
+    Designed for ML workflows requiring continuous bar sequences for training/validation.
+    Uses single-pass processing to guarantee the bar[i+1].open == bar[i].close invariant.
+
+    Parameters
+    ----------
+    symbol : str
+        Trading pair (e.g., "BTCUSDT")
+    start_date : str
+        Start date (inclusive) "YYYY-MM-DD"
+    end_date : str
+        End date (inclusive) "YYYY-MM-DD"
+    threshold_decimal_bps : int or str, default=250
+        Range bar threshold. Can be integer (250 = 0.25%) or preset name.
+    source : str, default="binance"
+        Data source: "binance" or "exness"
+    market : str, default="spot"
+        Market type for Binance: "spot", "futures-um"/"um", or "futures-cm"/"cm"
+    chunk_size : int, default=100_000
+        Ticks per processing chunk (~15MB memory per 100K ticks)
+    invalidate_existing : str, default="smart"
+        Cache invalidation strategy:
+        - "overlap": Invalidate only bars in date range
+        - "full": Invalidate ALL bars for symbol/threshold
+        - "none": Skip if any cached bars exist in range
+        - "smart": Invalidate overlapping + validate junction continuity
+    progress_callback : callable, optional
+        Callback for progress updates. Receives PrecomputeProgress dataclass.
+    include_microstructure : bool, default=False
+        Include order flow metrics (vwap, buy_volume, sell_volume)
+    validate_on_complete : bool, default=True
+        Validate continuity after precomputation. Raises ContinuityError if failed.
+
+    Returns
+    -------
+    PrecomputeResult
+        Dataclass with statistics: total_bars, total_ticks, elapsed_seconds,
+        continuity_valid, cache_key
+
+    Raises
+    ------
+    ValueError
+        Invalid parameters (dates, threshold, symbol)
+    RuntimeError
+        Fetch or processing failure
+    ContinuityError
+        If validate_on_complete=True and discontinuities found
+
+    Examples
+    --------
+    Basic precomputation:
+
+    >>> from rangebar import precompute_range_bars
+    >>> result = precompute_range_bars("BTCUSDT", "2024-01-01", "2024-03-31")
+    >>> print(f"Generated {result.total_bars} bars in {result.elapsed_seconds:.1f}s")
+
+    With progress callback:
+
+    >>> def on_progress(p):
+    ...     print(f"{p.phase}: {p.months_completed}/{p.months_total} months")
+    >>> precompute_range_bars("BTCUSDT", "2024-01-01", "2024-06-30",
+    ...                       progress_callback=on_progress)
+
+    See Also
+    --------
+    get_n_range_bars : Count-bounded bar retrieval (uses precomputed cache)
+    get_range_bars : Date-bounded bar retrieval
     """

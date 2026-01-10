@@ -392,6 +392,124 @@ class RangeBarCache(ClickHouseClientMixin):
         )
         return 0  # ClickHouse DELETE is async, can't return count
 
+    def invalidate_range_bars_by_range(
+        self,
+        symbol: str,
+        threshold_decimal_bps: int,
+        start_timestamp_ms: int,
+        end_timestamp_ms: int,
+    ) -> int:
+        """Invalidate (delete) cached bars within a timestamp range.
+
+        Unlike `invalidate_range_bars()` which requires an exact CacheKey match,
+        this method deletes all bars for a symbol/threshold within a time range.
+        Useful for overlap detection during precomputation.
+
+        Parameters
+        ----------
+        symbol : str
+            Trading symbol (e.g., "BTCUSDT")
+        threshold_decimal_bps : int
+            Threshold in decimal basis points
+        start_timestamp_ms : int
+            Start timestamp in milliseconds (inclusive)
+        end_timestamp_ms : int
+            End timestamp in milliseconds (inclusive)
+
+        Returns
+        -------
+        int
+            Always returns 0 (ClickHouse DELETE is async via mutations)
+
+        Examples
+        --------
+        >>> cache.invalidate_range_bars_by_range(
+        ...     "BTCUSDT", 250,
+        ...     start_timestamp_ms=1704067200000,  # 2024-01-01
+        ...     end_timestamp_ms=1706745600000,    # 2024-01-31
+        ... )
+        """
+        query = """
+            ALTER TABLE rangebar_cache.range_bars
+            DELETE WHERE symbol = {symbol:String}
+              AND threshold_decimal_bps = {threshold:UInt32}
+              AND timestamp_ms >= {start_ts:Int64}
+              AND timestamp_ms <= {end_ts:Int64}
+        """
+        self.client.command(
+            query,
+            parameters={
+                "symbol": symbol,
+                "threshold": threshold_decimal_bps,
+                "start_ts": start_timestamp_ms,
+                "end_ts": end_timestamp_ms,
+            },
+        )
+        return 0  # ClickHouse DELETE is async, can't return count
+
+    def get_last_bar_before(
+        self,
+        symbol: str,
+        threshold_decimal_bps: int,
+        before_timestamp_ms: int,
+    ) -> dict | None:
+        """Get the last bar before a given timestamp.
+
+        Useful for validating continuity at junction points during
+        incremental precomputation.
+
+        Parameters
+        ----------
+        symbol : str
+            Trading symbol (e.g., "BTCUSDT")
+        threshold_decimal_bps : int
+            Threshold in decimal basis points
+        before_timestamp_ms : int
+            Timestamp boundary in milliseconds
+
+        Returns
+        -------
+        dict | None
+            Last bar as dict with OHLCV keys, or None if no bars found
+
+        Examples
+        --------
+        >>> bar = cache.get_last_bar_before("BTCUSDT", 250, 1704067200000)
+        >>> if bar:
+        ...     print(f"Last close: {bar['Close']}")
+        """
+        query = """
+            SELECT timestamp_ms, open, high, low, close, volume
+            FROM rangebar_cache.range_bars
+            WHERE symbol = {symbol:String}
+              AND threshold_decimal_bps = {threshold:UInt32}
+              AND timestamp_ms < {before_ts:Int64}
+            ORDER BY timestamp_ms DESC
+            LIMIT 1
+        """
+        result = self.client.query(
+            query,
+            parameters={
+                "symbol": symbol,
+                "threshold": threshold_decimal_bps,
+                "before_ts": before_timestamp_ms,
+            },
+        )
+
+        rows = result.result_rows
+        if not rows:
+            return None
+
+        row = rows[0]
+        return {
+            "timestamp_ms": row[0],
+            "Open": row[1],
+            "High": row[2],
+            "Low": row[3],
+            "Close": row[4],
+            "Volume": row[5],
+        }
+
     # =========================================================================
     # Bar-Count-Based API (get_n_range_bars support)
     # =========================================================================

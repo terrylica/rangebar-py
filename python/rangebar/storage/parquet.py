@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -447,3 +448,123 @@ class TickStorage:
             "months": sorted(months),
             "compression": f"{COMPRESSION}-{COMPRESSION_LEVEL}",
         }
+
+    def fetch_month(
+        self,
+        symbol: str,
+        year: int,
+        month: int,
+        *,
+        timestamp_col: str = "timestamp",  # noqa: ARG002 - reserved for filtering
+        force_refresh: bool = False,
+    ) -> pl.LazyFrame:
+        """Fetch tick data for a specific month (lazy loading).
+
+        Returns a LazyFrame for memory efficiency. If data is not cached,
+        this method does NOT automatically download from source - use
+        `get_range_bars()` or manual fetching first.
+
+        Parameters
+        ----------
+        symbol : str
+            Trading symbol (e.g., "BTCUSDT" or "BINANCE_SPOT_BTCUSDT")
+        year : int
+            Year (e.g., 2024)
+        month : int
+            Month (1-12)
+        timestamp_col : str
+            Name of the timestamp column
+        force_refresh : bool
+            If True, skip cache and return empty LazyFrame (caller must fetch)
+
+        Returns
+        -------
+        pl.LazyFrame
+            Lazy frame for the month's tick data, or empty LazyFrame if not cached
+
+        Examples
+        --------
+        >>> storage = TickStorage()
+        >>> lf = storage.fetch_month("BTCUSDT", 2024, 1)
+        >>> df = lf.collect()  # Materialize when needed
+        """
+        year_month = f"{year}-{month:02d}"
+
+        if force_refresh:
+            return pl.LazyFrame()
+
+        parquet_path = self._get_parquet_path(symbol, year_month)
+
+        if not parquet_path.exists():
+            return pl.LazyFrame()
+
+        return pl.scan_parquet(parquet_path)
+
+    def fetch_date_range(
+        self,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        *,
+        timestamp_col: str = "timestamp",
+    ) -> Iterator[pl.LazyFrame]:
+        """Iterate over tick data for date range, one month at a time.
+
+        Yields LazyFrames for each month in range. This is the recommended
+        approach for processing large date ranges without loading all data
+        into memory at once.
+
+        Parameters
+        ----------
+        symbol : str
+            Trading symbol (e.g., "BTCUSDT")
+        start_date : str
+            Start date "YYYY-MM-DD"
+        end_date : str
+            End date "YYYY-MM-DD"
+        timestamp_col : str
+            Name of the timestamp column
+
+        Yields
+        ------
+        pl.LazyFrame
+            Lazy frame for each month with available data
+
+        Examples
+        --------
+        >>> storage = TickStorage()
+        >>> for lf in storage.fetch_date_range("BTCUSDT", "2024-01-01", "2024-03-31"):
+        ...     df = lf.collect()
+        ...     print(f"Processing {len(df)} ticks")
+
+        Notes
+        -----
+        - Only yields LazyFrames for months with cached data
+        - Data is NOT automatically downloaded - use get_range_bars() first
+        - Each LazyFrame can be collected independently for O(month) memory
+        """
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(
+            tzinfo=timezone.utc
+        )
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+
+        current = start_dt.replace(day=1)
+        while current <= end_dt:
+            year = current.year
+            month = current.month
+
+            lf = self.fetch_month(symbol, year, month, timestamp_col=timestamp_col)
+
+            # Only yield non-empty LazyFrames
+            # Note: We can't easily check if LazyFrame is empty without collecting
+            # So we yield all and let caller handle empty results
+            parquet_path = self._get_parquet_path(symbol, f"{year}-{month:02d}")
+            if parquet_path.exists():
+                yield lf
+
+            # Move to next month
+            _december = 12
+            if current.month == _december:
+                current = current.replace(year=current.year + 1, month=1)
+            else:
+                current = current.replace(month=current.month + 1)
