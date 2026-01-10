@@ -8,6 +8,36 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 **Core Principle**: The rangebar Rust crate maintainer does **ZERO** work. We handle all Python integration by importing their crate as a dependency.
 
+## Critical Development Principle: Upstream Rust Crate First
+
+**ALWAYS leverage the upstream `rangebar-core` Rust crate for heavy lifting.**
+
+When implementing features or fixing issues:
+
+1. **Check upstream first**: Before writing Python code, check if `rangebar-core` already provides the capability
+2. **Stream to Rust**: The Rust `RangeBarProcessor` maintains state between `process_trades()` calls - use this for streaming instead of building Python-side buffering
+3. **Checkpoint API**: Use `create_checkpoint()` and `from_checkpoint()` for cross-session continuity
+4. **No reinventing**: Don't reimplement range bar logic in Python - the Rust crate handles:
+   - Threshold breach detection
+   - OHLCV aggregation
+   - Temporal integrity
+   - State management between batches
+
+**Examples of correct patterns:**
+```python
+# CORRECT: Stream chunks to Rust processor (maintains state automatically)
+for chunk in data_stream:
+    bars = processor.process_trades(chunk.to_dicts())
+
+# WRONG: Buffer everything in Python, process at once
+all_data = []
+for chunk in data_stream:
+    all_data.extend(chunk)  # OOM risk!
+bars = processor.process_trades(all_data)
+```
+
+**Rationale**: The Rust crate is optimized for streaming and handles complex edge cases (incomplete bars, threshold calculations, fixed-point arithmetic). Python should only handle I/O and data format conversion.
+
 ## AI Agent Quick Reference
 
 ### Common Tasks & Entry Points

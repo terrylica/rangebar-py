@@ -288,6 +288,134 @@ class TickStorage:
         # Sort and materialize
         return result.sort(timestamp_col).collect()
 
+    def read_ticks_streaming(  # noqa: PLR0912
+        self,
+        symbol: str,
+        start_ts: int | None = None,
+        end_ts: int | None = None,
+        *,
+        chunk_size: int = 100_000,
+        timestamp_col: str = "timestamp",
+    ) -> Iterator[pl.DataFrame]:
+        """Read tick data in streaming chunks to avoid OOM on large months.
+
+        This method yields chunks of tick data instead of loading everything
+        into memory at once. Essential for high-volume months like March 2024.
+
+        Parameters
+        ----------
+        symbol : str
+            Trading symbol (e.g., "BTCUSDT")
+        start_ts : int | None
+            Start timestamp in milliseconds (inclusive)
+        end_ts : int | None
+            End timestamp in milliseconds (inclusive)
+        chunk_size : int
+            Number of rows per chunk (default: 100,000)
+        timestamp_col : str
+            Name of the timestamp column
+
+        Yields
+        ------
+        pl.DataFrame
+            Chunks of tick data, sorted by timestamp within each chunk
+
+        Notes
+        -----
+        Memory usage is O(chunk_size) instead of O(total_ticks).
+        Each chunk is sorted independently; overall order is maintained
+        because parquet files are read in month order.
+
+        Examples
+        --------
+        >>> storage = TickStorage()
+        >>> for chunk in storage.read_ticks_streaming("BTCUSDT", start_ts, end_ts):
+        ...     process_chunk(chunk)
+        """
+        symbol_dir = self._get_symbol_dir(symbol)
+
+        if not symbol_dir.exists():
+            return
+
+        # Find relevant parquet files
+        parquet_files = sorted(symbol_dir.glob("*.parquet"))
+
+        if not parquet_files:
+            return
+
+        # Filter files by month if time range specified
+        if start_ts is not None and end_ts is not None:
+            start_month = self._timestamp_to_year_month(start_ts)
+            end_month = self._timestamp_to_year_month(end_ts)
+
+            parquet_files = [
+                f for f in parquet_files if start_month <= f.stem <= end_month
+            ]
+
+        if not parquet_files:
+            return
+
+        # Process each parquet file using PyArrow's row group-based reading
+        # Row groups are Parquet's native chunking mechanism (typically 64K-1M rows)
+        # This is the key to avoiding OOM - we never load the entire file into memory
+        import pyarrow.parquet as pq
+
+        for parquet_file in parquet_files:
+            # Read parquet file in row groups
+            parquet_reader = pq.ParquetFile(parquet_file)
+            num_row_groups = parquet_reader.metadata.num_row_groups
+
+            accumulated_rows: list[pl.DataFrame] = []
+            accumulated_count = 0
+
+            for rg_idx in range(num_row_groups):
+                # Read single row group into PyArrow table (memory efficient)
+                row_group = parquet_reader.read_row_group(rg_idx)
+                chunk_df = pl.from_arrow(row_group)
+
+                # Apply time range filter using Polars expressions
+                if start_ts is not None:
+                    chunk_df = chunk_df.filter(
+                        pl.col(timestamp_col) >= pl.lit(start_ts)
+                    )
+                if end_ts is not None:
+                    chunk_df = chunk_df.filter(pl.col(timestamp_col) <= pl.lit(end_ts))
+
+                if chunk_df.is_empty():
+                    continue
+
+                accumulated_rows.append(chunk_df)
+                accumulated_count += len(chunk_df)
+
+                # Yield when accumulated enough rows
+                while accumulated_count >= chunk_size:
+                    # Concatenate and slice
+                    combined = pl.concat(accumulated_rows)
+                    combined = combined.sort(timestamp_col)
+
+                    # Yield chunk_size rows
+                    yield combined.slice(0, chunk_size)
+
+                    # Keep remainder for next iteration
+                    remainder_count = accumulated_count - chunk_size
+                    if remainder_count > 0:
+                        remainder = combined.slice(chunk_size, remainder_count)
+                        accumulated_rows = [remainder]
+                        accumulated_count = len(remainder)
+                    else:
+                        accumulated_rows = []
+                        accumulated_count = 0
+
+                    del combined
+
+            # Yield any remaining rows
+            if accumulated_rows:
+                combined = pl.concat(accumulated_rows)
+                combined = combined.sort(timestamp_col)
+                if not combined.is_empty():
+                    yield combined
+                del combined
+
     def has_ticks(
         self,
         symbol: str,
