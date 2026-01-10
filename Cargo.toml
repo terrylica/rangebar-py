@@ -46,13 +46,6 @@ binance = ["data-providers"]
 [build-dependencies]
 pyo3-build-config = "0.22"
 
-[dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
-
-[[bench]]
-name = "core"
-harness = false
-
 [lints.clippy]
 # Lint group priority: lower number = lower priority (applied first)
 # Individual lints can override groups with default priority (0)

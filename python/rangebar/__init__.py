@@ -69,6 +69,136 @@ __all__ = [
     "validate_continuity",
 ]
 
+# Continuity tolerance: 0.01% relative difference allowed (floating-point precision)
+CONTINUITY_TOLERANCE_PCT = 0.0001
+
+
+def _validate_junction_continuity(
+    older_bars: pd.DataFrame,
+    newer_bars: pd.DataFrame,
+    tolerance_pct: float = CONTINUITY_TOLERANCE_PCT,
+) -> tuple[bool, float | None]:
+    """Validate continuity at junction between two bar DataFrames.
+
+    Checks that older_bars[-1].Close == newer_bars[0].Open (within tolerance).
+
+    Parameters
+    ----------
+    older_bars : pd.DataFrame
+        Older bars (chronologically earlier)
+    newer_bars : pd.DataFrame
+        Newer bars (chronologically later)
+    tolerance_pct : float
+        Maximum allowed relative difference (0.0001 = 0.01%)
+
+    Returns
+    -------
+    tuple[bool, float | None]
+        (is_continuous, gap_pct) where gap_pct is the relative difference if
+        discontinuous, None if continuous
+    """
+    if older_bars.empty or newer_bars.empty:
+        return True, None
+
+    last_close = older_bars.iloc[-1]["Close"]
+    first_open = newer_bars.iloc[0]["Open"]
+
+    if last_close == 0:
+        return True, None  # Avoid division by zero
+
+    gap_pct = abs(first_open - last_close) / abs(last_close)
+
+    if gap_pct <= tolerance_pct:
+        return True, None
+
+    return False, gap_pct
+
+
+def validate_continuity(
+    df: pd.DataFrame,
+    tolerance_pct: float = CONTINUITY_TOLERANCE_PCT,
+) -> dict:
+    """Validate that range bars form a continuous sequence.
+
+    Checks that bar[i+1].Open == bar[i].Close (within tolerance) for all bars.
+    This invariant should hold for properly constructed range bars.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Range bar DataFrame with "Open" and "Close" columns
+    tolerance_pct : float, default=0.0001
+        Maximum allowed relative difference (0.0001 = 0.01%)
+
+    Returns
+    -------
+    dict
+        Validation result with keys:
+        - is_valid: bool - True if all bars are continuous
+        - bar_count: int - Total number of bars
+        - discontinuity_count: int - Number of discontinuities found
+        - discontinuities: list[dict] - Details of each discontinuity with
+          keys: bar_index, prev_close, curr_open, gap_pct
+
+    Examples
+    --------
+    >>> df = get_n_range_bars("BTCUSDT", n_bars=1000)
+    >>> result = validate_continuity(df)
+    >>> if not result["is_valid"]:
+    ...     print(f"Found {result['discontinuity_count']} gaps")
+    ...     for d in result["discontinuities"][:5]:
+    ...         print(f"  Bar {d['bar_index']}: gap={d['gap_pct']:.4%}")
+
+    Notes
+    -----
+    Discontinuities occur when range bars from different processing sessions
+    are combined. Each processing session creates bars independently, so the
+    junction point between sessions may have a price gap.
+
+    For continuous bars, either:
+    1. Use single-pass processing with one RangeBarProcessor instance
+    2. Invalidate cache and re-fetch all data
+    """
+    if df.empty:
+        return {
+            "is_valid": True,
+            "bar_count": 0,
+            "discontinuity_count": 0,
+            "discontinuities": [],
+        }
+
+    if "Close" not in df.columns or "Open" not in df.columns:
+        msg = "DataFrame must have 'Open' and 'Close' columns"
+        raise ValueError(msg)
+
+    discontinuities = []
+    close_prices = df["Close"].to_numpy()[:-1]
+    open_prices = df["Open"].to_numpy()[1:]
+
+    for i, (prev_close, curr_open) in enumerate(
+        zip(close_prices, open_prices, strict=False)
+    ):
+        if prev_close == 0:
+            continue
+
+        gap_pct = abs(curr_open - prev_close) / abs(prev_close)
+        if gap_pct > tolerance_pct:
+            discontinuities.append(
+                {
+                    "bar_index": i + 1,  # Index of the bar with discontinuity
+                    "prev_close": float(prev_close),
+                    "curr_open": float(curr_open),
+                    "gap_pct": float(gap_pct),
+                }
+            )
+
+    return {
+        "is_valid": len(discontinuities) == 0,
+        "bar_count": len(df),
+        "discontinuity_count": len(discontinuities),
+        "discontinuities": discontinuities,
+    }
+
 
 class RangeBarProcessor:
     """Process tick-level trade data into range bars.
@@ -1388,7 +1518,7 @@ def get_n_range_bars(  # noqa: PLR0911
     THRESHOLD_PRESETS : Named threshold values
     """
     import warnings
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from pathlib import Path
 
     import polars as pl
@@ -1606,7 +1736,7 @@ def _fill_gap_and_cache(
     For Exness (forex):
     Session-bounded processing is acceptable since weekend gaps are natural.
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from pathlib import Path
 
     import polars as pl
@@ -1621,9 +1751,9 @@ def _fill_gap_and_cache(
 
     # Determine end date for fetching
     if end_ts is not None:
-        end_dt = datetime.fromtimestamp(end_ts / 1000)  # noqa: DTZ006
+        end_dt = datetime.fromtimestamp(end_ts / 1000, tz=timezone.utc)
     else:
-        end_dt = datetime.now()  # noqa: DTZ005
+        end_dt = datetime.now(tz=timezone.utc)
 
     # Get oldest bar timestamp to know where to start fetching
     oldest_ts = cache.get_oldest_bar_timestamp(symbol, threshold)
@@ -1654,7 +1784,7 @@ def _fill_gap_and_cache(
         for _attempt in range(max_attempts):
             # Calculate fetch range
             if oldest_ts is not None:
-                fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000)  # noqa: DTZ006
+                fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=timezone.utc)
             else:
                 fetch_end_dt = end_dt
 
@@ -1722,6 +1852,22 @@ def _fill_gap_and_cache(
 
         # Combine with existing bars
         if current_bars is not None and len(current_bars) > 0:
+            # Validate continuity at junction (new_bars older, current_bars newer)
+            is_continuous, gap_pct = _validate_junction_continuity(
+                new_bars, current_bars
+            )
+            if not is_continuous:
+                import warnings
+
+                warnings.warn(
+                    f"Discontinuity detected at junction: {symbol} @ {threshold} dbps. "
+                    f"Gap: {gap_pct:.4%}. This occurs because range bars from different "
+                    f"processing sessions cannot guarantee bar[n].close == bar[n+1].open. "
+                    f"Consider invalidating cache and re-fetching all data for continuous "
+                    f"bars. See: https://github.com/terrylica/rangebar-py/issues/5",
+                    stacklevel=3,
+                )
+
             combined = pd.concat([new_bars, current_bars])
             combined = combined.sort_index()
             return combined[~combined.index.duplicated(keep="last")]
@@ -1743,7 +1889,7 @@ def _fill_gap_and_cache(
 
         # Calculate fetch range
         if oldest_ts is not None:
-            fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000)  # noqa: DTZ006
+            fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=timezone.utc)
         else:
             fetch_end_dt = end_dt
 
@@ -1807,7 +1953,7 @@ def _fetch_and_compute_bars(
 
     Uses single-pass processing for Binance (24/7 crypto) to guarantee continuity.
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from pathlib import Path
 
     import polars as pl
@@ -1816,9 +1962,9 @@ def _fetch_and_compute_bars(
 
     # Determine end date
     if end_ts is not None:
-        end_dt = datetime.fromtimestamp(end_ts / 1000)  # noqa: DTZ006
+        end_dt = datetime.fromtimestamp(end_ts / 1000, tz=timezone.utc)
     else:
-        end_dt = datetime.now()  # noqa: DTZ005
+        end_dt = datetime.now(tz=timezone.utc)
 
     # Estimate ticks needed using heuristic
     base_ticks_per_bar = 2500
@@ -1843,7 +1989,7 @@ def _fetch_and_compute_bars(
 
         for _attempt in range(max_attempts):
             if oldest_ts is not None:
-                fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000)  # noqa: DTZ006
+                fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=timezone.utc)
             else:
                 fetch_end_dt = end_dt
 
@@ -1906,7 +2052,7 @@ def _fetch_and_compute_bars(
         days_to_fetch = min(days_to_fetch, max_lookback_days)
 
         if oldest_ts is not None:
-            fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000)  # noqa: DTZ006
+            fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=timezone.utc)
         else:
             fetch_end_dt = end_dt
 
@@ -1952,107 +2098,6 @@ def _fetch_and_compute_bars(
     combined = combined.sort_index()
     # Remove duplicates (by index) and return
     return combined[~combined.index.duplicated(keep="last")]
-
-
-def validate_continuity(
-    df: pd.DataFrame,
-    tolerance_pct: float = 0.0001,
-    source_type: str = "crypto",
-) -> dict:
-    """Validate range bar continuity (bar[i+1].open == bar[i].close).
-
-    Range bars should form a continuous sequence where each bar's open price
-    equals the previous bar's close price. This function detects discontinuities
-    that indicate processing errors or data gaps.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Range bar DataFrame with Open and Close columns
-    tolerance_pct : float, default=0.0001
-        Tolerance as percentage (0.0001 = 0.0001% = 1e-6) for floating-point
-        comparison. Prices within this tolerance are considered equal.
-    source_type : str, default="crypto"
-        Source type affects interpretation:
-        - "crypto": 24/7 markets, any gap is an error
-        - "forex": Weekend gaps (Fri 5PM - Sun 5PM ET) are expected
-
-    Returns
-    -------
-    dict
-        Validation result:
-        - is_valid: bool - True if all bars are continuous
-        - bar_count: int - Total number of bars
-        - discontinuity_count: int - Number of discontinuities found
-        - discontinuities: list[dict] - Details of each discontinuity:
-            - bar_index: Index of bar with wrong open
-            - prev_close: Expected open (previous bar's close)
-            - curr_open: Actual open
-            - gap_pct: Gap as percentage of prev_close
-            - timestamp: Timestamp of the bar
-
-    Examples
-    --------
-    >>> df = get_n_range_bars("BTCUSDT", n_bars=1000)
-    >>> result = validate_continuity(df)
-    >>> if not result["is_valid"]:
-    ...     print(f"Found {result['discontinuity_count']} discontinuities")
-    ...     for d in result["discontinuities"][:5]:
-    ...         print(f"  Bar {d['bar_index']}: gap={d['gap_pct']:.4%}")
-
-    Notes
-    -----
-    For Binance (24/7 crypto), any discontinuity indicates a bug.
-    For Exness (forex), weekend gaps are expected and filtered out.
-    """
-    import numpy as np
-
-    min_bars_for_continuity = 2
-    if len(df) < min_bars_for_continuity:
-        return {
-            "is_valid": True,
-            "bar_count": len(df),
-            "discontinuity_count": 0,
-            "discontinuities": [],
-        }
-
-    # Get close and next open prices
-    close_prices = df["Close"].to_numpy()[:-1]
-    open_prices = df["Open"].to_numpy()[1:]
-    timestamps = df.index[1:]
-
-    # Calculate relative difference
-    with np.errstate(divide="ignore", invalid="ignore"):
-        rel_diff = np.abs(open_prices - close_prices) / np.abs(close_prices) * 100
-
-    # Find discontinuities
-    discontinuity_mask = rel_diff > tolerance_pct
-
-    # For forex, filter out weekend gaps (TODO: implement weekend detection)
-    # For now, just report all discontinuities
-    if source_type == "forex":
-        # Weekend gap detection would go here
-        pass
-
-    discontinuities = []
-    for idx in np.where(discontinuity_mask)[0]:
-        bar_idx = idx + 1  # Index in original DataFrame
-        discontinuities.append(
-            {
-                "bar_index": bar_idx,
-                "prev_close": float(close_prices[idx]),
-                "curr_open": float(open_prices[idx]),
-                "gap_pct": float(rel_diff[idx]) / 100,
-                "timestamp": timestamps[idx],
-            }
-        )
-
-    return {
-        "is_valid": len(discontinuities) == 0,
-        "bar_count": len(df),
-        "discontinuity_count": len(discontinuities),
-        "discontinuities": discontinuities,
-    }
 
 
 def __getattr__(name: str) -> object:
