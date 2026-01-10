@@ -1,3 +1,10 @@
+## [5.3.3](https://github.com/terrylica/rangebar-py/compare/v5.3.2...v5.3.3) (2026-01-10)
+
+
+### Bug Fixes
+
+* streaming read for large months to prevent OOM (Issue [#12](https://github.com/terrylica/rangebar-py/issues/12)) ([f3584e7](https://github.com/terrylica/rangebar-py/commit/f3584e713e152a7847144644eedd37072c9cef49)), closes [hi#volume](https://github.com/hi/issues/volume)
+
 ## [5.3.2](https://github.com/terrylica/rangebar-py/compare/v5.3.1...v5.3.2) (2026-01-10)
 
 
