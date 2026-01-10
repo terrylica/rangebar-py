@@ -1,3 +1,10 @@
+# [5.3.0](https://github.com/terrylica/rangebar-py/compare/v5.2.1...v5.3.0) (2026-01-10)
+
+
+### Features
+
+* implement Issues [#7](https://github.com/terrylica/rangebar-py/issues/7) and [#8](https://github.com/terrylica/rangebar-py/issues/8) - API consistency and WFO workflow ([c5ae438](https://github.com/terrylica/rangebar-py/commit/c5ae438c9d0ac2fc996f03d9316c0a701a89f572))
+
 # [5.2.0](https://github.com/terrylica/rangebar-py/compare/v5.1.1...v5.2.0) (2026-01-10)
 
 
