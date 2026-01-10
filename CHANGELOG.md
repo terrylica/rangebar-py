@@ -1,3 +1,10 @@
+## [5.3.1](https://github.com/terrylica/rangebar-py/compare/v5.3.0...v5.3.1) (2026-01-10)
+
+
+### Bug Fixes
+
+* deduplicate trades before processing to handle Binance duplicates ([fde2a19](https://github.com/terrylica/rangebar-py/commit/fde2a19d80c4c596d17f0eda026d0533c786e368)), closes [#10](https://github.com/terrylica/rangebar-py/issues/10)
+
 # [5.3.0](https://github.com/terrylica/rangebar-py/compare/v5.2.1...v5.3.0) (2026-01-10)
 
 
