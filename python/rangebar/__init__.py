@@ -1391,6 +1391,7 @@ def precompute_range_bars(
     ...     progress_callback=on_progress
     ... )
     """
+    import gc
     import time
     from datetime import datetime
     from pathlib import Path
@@ -1572,16 +1573,27 @@ def precompute_range_bars(
             )
 
         # Process with chunking for memory efficiency
-        trades_list = tick_data.to_dicts()
+        # IMPORTANT: Slice the DataFrame first, THEN convert to dicts
+        # This avoids loading all trades into memory at once (fixes Issue #11 OOM)
+        tick_count = len(tick_data)
 
-        for chunk_start in range(0, len(trades_list), chunk_size):
-            chunk_end = min(chunk_start + chunk_size, len(trades_list))
-            chunk = trades_list[chunk_start:chunk_end]
+        for chunk_start in range(0, tick_count, chunk_size):
+            chunk_end = min(chunk_start + chunk_size, tick_count)
+            # Slice DataFrame, then convert only the chunk to dicts
+            chunk_df = tick_data.slice(chunk_start, chunk_end - chunk_start)
+            chunk = chunk_df.to_dicts()
 
             bars = processor.process_trades(chunk)
             if bars:
                 bars_df = processor.to_dataframe(bars)
                 all_bars.append(bars_df)
+
+            # Explicitly delete chunk to help garbage collection
+            del chunk, chunk_df
+
+        # Delete month's tick data after processing to free memory
+        del tick_data
+        gc.collect()
 
     # Combine all bars
     if all_bars:
