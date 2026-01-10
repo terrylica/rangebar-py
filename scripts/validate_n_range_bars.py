@@ -73,7 +73,7 @@ def main() -> int:  # noqa: PLR0912, PLR0915
     # =========================================================================
     # Test 1: Parameter Validation
     # =========================================================================
-    print("\n[1/7] Testing parameter validation...")
+    print("\n[1/10] Testing parameter validation...")
 
     # n_bars=0
     try:
@@ -138,7 +138,7 @@ def main() -> int:  # noqa: PLR0912, PLR0915
     # =========================================================================
     # Test 2: Output Format (Empty Result)
     # =========================================================================
-    print("\n[2/7] Testing output format (empty result)...")
+    print("\n[2/10] Testing output format (empty result)...")
 
     df = get_n_range_bars(
         "BTCUSDT",
@@ -157,7 +157,7 @@ def main() -> int:  # noqa: PLR0912, PLR0915
     # =========================================================================
     # Test 3: Threshold Presets
     # =========================================================================
-    print("\n[3/7] Testing threshold presets...")
+    print("\n[3/10] Testing threshold presets...")
 
     for preset in ["tight", "medium", "wide"]:
         try:
@@ -176,7 +176,7 @@ def main() -> int:  # noqa: PLR0912, PLR0915
     # =========================================================================
     # Test 4: ClickHouse Connection
     # =========================================================================
-    print("\n[4/7] Testing ClickHouse connection...")
+    print("\n[4/10] Testing ClickHouse connection...")
 
     clickhouse_available = False
     try:
@@ -193,7 +193,7 @@ def main() -> int:  # noqa: PLR0912, PLR0915
     # =========================================================================
     # Test 5: Cache Methods
     # =========================================================================
-    print("\n[5/7] Testing cache methods...")
+    print("\n[5/10] Testing cache methods...")
 
     if clickhouse_available:
         try:
@@ -234,7 +234,7 @@ def main() -> int:  # noqa: PLR0912, PLR0915
     # =========================================================================
     # Test 6: Data Fetching (with cache)
     # =========================================================================
-    print("\n[6/7] Testing data fetching with cache...")
+    print("\n[6/10] Testing data fetching with cache...")
 
     if clickhouse_available:
         try:
@@ -282,9 +282,188 @@ def main() -> int:  # noqa: PLR0912, PLR0915
         skip("Data fetching with cache", "ClickHouse not available")
 
     # =========================================================================
-    # Test 7: Cache Performance
+    # Test 7: Bar Continuity (Issue #3 fix validation)
     # =========================================================================
-    print("\n[7/7] Testing cache performance...")
+    print("\n[7/10] Testing bar continuity (bar[i+1].open == bar[i].close)...")
+
+    if clickhouse_available:
+        try:
+            from rangebar import validate_continuity
+
+            # Fetch enough bars to span multiple file boundaries
+            df = get_n_range_bars(
+                "BTCUSDT",
+                n_bars=1000,
+                threshold_decimal_bps=250,
+                use_cache=True,
+                max_lookback_days=90,
+                warn_if_fewer=False,
+            )
+
+            if len(df) >= 100:
+                result = validate_continuity(df, tolerance_pct=0.0001)
+
+                test(
+                    f"Continuity check (bars={result['bar_count']})",
+                    result["is_valid"],
+                    f"Found {result['discontinuity_count']} discontinuities",
+                )
+
+                if not result["is_valid"]:
+                    # Show first 5 discontinuities for debugging
+                    print("  First discontinuities:")
+                    for d in result["discontinuities"][:5]:
+                        print(
+                            f"    Bar {d['bar_index']}: "
+                            f"prev_close={d['prev_close']:.2f}, "
+                            f"open={d['curr_open']:.2f}, "
+                            f"gap={d['gap_pct']:.4%}"
+                        )
+            else:
+                skip("Continuity test", f"Only {len(df)} bars available")
+        except Exception as e:
+            test("Continuity validation", False, str(e))
+    else:
+        skip("Continuity test", "ClickHouse not available")
+
+    # =========================================================================
+    # Test 8: Cross-Year Boundary Continuity (2024→2025, 2025→2026)
+    # =========================================================================
+    print("\n[8/10] Testing cross-year boundary continuity...")
+
+    if clickhouse_available:
+        try:
+            from rangebar import validate_continuity
+
+            # Test 2024→2025 boundary
+            print("  Testing 2024→2025 boundary...")
+            df_2024_2025 = get_n_range_bars(
+                "BTCUSDT",
+                n_bars=10000,
+                threshold_decimal_bps=250,
+                end_date="2025-01-15",
+                use_cache=True,
+                max_lookback_days=45,
+                warn_if_fewer=False,
+            )
+
+            if len(df_2024_2025) >= 1000:
+                years = df_2024_2025.index.year
+                has_2024 = 2024 in years.to_numpy()
+                has_2025 = 2025 in years.to_numpy()
+
+                if has_2024 and has_2025:
+                    result = validate_continuity(df_2024_2025, tolerance_pct=0.0001)
+                    test(
+                        f"2024→2025 boundary (bars={result['bar_count']})",
+                        result["is_valid"],
+                        f"Found {result['discontinuity_count']} discontinuities",
+                    )
+                    if not result["is_valid"]:
+                        for d in result["discontinuities"][:3]:
+                            print(
+                                f"    Bar {d['bar_index']}: "
+                                f"prev_close={d['prev_close']:.2f}, "
+                                f"open={d['curr_open']:.2f}, "
+                                f"gap={d['gap_pct']:.4%}"
+                            )
+                else:
+                    skip(
+                        "2024→2025 boundary",
+                        f"Data doesn't span boundary (2024: {has_2024}, 2025: {has_2025})",
+                    )
+            else:
+                skip("2024→2025 boundary", f"Only {len(df_2024_2025)} bars available")
+
+            # Test 2025→2026 boundary (today is Jan 9, 2026)
+            print("  Testing 2025→2026 boundary...")
+            df_2025_2026 = get_n_range_bars(
+                "BTCUSDT",
+                n_bars=10000,
+                threshold_decimal_bps=250,
+                end_date="2026-01-09",
+                use_cache=True,
+                max_lookback_days=45,
+                warn_if_fewer=False,
+            )
+
+            if len(df_2025_2026) >= 1000:
+                years = df_2025_2026.index.year
+                has_2025 = 2025 in years.to_numpy()
+                has_2026 = 2026 in years.to_numpy()
+
+                if has_2025 and has_2026:
+                    result = validate_continuity(df_2025_2026, tolerance_pct=0.0001)
+                    test(
+                        f"2025→2026 boundary (bars={result['bar_count']})",
+                        result["is_valid"],
+                        f"Found {result['discontinuity_count']} discontinuities",
+                    )
+                    if not result["is_valid"]:
+                        for d in result["discontinuities"][:3]:
+                            print(
+                                f"    Bar {d['bar_index']}: "
+                                f"prev_close={d['prev_close']:.2f}, "
+                                f"open={d['curr_open']:.2f}, "
+                                f"gap={d['gap_pct']:.4%}"
+                            )
+                else:
+                    skip(
+                        "2025→2026 boundary",
+                        f"Data doesn't span boundary (2025: {has_2025}, 2026: {has_2026})",
+                    )
+            else:
+                skip("2025→2026 boundary", f"Only {len(df_2025_2026)} bars available")
+
+        except Exception as e:
+            test("Cross-year boundary validation", False, str(e))
+    else:
+        skip("Cross-year boundary tests", "ClickHouse not available")
+
+    # =========================================================================
+    # Test 9: Cross-Month Boundary Continuity
+    # =========================================================================
+    print("\n[9/10] Testing cross-month boundary continuity...")
+
+    if clickhouse_available:
+        try:
+            from rangebar import validate_continuity
+
+            # Request bars spanning multiple months
+            df = get_n_range_bars(
+                "BTCUSDT",
+                n_bars=5000,
+                threshold_decimal_bps=250,
+                use_cache=True,
+                max_lookback_days=90,
+                warn_if_fewer=False,
+            )
+
+            if len(df) >= 1000:
+                months = df.index.to_period("M")
+                num_months = len(months.unique())
+
+                if num_months >= 2:
+                    result = validate_continuity(df, tolerance_pct=0.0001)
+                    test(
+                        f"Cross-month (spans {num_months} months, bars={result['bar_count']})",
+                        result["is_valid"],
+                        f"Found {result['discontinuity_count']} discontinuities",
+                    )
+                else:
+                    skip("Cross-month continuity", f"Only spans {num_months} month(s)")
+            else:
+                skip("Cross-month continuity", f"Only {len(df)} bars available")
+
+        except Exception as e:
+            test("Cross-month continuity", False, str(e))
+    else:
+        skip("Cross-month continuity", "ClickHouse not available")
+
+    # =========================================================================
+    # Test 10: Cache Performance
+    # =========================================================================
+    print("\n[10/10] Testing cache performance...")
 
     if clickhouse_available:
         try:

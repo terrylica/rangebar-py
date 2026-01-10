@@ -1,7 +1,10 @@
 use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use rangebar_core::{AggTrade, FixedPoint, RangeBar, RangeBarProcessor};
+use rangebar_core::{
+    AggTrade, AnomalySummary, Checkpoint, CheckpointError, FixedPoint, PositionVerification,
+    RangeBar, RangeBarProcessor,
+};
 
 #[cfg(feature = "data-providers")]
 use rangebar_providers::exness::{
@@ -114,11 +117,319 @@ fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject> {
     Ok(dict.into())
 }
 
+/// Convert Rust `Checkpoint` to Python dict (JSON-serializable)
+fn checkpoint_to_dict(py: Python, checkpoint: &Checkpoint) -> PyResult<PyObject> {
+    let dict = PyDict::new_bound(py);
+
+    // Identification
+    dict.set_item("symbol", &checkpoint.symbol)?;
+    dict.set_item("threshold_decimal_bps", checkpoint.threshold_decimal_bps)?;
+
+    // Incomplete bar (convert to dict if present)
+    if let Some(ref bar) = checkpoint.incomplete_bar {
+        dict.set_item("incomplete_bar", rangebar_to_dict(py, bar)?)?;
+
+        // Also store raw OHLCV for easy access
+        let bar_dict = PyDict::new_bound(py);
+        bar_dict.set_item("open", bar.open.to_f64())?;
+        bar_dict.set_item("high", bar.high.to_f64())?;
+        bar_dict.set_item("low", bar.low.to_f64())?;
+        bar_dict.set_item("close", bar.close.to_f64())?;
+        bar_dict.set_item("volume", bar.volume.to_f64())?;
+        bar_dict.set_item("open_time", bar.open_time)?;
+        bar_dict.set_item("close_time", bar.close_time)?;
+        bar_dict.set_item("agg_record_count", bar.agg_record_count)?;
+        dict.set_item("incomplete_bar_raw", bar_dict.into_py(py))?;
+    } else {
+        dict.set_item("incomplete_bar", py.None())?;
+        dict.set_item("incomplete_bar_raw", py.None())?;
+    }
+
+    // Thresholds (FixedPoint as f64)
+    if let Some((upper, lower)) = checkpoint.thresholds {
+        let thresholds_dict = PyDict::new_bound(py);
+        thresholds_dict.set_item("upper", upper.to_f64())?;
+        thresholds_dict.set_item("lower", lower.to_f64())?;
+        dict.set_item("thresholds", thresholds_dict.into_py(py))?;
+    } else {
+        dict.set_item("thresholds", py.None())?;
+    }
+
+    // Position tracking
+    dict.set_item("last_timestamp_us", checkpoint.last_timestamp_us)?;
+    // Convert to milliseconds for Python consistency
+    dict.set_item("last_timestamp_ms", checkpoint.last_timestamp_us / 1000)?;
+    dict.set_item("last_trade_id", checkpoint.last_trade_id)?;
+
+    // Integrity
+    dict.set_item("price_hash", checkpoint.price_hash)?;
+
+    // Anomaly summary
+    let anomaly_dict = PyDict::new_bound(py);
+    anomaly_dict.set_item("gaps_detected", checkpoint.anomaly_summary.gaps_detected)?;
+    anomaly_dict.set_item(
+        "overlaps_detected",
+        checkpoint.anomaly_summary.overlaps_detected,
+    )?;
+    anomaly_dict.set_item(
+        "timestamp_anomalies",
+        checkpoint.anomaly_summary.timestamp_anomalies,
+    )?;
+    dict.set_item("anomaly_summary", anomaly_dict.into_py(py))?;
+
+    // Has incomplete bar flag
+    dict.set_item("has_incomplete_bar", checkpoint.has_incomplete_bar())?;
+
+    Ok(dict.into())
+}
+
+/// Convert Python dict to Rust `Checkpoint`
+fn dict_to_checkpoint(py: Python, dict: &Bound<PyDict>) -> PyResult<Checkpoint> {
+    // Extract required fields
+    let symbol: String = dict
+        .get_item("symbol")?
+        .ok_or_else(|| PyKeyError::new_err("Missing 'symbol'"))?
+        .extract()?;
+
+    let threshold_decimal_bps: u32 = dict
+        .get_item("threshold_decimal_bps")?
+        .ok_or_else(|| PyKeyError::new_err("Missing 'threshold_decimal_bps'"))?
+        .extract()?;
+
+    let last_timestamp_us: i64 = dict
+        .get_item("last_timestamp_us")?
+        .ok_or_else(|| PyKeyError::new_err("Missing 'last_timestamp_us'"))?
+        .extract()?;
+
+    let last_trade_id: Option<i64> = dict
+        .get_item("last_trade_id")?
+        .and_then(|v| v.extract().ok());
+
+    let price_hash: u64 = dict
+        .get_item("price_hash")?
+        .ok_or_else(|| PyKeyError::new_err("Missing 'price_hash'"))?
+        .extract()?;
+
+    // Extract incomplete bar if present
+    let incomplete_bar: Option<RangeBar> =
+        if let Some(bar_raw) = dict.get_item("incomplete_bar_raw")? {
+            if bar_raw.is_none() {
+                None
+            } else {
+                let bar_dict: &Bound<PyDict> = bar_raw.downcast()?;
+                Some(dict_to_rangebar(py, bar_dict)?)
+            }
+        } else {
+            None
+        };
+
+    // Extract thresholds if present
+    let thresholds: Option<(FixedPoint, FixedPoint)> =
+        if let Some(thresholds_obj) = dict.get_item("thresholds")? {
+            if thresholds_obj.is_none() {
+                None
+            } else {
+                let thresholds_dict: &Bound<PyDict> = thresholds_obj.downcast()?;
+                let upper: f64 = thresholds_dict
+                    .get_item("upper")?
+                    .ok_or_else(|| PyKeyError::new_err("Missing 'thresholds.upper'"))?
+                    .extract()?;
+                let lower: f64 = thresholds_dict
+                    .get_item("lower")?
+                    .ok_or_else(|| PyKeyError::new_err("Missing 'thresholds.lower'"))?
+                    .extract()?;
+                Some((f64_to_fixed_point(upper), f64_to_fixed_point(lower)))
+            }
+        } else {
+            None
+        };
+
+    // Extract anomaly summary
+    let anomaly_summary = if let Some(anomaly_obj) = dict.get_item("anomaly_summary")? {
+        let anomaly_dict: &Bound<PyDict> = anomaly_obj.downcast()?;
+        AnomalySummary {
+            gaps_detected: anomaly_dict
+                .get_item("gaps_detected")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            overlaps_detected: anomaly_dict
+                .get_item("overlaps_detected")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            timestamp_anomalies: anomaly_dict
+                .get_item("timestamp_anomalies")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+        }
+    } else {
+        AnomalySummary::default()
+    };
+
+    Ok(Checkpoint {
+        symbol,
+        threshold_decimal_bps,
+        incomplete_bar,
+        thresholds,
+        last_timestamp_us,
+        last_trade_id,
+        price_hash,
+        anomaly_summary,
+    })
+}
+
+/// Convert Python dict to Rust `RangeBar` (for checkpoint restoration)
+fn dict_to_rangebar(_py: Python, dict: &Bound<PyDict>) -> PyResult<RangeBar> {
+    let open: f64 = dict
+        .get_item("open")?
+        .ok_or_else(|| PyKeyError::new_err("Missing 'open'"))?
+        .extract()?;
+    let high: f64 = dict
+        .get_item("high")?
+        .ok_or_else(|| PyKeyError::new_err("Missing 'high'"))?
+        .extract()?;
+    let low: f64 = dict
+        .get_item("low")?
+        .ok_or_else(|| PyKeyError::new_err("Missing 'low'"))?
+        .extract()?;
+    let close: f64 = dict
+        .get_item("close")?
+        .ok_or_else(|| PyKeyError::new_err("Missing 'close'"))?
+        .extract()?;
+    let volume: f64 = dict
+        .get_item("volume")?
+        .ok_or_else(|| PyKeyError::new_err("Missing 'volume'"))?
+        .extract()?;
+    let open_time: i64 = dict
+        .get_item("open_time")?
+        .ok_or_else(|| PyKeyError::new_err("Missing 'open_time'"))?
+        .extract()?;
+    let close_time: i64 = dict
+        .get_item("close_time")?
+        .ok_or_else(|| PyKeyError::new_err("Missing 'close_time'"))?
+        .extract()?;
+    let agg_record_count: u32 = dict
+        .get_item("agg_record_count")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(0);
+
+    Ok(RangeBar {
+        open_time,
+        close_time,
+        open: f64_to_fixed_point(open),
+        high: f64_to_fixed_point(high),
+        low: f64_to_fixed_point(low),
+        close: f64_to_fixed_point(close),
+        volume: f64_to_fixed_point(volume),
+        turnover: 0,
+        individual_trade_count: 0,
+        agg_record_count,
+        first_trade_id: 0,
+        last_trade_id: 0,
+        data_source: rangebar_core::DataSource::BinanceSpot,
+        buy_volume: FixedPoint(0),
+        sell_volume: FixedPoint(0),
+        buy_trade_count: 0,
+        sell_trade_count: 0,
+        vwap: FixedPoint(0),
+        buy_turnover: 0,
+        sell_turnover: 0,
+    })
+}
+
+/// Convert `CheckpointError` to Python exception
+fn checkpoint_error_to_pyerr(e: CheckpointError) -> PyErr {
+    match e {
+        CheckpointError::SymbolMismatch {
+            checkpoint,
+            expected,
+        } => PyValueError::new_err(format!(
+            "Symbol mismatch: checkpoint has '{checkpoint}', expected '{expected}'"
+        )),
+        CheckpointError::ThresholdMismatch {
+            checkpoint,
+            expected,
+        } => PyValueError::new_err(format!(
+            "Threshold mismatch: checkpoint has {checkpoint}, expected {expected}"
+        )),
+        CheckpointError::PriceHashMismatch {
+            checkpoint,
+            computed,
+        } => PyValueError::new_err(format!(
+            "Price hash mismatch: checkpoint has {checkpoint}, computed {computed}"
+        )),
+        CheckpointError::MissingThresholds => {
+            PyValueError::new_err("Checkpoint has incomplete bar but missing thresholds")
+        }
+        CheckpointError::SerializationError { message } => {
+            PyRuntimeError::new_err(format!("Checkpoint serialization error: {message}"))
+        }
+    }
+}
+
+/// Position verification result for Python
+#[pyclass(name = "PositionVerification")]
+#[derive(Clone)]
+struct PyPositionVerification {
+    verification: PositionVerification,
+}
+
+#[pymethods]
+impl PyPositionVerification {
+    /// Check if position is exact match
+    #[getter]
+    const fn is_exact(&self) -> bool {
+        matches!(self.verification, PositionVerification::Exact)
+    }
+
+    /// Check if there's a gap
+    #[getter]
+    fn has_gap(&self) -> bool {
+        self.verification.has_gap()
+    }
+
+    /// Get gap details if any
+    const fn gap_details(&self) -> Option<(i64, i64, i64)> {
+        match &self.verification {
+            PositionVerification::Gap {
+                expected_id,
+                actual_id,
+                missing_count,
+            } => Some((*expected_id, *actual_id, *missing_count)),
+            _ => None,
+        }
+    }
+
+    /// Get timestamp gap in milliseconds (for Exness/timestamp-only sources)
+    const fn timestamp_gap_ms(&self) -> Option<i64> {
+        match &self.verification {
+            PositionVerification::TimestampOnly { gap_ms } => Some(*gap_ms),
+            _ => None,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        match &self.verification {
+            PositionVerification::Exact => "PositionVerification::Exact".to_string(),
+            PositionVerification::Gap {
+                expected_id,
+                actual_id,
+                missing_count,
+            } => format!(
+                "PositionVerification::Gap(expected={expected_id}, actual={actual_id}, missing={missing_count})"
+            ),
+            PositionVerification::TimestampOnly { gap_ms } => {
+                format!("PositionVerification::TimestampOnly(gap_ms={gap_ms})")
+            }
+        }
+    }
+}
+
 /// Python-exposed `RangeBarProcessor`
 #[pyclass(name = "PyRangeBarProcessor")]
 struct PyRangeBarProcessor {
     processor: RangeBarProcessor,
     threshold_decimal_bps: u32,
+    symbol: Option<String>,
 }
 
 #[pymethods]
@@ -127,17 +438,46 @@ impl PyRangeBarProcessor {
     ///
     /// Args:
     ///     `threshold_decimal_bps`: Threshold in decimal basis points (250 = 25bps = 0.25%)
+    ///     symbol: Optional symbol for checkpoint creation (e.g., "BTCUSDT")
     ///
     /// Raises:
     ///     `ValueError`: If threshold is out of range [1, `100_000`]
     #[new]
-    fn new(threshold_decimal_bps: u32) -> PyResult<Self> {
+    #[pyo3(signature = (threshold_decimal_bps, symbol = None))]
+    fn new(threshold_decimal_bps: u32, symbol: Option<String>) -> PyResult<Self> {
         let processor = RangeBarProcessor::new(threshold_decimal_bps)
             .map_err(|e| PyValueError::new_err(format!("Failed to create processor: {e}")))?;
 
         Ok(Self {
             processor,
             threshold_decimal_bps,
+            symbol,
+        })
+    }
+
+    /// Create processor from checkpoint for cross-file continuation
+    ///
+    /// Args:
+    ///     checkpoint: Dict containing checkpoint state from `create_checkpoint()`
+    ///
+    /// Returns:
+    ///     New processor with restored state (incomplete bar continues building)
+    ///
+    /// Raises:
+    ///     `ValueError`: If checkpoint is invalid or corrupted
+    #[staticmethod]
+    fn from_checkpoint(py: Python, checkpoint: &Bound<PyDict>) -> PyResult<Self> {
+        let rust_checkpoint = dict_to_checkpoint(py, checkpoint)?;
+        let threshold = rust_checkpoint.threshold_decimal_bps;
+        let symbol = Some(rust_checkpoint.symbol.clone());
+
+        let processor = RangeBarProcessor::from_checkpoint(rust_checkpoint)
+            .map_err(checkpoint_error_to_pyerr)?;
+
+        Ok(Self {
+            processor,
+            threshold_decimal_bps: threshold,
+            symbol,
         })
     }
 
@@ -178,10 +518,95 @@ impl PyRangeBarProcessor {
         bars.iter().map(|bar| rangebar_to_dict(py, bar)).collect()
     }
 
+    /// Create checkpoint for cross-file continuation
+    ///
+    /// Captures current processing state including incomplete bar (if any).
+    /// The checkpoint can be serialized to JSON and used to resume processing
+    /// across file boundaries while maintaining bar continuity.
+    ///
+    /// Args:
+    ///     symbol: Symbol being processed (e.g., "BTCUSDT"). If None, uses the
+    ///             symbol provided at construction time.
+    ///
+    /// Returns:
+    ///     Dict containing checkpoint state (JSON-serializable)
+    ///
+    /// Example:
+    ///     ```python
+    ///     # Process first file
+    ///     processor = RangeBarProcessor(250, symbol="BTCUSDT")
+    ///     bars_1 = processor.process_trades(file1_trades)
+    ///     checkpoint = processor.create_checkpoint()
+    ///
+    ///     # Save checkpoint to JSON
+    ///     import json
+    ///     with open("checkpoint.json", "w") as f:
+    ///         json.dump(checkpoint, f)
+    ///
+    ///     # Resume from checkpoint (later, possibly different process)
+    ///     with open("checkpoint.json") as f:
+    ///         checkpoint = json.load(f)
+    ///     processor = RangeBarProcessor.from_checkpoint(checkpoint)
+    ///     bars_2 = processor.process_trades(file2_trades)
+    ///     # Incomplete bar from file 1 continues correctly!
+    ///     ```
+    #[pyo3(signature = (symbol = None))]
+    fn create_checkpoint(&self, py: Python, symbol: Option<String>) -> PyResult<PyObject> {
+        let sym = symbol
+            .or_else(|| self.symbol.clone())
+            .ok_or_else(|| PyValueError::new_err("Symbol required for checkpoint creation"))?;
+
+        let checkpoint = self.processor.create_checkpoint(&sym);
+        checkpoint_to_dict(py, &checkpoint)
+    }
+
+    /// Verify position in data stream at file boundary
+    ///
+    /// Checks if the first trade of the next file matches the expected position
+    /// based on the checkpoint state. Useful for detecting data gaps.
+    ///
+    /// Args:
+    ///     first_trade: Dict with first trade of next file
+    ///
+    /// Returns:
+    ///     `PositionVerification` object with verification result
+    fn verify_position(
+        &self,
+        py: Python,
+        first_trade: &Bound<PyDict>,
+    ) -> PyResult<PyPositionVerification> {
+        let trade = dict_to_agg_trade(py, first_trade, 0)?;
+        let verification = self.processor.verify_position(&trade);
+        Ok(PyPositionVerification { verification })
+    }
+
+    /// Get incomplete bar if any
+    ///
+    /// Returns the bar currently being built (not yet breached threshold).
+    /// Returns None if the last trade completed a bar cleanly.
+    fn get_incomplete_bar(&self, py: Python) -> PyResult<Option<PyObject>> {
+        match self.processor.get_incomplete_bar() {
+            Some(bar) => Ok(Some(rangebar_to_dict(py, &bar)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Check if there's an incomplete bar
+    #[getter]
+    fn has_incomplete_bar(&self) -> bool {
+        self.processor.get_incomplete_bar().is_some()
+    }
+
     /// Get threshold value
     #[getter]
     const fn threshold_decimal_bps(&self) -> u32 {
         self.threshold_decimal_bps
+    }
+
+    /// Get symbol if set
+    #[getter]
+    fn symbol(&self) -> Option<String> {
+        self.symbol.clone()
     }
 }
 
@@ -452,6 +877,7 @@ mod exness_bindings {
 fn _core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyRangeBarProcessor>()?;
+    m.add_class::<PyPositionVerification>()?;
 
     // Add Exness classes if feature enabled
     #[cfg(feature = "data-providers")]

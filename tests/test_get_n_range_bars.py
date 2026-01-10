@@ -329,5 +329,277 @@ class TestClickHouseCache:
             assert cache_time < 1.0, f"Cache hit took {cache_time:.2f}s, expected <1s"
 
 
+@pytest.mark.clickhouse
+class TestBarContinuity:
+    """Tests for bar continuity (bar[i+1].open == bar[i].close).
+
+    Range bars MUST have continuity: each bar's open price equals the
+    previous bar's close price. For Binance (24/7 crypto), any discontinuity
+    is a bug since there are no natural market breaks.
+
+    These tests validate continuity across:
+    - Cross-date boundaries (within same month)
+    - Cross-month boundaries
+    - Cross-year boundaries (2024→2025, 2025→2026)
+    """
+
+    CONTINUITY_TOLERANCE = 0.0001  # 0.01% for floating-point comparison
+
+    def test_bar_continuity_basic(self):
+        """Basic continuity check: bar[i+1].open == bar[i].close."""
+        if not _is_clickhouse_available():
+            pytest.skip("ClickHouse server not available")
+
+        from rangebar import validate_continuity
+
+        df = get_n_range_bars(
+            TEST_SYMBOL,
+            n_bars=500,
+            threshold_decimal_bps=250,
+            use_cache=True,
+            max_lookback_days=30,
+            warn_if_fewer=False,
+        )
+
+        if len(df) < 100:
+            pytest.skip(f"Only {len(df)} bars available, need at least 100")
+
+        result = validate_continuity(df, tolerance_pct=self.CONTINUITY_TOLERANCE)
+        gaps = result["discontinuity_count"]
+        first = result["discontinuities"][0] if result["discontinuities"] else "N/A"
+        assert result["is_valid"], f"Found {gaps} gaps. First: {first}"
+
+    def test_continuity_across_date_boundary(self):
+        """Continuity across midnight (cross-date boundary)."""
+        if not _is_clickhouse_available():
+            pytest.skip("ClickHouse server not available")
+
+        from rangebar import validate_continuity
+
+        # Request enough bars to span multiple days
+        df = get_n_range_bars(
+            TEST_SYMBOL,
+            n_bars=1000,
+            threshold_decimal_bps=250,
+            use_cache=True,
+            max_lookback_days=30,
+            warn_if_fewer=False,
+        )
+
+        if len(df) < 500:
+            pytest.skip(
+                f"Only {len(df)} bars available, need at least 500 for cross-date test"
+            )
+
+        # Verify we actually span multiple dates
+        unique_dates = df.index.date
+        num_dates = len(set(unique_dates))
+        if num_dates < 2:
+            pytest.skip(f"Data only spans {num_dates} date(s), need at least 2")
+
+        result = validate_continuity(df, tolerance_pct=self.CONTINUITY_TOLERANCE)
+        assert result["is_valid"], (
+            f"Cross-date discontinuity: {result['discontinuity_count']} gaps "
+            f"across {num_dates} dates"
+        )
+
+    def test_continuity_across_month_boundary(self):
+        """Continuity across month boundary (e.g., Jan 31 → Feb 1)."""
+        if not _is_clickhouse_available():
+            pytest.skip("ClickHouse server not available")
+
+        from rangebar import validate_continuity
+
+        # Request enough bars to span multiple months
+        df = get_n_range_bars(
+            TEST_SYMBOL,
+            n_bars=5000,
+            threshold_decimal_bps=250,
+            use_cache=True,
+            max_lookback_days=90,
+            warn_if_fewer=False,
+        )
+
+        if len(df) < 1000:
+            pytest.skip(f"Only {len(df)} bars available, need >=1000")
+
+        # Verify we span multiple months
+        months = df.index.to_period("M")
+        num_months = len(months.unique())
+        if num_months < 2:
+            pytest.skip(f"Data only spans {num_months} month(s), need at least 2")
+
+        result = validate_continuity(df, tolerance_pct=self.CONTINUITY_TOLERANCE)
+        assert result["is_valid"], (
+            f"Cross-month discontinuity: {result['discontinuity_count']} gaps "
+            f"across {num_months} months"
+        )
+
+    def test_continuity_across_year_boundary_2024_2025(self):
+        """Continuity across 2024→2025 year boundary (Dec 31 → Jan 1)."""
+        if not _is_clickhouse_available():
+            pytest.skip("ClickHouse server not available")
+
+        from rangebar import validate_continuity
+
+        # Request bars ending in early January 2025 to capture year boundary
+        df = get_n_range_bars(
+            TEST_SYMBOL,
+            n_bars=10000,
+            threshold_decimal_bps=250,
+            end_date="2025-01-15",
+            use_cache=True,
+            max_lookback_days=45,
+            warn_if_fewer=False,
+        )
+
+        if len(df) < 1000:
+            pytest.skip(f"Only {len(df)} bars available for 2024-2025 boundary test")
+
+        # Verify we actually span the year boundary
+        years = df.index.year
+        has_2024 = 2024 in years.to_numpy()
+        has_2025 = 2025 in years.to_numpy()
+
+        if not (has_2024 and has_2025):
+            pytest.skip(
+                f"Data doesn't span 2024-2025 boundary "
+                f"(has 2024: {has_2024}, has 2025: {has_2025})"
+            )
+
+        result = validate_continuity(df, tolerance_pct=self.CONTINUITY_TOLERANCE)
+        gaps = result["discontinuity_count"]
+        first = result["discontinuities"][0] if result["discontinuities"] else "N/A"
+        assert result["is_valid"], f"2024→2025: {gaps} gaps. First: {first}"
+
+    def test_continuity_across_year_boundary_2025_2026(self):
+        """Continuity across 2025→2026 year boundary (Dec 31 → Jan 1)."""
+        if not _is_clickhouse_available():
+            pytest.skip("ClickHouse server not available")
+
+        from rangebar import validate_continuity
+
+        # Request bars ending in early January 2026 to capture year boundary
+        # Note: Today is January 9, 2026 so limited 2026 data available
+        df = get_n_range_bars(
+            TEST_SYMBOL,
+            n_bars=10000,
+            threshold_decimal_bps=250,
+            end_date="2026-01-09",
+            use_cache=True,
+            max_lookback_days=45,
+            warn_if_fewer=False,
+        )
+
+        if len(df) < 1000:
+            pytest.skip(f"Only {len(df)} bars available for 2025-2026 boundary test")
+
+        # Verify we actually span the year boundary
+        years = df.index.year
+        has_2025 = 2025 in years.to_numpy()
+        has_2026 = 2026 in years.to_numpy()
+
+        if not (has_2025 and has_2026):
+            pytest.skip(
+                f"Data doesn't span 2025-2026 boundary "
+                f"(has 2025: {has_2025}, has 2026: {has_2026})"
+            )
+
+        result = validate_continuity(df, tolerance_pct=self.CONTINUITY_TOLERANCE)
+        gaps = result["discontinuity_count"]
+        first = result["discontinuities"][0] if result["discontinuities"] else "N/A"
+        assert result["is_valid"], f"2025→2026: {gaps} gaps. First: {first}"
+
+    def test_continuity_large_dataset(self):
+        """Continuity test with large dataset (spans multiple file boundaries)."""
+        if not _is_clickhouse_available():
+            pytest.skip("ClickHouse server not available")
+
+        from rangebar import validate_continuity
+
+        # Request a large number of bars to stress-test continuity
+        # Binance data is stored in daily files, so this should span many files
+        df = get_n_range_bars(
+            TEST_SYMBOL,
+            n_bars=20000,
+            threshold_decimal_bps=250,
+            use_cache=True,
+            max_lookback_days=180,
+            warn_if_fewer=False,
+        )
+
+        if len(df) < 5000:
+            pytest.skip(f"Only {len(df)} bars available, need >=5000")
+
+        result = validate_continuity(df, tolerance_pct=self.CONTINUITY_TOLERANCE)
+
+        # Calculate percentage of discontinuities (should be 0% for crypto)
+        discontinuity_pct = (
+            result["discontinuity_count"] / result["bar_count"] * 100
+            if result["bar_count"] > 0
+            else 0
+        )
+
+        assert result["is_valid"], (
+            f"Large dataset discontinuity: {result['discontinuity_count']} gaps "
+            f"({discontinuity_pct:.2f}%) in {result['bar_count']} bars"
+        )
+
+    def test_validate_continuity_function_returns_correct_format(self):
+        """validate_continuity() returns correct dict structure."""
+        from rangebar import validate_continuity
+
+        # Create minimal test DataFrame
+        df = pd.DataFrame(
+            {
+                "Open": [100.0, 100.5, 101.0],
+                "High": [100.5, 101.0, 101.5],
+                "Low": [99.5, 100.0, 100.5],
+                "Close": [100.5, 101.0, 101.5],
+                "Volume": [10.0, 10.0, 10.0],
+            },
+            index=pd.date_range("2024-01-01", periods=3, freq="h"),
+        )
+
+        result = validate_continuity(df)
+
+        # Check structure
+        assert "is_valid" in result
+        assert "bar_count" in result
+        assert "discontinuity_count" in result
+        assert "discontinuities" in result
+        assert isinstance(result["is_valid"], bool)
+        assert isinstance(result["bar_count"], int)
+        assert isinstance(result["discontinuity_count"], int)
+        assert isinstance(result["discontinuities"], list)
+
+    def test_validate_continuity_detects_gaps(self):
+        """validate_continuity() detects price gaps."""
+        from rangebar import validate_continuity
+
+        # Create DataFrame with intentional discontinuity
+        df = pd.DataFrame(
+            {
+                "Open": [
+                    100.0,
+                    100.5,
+                    102.0,
+                ],  # Gap at bar 2: prev close 101.0 != open 102.0
+                "High": [100.5, 101.0, 102.5],
+                "Low": [99.5, 100.0, 101.5],
+                "Close": [100.5, 101.0, 102.5],
+                "Volume": [10.0, 10.0, 10.0],
+            },
+            index=pd.date_range("2024-01-01", periods=3, freq="h"),
+        )
+
+        result = validate_continuity(df, tolerance_pct=0.0001)
+
+        assert not result["is_valid"], "Should detect the price gap"
+        assert result["discontinuity_count"] == 1
+        assert len(result["discontinuities"]) == 1
+        assert result["discontinuities"][0]["bar_index"] == 2
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
