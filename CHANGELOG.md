@@ -1,3 +1,34 @@
+# [6.0.0](https://github.com/terrylica/rangebar-py/compare/v5.4.0...v6.0.0) (2026-01-10)
+
+
+### Features
+
+* consolidate 8-crate Rust workspace from upstream rangebar ([f16f50b](https://github.com/terrylica/rangebar-py/commit/f16f50b12853dbaf4213c97ca45c2f94940d6eb9))
+
+
+### BREAKING CHANGES
+
+* Architecture now includes full 8-crate workspace
+
+- Layer 0: rangebar-core (algorithm), rangebar-config (settings)
+- Layer 1: rangebar-providers (Binance/Exness), rangebar-io (Polars)
+- Layer 2: rangebar-streaming (real-time), rangebar-batch (analytics)
+- Layer 3: rangebar-cli (disabled), rangebar (meta-crate)
+
+Build optimizations preserved:
+- Thin LTO for cross-platform compatibility
+- codegen-units=1 for maximum optimization
+- Custom [profile.wheel] for wheel builds
+- build.rs compile-time optimization guard
+
+New infrastructure:
+- Criterion benchmarks (1M ticks < 100ms target)
+- cargo-deny security/license checks
+- mise tasks for full dev workflow
+- Test data fixtures (~900KB)
+
+All 175 Rust tests passing.
+
 # [5.4.0](https://github.com/terrylica/rangebar-py/compare/v5.3.6...v5.4.0) (2026-01-10)
 
 
