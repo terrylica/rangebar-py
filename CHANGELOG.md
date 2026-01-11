@@ -1,3 +1,11 @@
+## [7.0.1](https://github.com/terrylica/rangebar-py/compare/v7.0.0...v7.0.1) (2026-01-11)
+
+
+### Bug Fixes
+
+* update crate readme paths to local READMEs for sdist build ([9559ff9](https://github.com/terrylica/rangebar-py/commit/9559ff979faf701b5b049ca3d194ca247501dc20))
+* update internal crate version references from 6.0 to 7.0 ([41d4198](https://github.com/terrylica/rangebar-py/commit/41d4198aa223855e95d09ffbef85224831ae58bf))
+
 # [7.0.0](https://github.com/terrylica/rangebar-py/compare/v6.2.1...v7.0.0) (2026-01-11)
 
 
