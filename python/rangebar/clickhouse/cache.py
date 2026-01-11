@@ -256,6 +256,17 @@ class RangeBarCache(ClickHouseClientMixin):
             "sell_volume",
             "individual_trade_count",
             "agg_record_count",
+            # Microstructure features (Issue #25)
+            "duration_us",
+            "ofi",
+            "vwap_close_deviation",
+            "price_impact",
+            "kyle_lambda_proxy",
+            "trade_intensity",
+            "volume_per_trade",
+            "aggression_ratio",
+            "aggregation_efficiency",
+            "turnover_imbalance",
         ]
         for col in optional:
             if col in df.columns:
@@ -628,7 +639,17 @@ class RangeBarCache(ClickHouseClientMixin):
             base_cols += """,
             vwap,
             buy_volume,
-            sell_volume
+            sell_volume,
+            duration_us,
+            ofi,
+            vwap_close_deviation,
+            price_impact,
+            kyle_lambda_proxy,
+            trade_intensity,
+            volume_per_trade,
+            aggression_ratio,
+            aggregation_efficiency,
+            turnover_imbalance
         """
 
         if before_ts is not None:
@@ -689,7 +710,22 @@ class RangeBarCache(ClickHouseClientMixin):
 
         # Convert microstructure columns if present
         if include_microstructure:
-            for col in ["vwap", "buy_volume", "sell_volume"]:
+            microstructure_cols = [
+                "vwap",
+                "buy_volume",
+                "sell_volume",
+                "duration_us",
+                "ofi",
+                "vwap_close_deviation",
+                "price_impact",
+                "kyle_lambda_proxy",
+                "trade_intensity",
+                "volume_per_trade",
+                "aggression_ratio",
+                "aggregation_efficiency",
+                "turnover_imbalance",
+            ]
+            for col in microstructure_cols:
                 if col in df.columns:
                     df[col] = df[col].astype("float64")
 
@@ -815,7 +851,17 @@ class RangeBarCache(ClickHouseClientMixin):
             base_cols += """,
             vwap,
             buy_volume,
-            sell_volume
+            sell_volume,
+            duration_us,
+            ofi,
+            vwap_close_deviation,
+            price_impact,
+            kyle_lambda_proxy,
+            trade_intensity,
+            volume_per_trade,
+            aggression_ratio,
+            aggregation_efficiency,
+            turnover_imbalance
         """
 
         query = f"""
@@ -853,7 +899,22 @@ class RangeBarCache(ClickHouseClientMixin):
                 df[col] = df[col].astype("float64")
 
         if include_microstructure:
-            for col in ["vwap", "buy_volume", "sell_volume"]:
+            microstructure_cols = [
+                "vwap",
+                "buy_volume",
+                "sell_volume",
+                "duration_us",
+                "ofi",
+                "vwap_close_deviation",
+                "price_impact",
+                "kyle_lambda_proxy",
+                "trade_intensity",
+                "volume_per_trade",
+                "aggression_ratio",
+                "aggregation_efficiency",
+                "turnover_imbalance",
+            ]
+            for col in microstructure_cols:
                 if col in df.columns:
                     df[col] = df[col].astype("float64")
 
@@ -947,6 +1008,17 @@ class RangeBarCache(ClickHouseClientMixin):
             "sell_volume",
             "individual_trade_count",
             "agg_record_count",
+            # Microstructure features (Issue #25)
+            "duration_us",
+            "ofi",
+            "vwap_close_deviation",
+            "price_impact",
+            "kyle_lambda_proxy",
+            "trade_intensity",
+            "volume_per_trade",
+            "aggression_ratio",
+            "aggregation_efficiency",
+            "turnover_imbalance",
         ]
         for col in optional:
             if col in df.columns:

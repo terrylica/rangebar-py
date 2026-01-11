@@ -128,6 +128,8 @@ impl RangeBarProcessor {
                     );
                     debug_assert!(bar_state.bar.low <= bar_state.bar.open.min(bar_state.bar.close));
 
+                    // Compute microstructure features at bar finalization (Issue #25)
+                    bar_state.bar.compute_microstructure_features();
                     let completed_bar = bar_state.bar.clone();
 
                     // Start new bar with breaching trade
@@ -292,8 +294,12 @@ impl RangeBarProcessor {
 
         // Add final partial bar only if explicitly requested
         // This preserves algorithm integrity: bars should only close on threshold breach
-        if include_incomplete && let Some(bar_state) = current_bar {
-            bars.push(bar_state.bar);
+        // Note: let-chains require Rust 2024, so we use nested if instead
+        #[allow(clippy::collapsible_if)]
+        if include_incomplete {
+            if let Some(bar_state) = current_bar {
+                bars.push(bar_state.bar);
+            }
         }
 
         Ok(bars)
@@ -1216,7 +1222,7 @@ impl ExportRangeBarProcessor {
             let completed_bar = self.current_bar.take().unwrap();
 
             // Convert to export format (this is from an old internal structure)
-            let export_bar = RangeBar {
+            let mut export_bar = RangeBar {
                 open_time: completed_bar.open_time,
                 close_time: completed_bar.close_time,
                 open: completed_bar.open,
@@ -1241,7 +1247,22 @@ impl ExportRangeBarProcessor {
                 vwap: completed_bar.vwap,
                 buy_turnover: completed_bar.buy_turnover,
                 sell_turnover: completed_bar.sell_turnover,
+
+                // Microstructure features (Issue #25) - computed below
+                duration_us: 0,
+                ofi: 0.0,
+                vwap_close_deviation: 0.0,
+                price_impact: 0.0,
+                kyle_lambda_proxy: 0.0,
+                trade_intensity: 0.0,
+                volume_per_trade: 0.0,
+                aggression_ratio: 0.0,
+                aggregation_efficiency_f64: 0.0,
+                turnover_imbalance: 0.0,
             };
+
+            // Compute microstructure features at bar finalization (Issue #25)
+            export_bar.compute_microstructure_features();
 
             self.completed_bars.push(export_bar);
 
@@ -1298,31 +1319,48 @@ impl ExportRangeBarProcessor {
 
     /// Get incomplete bar if exists (for final bar processing)
     pub fn get_incomplete_bar(&mut self) -> Option<RangeBar> {
-        self.current_bar.as_ref().map(|incomplete| RangeBar {
-            open_time: incomplete.open_time,
-            close_time: incomplete.close_time,
-            open: incomplete.open,
-            high: incomplete.high,
-            low: incomplete.low,
-            close: incomplete.close,
-            volume: incomplete.volume,
-            turnover: incomplete.turnover,
+        self.current_bar.as_ref().map(|incomplete| {
+            let mut bar = RangeBar {
+                open_time: incomplete.open_time,
+                close_time: incomplete.close_time,
+                open: incomplete.open,
+                high: incomplete.high,
+                low: incomplete.low,
+                close: incomplete.close,
+                volume: incomplete.volume,
+                turnover: incomplete.turnover,
 
-            // Enhanced fields
-            individual_trade_count: incomplete.individual_trade_count as u32,
-            agg_record_count: incomplete.agg_record_count,
-            first_trade_id: incomplete.first_trade_id,
-            last_trade_id: incomplete.last_trade_id,
-            data_source: crate::types::DataSource::default(),
+                // Enhanced fields
+                individual_trade_count: incomplete.individual_trade_count as u32,
+                agg_record_count: incomplete.agg_record_count,
+                first_trade_id: incomplete.first_trade_id,
+                last_trade_id: incomplete.last_trade_id,
+                data_source: crate::types::DataSource::default(),
 
-            // Market microstructure fields
-            buy_volume: incomplete.buy_volume,
-            sell_volume: incomplete.sell_volume,
-            buy_trade_count: incomplete.buy_trade_count as u32,
-            sell_trade_count: incomplete.sell_trade_count as u32,
-            vwap: incomplete.vwap,
-            buy_turnover: incomplete.buy_turnover,
-            sell_turnover: incomplete.sell_turnover,
+                // Market microstructure fields
+                buy_volume: incomplete.buy_volume,
+                sell_volume: incomplete.sell_volume,
+                buy_trade_count: incomplete.buy_trade_count as u32,
+                sell_trade_count: incomplete.sell_trade_count as u32,
+                vwap: incomplete.vwap,
+                buy_turnover: incomplete.buy_turnover,
+                sell_turnover: incomplete.sell_turnover,
+
+                // Microstructure features (Issue #25) - computed below
+                duration_us: 0,
+                ofi: 0.0,
+                vwap_close_deviation: 0.0,
+                price_impact: 0.0,
+                kyle_lambda_proxy: 0.0,
+                trade_intensity: 0.0,
+                volume_per_trade: 0.0,
+                aggression_ratio: 0.0,
+                aggregation_efficiency_f64: 0.0,
+                turnover_imbalance: 0.0,
+            };
+            // Compute microstructure features for incomplete bar (Issue #25)
+            bar.compute_microstructure_features();
+            bar
         })
     }
 }

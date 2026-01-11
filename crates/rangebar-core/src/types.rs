@@ -135,6 +135,58 @@ pub struct RangeBar {
 
     /// Turnover from sell-side trades (sell pressure)
     pub sell_turnover: i128,
+
+    // === MICROSTRUCTURE FEATURES (Issue #25) ===
+    // Computed at bar finalization via compute_microstructure_features()
+    /// Bar duration in microseconds (close_time - open_time)
+    /// Reference: Easley et al. (2012) "Volume Clock"
+    #[serde(default)]
+    pub duration_us: i64,
+
+    /// Order Flow Imbalance: (buy_vol - sell_vol) / (buy_vol + sell_vol)
+    /// Range: [-1.0, +1.0], Reference: Chordia et al. (2002)
+    #[serde(default)]
+    pub ofi: f64,
+
+    /// VWAP-Close Deviation: (close - vwap) / (high - low)
+    /// Measures intra-bar momentum, Reference: Berkowitz et al. (1988)
+    #[serde(default)]
+    pub vwap_close_deviation: f64,
+
+    /// Price Impact (Amihud-style): abs(close - open) / volume
+    /// Reference: Amihud (2002) illiquidity ratio
+    #[serde(default)]
+    pub price_impact: f64,
+
+    /// Kyle's Lambda Proxy: (close - open) / (buy_vol - sell_vol)
+    /// Market depth measure, Reference: Kyle (1985)
+    #[serde(default)]
+    pub kyle_lambda_proxy: f64,
+
+    /// Trade Intensity: individual_trade_count / duration_seconds
+    /// Reference: Engle & Russell (1998) ACD models
+    #[serde(default)]
+    pub trade_intensity: f64,
+
+    /// Average trade size: volume / individual_trade_count
+    /// Reference: Barclay & Warner (1993) stealth trading
+    #[serde(default)]
+    pub volume_per_trade: f64,
+
+    /// Aggression Ratio: buy_trade_count / sell_trade_count
+    /// Capped at 100.0, Reference: Lee & Ready (1991)
+    #[serde(default)]
+    pub aggression_ratio: f64,
+
+    /// Aggregation Efficiency: individual_trade_count / agg_record_count
+    /// Proxy for trade fragmentation (replaces trade_size_std)
+    #[serde(default)]
+    pub aggregation_efficiency_f64: f64,
+
+    /// Turnover Imbalance: (buy_turnover - sell_turnover) / total_turnover
+    /// Dollar-weighted OFI, Range: [-1.0, +1.0]
+    #[serde(default)]
+    pub turnover_imbalance: f64,
 }
 
 impl RangeBar {
@@ -187,6 +239,18 @@ impl RangeBar {
             vwap: trade.price, // Initial VWAP equals opening price
             buy_turnover,
             sell_turnover,
+
+            // Microstructure features (Issue #25) - computed at finalization
+            duration_us: 0,
+            ofi: 0.0,
+            vwap_close_deviation: 0.0,
+            price_impact: 0.0,
+            kyle_lambda_proxy: 0.0,
+            trade_intensity: 0.0,
+            volume_per_trade: 0.0,
+            aggression_ratio: 0.0,
+            aggregation_efficiency_f64: 0.0,
+            turnover_imbalance: 0.0,
         }
     }
 
@@ -251,6 +315,117 @@ impl RangeBar {
             let vwap_raw = self.turnover / (self.volume.0 as i128);
             self.vwap = FixedPoint(vwap_raw as i64);
         }
+    }
+
+    /// Compute all microstructure features at bar finalization (Issue #25)
+    ///
+    /// This method computes 10 derived features from the accumulated bar state.
+    /// All features use only data with timestamps <= bar.close_time (no lookahead).
+    ///
+    /// # Features Computed
+    ///
+    /// | Feature | Formula | Academic Reference |
+    /// |---------|---------|-------------------|
+    /// | duration_us | close_time - open_time | Easley et al. (2012) |
+    /// | ofi | (buy_vol - sell_vol) / total | Chordia et al. (2002) |
+    /// | vwap_close_deviation | (close - vwap) / (high - low) | Berkowitz et al. (1988) |
+    /// | price_impact | abs(close - open) / volume | Amihud (2002) |
+    /// | kyle_lambda_proxy | (close - open) / (buy_vol - sell_vol) | Kyle (1985) |
+    /// | trade_intensity | trade_count / duration_seconds | Engle & Russell (1998) |
+    /// | volume_per_trade | volume / trade_count | Barclay & Warner (1993) |
+    /// | aggression_ratio | buy_trades / sell_trades | Lee & Ready (1991) |
+    /// | aggregation_efficiency_f64 | trade_count / agg_count | (proxy) |
+    /// | turnover_imbalance | (buy_turn - sell_turn) / total_turn | (proxy) |
+    pub fn compute_microstructure_features(&mut self) {
+        // Extract values for computation
+        let buy_vol = self.buy_volume.to_f64();
+        let sell_vol = self.sell_volume.to_f64();
+        let total_vol = buy_vol + sell_vol;
+        let volume = self.volume.to_f64();
+        let open = self.open.to_f64();
+        let close = self.close.to_f64();
+        let high = self.high.to_f64();
+        let low = self.low.to_f64();
+        let vwap = self.vwap.to_f64();
+        let duration_us_raw = self.close_time - self.open_time;
+        let trade_count = self.individual_trade_count as f64;
+        let agg_count = self.agg_record_count as f64;
+        let buy_turn = self.buy_turnover as f64;
+        let sell_turn = self.sell_turnover as f64;
+        let total_turn = (self.buy_turnover + self.sell_turnover) as f64;
+
+        // 1. Duration (already in microseconds)
+        self.duration_us = duration_us_raw;
+
+        // 2. Order Flow Imbalance [-1, 1]
+        self.ofi = if total_vol > f64::EPSILON {
+            (buy_vol - sell_vol) / total_vol
+        } else {
+            0.0
+        };
+
+        // 3. VWAP-Close Deviation (normalized by price range)
+        let range = high - low;
+        self.vwap_close_deviation = if range > f64::EPSILON {
+            (close - vwap) / range
+        } else {
+            0.0
+        };
+
+        // 4. Price Impact (Amihud-style)
+        self.price_impact = if volume > f64::EPSILON {
+            (close - open).abs() / volume
+        } else {
+            0.0
+        };
+
+        // 5. Kyle's Lambda Proxy
+        let imbalance = buy_vol - sell_vol;
+        self.kyle_lambda_proxy = if imbalance.abs() > f64::EPSILON {
+            (close - open) / imbalance
+        } else {
+            0.0
+        };
+
+        // 6. Trade Intensity (trades per second)
+        // Note: duration_us is in microseconds, convert to seconds
+        let duration_sec = duration_us_raw as f64 / 1_000_000.0;
+        self.trade_intensity = if duration_sec > f64::EPSILON {
+            trade_count / duration_sec
+        } else {
+            trade_count // Instant bar = all trades at once
+        };
+
+        // 7. Volume per Trade (average trade size)
+        self.volume_per_trade = if trade_count > f64::EPSILON {
+            volume / trade_count
+        } else {
+            0.0
+        };
+
+        // 8. Aggression Ratio [0, 100] (capped)
+        let sell_count = self.sell_trade_count as f64;
+        self.aggression_ratio = if sell_count > f64::EPSILON {
+            (self.buy_trade_count as f64 / sell_count).min(100.0)
+        } else if self.buy_trade_count > 0 {
+            100.0 // All buys, cap at 100
+        } else {
+            1.0 // No trades = neutral
+        };
+
+        // 9. Aggregation Efficiency (proxy for trade fragmentation)
+        self.aggregation_efficiency_f64 = if agg_count > f64::EPSILON {
+            trade_count / agg_count
+        } else {
+            1.0
+        };
+
+        // 10. Turnover Imbalance (dollar-weighted OFI) [-1, 1]
+        self.turnover_imbalance = if total_turn.abs() > f64::EPSILON {
+            (buy_turn - sell_turn) / total_turn
+        } else {
+            0.0
+        };
     }
 
     /// Check if price breaches the range thresholds
@@ -401,5 +576,378 @@ mod tests {
             bar.buy_trade_count, bar.sell_trade_count
         );
         println!("   VWAP: {}", bar.vwap.to_string());
+    }
+
+    // =========================================================================
+    // Microstructure Features Tests (Issue #25)
+    // =========================================================================
+
+    #[test]
+    fn test_ofi_balanced() {
+        // Create a bar with equal buy and sell volumes
+        let buy_trade = test_utils::create_test_agg_trade_with_range(
+            1,
+            "50000.0",
+            "1.0",
+            1640995200000000, // microseconds
+            1,
+            1,
+            false, // Buy
+        );
+
+        let mut bar = RangeBar::new(&buy_trade);
+
+        let sell_trade = test_utils::create_test_agg_trade_with_range(
+            2,
+            "50050.0",
+            "1.0",
+            1640995201000000, // 1 second later
+            2,
+            2,
+            true, // Sell
+        );
+
+        bar.update_with_trade(&sell_trade);
+        bar.compute_microstructure_features();
+
+        // OFI should be 0 when buy_volume == sell_volume
+        assert!(
+            bar.ofi.abs() < f64::EPSILON,
+            "OFI should be 0 for balanced volumes, got {}",
+            bar.ofi
+        );
+    }
+
+    #[test]
+    fn test_ofi_all_buys() {
+        // Create a bar with only buy volume
+        let buy_trade1 = test_utils::create_test_agg_trade_with_range(
+            1,
+            "50000.0",
+            "1.0",
+            1640995200000000,
+            1,
+            1,
+            false, // Buy
+        );
+
+        let mut bar = RangeBar::new(&buy_trade1);
+
+        let buy_trade2 = test_utils::create_test_agg_trade_with_range(
+            2,
+            "50050.0",
+            "1.0",
+            1640995201000000,
+            2,
+            2,
+            false, // Buy
+        );
+
+        bar.update_with_trade(&buy_trade2);
+        bar.compute_microstructure_features();
+
+        // OFI should be 1.0 when all buys
+        assert!(
+            (bar.ofi - 1.0).abs() < f64::EPSILON,
+            "OFI should be 1.0 for all buys, got {}",
+            bar.ofi
+        );
+    }
+
+    #[test]
+    fn test_ofi_all_sells() {
+        // Create a bar with only sell volume
+        let sell_trade1 = test_utils::create_test_agg_trade_with_range(
+            1,
+            "50000.0",
+            "1.0",
+            1640995200000000,
+            1,
+            1,
+            true, // Sell
+        );
+
+        let mut bar = RangeBar::new(&sell_trade1);
+
+        let sell_trade2 = test_utils::create_test_agg_trade_with_range(
+            2,
+            "50050.0",
+            "1.0",
+            1640995201000000,
+            2,
+            2,
+            true, // Sell
+        );
+
+        bar.update_with_trade(&sell_trade2);
+        bar.compute_microstructure_features();
+
+        // OFI should be -1.0 when all sells
+        assert!(
+            (bar.ofi - (-1.0)).abs() < f64::EPSILON,
+            "OFI should be -1.0 for all sells, got {}",
+            bar.ofi
+        );
+    }
+
+    #[test]
+    fn test_turnover_imbalance_bounded() {
+        // Create a bar with mixed buy/sell turnover
+        let buy_trade = test_utils::create_test_agg_trade_with_range(
+            1,
+            "50000.0",
+            "1.0",
+            1640995200000000,
+            1,
+            1,
+            false, // Buy
+        );
+
+        let mut bar = RangeBar::new(&buy_trade);
+
+        let sell_trade = test_utils::create_test_agg_trade_with_range(
+            2,
+            "50100.0",
+            "2.0",
+            1640995201000000,
+            2,
+            2,
+            true, // Sell
+        );
+
+        bar.update_with_trade(&sell_trade);
+        bar.compute_microstructure_features();
+
+        // Turnover imbalance should be in [-1, 1]
+        assert!(
+            bar.turnover_imbalance >= -1.0 && bar.turnover_imbalance <= 1.0,
+            "Turnover imbalance should be in [-1, 1], got {}",
+            bar.turnover_imbalance
+        );
+    }
+
+    #[test]
+    fn test_kyle_lambda_div_zero() {
+        // Create a bar with equal buy/sell -> imbalance = 0
+        let buy_trade = test_utils::create_test_agg_trade_with_range(
+            1,
+            "50000.0",
+            "1.0",
+            1640995200000000,
+            1,
+            1,
+            false, // Buy
+        );
+
+        let mut bar = RangeBar::new(&buy_trade);
+
+        let sell_trade = test_utils::create_test_agg_trade_with_range(
+            2,
+            "50100.0",
+            "1.0",
+            1640995201000000,
+            2,
+            2,
+            true, // Sell
+        );
+
+        bar.update_with_trade(&sell_trade);
+        bar.compute_microstructure_features();
+
+        // Kyle lambda should be 0 when imbalance is 0
+        assert!(
+            bar.kyle_lambda_proxy.abs() < f64::EPSILON,
+            "Kyle lambda should be 0 when imbalance is 0, got {}",
+            bar.kyle_lambda_proxy
+        );
+    }
+
+    #[test]
+    fn test_duration_positive() {
+        let trade1 = test_utils::create_test_agg_trade_with_range(
+            1,
+            "50000.0",
+            "1.0",
+            1640995200000000, // microseconds
+            1,
+            1,
+            false,
+        );
+
+        let mut bar = RangeBar::new(&trade1);
+
+        let trade2 = test_utils::create_test_agg_trade_with_range(
+            2,
+            "50050.0",
+            "1.0",
+            1640995205000000, // 5 seconds later
+            2,
+            2,
+            true,
+        );
+
+        bar.update_with_trade(&trade2);
+        bar.compute_microstructure_features();
+
+        // Duration should be 5 seconds = 5,000,000 microseconds
+        assert_eq!(
+            bar.duration_us, 5_000_000,
+            "Duration should be 5,000,000 microseconds, got {}",
+            bar.duration_us
+        );
+    }
+
+    #[test]
+    fn test_trade_intensity() {
+        let trade1 = test_utils::create_test_agg_trade_with_range(
+            1,
+            "50000.0",
+            "1.0",
+            1640995200000000, // microseconds
+            1,
+            1,
+            false,
+        );
+
+        let mut bar = RangeBar::new(&trade1);
+
+        let trade2 = test_utils::create_test_agg_trade_with_range(
+            2,
+            "50050.0",
+            "1.0",
+            1640995202000000, // 2 seconds later
+            2,
+            2,
+            true,
+        );
+
+        bar.update_with_trade(&trade2);
+        bar.compute_microstructure_features();
+
+        // Trade intensity = 2 trades / 2 seconds = 1 trade/sec
+        assert!(
+            (bar.trade_intensity - 1.0).abs() < 0.01,
+            "Trade intensity should be ~1 trade/sec, got {}",
+            bar.trade_intensity
+        );
+    }
+
+    #[test]
+    fn test_aggression_ratio_capped() {
+        // Create a bar with only buy trades (no sells)
+        let buy_trade1 = test_utils::create_test_agg_trade_with_range(
+            1,
+            "50000.0",
+            "1.0",
+            1640995200000000,
+            1,
+            1,
+            false, // Buy
+        );
+
+        let mut bar = RangeBar::new(&buy_trade1);
+
+        let buy_trade2 = test_utils::create_test_agg_trade_with_range(
+            2,
+            "50050.0",
+            "1.0",
+            1640995201000000,
+            2,
+            2,
+            false, // Buy
+        );
+
+        bar.update_with_trade(&buy_trade2);
+        bar.compute_microstructure_features();
+
+        // Aggression ratio should be capped at 100 when no sells
+        assert_eq!(
+            bar.aggression_ratio, 100.0,
+            "Aggression ratio should be 100.0 when no sells, got {}",
+            bar.aggression_ratio
+        );
+    }
+
+    #[test]
+    fn test_aggregation_efficiency() {
+        // Create a bar with multiple individual trades per agg record
+        let trade = test_utils::create_test_agg_trade_with_range(
+            1,
+            "50000.0",
+            "5.0",
+            1640995200000000,
+            1,
+            10, // 10 individual trades in this agg record
+            false,
+        );
+
+        let mut bar = RangeBar::new(&trade);
+        bar.compute_microstructure_features();
+
+        // individual_trade_count / agg_record_count = 10 / 1 = 10.0
+        assert!(
+            (bar.aggregation_efficiency_f64 - 10.0).abs() < 0.01,
+            "Aggregation efficiency should be 10.0, got {}",
+            bar.aggregation_efficiency_f64
+        );
+    }
+
+    #[test]
+    fn test_vwap_close_deviation_zero_range() {
+        // Create a bar with high == low (zero range)
+        let trade = test_utils::create_test_agg_trade_with_range(
+            1,
+            "50000.0",
+            "1.0",
+            1640995200000000,
+            1,
+            1,
+            false,
+        );
+
+        let mut bar = RangeBar::new(&trade);
+        bar.compute_microstructure_features();
+
+        // VWAP close deviation should be 0 when high == low
+        assert_eq!(
+            bar.vwap_close_deviation, 0.0,
+            "VWAP close deviation should be 0 when high == low, got {}",
+            bar.vwap_close_deviation
+        );
+    }
+
+    #[test]
+    fn test_volume_per_trade() {
+        let trade1 = test_utils::create_test_agg_trade_with_range(
+            1,
+            "50000.0",
+            "3.0",
+            1640995200000000,
+            1,
+            1,
+            false,
+        );
+
+        let mut bar = RangeBar::new(&trade1);
+
+        let trade2 = test_utils::create_test_agg_trade_with_range(
+            2,
+            "50050.0",
+            "7.0",
+            1640995201000000,
+            2,
+            2,
+            true,
+        );
+
+        bar.update_with_trade(&trade2);
+        bar.compute_microstructure_features();
+
+        // volume_per_trade = 10 / 2 = 5.0
+        assert!(
+            (bar.volume_per_trade - 5.0).abs() < 0.01,
+            "Volume per trade should be 5.0, got {}",
+            bar.volume_per_trade
+        );
     }
 }

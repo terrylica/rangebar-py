@@ -114,6 +114,18 @@ fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject> {
     dict.set_item("individual_trade_count", bar.individual_trade_count)?;
     dict.set_item("agg_record_count", bar.agg_record_count)?;
 
+    // Microstructure features (Issue #25)
+    dict.set_item("duration_us", bar.duration_us)?;
+    dict.set_item("ofi", bar.ofi)?;
+    dict.set_item("vwap_close_deviation", bar.vwap_close_deviation)?;
+    dict.set_item("price_impact", bar.price_impact)?;
+    dict.set_item("kyle_lambda_proxy", bar.kyle_lambda_proxy)?;
+    dict.set_item("trade_intensity", bar.trade_intensity)?;
+    dict.set_item("volume_per_trade", bar.volume_per_trade)?;
+    dict.set_item("aggression_ratio", bar.aggression_ratio)?;
+    dict.set_item("aggregation_efficiency", bar.aggregation_efficiency_f64)?;
+    dict.set_item("turnover_imbalance", bar.turnover_imbalance)?;
+
     Ok(dict.into())
 }
 
@@ -333,6 +345,17 @@ fn dict_to_rangebar(_py: Python, dict: &Bound<PyDict>) -> PyResult<RangeBar> {
         vwap: FixedPoint(0),
         buy_turnover: 0,
         sell_turnover: 0,
+        // Microstructure features (Issue #25) - initialized to defaults
+        duration_us: 0,
+        ofi: 0.0,
+        vwap_close_deviation: 0.0,
+        price_impact: 0.0,
+        kyle_lambda_proxy: 0.0,
+        trade_intensity: 0.0,
+        volume_per_trade: 0.0,
+        aggression_ratio: 0.0,
+        aggregation_efficiency_f64: 0.0,
+        turnover_imbalance: 0.0,
     })
 }
 

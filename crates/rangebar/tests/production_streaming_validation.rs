@@ -301,6 +301,17 @@ fn create_test_bar(id: u64) -> RangeBar {
         vwap: base_price,
         buy_turnover: turnover / 2,
         sell_turnover: turnover / 2,
+        // Microstructure features (Issue #25)
+        duration_us: 0,
+        ofi: 0.0,
+        vwap_close_deviation: 0.0,
+        price_impact: 0.0,
+        kyle_lambda_proxy: 0.0,
+        trade_intensity: 0.0,
+        volume_per_trade: 0.0,
+        aggression_ratio: 0.0,
+        aggregation_efficiency_f64: 0.0,
+        turnover_imbalance: 0.0,
     }
 }
 
@@ -323,22 +334,28 @@ fn get_current_memory_kb() -> u64 {
         if let Ok(output) = std::process::Command::new("ps")
             .args(["-o", "rss=", "-p", &std::process::id().to_string()])
             .output()
-            && output.status.success()
-            && let Ok(rss_str) = String::from_utf8(output.stdout)
-            && let Ok(rss_kb) = rss_str.trim().parse::<u64>()
         {
-            return rss_kb;
+            if output.status.success() {
+                if let Ok(rss_str) = String::from_utf8(output.stdout) {
+                    if let Ok(rss_kb) = rss_str.trim().parse::<u64>() {
+                        return rss_kb;
+                    }
+                }
+            }
         }
 
         // Fallback: try with different ps format
         if let Ok(output) = std::process::Command::new("ps")
             .args(["-p", &std::process::id().to_string(), "-o", "rss="])
             .output()
-            && output.status.success()
-            && let Ok(rss_str) = String::from_utf8(output.stdout)
-            && let Ok(rss_kb) = rss_str.trim().parse::<u64>()
         {
-            return rss_kb;
+            if output.status.success() {
+                if let Ok(rss_str) = String::from_utf8(output.stdout) {
+                    if let Ok(rss_kb) = rss_str.trim().parse::<u64>() {
+                        return rss_kb;
+                    }
+                }
+            }
         }
     }
 

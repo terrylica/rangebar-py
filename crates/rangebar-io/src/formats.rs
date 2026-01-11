@@ -197,6 +197,17 @@ impl DataFrameConverter<Vec<RangeBar>> for Vec<RangeBar> {
                 vwap: FixedPoint(vwaps[i]),
                 buy_turnover: buy_turnovers[i] as i128,
                 sell_turnover: sell_turnovers[i] as i128,
+                // Microstructure features (Issue #25) - defaults for import
+                duration_us: 0,
+                ofi: 0.0,
+                vwap_close_deviation: 0.0,
+                price_impact: 0.0,
+                kyle_lambda_proxy: 0.0,
+                trade_intensity: 0.0,
+                volume_per_trade: 0.0,
+                aggression_ratio: 0.0,
+                aggregation_efficiency_f64: 0.0,
+                turnover_imbalance: 0.0,
             };
 
             // Validate range bar data integrity
@@ -456,6 +467,17 @@ mod tests {
             vwap: FixedPoint(105000000),
             buy_turnover: 630000000,
             sell_turnover: 420000000,
+            // Microstructure features (Issue #25)
+            duration_us: 0,
+            ofi: 0.0,
+            vwap_close_deviation: 0.0,
+            price_impact: 0.0,
+            kyle_lambda_proxy: 0.0,
+            trade_intensity: 0.0,
+            volume_per_trade: 0.0,
+            aggression_ratio: 0.0,
+            aggregation_efficiency_f64: 0.0,
+            turnover_imbalance: 0.0,
         }
     }
 

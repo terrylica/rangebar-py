@@ -441,6 +441,16 @@ def get_range_bars(
         - vwap: Volume-weighted average price
         - trade_count: Number of trades in bar
         - (Exness) spread_min, spread_max, spread_avg: Spread statistics
+        - (Issue #25) duration_us: Bar duration in microseconds
+        - (Issue #25) ofi: Order Flow Imbalance [-1, 1]
+        - (Issue #25) vwap_close_deviation: (close - vwap) / (high - low)
+        - (Issue #25) price_impact: Amihud-style illiquidity
+        - (Issue #25) kyle_lambda_proxy: Market depth proxy
+        - (Issue #25) trade_intensity: Trades per second
+        - (Issue #25) volume_per_trade: Average trade size
+        - (Issue #25) aggression_ratio: Buy/sell trade count ratio
+        - (Issue #25) aggregation_efficiency: Trade fragmentation proxy
+        - (Issue #25) turnover_imbalance: Dollar-weighted OFI [-1, 1]
     use_cache : bool, default=True
         Cache tick data locally in Parquet format.
     cache_dir : str or None, default=None
@@ -566,7 +576,8 @@ def get_n_range_bars(
     market : str, default="spot"
         Market type (Binance only): "spot", "futures-um", or "futures-cm"
     include_microstructure : bool, default=False
-        Include microstructure columns (vwap, buy_volume, sell_volume)
+        Include microstructure columns (vwap, buy_volume, sell_volume,
+        plus Issue #25 features: ofi, duration_us, price_impact, etc.)
     use_cache : bool, default=True
         Use ClickHouse cache for bar retrieval/storage
     fetch_if_missing : bool, default=True

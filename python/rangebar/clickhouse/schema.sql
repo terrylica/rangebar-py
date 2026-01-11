@@ -44,6 +44,18 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
     individual_trade_count UInt32 DEFAULT 0,
     agg_record_count UInt32 DEFAULT 0,
 
+    -- Microstructure features (Issue #25)
+    duration_us Int64 DEFAULT 0,
+    ofi Float64 DEFAULT 0,
+    vwap_close_deviation Float64 DEFAULT 0,
+    price_impact Float64 DEFAULT 0,
+    kyle_lambda_proxy Float64 DEFAULT 0,
+    trade_intensity Float64 DEFAULT 0,
+    volume_per_trade Float64 DEFAULT 0,
+    aggression_ratio Float64 DEFAULT 0,
+    aggregation_efficiency Float64 DEFAULT 1,
+    turnover_imbalance Float64 DEFAULT 0,
+
     -- Cache metadata
     cache_key String,                        -- Hash of full parameters
     rangebar_version String DEFAULT '',      -- Version for invalidation
