@@ -24,8 +24,10 @@ Basic usage:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum, IntEnum
 from typing import TYPE_CHECKING, Literal
 
 import pandas as pd
@@ -57,22 +59,33 @@ def _ensure_clickhouse_imports() -> None:
 
 
 __all__ = [
+    "ASSET_CLASS_MULTIPLIERS",
     "THRESHOLD_DECIMAL_MAX",
     "THRESHOLD_DECIMAL_MIN",
     "THRESHOLD_PRESETS",
     "TIER1_SYMBOLS",
+    "VALIDATION_PRESETS",
+    "AssetClass",
     "ContinuityError",
     "ContinuityWarning",
+    "GapInfo",
+    "GapTier",
     "PositionVerification",
     "PrecomputeProgress",
     "PrecomputeResult",
     "RangeBarProcessor",
+    "TierSummary",
+    "TierThresholds",
+    "TieredValidationResult",
+    "ValidationPreset",
     "__version__",
+    "detect_asset_class",
     "get_n_range_bars",
     "get_range_bars",
     "precompute_range_bars",
     "process_trades_to_dataframe",
     "validate_continuity",
+    "validate_continuity_tiered",
 ]
 
 # Continuity tolerance: 0.01% relative difference allowed (floating-point precision)
@@ -153,8 +166,9 @@ class PrecomputeResult:
         Total number of ticks processed
     elapsed_seconds : float
         Total elapsed time for precomputation
-    continuity_valid : bool
-        True if all bars pass continuity validation
+    continuity_valid : bool | None
+        True if all bars pass continuity validation, False if not,
+        None if validation was skipped
     cache_key : str
         Cache key for the generated bars
     """
@@ -166,7 +180,7 @@ class PrecomputeResult:
     total_bars: int
     total_ticks: int
     elapsed_seconds: float
-    continuity_valid: bool
+    continuity_valid: bool | None
     cache_key: str
 
 
@@ -1088,6 +1102,718 @@ THRESHOLD_PRESETS: dict[str, int] = {
 }
 
 
+# =============================================================================
+# Tiered Validation System (Issue #19 - v6.2.0+)
+# =============================================================================
+
+
+class GapTier(IntEnum):
+    """Gap severity classification for range bar continuity validation.
+
+    Tiers are based on empirical analysis of 30-month BTC data (Issue #19)
+    which identified 49 legitimate market microstructure events.
+
+    Examples
+    --------
+    >>> gap_pct = 0.05  # 0.05% gap
+    >>> if gap_pct < 0.00001:
+    ...     tier = GapTier.PRECISION
+    >>> elif gap_pct < 0.0001:
+    ...     tier = GapTier.NOISE
+    >>> elif gap_pct < 0.001:
+    ...     tier = GapTier.MARKET_MOVE
+    >>> elif gap_pct < threshold * 2:
+    ...     tier = GapTier.MICROSTRUCTURE
+    >>> else:
+    ...     tier = GapTier.SESSION_BOUNDARY
+    """
+
+    PRECISION = 1  # < 0.001% - Floating-point artifacts (always ignored)
+    NOISE = 2  # 0.001% - 0.01% - Tick-level noise (logged, not flagged)
+    MARKET_MOVE = 3  # 0.01% - 0.1% - Normal market movement (configurable)
+    MICROSTRUCTURE = 4  # > 0.1% - Flash crashes, liquidations (warning/error)
+    SESSION_BOUNDARY = 5  # > threshold*2 - Definite session break (always error)
+
+
+class AssetClass(Enum):
+    """Asset class for tolerance calibration.
+
+    Different asset classes have different typical gap magnitudes:
+    - Crypto: 24/7 markets, flash crashes possible, baseline tolerance
+    - Forex: Session-based, weekend gaps, tighter tolerance
+    - Equities: Overnight gaps, circuit breakers, looser tolerance
+
+    Examples
+    --------
+    >>> from rangebar import detect_asset_class, AssetClass
+    >>> detect_asset_class("BTCUSDT")
+    <AssetClass.CRYPTO: 'crypto'>
+    >>> detect_asset_class("EURUSD")
+    <AssetClass.FOREX: 'forex'>
+    """
+
+    CRYPTO = "crypto"  # 24/7 markets, flash crashes possible
+    FOREX = "forex"  # Session-based, weekend gaps
+    EQUITIES = "equities"  # Overnight gaps, circuit breakers
+    UNKNOWN = "unknown"  # Fallback to crypto defaults
+
+
+# Tolerance multipliers by asset class (relative to baseline)
+ASSET_CLASS_MULTIPLIERS: dict[AssetClass, float] = {
+    AssetClass.CRYPTO: 1.0,  # Baseline
+    AssetClass.FOREX: 0.5,  # Tighter (more stable)
+    AssetClass.EQUITIES: 1.5,  # Looser (overnight gaps)
+    AssetClass.UNKNOWN: 1.0,  # Default to crypto
+}
+
+# Common crypto base symbols for detection
+_CRYPTO_BASES: frozenset[str] = frozenset(
+    {
+        "BTC",
+        "ETH",
+        "BNB",
+        "SOL",
+        "XRP",
+        "ADA",
+        "DOGE",
+        "DOT",
+        "MATIC",
+        "AVAX",
+        "LINK",
+        "UNI",
+        "ATOM",
+        "LTC",
+        "ETC",
+        "XLM",
+        "ALGO",
+        "NEAR",
+        "FIL",
+        "APT",
+    }
+)
+
+# Common forex base/quote currencies
+_FOREX_CURRENCIES: frozenset[str] = frozenset(
+    {
+        "EUR",
+        "USD",
+        "GBP",
+        "JPY",
+        "CHF",
+        "AUD",
+        "NZD",
+        "CAD",
+        "SEK",
+        "NOK",
+    }
+)
+
+
+def detect_asset_class(symbol: str) -> AssetClass:
+    """Auto-detect asset class from symbol pattern.
+
+    Detection Rules:
+    - Crypto: Contains common crypto bases (BTC, ETH, BNB, SOL, etc.)
+             or ends with USDT/BUSD/USDC
+    - Forex: Standard 6-char pairs (EURUSD, GBPJPY, etc.)
+             or commodity symbols (XAU, XAG, BRENT, WTI)
+    - Unknown: Fallback for unrecognized patterns
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol (case-insensitive)
+
+    Returns
+    -------
+    AssetClass
+        Detected asset class
+
+    Examples
+    --------
+    >>> detect_asset_class("BTCUSDT")
+    <AssetClass.CRYPTO: 'crypto'>
+    >>> detect_asset_class("EURUSD")
+    <AssetClass.FOREX: 'forex'>
+    >>> detect_asset_class("AAPL")
+    <AssetClass.UNKNOWN: 'unknown'>
+    """
+    symbol_upper = symbol.upper()
+
+    # Crypto patterns: contains known base or ends with stablecoin
+    if any(base in symbol_upper for base in _CRYPTO_BASES):
+        return AssetClass.CRYPTO
+    if symbol_upper.endswith(("USDT", "BUSD", "USDC", "TUSD", "FDUSD")):
+        return AssetClass.CRYPTO
+
+    # Forex patterns: 6-char standard pairs (e.g., EURUSD)
+    forex_pair_length = 6
+    if len(symbol_upper) == forex_pair_length:
+        base, quote = symbol_upper[:3], symbol_upper[3:]
+        if base in _FOREX_CURRENCIES and quote in _FOREX_CURRENCIES:
+            return AssetClass.FOREX
+
+    # Commodities via forex brokers
+    if any(x in symbol_upper for x in ("XAU", "XAG", "BRENT", "WTI")):
+        return AssetClass.FOREX
+
+    return AssetClass.UNKNOWN
+
+
+@dataclass(frozen=True)
+class TierThresholds:
+    """Configurable boundaries between gap tiers (in percentage).
+
+    These thresholds define the boundaries for classifying gaps into tiers.
+    Values are percentages (e.g., 0.00001 = 0.001%).
+
+    Attributes
+    ----------
+    precision : float
+        Tier 1/2 boundary - gaps below this are floating-point artifacts
+    noise : float
+        Tier 2/3 boundary - gaps below this are tick-level noise
+    market_move : float
+        Tier 3/4 boundary - gaps below this are normal market movement
+    session_factor : float
+        Tier 5 multiplier - gaps > (threshold * factor) are session breaks
+
+    Examples
+    --------
+    >>> thresholds = TierThresholds()
+    >>> thresholds.precision
+    1e-05
+    >>> thresholds.noise
+    0.0001
+    """
+
+    precision: float = 0.00001  # 0.001% - Tier 1/2 boundary
+    noise: float = 0.0001  # 0.01% - Tier 2/3 boundary
+    market_move: float = 0.001  # 0.1% - Tier 3/4 boundary
+    session_factor: float = 2.0  # Tier 5 = threshold * factor
+
+
+@dataclass(frozen=True)
+class ValidationPreset:
+    """Immutable validation configuration preset.
+
+    Presets bundle tolerance, behavior mode, and tier thresholds into
+    named configurations for common use cases.
+
+    Attributes
+    ----------
+    tolerance_pct : float
+        Maximum gap percentage before flagging (e.g., 0.01 = 1%)
+    mode : Literal["error", "warn", "skip"]
+        Behavior on validation failure
+    tier_thresholds : TierThresholds
+        Boundaries for gap tier classification
+    asset_class : AssetClass | None
+        Override auto-detection if set
+    description : str
+        Human-readable description of the preset
+
+    Examples
+    --------
+    >>> preset = VALIDATION_PRESETS["research"]
+    >>> preset.tolerance_pct
+    0.02
+    >>> preset.mode
+    'warn'
+    """
+
+    tolerance_pct: float  # Max gap before flagging
+    mode: Literal["error", "warn", "skip"]  # Behavior on failure
+    tier_thresholds: TierThresholds = field(default_factory=TierThresholds)
+    asset_class: AssetClass | None = None  # Override auto-detection
+    description: str = ""
+
+
+# Named validation presets for common scenarios
+VALIDATION_PRESETS: dict[str, ValidationPreset] = {
+    # =========================================================================
+    # GENERAL-PURPOSE PRESETS
+    # =========================================================================
+    "permissive": ValidationPreset(
+        tolerance_pct=0.05,  # 5%
+        mode="warn",
+        description="Accept most microstructure events, warn on extreme gaps",
+    ),
+    "research": ValidationPreset(
+        tolerance_pct=0.02,  # 2%
+        mode="warn",
+        description="Standard exploratory analysis with monitoring",
+    ),
+    "standard": ValidationPreset(
+        tolerance_pct=0.01,  # 1%
+        mode="warn",
+        description="Balanced tolerance for production backtesting",
+    ),
+    "strict": ValidationPreset(
+        tolerance_pct=0.005,  # 0.5%
+        mode="error",
+        description="Strict validation for ML training data",
+    ),
+    "paranoid": ValidationPreset(
+        tolerance_pct=0.001,  # 0.1%
+        mode="error",
+        description="Maximum strictness (original v6.1.0 behavior)",
+    ),
+    # =========================================================================
+    # ASSET-CLASS SPECIFIC PRESETS
+    # =========================================================================
+    "crypto": ValidationPreset(
+        tolerance_pct=0.02,  # 2%
+        mode="warn",
+        asset_class=AssetClass.CRYPTO,
+        description="Crypto: Tuned for 24/7 markets with flash crashes",
+    ),
+    "forex": ValidationPreset(
+        tolerance_pct=0.01,  # 1%
+        mode="warn",
+        asset_class=AssetClass.FOREX,
+        description="Forex: Accounts for session boundaries",
+    ),
+    "equities": ValidationPreset(
+        tolerance_pct=0.03,  # 3%
+        mode="warn",
+        asset_class=AssetClass.EQUITIES,
+        description="Equities: Accounts for overnight gaps",
+    ),
+    # =========================================================================
+    # SPECIAL PRESETS
+    # =========================================================================
+    "skip": ValidationPreset(
+        tolerance_pct=0.0,
+        mode="skip",
+        description="Disable validation entirely",
+    ),
+    "audit": ValidationPreset(
+        tolerance_pct=0.002,  # 0.2%
+        mode="error",
+        description="Data quality audit mode",
+    ),
+}
+
+
+@dataclass
+class GapInfo:
+    """Details of a single gap between consecutive bars.
+
+    Attributes
+    ----------
+    bar_index : int
+        Index of the bar with the gap (0-based)
+    prev_close : float
+        Close price of the previous bar
+    curr_open : float
+        Open price of the current bar
+    gap_pct : float
+        Gap magnitude as percentage (e.g., 0.01 = 1%)
+    tier : GapTier
+        Severity classification of this gap
+    timestamp : pd.Timestamp | None
+        Timestamp of the bar (if available from DataFrame index)
+    """
+
+    bar_index: int
+    prev_close: float
+    curr_open: float
+    gap_pct: float
+    tier: GapTier
+    timestamp: pd.Timestamp | None = None
+
+
+@dataclass
+class TierSummary:
+    """Per-tier statistics for gap analysis.
+
+    Attributes
+    ----------
+    count : int
+        Number of gaps in this tier
+    max_gap_pct : float
+        Maximum gap percentage in this tier
+    avg_gap_pct : float
+        Average gap percentage in this tier (0 if count == 0)
+    """
+
+    count: int = 0
+    max_gap_pct: float = 0.0
+    avg_gap_pct: float = 0.0
+
+
+@dataclass
+class TieredValidationResult:
+    """Comprehensive validation result with tier breakdown.
+
+    This result provides detailed gap analysis categorized by severity tier,
+    enabling nuanced handling of different gap magnitudes.
+
+    Attributes
+    ----------
+    is_valid : bool
+        True if no SESSION_BOUNDARY gaps (tier 5) detected
+    bar_count : int
+        Total number of bars validated
+    gaps_by_tier : dict[GapTier, TierSummary]
+        Per-tier statistics
+    all_gaps : list[GapInfo]
+        All gaps above PRECISION tier (detailed list)
+    threshold_used_pct : float
+        Range bar threshold used for validation (as percentage)
+    asset_class_detected : AssetClass
+        Auto-detected or overridden asset class
+    preset_used : str | None
+        Name of preset used, or None for custom config
+
+    Examples
+    --------
+    >>> result = validate_continuity_tiered(df, validation="research")
+    >>> result.is_valid
+    True
+    >>> result.gaps_by_tier[GapTier.MICROSTRUCTURE].count
+    3
+    >>> result.has_microstructure_events
+    True
+    """
+
+    is_valid: bool
+    bar_count: int
+    gaps_by_tier: dict[GapTier, TierSummary]
+    all_gaps: list[GapInfo]
+    threshold_used_pct: float
+    asset_class_detected: AssetClass
+    preset_used: str | None
+
+    @property
+    def has_session_breaks(self) -> bool:
+        """True if any SESSION_BOUNDARY gaps detected."""
+        return self.gaps_by_tier[GapTier.SESSION_BOUNDARY].count > 0
+
+    @property
+    def has_microstructure_events(self) -> bool:
+        """True if any MICROSTRUCTURE gaps detected."""
+        return self.gaps_by_tier[GapTier.MICROSTRUCTURE].count > 0
+
+    def summary_dict(self) -> dict[str, int]:
+        """Return gap counts by tier name for logging.
+
+        Returns
+        -------
+        dict[str, int]
+            Mapping of tier name to gap count
+
+        Examples
+        --------
+        >>> result.summary_dict()
+        {'PRECISION': 0, 'NOISE': 5, 'MARKET_MOVE': 10, 'MICROSTRUCTURE': 3, 'SESSION_BOUNDARY': 0}
+        """
+        return {tier.name: summary.count for tier, summary in self.gaps_by_tier.items()}
+
+
+def _resolve_validation(
+    validation: str | dict | ValidationPreset,
+    symbol: str | None = None,
+) -> tuple[ValidationPreset, AssetClass, str | None]:
+    """Resolve validation parameter to preset and asset class.
+
+    Parameters
+    ----------
+    validation : str, dict, or ValidationPreset
+        Validation configuration:
+        - "auto": Auto-detect asset class from symbol
+        - str: Preset name ("research", "strict", "crypto", etc.)
+        - dict: Custom config {"tolerance_pct": 0.01, "mode": "warn"}
+        - ValidationPreset: Direct preset instance
+    symbol : str, optional
+        Symbol for asset class auto-detection
+
+    Returns
+    -------
+    tuple[ValidationPreset, AssetClass, str | None]
+        (resolved preset, detected asset class, preset name or None)
+
+    Raises
+    ------
+    ValueError
+        If unknown preset name provided
+    TypeError
+        If validation is not a supported type
+    """
+    # Handle "auto" - detect from symbol
+    if validation == "auto":
+        asset_class = detect_asset_class(symbol) if symbol else AssetClass.UNKNOWN
+        preset_name = (
+            asset_class.value if asset_class != AssetClass.UNKNOWN else "standard"
+        )
+        return VALIDATION_PRESETS[preset_name], asset_class, preset_name
+
+    # Handle preset string
+    if isinstance(validation, str):
+        if validation not in VALIDATION_PRESETS:
+            valid_presets = ", ".join(sorted(VALIDATION_PRESETS.keys()))
+            msg = f"Unknown validation preset: {validation!r}. Valid presets: {valid_presets}"
+            raise ValueError(msg)
+        preset = VALIDATION_PRESETS[validation]
+        asset_class = preset.asset_class or (
+            detect_asset_class(symbol) if symbol else AssetClass.UNKNOWN
+        )
+        return preset, asset_class, validation
+
+    # Handle dict
+    if isinstance(validation, dict):
+        tier_thresholds = validation.get("tier_thresholds", TierThresholds())
+        if isinstance(tier_thresholds, dict):
+            tier_thresholds = TierThresholds(**tier_thresholds)
+        preset = ValidationPreset(
+            tolerance_pct=validation["tolerance_pct"],
+            mode=validation["mode"],
+            tier_thresholds=tier_thresholds,
+            description="Custom",
+        )
+        asset_class = detect_asset_class(symbol) if symbol else AssetClass.UNKNOWN
+        return preset, asset_class, None
+
+    # Handle ValidationPreset directly
+    if isinstance(validation, ValidationPreset):
+        asset_class = validation.asset_class or (
+            detect_asset_class(symbol) if symbol else AssetClass.UNKNOWN
+        )
+        return validation, asset_class, None
+
+    msg = f"Invalid validation type: {type(validation).__name__}. Expected str, dict, or ValidationPreset"
+    raise TypeError(msg)
+
+
+def _classify_gap(
+    gap_pct: float,
+    tier_thresholds: TierThresholds,
+    session_threshold_pct: float,
+) -> GapTier:
+    """Classify a gap into a severity tier.
+
+    Parameters
+    ----------
+    gap_pct : float
+        Gap magnitude as percentage (absolute value)
+    tier_thresholds : TierThresholds
+        Boundaries between tiers
+    session_threshold_pct : float
+        Session boundary threshold (threshold * session_factor)
+
+    Returns
+    -------
+    GapTier
+        Severity classification
+    """
+    if gap_pct < tier_thresholds.precision:
+        return GapTier.PRECISION
+    if gap_pct < tier_thresholds.noise:
+        return GapTier.NOISE
+    if gap_pct < tier_thresholds.market_move:
+        return GapTier.MARKET_MOVE
+    if gap_pct < session_threshold_pct:
+        return GapTier.MICROSTRUCTURE
+    return GapTier.SESSION_BOUNDARY
+
+
+def validate_continuity_tiered(
+    df: pd.DataFrame,
+    threshold_decimal_bps: int = 250,
+    *,
+    validation: str | dict | ValidationPreset = "standard",
+    symbol: str | None = None,
+) -> TieredValidationResult:
+    """Validate range bar continuity with tiered gap classification.
+
+    This function categorizes gaps by severity tier, enabling nuanced
+    handling of different gap magnitudes. It's the opt-in v6.2.0 API
+    that will become the default in v7.0.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Range bar DataFrame with OHLCV columns
+    threshold_decimal_bps : int, default=250
+        Range bar threshold (250 = 0.25% = 25 basis points)
+    validation : str, dict, or ValidationPreset, default="standard"
+        Validation configuration:
+        - "auto": Auto-detect asset class from symbol
+        - str: Preset name ("research", "strict", "crypto", etc.)
+        - dict: Custom config {"tolerance_pct": 0.01, "mode": "warn"}
+        - ValidationPreset: Direct preset instance
+    symbol : str, optional
+        Symbol for asset class auto-detection. If None and validation is
+        "auto", uses "standard" preset.
+
+    Returns
+    -------
+    TieredValidationResult
+        Comprehensive result with per-tier statistics
+
+    Raises
+    ------
+    ContinuityError
+        If validation mode is "error" and tolerance exceeded
+    ContinuityWarning
+        If validation mode is "warn" and tolerance exceeded (via warnings module)
+
+    Examples
+    --------
+    >>> result = validate_continuity_tiered(df, validation="research")
+    >>> print(f"Valid: {result.is_valid}, Microstructure events: {result.has_microstructure_events}")
+    Valid: True, Microstructure events: True
+
+    >>> # Custom configuration
+    >>> result = validate_continuity_tiered(
+    ...     df,
+    ...     validation={"tolerance_pct": 0.015, "mode": "warn"},
+    ...     symbol="BTCUSDT",
+    ... )
+
+    >>> # Auto-detect asset class
+    >>> result = validate_continuity_tiered(df, validation="auto", symbol="EURUSD")
+    >>> result.asset_class_detected
+    <AssetClass.FOREX: 'forex'>
+    """
+    import warnings
+
+    min_bars_for_gap = 2  # Need at least 2 bars to have a gap
+    if len(df) < min_bars_for_gap:
+        # No gaps possible with fewer than 2 bars
+        return TieredValidationResult(
+            is_valid=True,
+            bar_count=len(df),
+            gaps_by_tier={tier: TierSummary() for tier in GapTier},
+            all_gaps=[],
+            threshold_used_pct=threshold_decimal_bps / 10000.0,
+            asset_class_detected=(
+                detect_asset_class(symbol) if symbol else AssetClass.UNKNOWN
+            ),
+            preset_used=validation if isinstance(validation, str) else None,
+        )
+
+    # Resolve validation configuration
+    preset, asset_class, preset_name = _resolve_validation(validation, symbol)
+
+    # Skip validation if mode is "skip"
+    if preset.mode == "skip":
+        return TieredValidationResult(
+            is_valid=True,
+            bar_count=len(df),
+            gaps_by_tier={tier: TierSummary() for tier in GapTier},
+            all_gaps=[],
+            threshold_used_pct=threshold_decimal_bps / 10000.0,
+            asset_class_detected=asset_class,
+            preset_used=preset_name,
+        )
+
+    # Calculate session boundary threshold
+    threshold_pct = threshold_decimal_bps / 10000.0  # Convert to percentage
+    session_threshold_pct = threshold_pct * preset.tier_thresholds.session_factor
+
+    # Analyze gaps
+    all_gaps: list[GapInfo] = []
+    tier_gaps: dict[GapTier, list[float]] = {tier: [] for tier in GapTier}
+
+    # Get Close and Open columns
+    close_col = "Close" if "Close" in df.columns else "close"
+    open_col = "Open" if "Open" in df.columns else "open"
+
+    closes = df[close_col].to_numpy()
+    opens = df[open_col].to_numpy()
+    index = df.index
+
+    for i in range(1, len(df)):
+        prev_close = float(closes[i - 1])
+        curr_open = float(opens[i])
+
+        if prev_close == 0:
+            continue  # Skip division by zero
+
+        gap_pct = abs(curr_open - prev_close) / prev_close
+        tier = _classify_gap(gap_pct, preset.tier_thresholds, session_threshold_pct)
+
+        tier_gaps[tier].append(gap_pct)
+
+        # Record non-PRECISION gaps for detailed list
+        if tier != GapTier.PRECISION:
+            timestamp = index[i] if isinstance(index, pd.DatetimeIndex) else None
+            all_gaps.append(
+                GapInfo(
+                    bar_index=i,
+                    prev_close=prev_close,
+                    curr_open=curr_open,
+                    gap_pct=gap_pct,
+                    tier=tier,
+                    timestamp=timestamp,
+                )
+            )
+
+    # Build tier summaries
+    gaps_by_tier: dict[GapTier, TierSummary] = {}
+    for tier in GapTier:
+        gaps = tier_gaps[tier]
+        if gaps:
+            gaps_by_tier[tier] = TierSummary(
+                count=len(gaps),
+                max_gap_pct=max(gaps),
+                avg_gap_pct=sum(gaps) / len(gaps),
+            )
+        else:
+            gaps_by_tier[tier] = TierSummary()
+
+    # Determine validity: no SESSION_BOUNDARY gaps
+    is_valid = gaps_by_tier[GapTier.SESSION_BOUNDARY].count == 0
+
+    # Check tolerance threshold
+    tolerance_exceeded = any(
+        gap.gap_pct > preset.tolerance_pct
+        for gap in all_gaps
+        if gap.tier >= GapTier.MARKET_MOVE  # Only check MARKET_MOVE and above
+    )
+
+    result = TieredValidationResult(
+        is_valid=is_valid,
+        bar_count=len(df),
+        gaps_by_tier=gaps_by_tier,
+        all_gaps=all_gaps,
+        threshold_used_pct=threshold_pct,
+        asset_class_detected=asset_class,
+        preset_used=preset_name,
+    )
+
+    # Handle tolerance violations based on mode
+    if tolerance_exceeded:
+        violating_gaps = [g for g in all_gaps if g.gap_pct > preset.tolerance_pct]
+        max_gap = max(violating_gaps, key=lambda g: g.gap_pct)
+
+        msg = (
+            f"Continuity tolerance exceeded: {len(violating_gaps)} gap(s) > {preset.tolerance_pct:.4%}. "
+            f"Max gap: {max_gap.gap_pct:.4%} at bar {max_gap.bar_index}. "
+            f"Tier breakdown: {result.summary_dict()}"
+        )
+
+        if preset.mode == "error":
+            discontinuities = [
+                {
+                    "bar_index": g.bar_index,
+                    "prev_close": g.prev_close,
+                    "curr_open": g.curr_open,
+                    "gap_pct": g.gap_pct,
+                    "tier": g.tier.name,
+                }
+                for g in violating_gaps
+            ]
+            raise ContinuityError(msg, discontinuities)
+
+        if preset.mode == "warn":
+            warnings.warn(msg, ContinuityWarning, stacklevel=2)
+
+    return result
+
+
 def get_range_bars(
     symbol: str,
     start_date: str,
@@ -1391,7 +2117,8 @@ def precompute_range_bars(
     invalidate_existing: str = "smart",
     progress_callback: Callable[[PrecomputeProgress], None] | None = None,
     include_microstructure: bool = False,  # noqa: ARG001 - reserved for future use
-    validate_on_complete: bool = True,
+    validate_on_complete: str = "error",
+    continuity_tolerance_pct: float = 0.001,
     cache_dir: str | None = None,
 ) -> PrecomputeResult:
     """Precompute continuous range bars for a date range (single-pass, guaranteed continuity).
@@ -1425,8 +2152,15 @@ def precompute_range_bars(
         Optional callback for progress updates
     include_microstructure : bool, default=False
         Include order flow metrics (buy_volume, sell_volume, vwap)
-    validate_on_complete : bool, default=True
-        Validate continuity after precomputation
+    validate_on_complete : str, default="error"
+        Continuity validation mode after precomputation:
+        - "error": Raise ContinuityError if discontinuities found
+        - "warn": Log warning but continue (sets continuity_valid=False)
+        - "skip": Skip validation entirely (continuity_valid=None)
+    continuity_tolerance_pct : float, default=0.001
+        Maximum allowed price gap percentage for continuity validation.
+        Default 0.1% (0.001) accommodates market microstructure events.
+        The total allowed gap is threshold_pct + continuity_tolerance_pct.
     cache_dir : str or None, default=None
         Custom cache directory for tick data
 
@@ -1475,6 +2209,10 @@ def precompute_range_bars(
     # Validate parameters
     if invalidate_existing not in ("overlap", "full", "none", "smart"):
         msg = f"Invalid invalidate_existing: {invalidate_existing!r}. Must be 'overlap', 'full', 'none', or 'smart'"
+        raise ValueError(msg)
+
+    if validate_on_complete not in ("error", "warn", "skip"):
+        msg = f"Invalid validate_on_complete: {validate_on_complete!r}. Must be 'error', 'warn', or 'skip'"
         raise ValueError(msg)
 
     if not THRESHOLD_DECIMAL_MIN <= threshold_decimal_bps <= THRESHOLD_DECIMAL_MAX:
@@ -1759,14 +2497,32 @@ def precompute_range_bars(
     if not final_bars.empty:
         cache.store_bars_bulk(symbol, threshold_decimal_bps, final_bars)
 
-    # Validate continuity (use correct threshold for gap detection)
-    continuity_result = validate_continuity(
-        final_bars, threshold_decimal_bps=threshold_decimal_bps
-    )
+    # Validate continuity (Issue #19: configurable tolerance and validation mode)
+    continuity_valid: bool | None = None
 
-    if validate_on_complete and not continuity_result["is_valid"]:
-        msg = f"Found {continuity_result['discontinuity_count']} discontinuities in precomputed bars"
-        raise ContinuityError(msg, continuity_result["discontinuities"])
+    if validate_on_complete == "skip":
+        # Skip validation entirely
+        continuity_valid = None
+    else:
+        continuity_result = validate_continuity(
+            final_bars,
+            tolerance_pct=continuity_tolerance_pct,
+            threshold_decimal_bps=threshold_decimal_bps,
+        )
+        continuity_valid = continuity_result["is_valid"]
+
+        if not continuity_valid:
+            if validate_on_complete == "error":
+                msg = f"Found {continuity_result['discontinuity_count']} discontinuities in precomputed bars"
+                raise ContinuityError(msg, continuity_result["discontinuities"])
+            if validate_on_complete == "warn":
+                import warnings
+
+                msg = (
+                    f"Found {continuity_result['discontinuity_count']} discontinuities "
+                    f"in precomputed bars (tolerance: {continuity_tolerance_pct:.4%})"
+                )
+                warnings.warn(msg, stacklevel=2)
 
     return PrecomputeResult(
         symbol=symbol,
@@ -1776,7 +2532,7 @@ def precompute_range_bars(
         total_bars=len(final_bars),
         total_ticks=total_ticks,
         elapsed_seconds=time.time() - start_time,
-        continuity_valid=continuity_result["is_valid"],
+        continuity_valid=continuity_valid,
         cache_key=f"{symbol}_{threshold_decimal_bps}",
     )
 
