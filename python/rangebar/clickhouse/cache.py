@@ -313,8 +313,8 @@ class RangeBarCache(ClickHouseClientMixin):
         if df.empty:
             return None
 
-        # Convert to DatetimeIndex
-        df["timestamp"] = pd.to_datetime(df["timestamp_ms"], unit="ms")
+        # Convert to TZ-aware UTC DatetimeIndex (Issue #20: consistent timestamps)
+        df["timestamp"] = pd.to_datetime(df["timestamp_ms"], unit="ms", utc=True)
         df = df.set_index("timestamp")
         df = df.drop(columns=["timestamp_ms"])
 
@@ -676,8 +676,8 @@ class RangeBarCache(ClickHouseClientMixin):
         # Reverse to chronological order (oldest first)
         df = df.iloc[::-1].reset_index(drop=True)
 
-        # Convert to DatetimeIndex
-        df["timestamp"] = pd.to_datetime(df["timestamp_ms"], unit="ms")
+        # Convert to TZ-aware UTC DatetimeIndex (Issue #20: match get_range_bars output)
+        df["timestamp"] = pd.to_datetime(df["timestamp_ms"], unit="ms", utc=True)
         df = df.set_index("timestamp")
         df = df.drop(columns=["timestamp_ms"])
 
@@ -768,6 +768,96 @@ class RangeBarCache(ClickHouseClientMixin):
         )
         # ClickHouse returns 0 for max() on empty result
         return int(result) if result and result > 0 else None
+
+    def get_bars_by_timestamp_range(
+        self,
+        symbol: str,
+        threshold_decimal_bps: int,
+        start_ts: int,
+        end_ts: int,
+        include_microstructure: bool = False,
+    ) -> pd.DataFrame | None:
+        """Get bars within a timestamp range (for get_range_bars cache lookup).
+
+        Unlike get_range_bars() which requires exact CacheKey match,
+        this method queries by timestamp range, returning any cached bars
+        that fall within [start_ts, end_ts].
+
+        Parameters
+        ----------
+        symbol : str
+            Trading symbol (e.g., "BTCUSDT")
+        threshold_decimal_bps : int
+            Threshold in decimal basis points
+        start_ts : int
+            Start timestamp in milliseconds (inclusive)
+        end_ts : int
+            End timestamp in milliseconds (inclusive)
+        include_microstructure : bool
+            If True, includes vwap, buy_volume, sell_volume columns
+
+        Returns
+        -------
+        pd.DataFrame | None
+            OHLCV DataFrame with TZ-aware UTC timestamps if found, None otherwise.
+            Returns None if no bars exist in the range.
+        """
+        # Build column list
+        base_cols = """
+            timestamp_ms,
+            open as Open,
+            high as High,
+            low as Low,
+            close as Close,
+            volume as Volume
+        """
+        if include_microstructure:
+            base_cols += """,
+            vwap,
+            buy_volume,
+            sell_volume
+        """
+
+        query = f"""
+            SELECT {base_cols}
+            FROM rangebar_cache.range_bars
+            WHERE symbol = {{symbol:String}}
+              AND threshold_decimal_bps = {{threshold:UInt32}}
+              AND timestamp_ms >= {{start_ts:Int64}}
+              AND timestamp_ms <= {{end_ts:Int64}}
+            ORDER BY timestamp_ms
+        """
+
+        df = self.client.query_df_arrow(
+            query,
+            parameters={
+                "symbol": symbol,
+                "threshold": threshold_decimal_bps,
+                "start_ts": start_ts,
+                "end_ts": end_ts,
+            },
+        )
+
+        if df.empty:
+            return None
+
+        # Convert to TZ-aware UTC DatetimeIndex (matches get_range_bars output)
+        df["timestamp"] = pd.to_datetime(df["timestamp_ms"], unit="ms", utc=True)
+        df = df.set_index("timestamp")
+        df = df.drop(columns=["timestamp_ms"])
+
+        # Convert PyArrow dtypes to numpy float64 for compatibility
+        ohlcv_cols = ["Open", "High", "Low", "Close", "Volume"]
+        for col in ohlcv_cols:
+            if col in df.columns:
+                df[col] = df[col].astype("float64")
+
+        if include_microstructure:
+            for col in ["vwap", "buy_volume", "sell_volume"]:
+                if col in df.columns:
+                    df[col] = df[col].astype("float64")
+
+        return df
 
     def store_bars_bulk(
         self,

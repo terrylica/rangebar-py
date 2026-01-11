@@ -2051,7 +2051,32 @@ def get_range_bars(
     end_ts = int((end_dt.timestamp() + 86399) * 1000)  # End of day
 
     # -------------------------------------------------------------------------
-    # Initialize storage
+    # Check ClickHouse bar cache first (Issue #21: fast path for precomputed bars)
+    # -------------------------------------------------------------------------
+    if use_cache:
+        try:
+            from .clickhouse import RangeBarCache
+
+            with RangeBarCache() as cache:
+                cached_bars = cache.get_bars_by_timestamp_range(
+                    symbol=symbol,
+                    threshold_decimal_bps=threshold_decimal_bps,
+                    start_ts=start_ts,
+                    end_ts=end_ts,
+                    include_microstructure=include_microstructure,
+                )
+                if cached_bars is not None and len(cached_bars) > 0:
+                    # Fast path: return precomputed bars from ClickHouse (~50ms)
+                    return cached_bars
+        except ImportError:
+            # ClickHouse not available, fall through to tick processing
+            pass
+        except Exception:
+            # ClickHouse connection failed, fall through to tick processing
+            pass
+
+    # -------------------------------------------------------------------------
+    # Initialize storage (Tier 1: local Parquet ticks)
     # -------------------------------------------------------------------------
     storage = TickStorage(cache_dir=Path(cache_dir) if cache_dir else None)
 
@@ -2059,7 +2084,7 @@ def get_range_bars(
     cache_symbol = f"{source}_{market_normalized}_{symbol}".upper()
 
     # -------------------------------------------------------------------------
-    # Fetch tick data (cache or network)
+    # Fetch tick data (cache or network) - slow path
     # -------------------------------------------------------------------------
     tick_data: pl.DataFrame
 
