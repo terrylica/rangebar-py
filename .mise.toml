@@ -231,15 +231,6 @@ run = "maturin sdist"
 description = "Build macOS ARM64 wheel (native)"
 run = "maturin build --profile wheel"
 
-[tasks."release:macos-x86"]
-description = "Build macOS x86_64 wheel (cross-compile)"
-run = """
-if ! rustup target list --installed | grep -q x86_64-apple-darwin; then
-    rustup target add x86_64-apple-darwin
-fi
-maturin build --profile wheel --target x86_64-apple-darwin
-"""
-
 [tasks."release:linux-preflight"]
 description = "Verify Linux build host availability"
 run = """
@@ -320,11 +311,9 @@ description = "Build all platform wheels (Phase 3)"
 run = """
 echo "=== BUILD ALL PLATFORMS ==="
 mise run release:macos-arm64
-mise run release:macos-x86
-mise run release:sdist
 mise run release:linux
 echo "OK: All wheels built"
-ls -la dist/*.whl dist/*.tar.gz 2>/dev/null || true
+ls -la dist/*.whl 2>/dev/null || true
 """
 
 [tasks."release:postflight"]
