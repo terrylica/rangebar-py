@@ -487,6 +487,60 @@ class RangeBarProcessor:
 
         return self._processor.process_trades(trades)
 
+    def process_trades_streaming(
+        self, trades: list[dict[str, int | float]]
+    ) -> list[dict[str, str | float | int]]:
+        """Process trades into range bars (streaming mode - preserves state).
+
+        Unlike `process_trades()`, this method maintains processor state across
+        calls, enabling continuous processing across multiple batches (e.g.,
+        month-by-month or chunk-by-chunk processing).
+
+        Use this method for:
+        - Multi-month precomputation (Issue #16)
+        - Chunked processing of large datasets
+        - Any scenario requiring bar continuity across batches
+
+        Parameters
+        ----------
+        trades : List[Dict]
+            List of trade dictionaries with keys:
+            - timestamp: int (milliseconds since epoch)
+            - price: float
+            - quantity: float (or 'volume')
+
+            Optional keys:
+            - agg_trade_id: int
+            - first_trade_id: int
+            - last_trade_id: int
+            - is_buyer_maker: bool
+
+        Returns
+        -------
+        List[Dict]
+            List of range bar dictionaries (only completed bars).
+            Same structure as process_trades().
+
+        Notes
+        -----
+        State persistence: The processor remembers the incomplete bar from
+        the previous call. When new trades arrive, they continue building
+        that bar until threshold breach, ensuring continuity.
+
+        Examples
+        --------
+        >>> processor = RangeBarProcessor(250)
+        >>> # First batch (month 1)
+        >>> bars1 = processor.process_trades_streaming(month1_trades)
+        >>> # Second batch (month 2) - continues from month 1's state
+        >>> bars2 = processor.process_trades_streaming(month2_trades)
+        >>> # No discontinuity at month boundary
+        """
+        if not trades:
+            return []
+
+        return self._processor.process_trades_streaming(trades)
+
     def to_dataframe(self, bars: list[dict[str, str | float | int]]) -> pd.DataFrame:
         """Convert range bars to pandas DataFrame (backtesting.py compatible).
 
@@ -1588,9 +1642,9 @@ def precompute_range_bars(
                         )
                     )
 
-                # Stream directly to Rust processor (maintains state for continuity)
+                # Stream directly to Rust processor (Issue #16: use streaming mode)
                 chunk = tick_chunk.to_dicts()
-                bars = processor.process_trades(chunk)
+                bars = processor.process_trades_streaming(chunk)
                 if bars:
                     bars_df = processor.to_dataframe(bars)
                     all_bars.append(bars_df)
@@ -1667,8 +1721,8 @@ def precompute_range_bars(
                         chunk_df = tick_data.slice(chunk_start, chunk_end - chunk_start)
                         chunk = chunk_df.to_dicts()
 
-                        # Stream to Rust processor (maintains state)
-                        bars = processor.process_trades(chunk)
+                        # Stream to Rust processor (Issue #16: use streaming mode)
+                        bars = processor.process_trades_streaming(chunk)
                         if bars:
                             bars_df = processor.to_dataframe(bars)
                             all_bars.append(bars_df)

@@ -481,7 +481,11 @@ impl PyRangeBarProcessor {
         })
     }
 
-    /// Process aggregated trades into range bars
+    /// Process aggregated trades into range bars (batch mode - resets state)
+    ///
+    /// WARNING: This method resets processor state on each call. For streaming
+    /// across multiple batches (e.g., month-by-month processing), use
+    /// `process_trades_streaming()` instead.
     ///
     /// Args:
     ///     trades: List of trade dicts with keys: timestamp (ms), price, quantity
@@ -516,6 +520,55 @@ impl PyRangeBarProcessor {
 
         // Convert RangeBars to Python dicts
         bars.iter().map(|bar| rangebar_to_dict(py, bar)).collect()
+    }
+
+    /// Process aggregated trades into range bars (streaming mode - preserves state)
+    ///
+    /// Unlike `process_trades()`, this method maintains processor state across
+    /// calls, enabling continuous processing across multiple batches (e.g.,
+    /// month-by-month or chunk-by-chunk processing).
+    ///
+    /// Use this method for:
+    /// - Multi-month precomputation (Issue #16)
+    /// - Chunked processing of large datasets
+    /// - Any scenario requiring bar continuity across batches
+    ///
+    /// Args:
+    ///     trades: List of trade dicts with keys: timestamp (ms), price, quantity
+    ///
+    /// Returns:
+    ///     List of range bar dicts with OHLCV data (only completed bars)
+    ///
+    /// Raises:
+    ///     `KeyError`: If required trade fields are missing
+    ///     `RuntimeError`: If trade processing fails
+    fn process_trades_streaming(
+        &mut self,
+        py: Python,
+        trades: Vec<Bound<PyDict>>,
+    ) -> PyResult<Vec<PyObject>> {
+        if trades.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Convert Python dicts to AggTrade
+        let agg_trades: Vec<AggTrade> = trades
+            .iter()
+            .enumerate()
+            .map(|(i, trade_dict)| dict_to_agg_trade(py, trade_dict, i))
+            .collect::<PyResult<Vec<_>>>()?;
+
+        // Process each trade individually to maintain state (Issue #16 fix)
+        let mut bars = Vec::new();
+        for trade in agg_trades {
+            match self.processor.process_single_trade(trade) {
+                Ok(Some(bar)) => bars.push(rangebar_to_dict(py, &bar)?),
+                Ok(None) => {} // No bar completed yet
+                Err(e) => return Err(PyRuntimeError::new_err(format!("Processing failed: {e}"))),
+            }
+        }
+
+        Ok(bars)
     }
 
     /// Create checkpoint for cross-file continuation
