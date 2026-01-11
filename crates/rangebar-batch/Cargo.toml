@@ -14,8 +14,8 @@ keywords = ["finance", "trading", "batch", "processing"]
 categories = ["finance", "algorithms"]
 
 [dependencies]
-rangebar-core = { path = "../rangebar-core", version = "6.0" }
-rangebar-io = { path = "../rangebar-io", version = "6.0", features = ["parquet"] }
+rangebar-core = { path = "../rangebar-core", version = "7.0" }
+rangebar-io = { path = "../rangebar-io", version = "7.0", features = ["parquet"] }
 
 # Data processing
 polars.workspace = true

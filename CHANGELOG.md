@@ -1,3 +1,40 @@
+# [7.0.0](https://github.com/terrylica/rangebar-py/compare/v6.2.1...v7.0.0) (2026-01-11)
+
+
+* feat!: add 10 market microstructure features computed in Rust (Issue [#25](https://github.com/terrylica/rangebar-py/issues/25)) ([be4be75](https://github.com/terrylica/rangebar-py/commit/be4be75c691d39863c25ccb297004f956e66fde7))
+
+
+### BREAKING CHANGES
+
+* RangeBar struct extended with 10 new fields. Cached bars
+must be re-precomputed to populate new columns.
+
+Microstructure features added (all computed at bar finalization):
+- duration_us: Bar duration in microseconds
+- ofi: Order Flow Imbalance [-1, 1]
+- vwap_close_deviation: (close - vwap) / (high - low)
+- price_impact: Amihud-style illiquidity ratio
+- kyle_lambda_proxy: Market depth proxy
+- trade_intensity: Trades per second
+- volume_per_trade: Average trade size
+- aggression_ratio: Buy/sell trade count ratio [0, 100]
+- aggregation_efficiency_f64: Trade fragmentation proxy
+- turnover_imbalance: Dollar-weighted OFI [-1, 1]
+
+Implementation:
+- Extended RangeBar struct with 10 new fields (#[serde(default)])
+- Added compute_microstructure_features() method in types.rs
+- Updated processor.rs to compute features at bar finalization
+- Updated PyO3 bindings to expose all fields to Python
+- Updated ClickHouse schema with 10 new columns (DEFAULT values)
+- Updated cache.py with new column handling
+- Created tiered validation framework (tier1.py, tier2.py)
+- Added 11 Rust unit tests, 10 Python integration tests
+- Created GPU workstation validation script
+
+Academic backing: Kyle (1985), Cont et al. (2014), Amihud (2002),
+Easley et al. (2012), Welford (1962).
+
 ## [6.2.1](https://github.com/terrylica/rangebar-py/compare/v6.2.0...v6.2.1) (2026-01-11)
 
 
