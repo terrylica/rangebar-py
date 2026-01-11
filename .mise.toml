@@ -8,6 +8,17 @@ BENCH_DATA_DIR = "{{ env.PWD }}/bench-data"
 PROFILE_DATA_DIR = "{{ env.PWD }}/profile-data"
 
 # =============================================================================
+# Linux Build Configuration (SSH-based remote build)
+# =============================================================================
+LINUX_BUILD_HOST = "bigblack"
+LINUX_BUILD_USER = "tca"
+LINUX_BUILD_DIR = "/tmp/rangebar-py-build"
+LINUX_MATURIN_PROFILE = "wheel"
+LINUX_MATURIN_COMPAT = "manylinux_2_17"
+LINUX_MIN_DISK_GB = "5"
+LINUX_MIN_RUST_VERSION = "1.90"
+
+# =============================================================================
 # Tools - managed by mise (NOT separate cargo install)
 # =============================================================================
 
@@ -212,6 +223,122 @@ run = "maturin build --release --profile wheel"
 description = "Build source distribution"
 run = "maturin sdist"
 
+# =============================================================================
+# Platform-Specific Build Tasks (Issue #17)
+# =============================================================================
+
+[tasks."release:macos-arm64"]
+description = "Build macOS ARM64 wheel (native)"
+run = "maturin build --profile wheel"
+
+[tasks."release:macos-x86"]
+description = "Build macOS x86_64 wheel (cross-compile)"
+run = """
+if ! rustup target list --installed | grep -q x86_64-apple-darwin; then
+    rustup target add x86_64-apple-darwin
+fi
+maturin build --profile wheel --target x86_64-apple-darwin
+"""
+
+[tasks."release:linux-preflight"]
+description = "Verify Linux build host availability"
+run = """
+echo "=== Linux Build Preflight ==="
+if ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" "echo connected" >/dev/null 2>&1; then
+    echo "FAIL: Cannot connect to $LINUX_BUILD_USER@$LINUX_BUILD_HOST"
+    exit 1
+fi
+echo "OK: SSH connectivity verified"
+
+REMOTE_RUST=$(ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" "~/.cargo/bin/rustc --version 2>/dev/null | cut -d' ' -f2" || echo "not found")
+echo "OK: Remote Rust version: $REMOTE_RUST"
+"""
+
+[tasks."release:linux"]
+description = "Build Linux x86_64 wheel on remote host (Docker manylinux)"
+depends = ["release:linux-preflight"]
+run = """
+echo "=== Building Linux x86_64 Wheel (Docker manylinux) ==="
+PROJECT_DIR="$(pwd)"
+REMOTE_DIR="${LINUX_BUILD_DIR}-$$"
+
+cleanup() { ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" "rm -rf $REMOTE_DIR" 2>/dev/null || true; }
+trap cleanup EXIT
+
+ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" "mkdir -p $REMOTE_DIR"
+
+rsync -az --delete \
+    --exclude 'target/' --exclude 'dist/' --exclude '.git/' \
+    --exclude '__pycache__/' --exclude '*.egg-info/' --exclude 'node_modules/' \
+    "$PROJECT_DIR/" "$LINUX_BUILD_USER@$LINUX_BUILD_HOST:$REMOTE_DIR/"
+
+# Build using manylinux Docker container for glibc compatibility
+ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" 'cd '"$REMOTE_DIR"' && docker run --rm -v $(pwd):/io -w /io quay.io/pypa/manylinux2014_x86_64 bash -c "yum install -y openssl-devel perl-IPC-Cmd && curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && /opt/python/cp311-cp311/bin/pip install maturin && /opt/python/cp311-cp311/bin/maturin build --profile wheel --compatibility manylinux2014 -i /opt/python/cp311-cp311/bin/python"'
+
+mkdir -p dist/
+scp "$LINUX_BUILD_USER@$LINUX_BUILD_HOST:$REMOTE_DIR/target/wheels/*manylinux*.whl" dist/
+echo "OK: Linux wheel built"
+"""
+
+# =============================================================================
+# 4-Phase Workflow Tasks
+# =============================================================================
+
+[tasks."release:preflight"]
+description = "Validate release prerequisites (Phase 1)"
+run = """
+echo "=== PREFLIGHT ==="
+git update-index --refresh -q || true
+
+if [ -n "$(git status --porcelain)" ]; then
+    echo "FAIL: Working directory not clean"
+    git status --short
+    exit 1
+fi
+
+BRANCH=$(git branch --show-current)
+if [ "$BRANCH" != "main" ]; then
+    echo "FAIL: Not on main branch (on: $BRANCH)"
+    exit 1
+fi
+
+echo "OK: Preflight passed"
+"""
+
+[tasks."release:sync"]
+description = "Synchronize with remote (Phase 2)"
+depends = ["release:preflight"]
+run = """
+echo "=== SYNC ==="
+git pull --rebase origin main || { echo "FAIL: Pull failed"; exit 1; }
+git push origin main || { echo "FAIL: Push failed"; exit 1; }
+echo "OK: Synced"
+"""
+
+[tasks."release:build-all"]
+description = "Build all platform wheels (Phase 3)"
+run = """
+echo "=== BUILD ALL PLATFORMS ==="
+mise run release:macos-arm64
+mise run release:macos-x86
+mise run release:sdist
+mise run release:linux
+echo "OK: All wheels built"
+ls -la dist/*.whl dist/*.tar.gz 2>/dev/null || true
+"""
+
+[tasks."release:postflight"]
+description = "Verify and publish (Phase 4)"
+depends = ["smoke"]
+run = """
+echo "=== POSTFLIGHT ==="
+WHEEL_COUNT=$(find dist/ -name "*.whl" 2>/dev/null | wc -l | tr -d ' ')
+echo "Found $WHEEL_COUNT wheel(s)"
+ls -la dist/*.whl 2>/dev/null || true
+echo ""
+echo "To publish: mise run publish"
+"""
+
 [tasks."release:version"]
 description = "Bump version via semantic-release (requires npm install first)"
 run = """
@@ -223,26 +350,33 @@ npm run release
 """
 
 [tasks."release:full"]
-description = "Full release workflow: version → build → smoke → publish (dry-run)"
+description = "Full 4-phase release workflow"
 run = """
-echo "=== Phase 1: Version bump (semantic-release) ==="
+echo "=== FULL RELEASE WORKFLOW ==="
+
+echo ""
+echo "=== Phase 1: PREFLIGHT ==="
+mise run release:preflight
+
+echo ""
+echo "=== Phase 2: SYNC ==="
+mise run release:sync
+
+echo ""
+echo "=== Phase 3: VERSION (semantic-release) ==="
 mise run release:version
 
 echo ""
-echo "=== Phase 2: Build wheels ==="
-mise run release
+echo "=== Phase 4: BUILD ==="
+mise run release:build-all
 
 echo ""
-echo "=== Phase 3: Smoke tests ==="
-mise run smoke
+echo "=== Phase 5: POSTFLIGHT ==="
+mise run release:postflight
 
 echo ""
-echo "=== Phase 4: Publish (dry-run) ==="
-./scripts/publish-wheels.sh --dry-run
-
-echo ""
-echo "=== Release preparation complete! ==="
-echo "To publish for real, run: mise run publish"
+echo "=== COMPLETE ==="
+echo "Run 'mise run publish' to publish to PyPI"
 """
 
 # =============================================================================

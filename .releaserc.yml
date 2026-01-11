@@ -18,7 +18,11 @@ plugins:
     - prepareCmd: |
         perl -i -pe 's/^version = ".*"/version = "${nextRelease.version}"/' pyproject.toml
         perl -i -pe 's/^version = ".*"/version = "${nextRelease.version}"/' Cargo.toml
-      publishCmd: "echo 'Version updated in pyproject.toml and Cargo.toml - use mise run publish for PyPI publishing'"
+      successCmd: |
+        git push --follow-tags origin main
+        git update-index --refresh -q || true
+        echo "Version ${nextRelease.version} released"
+      publishCmd: "echo 'Use mise run publish for PyPI'"
 
   # Commit version changes back to repository
   - - "@semantic-release/git"
