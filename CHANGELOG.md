@@ -1,3 +1,10 @@
+## [6.2.1](https://github.com/terrylica/rangebar-py/compare/v6.2.0...v6.2.1) (2026-01-11)
+
+
+### Bug Fixes
+
+* add ClickHouse bar cache lookup to get_range_bars() and fix TZ-aware timestamps (Issues [#20](https://github.com/terrylica/rangebar-py/issues/20), [#21](https://github.com/terrylica/rangebar-py/issues/21)) ([b9fa078](https://github.com/terrylica/rangebar-py/commit/b9fa078e6bfc8f87da1753412693e74b5dd17d5d))
+
 # [6.2.0](https://github.com/terrylica/rangebar-py/compare/v6.1.0...v6.2.0) (2026-01-11)
 
 
