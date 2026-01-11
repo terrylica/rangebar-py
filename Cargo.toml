@@ -20,7 +20,7 @@ members = [
 [workspace.package]
 # CRITICAL: Prevent crates.io publishing - this is a PyPI-only project
 publish = false
-version = "6.1.0"
+version = "6.2.0"
 authors = ["Terry Li <terry@eonlabs.com>"]
 categories = ["algorithms", "data-structures", "finance"]
 documentation = "https://docs.rs/rangebar"
@@ -99,7 +99,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 
 [package]
 name = "rangebar-py"
-version = "6.1.0"
+version = "6.2.0"
 edition = "2021"
 authors = ["Terry Li"]
 license = "MIT"

@@ -1,3 +1,10 @@
+# [6.2.0](https://github.com/terrylica/rangebar-py/compare/v6.1.0...v6.2.0) (2026-01-11)
+
+
+### Features
+
+* add tiered validation system for market microstructure events (Issue [#19](https://github.com/terrylica/rangebar-py/issues/19)) ([685bb49](https://github.com/terrylica/rangebar-py/commit/685bb498654d87506ba9cd686e700b089d78e491))
+
 # [6.1.0](https://github.com/terrylica/rangebar-py/compare/v6.0.0...v6.1.0) (2026-01-11)
 
 
