@@ -1,5 +1,7 @@
 # Architecture Overview
 
+**Parent**: [/CLAUDE.md](/CLAUDE.md)
+
 **rangebar-py** is a unified Rust workspace with Python bindings. This document describes the 8-crate modular architecture.
 
 ## Workspace Structure
@@ -201,6 +203,8 @@ mise run bench:validate  # Verify 1M ticks < 100ms
 
 ## Related Documentation
 
-- [`/CLAUDE.md`](/CLAUDE.md) - Project memory for Claude Code
-- [`/crates/CLAUDE.md`](/crates/CLAUDE.md) - Detailed crate documentation
-- [`/docs/api.md`](/docs/api.md) - Python API reference
+- [/CLAUDE.md](/CLAUDE.md) - Project hub
+- [/crates/CLAUDE.md](/crates/CLAUDE.md) - Detailed crate documentation
+- [/python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) - Python layer details
+- [/docs/api.md](/docs/api.md) - Python API reference
+- [/docs/development/RELEASE.md](/docs/development/RELEASE.md) - Release workflow

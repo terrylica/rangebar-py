@@ -1,129 +1,161 @@
 # Crates Workspace
 
-Detailed context for the 8-crate modular workspace architecture.
+**Parent**: [/CLAUDE.md](/CLAUDE.md) | **Architecture**: [/docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)
 
-**Parent**: [`/CLAUDE.md`](/CLAUDE.md) | **Architecture**: [`/docs/ARCHITECTURE.md`](/docs/ARCHITECTURE.md)
+8-crate modular Rust workspace. All crates have `publish = false` (PyPI-only distribution).
+
+---
+
+## Quick Reference
+
+| Crate | Purpose | Key Types |
+|-------|---------|-----------|
+| `rangebar-core` | Core algorithm | `RangeBarProcessor`, `RangeBar`, `FixedPoint` |
+| `rangebar-providers` | Data sources | `HistoricalDataLoader`, `ExnessFetcher` |
+| `rangebar-io` | I/O operations | Polars integration |
+| `rangebar-streaming` | Real-time | `StreamingProcessor` |
+| `rangebar-batch` | Batch analytics | `BatchAnalysisEngine` |
+| `rangebar-config` | Configuration | `Settings` |
+| `rangebar-cli` | CLI tools | (disabled for PyPI) |
+| `rangebar` | Meta-crate | v4.0 compatibility |
+
+---
 
 ## Dependency Graph
 
 ```
-                    rangebar (meta-crate, v4.0 compat)
-                              │
-        ┌─────────────────────┼─────────────────────┐
-        │                     │                     │
-   rangebar-cli          rangebar-batch      rangebar-streaming
-        │                     │                     │
-        └──────────┬──────────┴──────────┬──────────┘
-                   │                     │
-             rangebar-io          rangebar-providers
-                   │                     │
-                   └──────────┬──────────┘
-                              │
-                        rangebar-core
-                              │
-                        rangebar-config
+                    rangebar (meta-crate)
+                           │
+     ┌─────────────────────┼─────────────────────┐
+     │                     │                     │
+rangebar-cli         rangebar-batch      rangebar-streaming
+     │                     │                     │
+     └──────────┬──────────┴──────────┬──────────┘
+                │                     │
+          rangebar-io          rangebar-providers
+                │                     │
+                └──────────┬──────────┘
+                           │
+                     rangebar-core
+                           │
+                     rangebar-config
 ```
+
+---
+
+## Microstructure Features (v7.0)
+
+**Location**: `rangebar-core/src/processor.rs`
+
+10 features computed in Rust during bar construction:
+
+| # | Feature | Formula | Range |
+|---|---------|---------|-------|
+| 1 | `duration_us` | (close_time - open_time) * 1000 | [0, +inf) |
+| 2 | `ofi` | (buy_vol - sell_vol) / total | [-1, 1] |
+| 3 | `vwap_close_deviation` | (close - vwap) / (high - low) | ~[-1, 1] |
+| 4 | `price_impact` | abs(close - open) / volume | [0, +inf) |
+| 5 | `kyle_lambda_proxy` | (close - open) / (buy_vol - sell_vol) | (-inf, +inf) |
+| 6 | `trade_intensity` | trade_count / duration_sec | [0, +inf) |
+| 7 | `volume_per_trade` | volume / trade_count | [0, +inf) |
+| 8 | `aggression_ratio` | buy_count / sell_count | [0, 100] |
+| 9 | `aggregation_efficiency` | individual_count / agg_count | [1, +inf) |
+| 10 | `turnover_imbalance` | (buy_turn - sell_turn) / volume | [-1, 1] |
+
+**Edge cases**: Division by zero returns 0.0 (no information).
+
+**Academic backing**: Kyle (1985), Amihud (2002), Easley et al. (2012).
+
+---
 
 ## Crate Details
 
 ### Layer 0: Foundation
 
-**rangebar-config** - Configuration management
+#### rangebar-config
 
 - Dependencies: `config`, `serde`
 - Public API: `Settings::load()`, `Settings::default()`
 
-**rangebar-core** - Core algorithm (minimal deps)
+#### rangebar-core
+
+Core algorithm with minimal dependencies.
 
 - Dependencies: `chrono`, `serde`, `serde_json`, `thiserror`, `ahash`
-- Features: `test-utils` (CSV loading), `python` (PyO3), `api` (utoipa)
-- Public types: `AggTrade`, `RangeBar`, `FixedPoint`, `RangeBarProcessor`
-- Key: 8-decimal fixed-point arithmetic, non-lookahead breach detection
+- Features:
+  - `test-utils` - CSV loading for tests
+  - `python` - PyO3 type exports
+  - `api` - utoipa OpenAPI schemas
+
+**Key types**:
+- `AggTrade` - Input trade data
+- `RangeBar` - Output bar with OHLCV + microstructure
+- `FixedPoint` - 8-decimal fixed-point arithmetic
+- `RangeBarProcessor` - Stateful processor
+
+**Key properties**:
+- Non-lookahead breach detection
+- Temporal integrity (breach tick in closing bar)
+- Streaming-friendly (maintains state between calls)
 
 ### Layer 1: Data Access
 
-**rangebar-providers** - Data sources
+#### rangebar-providers
 
 - Depends on: `rangebar-core`
-- Features: `binance` (default), `exness`, `all-providers`
-- Binance: `HistoricalDataLoader`, spot/UM/CM futures, aggTrades
-- Exness: `ExnessFetcher`, `ExnessInstrument` enum (10 forex pairs)
+- Features:
+  - `binance` (default) - Spot, UM futures, CM futures
+  - `exness` - 10 forex pairs
+  - `all-providers` - Enable all
 
-**rangebar-io** - I/O operations
+**Binance types**: `HistoricalDataLoader`, `BinanceMarket`
+**Exness types**: `ExnessFetcher`, `ExnessInstrument`
+
+#### rangebar-io
 
 - Depends on: `rangebar-core`
-- Features: `parquet` (enables Polars), `all`
-- Polars integration for DataFrame ops
-- Export: CSV, Parquet, Arrow IPC
+- Features:
+  - `parquet` - Enables Polars
+  - `all`
+
+Export formats: CSV, Parquet, Arrow IPC
 
 ### Layer 2: Engines
 
-**rangebar-streaming** - Real-time processor
+#### rangebar-streaming
 
 - Depends on: `rangebar-core`, `rangebar-providers` (optional)
 - Features: `binance-integration`, `stats`, `indicators`, `all`
 - Bounded memory, circuit breaker pattern
-- Public API: `StreamingProcessor`, `StreamingConfig`
 
-**rangebar-batch** - Batch analytics
+**Types**: `StreamingProcessor`, `StreamingConfig`
+
+#### rangebar-batch
 
 - Depends on: `rangebar-core`, `rangebar-io`
-- High-throughput parallel processing (Rayon)
-- Public API: `BatchAnalysisEngine`, `BatchConfig`, `AnalysisReport`
+- Rayon parallel processing
 
-### Layer 3: Tools
+**Types**: `BatchAnalysisEngine`, `BatchConfig`, `AnalysisReport`
 
-**rangebar-cli** - All binaries (6 tools)
+### Layer 3: Applications
 
-- Depends on: ALL other crates
-- Location: `src/bin/`
+#### rangebar-cli (disabled)
 
-| Binary | Purpose |
-|--------|---------|
-| `tier1-symbol-discovery` | Multi-market symbol analysis |
-| `rangebar-analyze` | Parallel tier-1 batch analysis |
-| `data-structure-validator` | Cross-market format verification |
-| `spot-tier1-processor` | Spot market processing |
-| `polars-benchmark` | Performance benchmarking |
-| `temporal-integrity-validator` | Temporal integrity tests |
+6 CLI binaries preserved as source, not built for PyPI:
+- `tier1-symbol-discovery`
+- `rangebar-analyze`
+- `data-structure-validator`
+- `spot-tier1-processor`
+- `polars-benchmark`
+- `temporal-integrity-validator`
 
-**rangebar** - Meta-crate (v4.0 backward compat)
+#### rangebar (meta-crate)
 
-- Re-exports all sub-crates
-- Legacy module paths: `fixed_point`, `range_bars`, `types`, `tier1`, `data`
+Re-exports for v4.0 backward compatibility.
 
-## Common Patterns
+---
 
-### Adding a New Binary
-
-1. Create `crates/rangebar-cli/src/bin/my_tool.rs`
-2. Add to `Cargo.toml`:
-   ```toml
-   [[bin]]
-   name = "my-tool"
-   path = "src/bin/my_tool.rs"
-   ```
-
-### Feature Flags
-
-```bash
-# Build with specific features
-cargo build -p rangebar-providers --features exness
-cargo build -p rangebar-core --features test-utils
-
-# Build CLI with all features
-cargo build -p rangebar-cli --release
-```
-
-### Running Binaries
-
-```bash
-cargo run --bin tier1-symbol-discovery -- --format comprehensive
-cargo run --bin rangebar-analyze -- --symbol BTCUSDT --threshold 250
-cargo run --bin data-structure-validator
-```
-
-## Testing
+## Development Commands
 
 ```bash
 # Test specific crate
@@ -132,6 +164,130 @@ cargo nextest run -p rangebar-core
 # Test with features
 cargo nextest run -p rangebar-core --features test-utils
 
-# Test all crates
-cargo nextest run --workspace
+# Test all (excludes PyO3 crate)
+cargo nextest run --workspace --exclude rangebar-py
+
+# Build with features
+cargo build -p rangebar-providers --features exness
+cargo build -p rangebar-core --features test-utils
 ```
+
+---
+
+## Common Patterns
+
+### Adding a New Feature to rangebar-core
+
+1. Add field to `RangeBar` struct in `types.rs`
+2. Update `compute_microstructure_features()` in `processor.rs`
+3. Add tests in `processor.rs` or dedicated test file
+4. Update PyO3 bindings in `/src/lib.rs`
+5. Update Python types in `/python/rangebar/__init__.pyi`
+6. Update ClickHouse schema if caching
+
+### Feature Flags
+
+```toml
+# Enable in Cargo.toml
+[dependencies]
+rangebar-core = { path = "../rangebar-core", features = ["test-utils"] }
+
+# Or via CLI
+cargo build -p rangebar-core --features test-utils,python
+```
+
+---
+
+## Testing
+
+### Unit Tests
+
+```bash
+cargo nextest run -p rangebar-core
+```
+
+### Property-Based Tests
+
+Uses `proptest` for invariant checking:
+
+```rust
+proptest! {
+    #[test]
+    fn ofi_always_bounded(buy in 0.0f64..1e12, sell in 0.0f64..1e12) {
+        let total = buy + sell;
+        if total > f64::EPSILON {
+            let ofi = (buy - sell) / total;
+            prop_assert!(ofi >= -1.0 && ofi <= 1.0);
+        }
+    }
+}
+```
+
+### Integration Tests
+
+```bash
+# Tests in crates/rangebar/tests/
+cargo nextest run -p rangebar --features full
+```
+
+---
+
+## Critical Implementation Details
+
+### Fixed-Point Arithmetic
+
+The rangebar crate uses **8-decimal fixed-point arithmetic** to avoid floating-point errors:
+
+```rust
+// Convert rangebar FixedPoint to f64 for Python
+let price_f64 = bar.open.to_f64();
+```
+
+**Warning**: Do NOT round or truncate - preserve full precision.
+
+### Timestamp Handling
+
+**Rust Side** (`src/lib.rs`):
+
+```rust
+// rangebar uses i64 milliseconds
+let timestamp_ms: i64 = bar.timestamp_ms;
+
+// Convert to RFC3339 string for Python
+let timestamp = chrono::DateTime::from_timestamp_millis(timestamp_ms)
+    .unwrap()
+    .to_rfc3339();
+```
+
+**Python Side** (`python/rangebar/__init__.py`):
+
+```python
+# Parse timestamp string to DatetimeIndex
+df["timestamp"] = pd.to_datetime(df["timestamp"])
+df = df.set_index("timestamp")
+```
+
+### Error Handling (PyO3)
+
+Map Rust errors to Python exceptions:
+
+```rust
+let processor = RangeBarProcessor::new(threshold_decimal_bps)
+    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
+        format!("Failed to create processor: {}", e)
+    ))?;
+```
+
+**Python exception types**:
+- `ValueError`: Invalid input (negative threshold, missing fields)
+- `RuntimeError`: Processing errors (unsorted trades, internal failures)
+- `KeyError`: Missing required dictionary keys
+
+---
+
+## Related
+
+- [/CLAUDE.md](/CLAUDE.md) - Project hub
+- [/docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md) - System design
+- [/src/lib.rs](/src/lib.rs) - PyO3 bindings
+- [/python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) - Python layer

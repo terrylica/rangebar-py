@@ -1,653 +1,174 @@
 # CLAUDE.md - Project Memory
 
-This file provides guidance to Claude Code when working with code in this repository.
+**rangebar-py**: Rust workspace with Python bindings via PyO3/maturin. Publishes to PyPI only (not crates.io).
 
-## Project Overview
+---
 
-**rangebar-py** is a unified Rust workspace with Python bindings via PyO3/maturin. The project consolidates 8 specialized Rust crates plus Python bindings, publishing exclusively to PyPI (not crates.io).
+## Quick Reference
 
-**Architecture**: 8-crate modular Rust workspace
-- **rangebar-core** - Core algorithm (8-decimal fixed-point, non-lookahead breach detection)
-- **rangebar-providers** - Data sources (Binance spot/futures, Exness forex)
-- **rangebar-config** - Configuration management
-- **rangebar-io** - I/O operations (CSV, Parquet, Arrow IPC)
-- **rangebar-streaming** - Real-time processor (bounded memory, circuit breaker)
-- **rangebar-batch** - Batch analytics (Rayon parallel processing)
-- **rangebar-cli** - CLI tools (6 binaries, disabled for PyPI focus)
-- **rangebar** - Meta-crate (v4.0 backward compatibility)
+| Task | Entry Point | Details |
+|------|-------------|---------|
+| Generate range bars | `get_range_bars()` | [Python API](#python-api) |
+| Understand architecture | [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md) | 8-crate workspace |
+| Work with Rust crates | [crates/CLAUDE.md](/crates/CLAUDE.md) | Crate details, microstructure |
+| Work with Python layer | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) | API, caching, validation |
+| Release workflow | [docs/development/RELEASE.md](/docs/development/RELEASE.md) | mise tasks, PyPI |
+| Performance monitoring | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics |
+| Project context | [docs/CONTEXT.md](/docs/CONTEXT.md) | Why this project exists |
+| API reference | [docs/api.md](/docs/api.md) | Full Python API docs |
 
-**Detailed crate documentation**: See [`crates/CLAUDE.md`](/crates/CLAUDE.md)
+---
 
-## Critical Development Principle: Leverage Rust Crates
+## Critical Principle: Leverage Rust
 
-**ALWAYS leverage the local `rangebar-core` Rust crate (in `crates/`) for heavy lifting.**
+**ALWAYS use local Rust crates for heavy lifting.** Python handles I/O only.
 
 When implementing features or fixing issues:
 
-1. **Check upstream first**: Before writing Python code, check if `rangebar-core` already provides the capability
-2. **Stream to Rust**: The Rust `RangeBarProcessor` maintains state between `process_trades()` calls - use this for streaming instead of building Python-side buffering
+1. **Check Rust first**: Before writing Python code, check if `rangebar-core` already provides the capability
+2. **Stream to Rust**: The `RangeBarProcessor` maintains state between `process_trades()` calls
 3. **Checkpoint API**: Use `create_checkpoint()` and `from_checkpoint()` for cross-session continuity
-4. **No reinventing**: Don't reimplement range bar logic in Python - the Rust crate handles:
-   - Threshold breach detection
-   - OHLCV aggregation
-   - Temporal integrity
-   - State management between batches
+4. **No reinventing**: Don't reimplement range bar logic in Python
 
-**Examples of correct patterns:**
 ```python
-# CORRECT: Stream chunks to Rust processor (maintains state automatically)
+# CORRECT: Stream to Rust (maintains state automatically)
 for chunk in data_stream:
     bars = processor.process_trades(chunk.to_dicts())
 
-# WRONG: Buffer everything in Python, process at once
+# WRONG: Buffer in Python (OOM risk)
 all_data = []
 for chunk in data_stream:
-    all_data.extend(chunk)  # OOM risk!
-bars = processor.process_trades(all_data)
+    all_data.extend(chunk)
 ```
 
-**Rationale**: The Rust crate is optimized for streaming and handles complex edge cases (incomplete bars, threshold calculations, fixed-point arithmetic). Python should only handle I/O and data format conversion.
+**Why**: Rust handles threshold breach, OHLCV aggregation, temporal integrity, fixed-point arithmetic.
 
-## AI Agent Quick Reference
+---
 
-### Common Tasks & Entry Points
+## Python API
 
-| When Claude is asked to... | Primary File | Function/Class |
-|---------------------------|--------------|----------------|
-| Generate range bars (date-bounded) | `python/rangebar/__init__.py` | `get_range_bars()` |
-| Generate range bars (count-bounded, ML) | `python/rangebar/__init__.py` | `get_n_range_bars()` |
-| Generate range bars (existing data) | `python/rangebar/__init__.py` | `process_trades_to_dataframe()` |
-| Generate range bars (Polars) | `python/rangebar/__init__.py` | `process_trades_polars()` |
-| Process large datasets | `python/rangebar/__init__.py` | `process_trades_chunked()` |
-| Debug PyO3 bindings | `src/lib.rs` | Check error handling section |
-| Read/write tick data | `python/rangebar/storage/parquet.py` | `TickStorage` class |
-| Bar-count cache operations | `python/rangebar/clickhouse/cache.py` | `count_bars()`, `get_n_bars()` |
+```python
+from rangebar import get_range_bars, get_n_range_bars
 
-### API Selection Guide
+# Date-bounded (backtesting)
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
 
-```
-Starting Point?
-├── Need data fetching (date range)? → get_range_bars() [DATE-BOUNDED]
-├── Need exactly N bars (ML/walk-forward)? → get_n_range_bars() [COUNT-BOUNDED]
-├── Have pandas DataFrame → process_trades_to_dataframe()
-├── Have Polars DataFrame/LazyFrame → process_trades_polars() [2-3x faster]
-└── Have Iterator (large data) → process_trades_chunked()
+# Count-bounded (ML training)
+df = get_n_range_bars("BTCUSDT", n_bars=10000)
+
+# With microstructure features (v7.0+)
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30", include_microstructure=True)
 ```
 
-### File-to-Responsibility Mapping
+| API | Use Case | Details |
+|-----|----------|---------|
+| `get_range_bars()` | Date range, backtesting | [docs/api.md](/docs/api.md#get_range_bars) |
+| `get_n_range_bars()` | Exact N bars, ML | [docs/api.md](/docs/api.md#get_n_range_bars) |
+| `process_trades_polars()` | Polars DataFrames, 2-3x faster | [docs/api.md](/docs/api.md#process_trades_polars) |
+| `process_trades_chunked()` | Large datasets >10M trades | [docs/api.md](/docs/api.md#process_trades_chunked) |
 
-| File | Responsibility |
-|------|----------------|
-| `src/lib.rs` | PyO3 bindings (Rust→Python bridge) |
-| `python/rangebar/__init__.py` | Public Python API |
-| `python/rangebar/__init__.pyi` | Type stubs for IDE/AI |
-| `python/rangebar/storage/parquet.py` | Tier 1 cache (local Parquet) |
-| `python/rangebar/clickhouse/cache.py` | Tier 2 cache (ClickHouse) |
-| `tests/test_e2e_optimized.py` | E2E tests for optimized APIs |
-| `tests/test_get_n_range_bars.py` | Tests for count-bounded API |
-| `scripts/validate_n_range_bars.py` | Portable validation for GPU workstations |
+**Full API reference**: [docs/api.md](/docs/api.md)
 
-### Performance Optimization Checklist
-
-When optimizing data processing:
-1. Use `pl.scan_parquet()` instead of `pl.read_parquet()` (lazy loading)
-2. Apply filters on LazyFrame before `.collect()` (predicate pushdown)
-3. Select only required columns before `.to_dicts()` (minimal conversion)
-4. Use `process_trades_chunked()` for datasets >10M trades
-
-### Common Error Recovery
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `AttributeError: RangeBarProcessor has no attribute X` | Rust binding outdated | Run `maturin develop` |
-| `ValueError: Invalid threshold_decimal_bps` | Expects decimal basis points | Use 250 for 0.25% |
-| `AssertionError: High < Low` | OHLC invariant violation | Check input data sorting |
-| `dtype mismatch (double[pyarrow] vs float64)` | Cache retrieval issue | Fixed in v2.2.0 |
+---
 
 ## Architecture
 
 ```
-rangebar-py (Unified Workspace)
-├── crates/                          [8 Rust crates - local, NOT crates.io]
-│   ├── rangebar-core/               Core algorithm (foundation)
-│   ├── rangebar-providers/          Data sources (Binance, Exness)
-│   ├── rangebar-config/             Configuration management
-│   ├── rangebar-io/                 I/O operations (Parquet, CSV)
-│   ├── rangebar-streaming/          Real-time processing
-│   ├── rangebar-batch/              Batch analytics
-│   ├── rangebar-cli/                CLI tools (disabled for PyPI)
-│   └── rangebar/                    Meta-crate (v4.0 compat)
-├── src/lib.rs                       PyO3 bindings (imports local crates)
-├── python/rangebar/                 Python API layer
-│   ├── __init__.py                  Public API (get_range_bars, etc.)
-│   ├── clickhouse/                  Tier 2 cache (ClickHouse)
-│   └── storage/                     Tier 1 cache (Parquet)
-└── pyproject.toml                   Maturin build configuration
-    ↓ [maturin build → pip install]
-Python users (backtesting.py, ML pipelines)
-```
-
-**Key**: All Rust crates have `publish = false` in Cargo.toml. Only Python wheels are published to PyPI.
-
-## Why This Project Exists
-
-### Problem Statement
-
-The backtesting.py project (located at `~/eon/backtesting.py`) completed crypto intraday research (Phases 8-16B) that **TERMINATED** all strategies due to:
-
-- **Inverse Timeframe Effect**: MA crossover win rates degraded from 40.3% (5-min) → 38.7% (15-min) → 37.2% (1-hour)
-- **17 strategies tested**, all failed with <45% win rate
-- **Time-based bars fundamentally incompatible** with crypto market structure
-
-### Solution: Range Bars
-
-Range bars offer an alternative to time-based bars:
-
-- **Fixed Price Movement**: Each bar closes when price moves X% from open (e.g., 0.25% = 25 basis points)
-- **Market-Adaptive**: Bars form faster during volatile periods, slower during consolidation
-- **No Lookahead Bias**: Strict temporal integrity (breach tick included in closing bar)
-- **Eliminates Time Artifacts**: No arbitrary 5-min/15-min/1-hour intervals
-
-### Why PyO3 Bindings?
-
-The rangebar maintainer:
-
-- ✅ **Will maintain** the Rust crate
-- ✅ **Provides CLI tools** for command-line usage
-- ❌ **Will NOT add Python support** to the crate itself
-
-Our approach:
-
-- ✅ **Import rangebar as dependency** (from crates.io)
-- ✅ **Write PyO3 wrapper** (this project)
-- ✅ **Zero burden on maintainer** - they don't need to do anything
-- ✅ **We control Python API** - can iterate quickly
-
-## Target Use Case
-
-### Primary Workflow (backtesting.py integration)
-
-```python
-from backtesting import Backtest, Strategy
-from rangebar import get_range_bars
-
-# Fetch data and generate range bars in one call
-data = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
-
-# Use directly with backtesting.py
-bt = Backtest(data, MyStrategy, cash=10000, commission=0.0002)
-stats = bt.run()
-bt.plot()
-```
-
-### Alternative: Using Pre-downloaded Data
-
-```python
-import pandas as pd
-from rangebar import process_trades_to_dataframe
-
-# Load tick data from CSV
-trades = pd.read_csv("BTCUSDT-aggTrades-2024-01.csv")
-
-# Convert to range bars (25 basis points = 0.25%)
-data = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
-```
-
-### Output Format (backtesting.py compatible)
-
-```python
-# DataFrame with DatetimeIndex and OHLCV columns
-                          Open      High       Low     Close  Volume
-timestamp
-2024-01-01 00:00:15  42000.00  42105.00  41980.00  42100.00   15.43
-2024-01-01 00:03:42  42100.00  42220.00  42100.00  42215.00    8.72
-```
-
-## Technical Requirements
-
-### Rust Dependencies
-
-<!-- Dependency versions: See Cargo.toml for current versions -->
-- **rangebar-core**: (from crates.io) - Core range bar algorithm
-- **pyo3**: Python bindings
-- **chrono**: Timestamp handling
-
-### Python Dependencies
-
-- **pandas**: ≥2.0 - DataFrame operations
-- **numpy**: ≥1.24 - Numerical operations
-- **backtesting.py**: ≥0.3 (optional) - Target integration library
-
-### Build System
-
-- **maturin**: ≥1.7 - Python package builder for Rust extensions
-- **PyO3**: abi3 wheels for Python 3.9+ compatibility
-
-## Project Structure
-
-```
 rangebar-py/
-├── CLAUDE.md                       # This file (project memory)
-├── IMPLEMENTATION_PLAN.md          # High-level implementation roadmap
-├── README.md                       # User-facing documentation
-├── LICENSE                         # MIT license
-├── Cargo.toml                      # Rust dependencies
-├── pyproject.toml                  # Python packaging (maturin)
-├── src/
-│   └── lib.rs                      # PyO3 bindings (Rust → Python bridge)
-├── python/
-│   └── rangebar/
-│       ├── __init__.py             # Pythonic API
-│       ├── __init__.pyi            # Type stubs
-│       ├── utils.py                # Helper functions
-│       └── backtesting.py          # backtesting.py integration utilities
-├── tests/
-│   ├── test_core.py                # Core functionality tests
-│   ├── test_backtesting.py         # backtesting.py integration tests
-│   └── test_performance.py         # Performance benchmarks
-├── examples/
-│   ├── basic_usage.py              # Simple example
-│   ├── backtesting_integration.py  # Full backtesting.py workflow
-│   └── comparison_time_vs_range.py # Time bars vs range bars comparison
-└── docs/
-    ├── api.md                      # API reference
-    ├── algorithms.md               # Range bar algorithm explanation
-    └── backtesting_guide.md        # Integration guide
+├── crates/                    8 Rust crates (publish = false)
+│   └── rangebar-core/         Core algorithm, microstructure features
+├── src/lib.rs                 PyO3 bindings
+├── python/rangebar/           Python API layer
+│   ├── clickhouse/            Tier 2 cache
+│   ├── validation/            Microstructure validation (v7.0+)
+│   └── storage/               Tier 1 cache (Parquet)
+└── pyproject.toml             Maturin config
 ```
 
-## Key Implementation Files
+**Key files**:
+- `src/lib.rs` - PyO3 bindings (Rust→Python bridge)
+- `python/rangebar/__init__.py` - Public Python API
+- `crates/rangebar-core/src/processor.rs` - Core algorithm
 
-### src/lib.rs (PyO3 Bindings)
+**Full architecture**: [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)
 
-**Responsibilities**:
+---
 
-- Import `rangebar_core::RangeBarProcessor` from crates.io
-- Create `PyRangeBarProcessor` wrapper class
-- Convert Rust types to Python types:
-  - `RangeBar` → `Dict[str, float]` (timestamp, open, high, low, close, volume)
-  - `AggTrade` ← `Dict[str, float]` (timestamp, price, quantity)
-- Handle error conversion (Rust `Result` → Python exceptions)
-
-**Critical Requirements**:
-
-- **No lookahead bias**: Preserve temporal integrity from Rust implementation
-- **Performance**: Avoid unnecessary copies (use zero-copy where possible)
-- **Type safety**: Proper validation of Python input
-
-### python/rangebar/**init**.py (Pythonic API)
-
-**Responsibilities**:
-
-- Wrap `PyRangeBarProcessor` with Pythonic interface
-- Provide `process_trades_to_dataframe()` convenience function
-- Handle pandas DataFrame conversions
-- Validate input data structure
-- Format output for backtesting.py compatibility
-
-**Critical Requirements**:
-
-- **OHLCV column names**: Capitalized (Open, High, Low, Close, Volume)
-- **DatetimeIndex**: Proper timestamp parsing
-- **Error messages**: User-friendly Python exceptions
-
-### python/rangebar/backtesting.py (Integration Utilities)
-
-**Responsibilities**:
-
-- `load_from_binance_csv()`: Load Binance aggTrades format
-- `split_train_test()`: Train/test splitting for walk-forward validation
-- `compare_to_time_bars()`: Compare range bars vs time bars
-
-**Critical Requirements**:
-
-- **Binance format compatibility**: Handle aggTrades CSV structure
-- **Temporal alignment**: Ensure no data leakage in train/test split
-
-## Development Workflow
-
-### Setup
+## Development Commands
 
 ```bash
-cd ~/eon/rangebar-py
+# Setup (mise manages all tools)
+mise install
 
-# Install Rust toolchain (if not already)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# Build & test
+mise run build              # maturin develop
+mise run test               # Rust tests (cargo nextest)
+mise run test-py            # Python tests (pytest)
 
-# Install maturin
-pip install maturin
+# Quality
+mise run check-full         # fmt + lint + test + deny
 
-# Install development dependencies
-pip install pytest pandas backtesting.py mypy black ruff
+# Release (see docs/development/RELEASE.md)
+mise run release:full       # Full 4-phase workflow
+mise run publish            # Upload to PyPI
+
+# Benchmarks
+mise run bench:run          # Full benchmarks
+mise run bench:validate     # Verify 1M ticks < 100ms
 ```
 
-### Development Commands
+---
 
-```bash
-# Editable install (for development)
-maturin develop
+## Version 7.0 Features (Issue #25)
 
-# Run tests
-pytest tests/ -v
+10 market microstructure features computed in Rust during bar construction:
 
-# Type checking
-mypy python/rangebar/
+| Feature | Formula | Range |
+|---------|---------|-------|
+| `duration_us` | (close_time - open_time) * 1000 | [0, +inf) |
+| `ofi` | (buy_vol - sell_vol) / total | [-1, 1] |
+| `vwap_close_deviation` | (close - vwap) / range | ~[-1, 1] |
+| `price_impact` | abs(close - open) / volume | [0, +inf) |
+| `kyle_lambda_proxy` | (close - open) / imbalance | (-inf, +inf) |
+| `trade_intensity` | trades / duration_sec | [0, +inf) |
+| `volume_per_trade` | volume / trade_count | [0, +inf) |
+| `aggression_ratio` | buy_count / sell_count | [0, 100] |
+| `aggregation_efficiency` | individual_count / agg_count | [1, +inf) |
+| `turnover_imbalance` | (buy_turn - sell_turn) / volume | [-1, 1] |
 
-# Linting
-ruff check python/
-black python/ --check
+**Full details**: [crates/CLAUDE.md](/crates/CLAUDE.md#microstructure-features-v70)
 
-# Build release wheels
-maturin build --release
+**Validation**: `python/rangebar/validation/` - Tier 1 (auto), Tier 2 (before ML)
 
-# Build for multiple Python versions
-maturin build --release --interpreter python3.9 python3.10 python3.11 python3.12
-```
+---
 
-### Testing Strategy
+## Common Errors
 
-1. **Unit Tests** (`test_core.py`):
-   - Test `RangeBarProcessor` with synthetic data
-   - Verify OHLCV output structure
-   - Test edge cases (empty input, single trade, etc.)
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `RangeBarProcessor has no attribute X` | Outdated binding | `maturin develop` |
+| `Invalid threshold_decimal_bps` | Wrong units | Use 250 for 0.25% |
+| `High < Low` assertion | Bad input data | Check sorting |
+| `dtype mismatch (double[pyarrow] vs float64)` | Cache issue | Fixed in v2.2.0 |
 
-2. **Integration Tests** (`test_backtesting.py`):
-   - Load actual Binance data
-   - Generate range bars
-   - Run with backtesting.py
-   - Verify stats structure
+---
 
-3. **Performance Benchmarks** (`test_performance.py`):
-   - Process 1M trades
-   - Measure throughput (trades/sec)
-   - Memory usage profiling
+## Navigation
 
-## Critical Implementation Details
+### CLAUDE.md Files (Hub-and-Spoke)
 
-### Timestamp Handling
+| Directory | CLAUDE.md | Purpose |
+|-----------|-----------|---------|
+| `/` | This file | Hub, quick reference |
+| `/crates/` | [crates/CLAUDE.md](/crates/CLAUDE.md) | Rust workspace, microstructure |
+| `/python/rangebar/` | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) | Python API, caching, validation |
 
-**Rust Side (src/lib.rs)**:
+### Documentation Index
 
-```rust
-// rangebar uses i64 milliseconds
-let timestamp_ms: i64 = bar.timestamp_ms;
-
-// Convert to RFC3339 string for Python
-let timestamp = chrono::DateTime::from_timestamp_millis(timestamp_ms)
-    .unwrap()
-    .to_rfc3339();
-```
-
-**Python Side (python/rangebar/**init**.py)**:
-
-```python
-# Parse timestamp string to DatetimeIndex
-df["timestamp"] = pd.to_datetime(df["timestamp"])
-df = df.set_index("timestamp")
-```
-
-### Fixed-Point Arithmetic
-
-The rangebar crate uses fixed-point arithmetic (8 decimal places) to avoid floating-point errors. Our bindings must preserve this:
-
-```rust
-// Convert rangebar FixedPoint to f64 for Python
-let price_f64 = bar.open.to_f64();
-```
-
-**Warning**: Do NOT round or truncate - preserve full precision.
-
-### Error Handling
-
-Map Rust errors to Python exceptions:
-
-```rust
-let processor = RangeBarProcessor::new(threshold_decimal_bps)
-    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-        format!("Failed to create processor: {}", e)
-    ))?;
-```
-
-**Python exception types**:
-
-- `ValueError`: Invalid input (negative threshold, missing fields)
-- `RuntimeError`: Processing errors (unsorted trades, internal failures)
-- `KeyError`: Missing required dictionary keys
-
-## Testing Against backtesting.py
-
-### Compatibility Checklist
-
-- [x] **OHLCV column names**: Capitalized (Open, High, Low, Close, Volume)
-- [x] **DatetimeIndex**: Pandas DatetimeIndex with timezone-naive timestamps
-- [x] **No NaN values**: All bars complete (backtesting.py raises on NaN)
-- [x] **Sorted chronologically**: Timestamps in ascending order
-- [x] **OHLC invariants**: High ≥ max(Open, Close), Low ≤ min(Open, Close)
-
-### Validation Script
-
-```python
-def validate_for_backtesting_py(df: pd.DataFrame) -> bool:
-    """Validate DataFrame is compatible with backtesting.py."""
-    # Check columns
-    assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
-
-    # Check index
-    assert isinstance(df.index, pd.DatetimeIndex)
-    assert df.index.is_monotonic_increasing
-
-    # Check no NaN
-    assert not df.isnull().any().any()
-
-    # Check OHLC invariants
-    assert (df["High"] >= df["Open"]).all()
-    assert (df["High"] >= df["Close"]).all()
-    assert (df["Low"] <= df["Open"]).all()
-    assert (df["Low"] <= df["Close"]).all()
-
-    return True
-```
-
-## Relationship to backtesting.py Project
-
-This project is a **companion tool** for the backtesting.py fork located at:
-
-- **Path**: `~/eon/backtesting.py`
-- **Branch**: `research/compression-breakout`
-- **Status**: Research terminated after 17 failed strategies on time-based bars
-
-### Integration Workflow
-
-1. **Generate range bars** (this project):
-
-   ```python
-   from rangebar import get_range_bars
-   data = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
-   ```
-
-2. **Use with backtesting.py**:
-
-   ```python
-   from backtesting import Backtest
-   bt = Backtest(data, MyStrategy, cash=10000)
-   stats = bt.run()
-   ```
-
-3. **Compare results**:
-   - Range bars vs 5-minute bars
-   - Range bars vs 15-minute bars
-   - Range bars vs 1-hour bars
-
-**Research Question**: Do mean reversion / trend-following strategies perform better on range bars than time bars?
-
-## Daily Performance Monitoring
-
-**Decision**: ADR-0007 - Daily Performance Monitoring on CI/CD
-
-### Overview
-
-Automated daily benchmarks run on GitHub Actions to track performance metrics over time, generating observable files for both humans (HTML dashboard) and AI agents (JSON files).
-
-### Observable Files
-
-**Machine-Readable** (AI agents):
-
-- JSON files: `gh-pages:/dev/bench/python-bench.json` (pytest-benchmark output)
-- Committed daily to `gh-pages` branch
-- Historical data with unlimited retention
-
-**Human-Readable** (developers):
-
-- Dashboard: https://terrylica.github.io/rangebar-py/ (live after GitHub Pages enabled)
-- Chart.js trend visualization
-- Regression detection with 150% threshold (non-blocking warnings)
-
-### Daily Viability Metrics
-
-**Python API Layer** (pytest-benchmark):
-
-- Throughput: 1K, 100K, 1M trades/sec (target: >1M trades/sec)
-- Memory: Peak usage for 1M trades (target: <350MB)
-- Compression: Ratio for 100/250/500/1000 bps thresholds
-
-**Rust Core Layer** (Criterion.rs):
-
-- Throughput: 1M trades/sec without PyO3 overhead
-- Latency: P50/P95/P99 percentiles
-- PyO3 overhead: Calculated as (Python throughput - Rust throughput)
-
-### Execution Schedule
-
-- **Daily**: 3:17 AM UTC (off-peak, automated via cron)
-- **Manual**: On-demand via `gh workflow run performance-daily.yml`
-- **Weekly**: Sunday 2:00 AM UTC (comprehensive benchmarks, extended rounds)
-
-### Interpretation (AI Agents)
-
-**Query JSON files for viability checks**:
-
-```bash
-# Fetch latest benchmark results
-git fetch origin gh-pages
-git checkout gh-pages
-cat dev/bench/python-bench.json | jq '.benchmarks[] | {name: .name, mean: .stats.mean}'
-```
-
-**Viability criteria**:
-
-- `test_throughput_1m_trades`: mean < 1.0 second (target: >1M trades/sec)
-- `test_memory_1m_trades`: peak_memory < 350MB
-- `test_compression_ratio`: bars_count > 0 for all thresholds
-
-**Regression detection**:
-
-- Alert if throughput degrades >50% vs previous run
-- Alert if memory increases >50% vs previous run
-- Warnings logged but workflow continues (non-blocking)
-
-### Implementation Details
-
-- **Workflows**: `.github/workflows/performance-daily.yml`, `.github/workflows/performance-weekly.yml`
-- **Benchmarks**: `benches/core.rs` (Rust), `tests/test_performance.py` (Python)
-- **Visualization**: github-action-benchmark (generates HTML/JSON)
-- **Deployment**: GitHub Actions (via `actions/deploy-pages@v4`, not branch-based)
-- **Documentation**: `docs/decisions/0007-daily-performance-monitoring.md` (ADR), `docs/plan/0007-daily-performance-monitoring/plan.md` (plan), `docs/GITHUB_PAGES_SETUP.md` (setup guide)
-
-### Why Non-Blocking?
-
-**Philosophy** (from ADR-0007, aligns with global ADR-0007 GitHub Actions policy):
-
-- Trend monitoring, not gating
-- Performance regressions caught early via dashboard
-- Never blocks development workflow
-- Complements local benchmarking (instant feedback loop)
-
-## Package Distribution
-
-### PyPI Release Workflow
-
-```bash
-# Build wheels for all platforms
-maturin build --release --sdist
-
-# Wheels generated in target/wheels/:
-# - rangebar-0.1.0-cp39-cp39-manylinux_2_17_x86_64.whl
-# - rangebar-0.1.0-cp310-cp310-manylinux_2_17_x86_64.whl
-# - rangebar-0.1.0-cp39-cp39-macosx_11_0_arm64.whl
-# - ... (more platforms)
-
-# Upload to PyPI
-maturin publish
-```
-
-### Pre-built Wheels Strategy
-
-Use GitHub Actions to build wheels for:
-
-- **Linux**: manylinux_2_17 (x86_64, aarch64)
-- **macOS**: 11.0+ (x86_64, arm64)
-- **Windows**: (x86_64)
-- **Python**: 3.9, 3.10, 3.11, 3.12
-
-Users can install without Rust toolchain:
-
-```bash
-pip install rangebar  # Downloads pre-built wheel
-```
-
-## Success Criteria
-
-### Minimum Viable Product (MVP)
-
-- [x] `process_trades_to_dataframe()` works with Binance CSV
-- [x] Output is backtesting.py compatible
-- [x] No lookahead bias (verified against Rust implementation)
-- [x] Performance: >1M trades/sec
-- [x] Memory: <2GB for typical datasets
-- [x] Tests: 95%+ coverage
-- [x] Documentation: README with examples
-
-### Future Enhancements (Post-MVP)
-
-- [ ] Streaming API (process trades incrementally)
-- [ ] Multi-symbol processing (batch conversion)
-- [ ] Parquet output support
-- [ ] Advanced backtesting.py helpers (walk-forward optimization)
-- [ ] Visualization tools (plot range bars vs time bars)
-
-## Non-Goals
-
-- ❌ **Replace rangebar CLI**: We provide Python bindings, not CLI alternatives
-- ❌ **Modify upstream crate**: Zero changes to rangebar Rust code
-- ❌ **Support all data sources**: Focus on Binance; users can adapt
-- ❌ **Real-time trading**: This is for backtesting only
-
-## License
-
-**MIT** (matches upstream rangebar crate)
-
-## Contributing
-
-See `IMPLEMENTATION_PLAN.md` for step-by-step implementation roadmap.
-
-## Contact / Maintainer
-
-This project is maintained independently of the upstream rangebar Rust crate. For:
-
-- **Python bindings issues**: Open issue in this repo
-- **Range bar algorithm questions**: Refer to upstream [rangebar](https://github.com/terrylica/rangebar)
-- **backtesting.py integration**: See examples in this repo
-
-## Quick Start (After Implementation)
-
-```bash
-cd ~/eon/rangebar-py
-
-# Setup
-maturin develop
-pytest tests/
-
-# Try example
-python examples/basic_usage.py
-```
-
-For detailed implementation steps, see `IMPLEMENTATION_PLAN.md`.
+| Document | Purpose |
+|----------|---------|
+| [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md) | System design, dependency graph |
+| [docs/CONTEXT.md](/docs/CONTEXT.md) | Why this project exists, backtesting.py |
+| [docs/api.md](/docs/api.md) | Python API reference |
+| [docs/development/RELEASE.md](/docs/development/RELEASE.md) | Release workflow, mise tasks |
+| [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics, viability |
