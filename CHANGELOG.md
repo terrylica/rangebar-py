@@ -1,3 +1,16 @@
+# [6.1.0](https://github.com/terrylica/rangebar-py/compare/v6.0.0...v6.1.0) (2026-01-11)
+
+
+### Bug Fixes
+
+* add process_trades_streaming() for cross-batch state persistence (Issue [#16](https://github.com/terrylica/rangebar-py/issues/16)) ([5951fce](https://github.com/terrylica/rangebar-py/commit/5951fce665662997916b4602e67b44211b572e3d))
+* align internal crate version requirements with 6.0.0 ([73409eb](https://github.com/terrylica/rangebar-py/commit/73409eb48fed56a75866f6b7b080cc171b23a369))
+
+
+### Features
+
+* add granular mise release tasks with 4-phase workflow ([6b6482a](https://github.com/terrylica/rangebar-py/commit/6b6482a602770b6758c425a1c312c513d2ab7e4a)), closes [#17](https://github.com/terrylica/rangebar-py/issues/17)
+
 # [6.0.0](https://github.com/terrylica/rangebar-py/compare/v5.4.0...v6.0.0) (2026-01-10)
 
 
