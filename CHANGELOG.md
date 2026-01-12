@@ -1,3 +1,10 @@
+# [7.1.0](https://github.com/terrylica/rangebar-py/compare/v7.0.1...v7.1.0) (2026-01-12)
+
+
+### Features
+
+* add incremental ClickHouse caching with post-cache validation (Issue [#27](https://github.com/terrylica/rangebar-py/issues/27)) ([7318da4](https://github.com/terrylica/rangebar-py/commit/7318da4002c681c54caf898db9510db811d20410)), closes [#5](https://github.com/terrylica/rangebar-py/issues/5)
+
 ## [7.0.1](https://github.com/terrylica/rangebar-py/compare/v7.0.0...v7.0.1) (2026-01-11)
 
 
