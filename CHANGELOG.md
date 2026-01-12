@@ -1,3 +1,10 @@
+## [7.1.3](https://github.com/terrylica/rangebar-py/compare/v7.1.2...v7.1.3) (2026-01-12)
+
+
+### Bug Fixes
+
+* compute microstructure features in batch processing path (Issue [#34](https://github.com/terrylica/rangebar-py/issues/34)) ([531c9b1](https://github.com/terrylica/rangebar-py/commit/531c9b16fc29b270665574adabaf23577fb966ce))
+
 ## [7.1.1](https://github.com/terrylica/rangebar-py/compare/v7.1.0...v7.1.1) (2026-01-12)
 
 
