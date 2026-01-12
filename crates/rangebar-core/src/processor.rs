@@ -278,6 +278,9 @@ impl RangeBarProcessor {
                             bar_state.bar.low <= bar_state.bar.open.min(bar_state.bar.close)
                         );
 
+                        // Compute microstructure features at bar finalization (Issue #34)
+                        bar_state.bar.compute_microstructure_features();
+
                         bars.push(bar_state.bar.clone());
                         current_bar = None;
                         defer_open = true; // Next record will open new bar
@@ -297,7 +300,9 @@ impl RangeBarProcessor {
         // Note: let-chains require Rust 2024, so we use nested if instead
         #[allow(clippy::collapsible_if)]
         if include_incomplete {
-            if let Some(bar_state) = current_bar {
+            if let Some(mut bar_state) = current_bar {
+                // Compute microstructure features for incomplete bar (Issue #34)
+                bar_state.bar.compute_microstructure_features();
                 bars.push(bar_state.bar);
             }
         }
