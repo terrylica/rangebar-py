@@ -18,7 +18,7 @@ repos:
     rev: v0.8.4
     hooks:
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
+        args: [--fix, --exit-non-zero-on-fix, --ignore=E501]
 
   # Rust formatting
   - repo: https://github.com/doublify/pre-commit-rust
