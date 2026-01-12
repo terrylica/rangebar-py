@@ -1,5 +1,10 @@
 [env]
-# Existing GitHub tokens (preserve)
+# GitHub account isolation (required for git-account-validator hooks)
+# See: ADR 2025-12-17-github-multi-account-authentication
+GH_ACCOUNT = "terrylica"
+GH_CONFIG_DIR = "{{ env.HOME }}/.config/gh/profiles/terrylica"
+
+# GitHub tokens (for API operations)
 GH_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/gh-token-terrylica') | trim }}"
 GITHUB_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/gh-token-terrylica') | trim }}"
 
@@ -53,6 +58,18 @@ run = "cargo nextest run --workspace --exclude rangebar-py"
 [tasks.test-py]
 description = "Run Python tests"
 run = "pytest tests/ -v"
+
+[tasks."test:e2e"]
+description = "Run end-to-end tests (requires ClickHouse)"
+run = "pytest tests/ -v -m 'not slow' --tb=short"
+
+[tasks."test:clickhouse"]
+description = "Run ClickHouse-specific tests"
+run = "pytest tests/ -v -m clickhouse --tb=short"
+
+[tasks."test:all"]
+description = "Run all tests including slow and ClickHouse"
+run = "pytest tests/ -v --tb=short"
 
 [tasks.deny]
 description = "Run cargo deny security checks"
@@ -203,6 +220,22 @@ run = "python scripts/validate_memory_efficiency.py"
 description = "Run all production validation checks"
 depends = ["validate:security", "validate:injection", "validate:memory"]
 
+[tasks."validate:clickhouse"]
+description = "Validate ClickHouse connectivity and cache integrity"
+run = "python scripts/validate_clickhouse.py"
+
+# =============================================================================
+# ClickHouse Cache Tasks
+# =============================================================================
+
+[tasks."cache:status"]
+description = "Show ClickHouse cache statistics"
+run = "python scripts/cache_status.py"
+
+[tasks."cache:clear"]
+description = "Clear ClickHouse cache for a symbol (interactive)"
+run = "python scripts/cache_clear.py"
+
 # =============================================================================
 # Release Tasks
 # =============================================================================
@@ -337,6 +370,21 @@ if [ ! -d node_modules ]; then
 fi
 npm run release
 """
+
+[tasks."release:dry"]
+description = "Preview what semantic-release would do (no changes)"
+run = """
+if [ ! -d node_modules ]; then
+  echo "Installing npm dependencies..."
+  npm install
+fi
+echo "=== DRY RUN: Previewing release ==="
+npx semantic-release --dry-run --no-ci
+"""
+
+[tasks."release:pypi"]
+description = "Publish to PyPI using Doppler credentials (local-only)"
+run = "./scripts/publish-to-pypi.sh"
 
 [tasks."release:full"]
 description = "Full 4-phase release workflow"
