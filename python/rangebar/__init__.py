@@ -1041,15 +1041,18 @@ def process_trades_polars(
     # Determine volume column name
     volume_col = "quantity" if "quantity" in trades.columns else "volume"
 
+    # Build column list - include is_buyer_maker for microstructure features (Issue #30)
+    columns = [
+        pl.col("timestamp"),
+        pl.col("price"),
+        pl.col(volume_col).alias("quantity"),
+    ]
+    if "is_buyer_maker" in trades.columns:
+        columns.append(pl.col("is_buyer_maker"))
+
     # Select only required columns (minimal dict conversion)
     # This avoids converting unused columns to Python objects
-    trades_minimal = trades.select(
-        [
-            pl.col("timestamp"),
-            pl.col("price"),
-            pl.col(volume_col).alias("quantity"),
-        ]
-    )
+    trades_minimal = trades.select(columns)
 
     # Convert to trades list
     trades_list = trades_minimal.to_dicts()
@@ -2071,7 +2074,7 @@ def get_range_bars(
         except ImportError:
             # ClickHouse not available, fall through to tick processing
             pass
-        except Exception:
+        except ConnectionError:
             # ClickHouse connection failed, fall through to tick processing
             pass
 
@@ -2683,14 +2686,17 @@ def _process_binance_trades(
     # Determine volume column name
     volume_col = "quantity" if "quantity" in trades.columns else "volume"
 
+    # Build column list - include is_buyer_maker for microstructure features (Issue #30)
+    columns = [
+        pl.col("timestamp"),
+        pl.col("price"),
+        pl.col(volume_col).alias("quantity"),
+    ]
+    if "is_buyer_maker" in trades.columns:
+        columns.append(pl.col("is_buyer_maker"))
+
     # Select only required columns
-    trades_minimal = trades.select(
-        [
-            pl.col("timestamp"),
-            pl.col("price"),
-            pl.col(volume_col).alias("quantity"),
-        ]
-    )
+    trades_minimal = trades.select(columns)
 
     # Convert to trades list and process
     trades_list = trades_minimal.to_dicts()
