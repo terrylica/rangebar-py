@@ -2320,6 +2320,9 @@ def precompute_range_bars(
     processor = RangeBarProcessor(threshold_decimal_bps, symbol=symbol)
 
     all_bars: list[pd.DataFrame] = []
+    month_bars: list[pd.DataFrame] = (
+        []
+    )  # Issue #27: Track bars per month for incremental caching
     total_ticks = 0
     cache_symbol = f"{source}_{market_normalized}_{symbol}".upper()
 
@@ -2410,7 +2413,7 @@ def precompute_range_bars(
                 bars = processor.process_trades_streaming(chunk)
                 if bars:
                     bars_df = processor.to_dataframe(bars)
-                    all_bars.append(bars_df)
+                    month_bars.append(bars_df)  # Issue #27: Track per-month bars
 
                 del chunk, tick_chunk
 
@@ -2488,7 +2491,9 @@ def precompute_range_bars(
                         bars = processor.process_trades_streaming(chunk)
                         if bars:
                             bars_df = processor.to_dataframe(bars)
-                            all_bars.append(bars_df)
+                            month_bars.append(
+                                bars_df
+                            )  # Issue #27: Track per-month bars
 
                         del chunk, chunk_df
 
@@ -2497,6 +2502,46 @@ def precompute_range_bars(
 
                 current_day = next_day
 
+        # Issue #27: Incremental caching - store bars to ClickHouse after each month
+        # This provides crash resilience and bounded memory for DB writes
+        if month_bars:
+            month_df = pd.concat(month_bars, ignore_index=False)
+            month_df = month_df.sort_index()
+
+            # Report progress - caching this month
+            if progress_callback:
+                progress_callback(
+                    PrecomputeProgress(
+                        phase="caching",
+                        current_month=month_str,
+                        months_completed=i + 1,
+                        months_total=len(months),
+                        bars_generated=len(month_df) + sum(len(b) for b in all_bars),
+                        ticks_processed=total_ticks,
+                        elapsed_seconds=time.time() - start_time,
+                    )
+                )
+
+            # Cache immediately (idempotent via ReplacingMergeTree)
+            rows_sent = len(month_df)
+            rows_inserted = cache.store_bars_bulk(
+                symbol, threshold_decimal_bps, month_df
+            )
+
+            # Post-cache validation: FAIL LOUDLY if ClickHouse didn't receive all bars
+            if rows_inserted != rows_sent:
+                msg = (
+                    f"ClickHouse cache validation FAILED for {month_str}: "
+                    f"sent {rows_sent} bars but only {rows_inserted} inserted. "
+                    f"Data integrity compromised - aborting."
+                )
+                raise RuntimeError(msg)
+
+            # Preserve for final validation and return
+            all_bars.append(month_df)
+            month_bars = []  # Clear to reclaim memory
+            gc.collect()
+
     # Combine all bars
     if all_bars:
         final_bars = pd.concat(all_bars, ignore_index=False)
@@ -2504,23 +2549,8 @@ def precompute_range_bars(
     else:
         final_bars = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
 
-    # Report progress - caching
-    if progress_callback:
-        progress_callback(
-            PrecomputeProgress(
-                phase="caching",
-                current_month=f"{months[-1][0]}-{months[-1][1]:02d}" if months else "",
-                months_completed=len(months),
-                months_total=len(months),
-                bars_generated=len(final_bars),
-                ticks_processed=total_ticks,
-                elapsed_seconds=time.time() - start_time,
-            )
-        )
-
-    # Store to cache
-    if not final_bars.empty:
-        cache.store_bars_bulk(symbol, threshold_decimal_bps, final_bars)
+    # Note: Caching now happens incrementally after each month (Issue #27)
+    # No final bulk store needed - all bars already cached per-month
 
     # Validate continuity (Issue #19: configurable tolerance and validation mode)
     continuity_valid: bool | None = None

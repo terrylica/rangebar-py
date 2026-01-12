@@ -143,6 +143,8 @@ ignore = [
     "F841",    # Unused variable (common in mock tests)
     "RET504",  # Unnecessary assignment before return
     "SIM117",  # Nested with statements
+    "E501",    # Line too long (test output messages can be verbose)
+    "B007",    # Loop control variable not used (common in iterrows)
 ]
 "examples/*" = [
     "PD901",   # Generic variable name 'df'

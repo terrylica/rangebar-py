@@ -275,12 +275,13 @@ class RangeBarCache(ClickHouseClientMixin):
         # Filter to existing columns
         columns = [c for c in columns if c in df.columns]
 
-        self.client.insert_df(
+        summary = self.client.insert_df(
             "rangebar_cache.range_bars",
             df[columns],
         )
 
-        return len(df)
+        # Return actual rows written per ClickHouse (not len(df) which is what we sent)
+        return summary.written_rows
 
     def get_range_bars(self, key: CacheKey) -> pd.DataFrame | None:
         """Get cached range bars.
@@ -1027,9 +1028,10 @@ class RangeBarCache(ClickHouseClientMixin):
         # Filter to existing columns
         columns = [c for c in columns if c in df.columns]
 
-        self.client.insert_df(
+        summary = self.client.insert_df(
             "rangebar_cache.range_bars",
             df[columns],
         )
 
-        return len(df)
+        # Return actual rows written per ClickHouse (not len(df) which is what we sent)
+        return summary.written_rows
