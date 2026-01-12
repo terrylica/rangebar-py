@@ -1,3 +1,10 @@
+## [7.1.1](https://github.com/terrylica/rangebar-py/compare/v7.1.0...v7.1.1) (2026-01-12)
+
+
+### Bug Fixes
+
+* pass is_buyer_maker to Rust for microstructure features (Issue [#30](https://github.com/terrylica/rangebar-py/issues/30)) ([6c32dbb](https://github.com/terrylica/rangebar-py/commit/6c32dbb2d0f6860d10d0e3316b877e5371f34804))
+
 # [7.1.0](https://github.com/terrylica/rangebar-py/compare/v7.0.1...v7.1.0) (2026-01-12)
 
 
