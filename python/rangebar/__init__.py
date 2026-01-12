@@ -555,13 +555,20 @@ class RangeBarProcessor:
 
         return self._processor.process_trades_streaming(trades)
 
-    def to_dataframe(self, bars: list[dict[str, str | float | int]]) -> pd.DataFrame:
+    def to_dataframe(
+        self,
+        bars: list[dict[str, str | float | int]],
+        include_microstructure: bool = False,
+    ) -> pd.DataFrame:
         """Convert range bars to pandas DataFrame (backtesting.py compatible).
 
         Parameters
         ----------
         bars : List[Dict]
             List of range bar dictionaries from process_trades()
+        include_microstructure : bool, default=False
+            If True, include all microstructure columns (vwap, buy_volume,
+            sell_volume, ofi, kyle_lambda_proxy, etc.)
 
         Returns
         -------
@@ -569,6 +576,7 @@ class RangeBarProcessor:
             DataFrame with DatetimeIndex and OHLCV columns:
             - Index: timestamp (DatetimeIndex)
             - Columns: Open, High, Low, Close, Volume
+            - (if include_microstructure) Additional microstructure columns
 
         Notes
         -----
@@ -614,6 +622,10 @@ class RangeBarProcessor:
                 "volume": "Volume",
             }
         )
+
+        if include_microstructure:
+            # Return all columns including microstructure
+            return result
 
         # Return only OHLCV columns (drop microstructure fields for backtesting)
         return result[["Open", "High", "Low", "Close", "Volume"]]
@@ -2415,7 +2427,8 @@ def precompute_range_bars(
                 chunk = tick_chunk.to_dicts()
                 bars = processor.process_trades_streaming(chunk)
                 if bars:
-                    bars_df = processor.to_dataframe(bars)
+                    # Issue #30: Always include microstructure for ClickHouse cache
+                    bars_df = processor.to_dataframe(bars, include_microstructure=True)
                     month_bars.append(bars_df)  # Issue #27: Track per-month bars
 
                 del chunk, tick_chunk
@@ -2493,7 +2506,10 @@ def precompute_range_bars(
                         # Stream to Rust processor (Issue #16: use streaming mode)
                         bars = processor.process_trades_streaming(chunk)
                         if bars:
-                            bars_df = processor.to_dataframe(bars)
+                            # Issue #30: Always include microstructure for ClickHouse cache
+                            bars_df = processor.to_dataframe(
+                                bars, include_microstructure=True
+                            )
                             month_bars.append(
                                 bars_df
                             )  # Issue #27: Track per-month bars
