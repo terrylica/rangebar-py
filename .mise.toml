@@ -1,14 +1,31 @@
 [env]
-# GitHub account isolation (required for git-account-validator hooks)
+# =============================================================================
+# GitHub Account Isolation (CRITICAL for multi-account setups)
+# =============================================================================
 # See: ADR 2025-12-17-github-multi-account-authentication
+#
+# This ensures all gh CLI and git operations use the correct GitHub identity.
+# The git remote MUST use SSH with host alias: git@github.com-terrylica:...
 GH_ACCOUNT = "terrylica"
 GH_CONFIG_DIR = "{{ env.HOME }}/.config/gh/profiles/terrylica"
 
-# GitHub tokens (for API operations)
-GH_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/gh-token-terrylica') | trim }}"
-GITHUB_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/gh-token-terrylica') | trim }}"
+# GitHub token for gh CLI operations (uses profile-specific auth)
+# NOTE: For semantic-release, use `mise run release:version` which fetches
+# the PAT from Doppler dynamically to avoid stale token issues.
+GH_TOKEN = "{{ exec(command='gh auth token --hostname github.com 2>/dev/null || echo \"\"') | trim }}"
+GITHUB_TOKEN = "{{ exec(command='gh auth token --hostname github.com 2>/dev/null || echo \"\"') | trim }}"
 
-# Benchmark configuration
+# =============================================================================
+# Doppler Configuration (SSoT for secrets)
+# =============================================================================
+# PyPI: doppler secrets get PYPI_TOKEN --project claude-config --config prd
+# GitHub PAT: doppler secrets get GH_TOKEN_TERRYLICA --project main --config dev
+DOPPLER_PYPI_PROJECT = "claude-config"
+DOPPLER_PYPI_CONFIG = "prd"
+
+# =============================================================================
+# Build Configuration
+# =============================================================================
 BENCH_DATA_DIR = "{{ env.PWD }}/bench-data"
 PROFILE_DATA_DIR = "{{ env.PWD }}/profile-data"
 
@@ -333,11 +350,26 @@ echo "OK: Preflight passed"
 description = "Synchronize with remote (Phase 2)"
 depends = ["release:preflight"]
 run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
 echo "=== SYNC ==="
+
+# Ensure SSH remote for terrylica account
+REMOTE_URL=$(git remote get-url origin)
+if [[ ! "$REMOTE_URL" =~ github.com-terrylica ]]; then
+  echo "Fixing remote URL for terrylica identity..."
+  git remote set-url origin "git@github.com-terrylica:terrylica/rangebar-py.git"
+fi
+
 git pull --rebase origin main || { echo "FAIL: Pull failed"; exit 1; }
 git push origin main || { echo "FAIL: Push failed"; exit 1; }
 echo "OK: Synced"
 """
+
+[tasks."release:check-config"]
+description = "Verify release configuration (GitHub, Doppler, SSH)"
+run = "./scripts/check-release-config.sh"
 
 [tasks."release:build-all"]
 description = "Build all platform wheels (Phase 3)"
@@ -362,59 +394,21 @@ echo "To publish: mise run publish"
 """
 
 [tasks."release:version"]
-description = "Bump version via semantic-release (requires npm install first)"
-run = """
-if [ ! -d node_modules ]; then
-  echo "Installing npm dependencies..."
-  npm install
-fi
-npm run release
-"""
+description = "Bump version via semantic-release with Doppler GitHub token"
+run = "./scripts/semantic-release.sh"
 
 [tasks."release:dry"]
 description = "Preview what semantic-release would do (no changes)"
-run = """
-if [ ! -d node_modules ]; then
-  echo "Installing npm dependencies..."
-  npm install
-fi
-echo "=== DRY RUN: Previewing release ==="
-npx semantic-release --dry-run --no-ci
-"""
+run = "npm install --silent 2>/dev/null && GH_CONFIG_DIR=$HOME/.config/gh/profiles/terrylica GITHUB_TOKEN=$(gh auth token) npx semantic-release --dry-run --no-ci"
 
 [tasks."release:pypi"]
-description = "Publish to PyPI using Doppler credentials (local-only)"
+description = "Publish to PyPI using Doppler credentials (local-only, ADR-0027)"
 run = "./scripts/publish-to-pypi.sh"
 
 [tasks."release:full"]
-description = "Full 4-phase release workflow"
-run = """
-echo "=== FULL RELEASE WORKFLOW ==="
-
-echo ""
-echo "=== Phase 1: PREFLIGHT ==="
-mise run release:preflight
-
-echo ""
-echo "=== Phase 2: SYNC ==="
-mise run release:sync
-
-echo ""
-echo "=== Phase 3: VERSION (semantic-release) ==="
-mise run release:version
-
-echo ""
-echo "=== Phase 4: BUILD ==="
-mise run release:build-all
-
-echo ""
-echo "=== Phase 5: POSTFLIGHT ==="
-mise run release:postflight
-
-echo ""
-echo "=== COMPLETE ==="
-echo "Run 'mise run publish' to publish to PyPI"
-"""
+description = "Full 4-phase release workflow (versioning only - PyPI separate)"
+depends = ["release:preflight", "release:sync", "release:version", "release:build-all", "release:postflight"]
+run = "echo 'Release complete! Next: mise run release:pypi'"
 
 # =============================================================================
 # Smoke Test Tasks
