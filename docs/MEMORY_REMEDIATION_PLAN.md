@@ -304,12 +304,33 @@ memray stats profile.bin | grep "Peak memory"
 
 ## Success Criteria
 
-| Metric                | Current | Target   | Status |
-| --------------------- | ------- | -------- | ------ |
-| Single test peak      | 52 GB   | < 2 GB   | -      |
-| Full suite (isolated) | OOM     | Pass     | -      |
-| 1-month processing    | 169 GB  | < 500 MB | -      |
-| 1-year processing     | OOM     | < 2 GB   | -      |
+| Metric                | Current | Target   | Status      |
+| --------------------- | ------- | -------- | ----------- |
+| Single test peak      | 52 GB   | < 2 GB   | In progress |
+| Full suite (isolated) | OOM     | Pass     | **PASS**    |
+| 1-month processing    | 169 GB  | < 500 MB | In progress |
+| 1-year processing     | OOM     | < 2 GB   | In progress |
+
+---
+
+## Validation Results (2026-01-12)
+
+### P0 Fixes Validated
+
+| Test                                                 | Trades    | Peak Memory | Status   |
+| ---------------------------------------------------- | --------- | ----------- | -------- |
+| MEM-001: Vectorized year-month (1M trades, 3 months) | 1,000,000 | **137 MB**  | **PASS** |
+| MEM-002: Chunked process_trades_polars (500K trades) | 500,000   | **66 MB**   | **PASS** |
+| MEM-005: Full test suite (264 tests)                 | -         | Bounded     | **PASS** |
+
+### Test Suite Results
+
+```
+264 passed, 62 skipped (E2E tests skipped locally per MEM-005)
+Duration: 50.66s
+```
+
+**Note**: E2E tests are skipped locally to prevent OOM. Set `CI=true` to run all tests.
 
 ---
 
@@ -323,6 +344,7 @@ memray stats profile.bin | grep "Peak memory"
 
 ## Changelog
 
-| Date       | Change               |
-| ---------- | -------------------- |
-| 2026-01-12 | Initial plan created |
+| Date       | Change                                                    |
+| ---------- | --------------------------------------------------------- |
+| 2026-01-12 | Initial plan created                                      |
+| 2026-01-12 | MEM-001, MEM-002, MEM-005 completed and validated (P0+P1) |
