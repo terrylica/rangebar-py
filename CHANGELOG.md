@@ -1,3 +1,32 @@
+# [8.0.0](https://github.com/terrylica/rangebar-py/compare/v7.1.3...v8.0.0) (2026-01-13)
+
+
+### Bug Fixes
+
+* apply column selection before .collect() for predicate pushdown (MEM-003) ([03f1c47](https://github.com/terrylica/rangebar-py/commit/03f1c471c8dfc88f6d96cec0d51709622e2f8277))
+* **MEM-001:** vectorize _timestamp_to_year_month to eliminate per-tick Python calls ([39245c5](https://github.com/terrylica/rangebar-py/commit/39245c53ce3b19ba092ebd735cb65890bd638ece))
+* **MEM-002:** chunk .to_dicts() calls to bound memory usage ([d190d83](https://github.com/terrylica/rangebar-py/commit/d190d832d4621b31986153bc3133169db0aef4aa))
+* **MEM-005:** add test suite memory isolation with GC fixture ([3b0c144](https://github.com/terrylica/rangebar-py/commit/3b0c1442fd2828de0a1d7bf3416c8afb8909b48e))
+* **MEM-006:** replace pd.concat with Polars for memory efficiency ([e6fb056](https://github.com/terrylica/rangebar-py/commit/e6fb056a8c05ddaaebf4bb85168656908dab5cfa))
+
+
+### Features
+
+* add get_range_bars_pandas backward compatibility shim (Phase 5.1) ([b582d72](https://github.com/terrylica/rangebar-py/commit/b582d72dd47f53b20bdb8d9a9320224b73abbc4b))
+* add store_bars_batch for Arrow-based streaming cache writes (Phase 4.3) ([c7d293e](https://github.com/terrylica/rangebar-py/commit/c7d293e3ed7b70d964954c53d53e2b6297fba352))
+* add streaming-first API with materialize parameter (Phase 4) ([2d6fa25](https://github.com/terrylica/rangebar-py/commit/2d6fa250f2acc23af192bcd7a8121ed57c05450f))
+* **python:** expose process_trades_streaming_arrow in RangeBarProcessor ([ee16d47](https://github.com/terrylica/rangebar-py/commit/ee16d479bef977e8fc121478f6fe50da79e58287))
+* **streaming:** add memory-efficient streaming architecture (Phases 1-3) ([4ec670d](https://github.com/terrylica/rangebar-py/commit/4ec670d95b01af0f05478220e817a144eb4fc478)), closes [#32](https://github.com/terrylica/rangebar-py/issues/32)
+
+
+### BREAKING CHANGES
+
+* get_range_bars() return type is now
+pd.DataFrame | Iterator[pl.DataFrame]. Use materialize=True
+(default) for backward compatibility.
+
+Memory impact: ~50 MB per 6-hour chunk vs 5.6 GB for full day
+
 ## [7.1.3](https://github.com/terrylica/rangebar-py/compare/v7.1.2...v7.1.3) (2026-01-12)
 
 

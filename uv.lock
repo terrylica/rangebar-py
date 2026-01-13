@@ -1429,7 +1429,7 @@ wheels = [
 
 [[package]]
 name = "rangebar"
-version = "7.1.3"
+version = "8.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "arro3-core" },

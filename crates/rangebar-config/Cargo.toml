@@ -14,7 +14,7 @@ keywords = ["finance", "trading", "configuration"]
 categories = ["config"]
 
 [dependencies]
-rangebar-core = { path = "../rangebar-core", version = "7.0" }
+rangebar-core = { path = "../rangebar-core", version = "8.0" }
 
 # Serialization
 serde.workspace = true
