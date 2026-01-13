@@ -177,6 +177,10 @@ class TestRangeBarCache:
         client.query.return_value = MagicMock(result_rows=[])
         client.query_df.return_value = pd.DataFrame()
         client.query_df_arrow.return_value = pd.DataFrame()  # Arrow-optimized
+        # Configure insert_df to return QuerySummary-like object with written_rows
+        insert_summary = MagicMock()
+        insert_summary.written_rows = 1
+        client.insert_df.return_value = insert_summary
         return client
 
     @pytest.fixture
