@@ -2701,8 +2701,8 @@ def precompute_range_bars(
         # Issue #27: Incremental caching - store bars to ClickHouse after each month
         # This provides crash resilience and bounded memory for DB writes
         if month_bars:
-            month_df = pd.concat(month_bars, ignore_index=False)
-            month_df = month_df.sort_index()
+            # MEM-006: Use Polars for memory-efficient concatenation
+            month_df = _concat_pandas_via_polars(month_bars)
 
             # Report progress - caching this month
             if progress_callback:
@@ -2738,10 +2738,9 @@ def precompute_range_bars(
             month_bars = []  # Clear to reclaim memory
             gc.collect()
 
-    # Combine all bars
+    # Combine all bars (MEM-006: use Polars for memory efficiency)
     if all_bars:
-        final_bars = pd.concat(all_bars, ignore_index=False)
-        final_bars = final_bars.sort_index()
+        final_bars = _concat_pandas_via_polars(all_bars)
     else:
         final_bars = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
 
@@ -2936,6 +2935,47 @@ def _bars_list_to_polars(
     # Only OHLCV columns
     available = [c for c in base_cols if c in df.columns]
     return df.select(available)
+
+
+def _concat_pandas_via_polars(dfs: list[pd.DataFrame]) -> pd.DataFrame:
+    """Concatenate pandas DataFrames using Polars for memory efficiency (MEM-006).
+
+    This function uses Polars' more efficient concatenation instead of pd.concat,
+    reducing memory fragmentation and improving performance for large datasets.
+
+    Parameters
+    ----------
+    dfs : list[pd.DataFrame]
+        List of pandas DataFrames to concatenate
+
+    Returns
+    -------
+    pd.DataFrame
+        Concatenated DataFrame with sorted DatetimeIndex
+    """
+    import polars as pl
+
+    if not dfs:
+        return pd.DataFrame()
+
+    if len(dfs) == 1:
+        return dfs[0]
+
+    # Convert to Polars, concat, convert back
+    # This is more memory-efficient than pd.concat for large DataFrames
+    pl_dfs = [pl.from_pandas(df.reset_index()) for df in dfs]
+    combined = pl.concat(pl_dfs)
+
+    # Sort by timestamp/index column
+    index_col = "timestamp" if "timestamp" in combined.columns else combined.columns[0]
+    combined = combined.sort(index_col)
+
+    # Convert back to pandas with proper index
+    result = combined.to_pandas()
+    if index_col in result.columns:
+        result = result.set_index(index_col)
+
+    return result
 
 
 def _fetch_binance(
@@ -3725,8 +3765,8 @@ def _fill_gap_and_cache(
                     stacklevel=3,
                 )
 
-            combined = pd.concat([new_bars, current_bars])
-            combined = combined.sort_index()
+            # MEM-006: Use Polars for memory-efficient concatenation
+            combined = _concat_pandas_via_polars([new_bars, current_bars])
             return combined[~combined.index.duplicated(keep="last")]
 
         return new_bars
@@ -3790,8 +3830,8 @@ def _fill_gap_and_cache(
     if not all_bars:
         return None
 
-    combined = pd.concat(all_bars)
-    combined = combined.sort_index()
+    # MEM-006: Use Polars for memory-efficient concatenation
+    combined = _concat_pandas_via_polars(all_bars)
     return combined[~combined.index.duplicated(keep="last")]
 
 
@@ -3967,8 +4007,8 @@ def _fetch_and_compute_bars(
     if not all_bars:
         return None
 
-    combined = pd.concat(all_bars)
-    combined = combined.sort_index()
+    # MEM-006: Use Polars for memory-efficient concatenation
+    combined = _concat_pandas_via_polars(all_bars)
     # Remove duplicates (by index) and return
     return combined[~combined.index.duplicated(keep="last")]
 
