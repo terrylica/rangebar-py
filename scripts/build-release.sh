@@ -4,11 +4,11 @@
 # =============================================================================
 # Builds wheels for:
 #   - macOS ARM64 (local)
-#   - macOS x86_64 (cross-compile)
 #   - Linux x86_64 (bigblack SSH)
 #   - Source distribution (sdist)
 #
-# Uses abi3-py39 for single wheel per platform.
+# Builds per-Python-version wheels (abi3 removed for Arrow export support).
+# Supports: Python 3.10, 3.11, 3.12
 # =============================================================================
 
 set -euo pipefail
@@ -20,7 +20,10 @@ DRY_RUN="${DRY_RUN:-false}"
 VERBOSE="${VERBOSE:-false}"
 SKIP_REMOTE="${SKIP_REMOTE:-false}"
 SKIP_VERIFY="${SKIP_VERIFY:-false}"
-SKIP_MACOS_X86="${SKIP_MACOS_X86:-false}"
+SKIP_MACOS_X86="${SKIP_MACOS_X86:-true}"  # x86_64 not needed - ARM64 only
+
+# Python versions to build for (abi3 removed, need per-version wheels)
+PYTHON_VERSIONS=("python3.10" "python3.11" "python3.12")
 
 # Project paths
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -69,19 +72,29 @@ run_cmd() {
 # -----------------------------------------------------------------------------
 
 build_macos_arm64() {
-    log_info "Building macOS ARM64 wheel (native)..."
+    log_info "Building macOS ARM64 wheels (native) for ${#PYTHON_VERSIONS[@]} Python versions..."
 
-    cd "$PROJECT_DIR"
-    run_cmd maturin build --release --profile wheel
+    cd "$PROJECT_DIR" || { log_error "Failed to cd to $PROJECT_DIR"; return 1; }
 
-    # Find the built wheel
-    local wheel
-    wheel=$(find "$DIST_DIR" -name "*macosx*arm64*.whl" -newer /tmp/.build_start 2>/dev/null | head -1)
+    # Build for each Python version
+    for pyver in "${PYTHON_VERSIONS[@]}"; do
+        if command -v "$pyver" &> /dev/null; then
+            log_info "Building for $pyver..."
+            run_cmd maturin build --release --profile wheel -i "$pyver"
+        else
+            log_warn "Python interpreter not found: $pyver (skipping)"
+        fi
+    done
 
-    if [[ -n "$wheel" ]]; then
-        log_success "Built: $(basename "$wheel")"
+    # Count built wheels
+    local wheel_count
+    wheel_count=$(find "$DIST_DIR" -name "*macosx*arm64*.whl" -newer /tmp/.build_start 2>/dev/null | wc -l | tr -d ' ')
+
+    if [[ "$wheel_count" -gt 0 ]]; then
+        log_success "Built $wheel_count macOS ARM64 wheel(s)"
+        find "$DIST_DIR" -name "*macosx*arm64*.whl" -newer /tmp/.build_start -exec basename {} \;
     else
-        log_warn "macOS ARM64 wheel not found (may already exist)"
+        log_warn "No macOS ARM64 wheels built (may already exist)"
     fi
 }
 
@@ -91,7 +104,7 @@ build_macos_x86_64() {
         return 0
     fi
 
-    log_info "Building macOS x86_64 wheel (cross-compile)..."
+    log_info "Building macOS x86_64 wheels (cross-compile) for ${#PYTHON_VERSIONS[@]} Python versions..."
 
     # Check if target is installed
     if ! rustup target list --installed | grep -q "x86_64-apple-darwin"; then
@@ -99,16 +112,27 @@ build_macos_x86_64() {
         run_cmd rustup target add x86_64-apple-darwin
     fi
 
-    cd "$PROJECT_DIR"
-    run_cmd maturin build --release --profile wheel --target x86_64-apple-darwin
+    cd "$PROJECT_DIR" || { log_error "Failed to cd to $PROJECT_DIR"; return 1; }
 
-    local wheel
-    wheel=$(find "$DIST_DIR" -name "*macosx*x86_64*.whl" -newer /tmp/.build_start 2>/dev/null | head -1)
+    # Build for each Python version
+    for pyver in "${PYTHON_VERSIONS[@]}"; do
+        if command -v "$pyver" &> /dev/null; then
+            log_info "Building for $pyver (x86_64)..."
+            run_cmd maturin build --release --profile wheel --target x86_64-apple-darwin -i "$pyver"
+        else
+            log_warn "Python interpreter not found: $pyver (skipping)"
+        fi
+    done
 
-    if [[ -n "$wheel" ]]; then
-        log_success "Built: $(basename "$wheel")"
+    # Count built wheels
+    local wheel_count
+    wheel_count=$(find "$DIST_DIR" -name "*macosx*x86_64*.whl" -newer /tmp/.build_start 2>/dev/null | wc -l | tr -d ' ')
+
+    if [[ "$wheel_count" -gt 0 ]]; then
+        log_success "Built $wheel_count macOS x86_64 wheel(s)"
+        find "$DIST_DIR" -name "*macosx*x86_64*.whl" -newer /tmp/.build_start -exec basename {} \;
     else
-        log_warn "macOS x86_64 wheel not found (may already exist)"
+        log_warn "No macOS x86_64 wheels built (may already exist)"
     fi
 }
 
@@ -134,11 +158,9 @@ build_linux_x86_64() {
         return 0
     fi
 
-    log_info "Building Linux x86_64 wheel on ${LINUX_BUILD_HOST}..."
+    log_info "Building Linux x86_64 wheels on ${LINUX_BUILD_HOST}..."
 
     local remote_dir="/tmp/rangebar-py-build-$$"
-    local version
-    version=$(grep '^version = ' "$PROJECT_DIR/pyproject.toml" | head -1 | sed 's/.*= "\(.*\)"/\1/')
 
     # Sync project to remote
     log_info "Syncing project to ${LINUX_BUILD_HOST}:${remote_dir}..."
@@ -151,12 +173,20 @@ build_linux_x86_64() {
         --exclude '*.egg-info/' \
         "$PROJECT_DIR/" "${LINUX_BUILD_USER}@${LINUX_BUILD_HOST}:${remote_dir}/"
 
-    # Build on remote
-    log_info "Building wheel on ${LINUX_BUILD_HOST}..."
+    # Build on remote for each Python version
+    log_info "Building wheels on ${LINUX_BUILD_HOST} for Python 3.10, 3.11, 3.12..."
     run_cmd ssh "${LINUX_BUILD_USER}@${LINUX_BUILD_HOST}" "
-        cd ${remote_dir}
+        cd ${remote_dir} || exit 1
         export PATH=\$HOME/.cargo/bin:\$HOME/.local/bin:\$PATH
-        uvx maturin build --release --profile wheel --compatibility manylinux_2_17
+        # Build for each Python version available on remote
+        for pyver in python3.10 python3.11 python3.12; do
+            if command -v \$pyver &> /dev/null; then
+                echo \"Building for \$pyver...\"
+                uvx maturin build --release --profile wheel --compatibility manylinux_2_17 -i \$pyver
+            else
+                echo \"Skipping \$pyver (not found)\"
+            fi
+        done
     "
 
     # Fetch wheel back

@@ -278,8 +278,19 @@ run = "maturin sdist"
 # =============================================================================
 
 [tasks."release:macos-arm64"]
-description = "Build macOS ARM64 wheel (native)"
-run = "maturin build --profile wheel"
+description = "Build macOS ARM64 wheels for Python 3.10, 3.11, 3.12 (native)"
+run = """
+echo "=== Building macOS ARM64 wheels (per-Python-version) ==="
+for pyver in python3.10 python3.11 python3.12; do
+    if command -v $pyver &> /dev/null; then
+        echo "Building for $pyver..."
+        maturin build --profile wheel -i $pyver
+    else
+        echo "WARN: $pyver not found, skipping"
+    fi
+done
+echo "OK: macOS ARM64 wheels built"
+"""
 
 [tasks."release:linux-preflight"]
 description = "Verify Linux build host availability"
@@ -296,10 +307,10 @@ echo "OK: Remote Rust version: $REMOTE_RUST"
 """
 
 [tasks."release:linux"]
-description = "Build Linux x86_64 wheel on remote host (Docker manylinux)"
+description = "Build Linux x86_64 wheels for Python 3.10, 3.11, 3.12 on remote host (Docker manylinux)"
 depends = ["release:linux-preflight"]
 run = """
-echo "=== Building Linux x86_64 Wheel (Docker manylinux) ==="
+echo "=== Building Linux x86_64 Wheels (Docker manylinux, per-Python-version) ==="
 PROJECT_DIR="$(pwd)"
 REMOTE_DIR="${LINUX_BUILD_DIR}-$$"
 
@@ -314,11 +325,12 @@ rsync -az --delete \
     "$PROJECT_DIR/" "$LINUX_BUILD_USER@$LINUX_BUILD_HOST:$REMOTE_DIR/"
 
 # Build using manylinux Docker container for glibc compatibility
-ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" 'cd '"$REMOTE_DIR"' && docker run --rm -v $(pwd):/io -w /io quay.io/pypa/manylinux2014_x86_64 bash -c "yum install -y openssl-devel perl-IPC-Cmd && curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && /opt/python/cp311-cp311/bin/pip install maturin && /opt/python/cp311-cp311/bin/maturin build --profile wheel --compatibility manylinux2014 -i /opt/python/cp311-cp311/bin/python"'
+# Build for Python 3.10, 3.11, 3.12 (abi3 removed, need per-version wheels)
+ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" 'cd '"$REMOTE_DIR"' && docker run --rm -v $(pwd):/io -w /io quay.io/pypa/manylinux2014_x86_64 bash -c "yum install -y openssl-devel perl-IPC-Cmd && curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && /opt/python/cp311-cp311/bin/pip install maturin && for pyver in cp310-cp310 cp311-cp311 cp312-cp312; do /opt/python/cp311-cp311/bin/maturin build --profile wheel --compatibility manylinux2014 -i /opt/python/\\$pyver/bin/python; done"'
 
 mkdir -p dist/
 scp "$LINUX_BUILD_USER@$LINUX_BUILD_HOST:$REMOTE_DIR/target/wheels/*manylinux*.whl" dist/
-echo "OK: Linux wheel built"
+echo "OK: Linux wheels built"
 """
 
 # =============================================================================
@@ -399,7 +411,7 @@ run = "./scripts/semantic-release.sh"
 
 [tasks."release:dry"]
 description = "Preview what semantic-release would do (no changes)"
-run = "npm install --silent 2>/dev/null && GH_CONFIG_DIR=$HOME/.config/gh/profiles/terrylica GITHUB_TOKEN=$(gh auth token) npx semantic-release --dry-run --no-ci"
+run = "bun install --silent 2>/dev/null && GH_CONFIG_DIR=$HOME/.config/gh/profiles/terrylica GITHUB_TOKEN=$(gh auth token) bun run semantic-release --dry-run --no-ci"
 
 [tasks."release:pypi"]
 description = "Publish to PyPI using Doppler credentials (local-only, ADR-0027)"
