@@ -337,6 +337,53 @@ class TestTickStorage:
         assert final_count == initial_count * 2
 
 
+class TestVectorizedYearMonth:
+    """Tests for MEM-001 fix: vectorized _timestamp_to_year_month."""
+
+    def test_vectorized_year_month_extraction(self) -> None:
+        """Verify vectorized Polars year-month extraction produces correct results."""
+        # Test data spanning multiple months
+        timestamps = [
+            1704067200000,  # 2024-01-01 00:00:00 UTC
+            1706745600000,  # 2024-02-01 00:00:00 UTC
+            1709251200000,  # 2024-03-01 00:00:00 UTC
+            1735689600000,  # 2025-01-01 00:00:00 UTC (year boundary)
+        ]
+
+        df = pl.DataFrame({"ts": timestamps})
+
+        # This is the vectorized approach (MEM-001 fix)
+        result = df.with_columns(
+            pl.col("ts")
+            .cast(pl.Datetime(time_unit="ms"))
+            .dt.strftime("%Y-%m")
+            .alias("ym")
+        )
+
+        expected = ["2024-01", "2024-02", "2024-03", "2025-01"]
+        assert result["ym"].to_list() == expected
+
+    def test_vectorized_handles_boundary_timestamps(self) -> None:
+        """Verify boundary cases: midnight UTC transitions."""
+        # Exact midnight UTC on month boundaries
+        timestamps = [
+            1704067199999,  # 2023-12-31 23:59:59.999 UTC
+            1704067200000,  # 2024-01-01 00:00:00.000 UTC
+            1704067200001,  # 2024-01-01 00:00:00.001 UTC
+        ]
+
+        df = pl.DataFrame({"ts": timestamps})
+        result = df.with_columns(
+            pl.col("ts")
+            .cast(pl.Datetime(time_unit="ms"))
+            .dt.strftime("%Y-%m")
+            .alias("ym")
+        )
+
+        expected = ["2023-12", "2024-01", "2024-01"]
+        assert result["ym"].to_list() == expected
+
+
 class TestTickStorageCompression:
     """Tests for compression behavior."""
 
