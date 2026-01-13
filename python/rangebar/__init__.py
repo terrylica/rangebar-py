@@ -724,6 +724,50 @@ class RangeBarProcessor:
         """Check if there's an incomplete bar."""
         return self._processor.has_incomplete_bar
 
+    def process_trades_streaming_arrow(
+        self, trades: list[dict[str, int | float]]
+    ) -> PyRecordBatch:
+        """Process trades into range bars, returning Arrow RecordBatch.
+
+        This is the most memory-efficient streaming API. Returns Arrow
+        RecordBatch for zero-copy transfer to Polars or other Arrow-compatible
+        systems.
+
+        Parameters
+        ----------
+        trades : List[Dict]
+            List of trade dictionaries with keys:
+            - timestamp: int (milliseconds since epoch)
+            - price: float
+            - quantity: float (or 'volume')
+
+        Returns
+        -------
+        PyRecordBatch
+            Arrow RecordBatch with 30 columns (OHLCV + microstructure).
+            Use `polars.from_arrow()` for zero-copy conversion.
+
+        Examples
+        --------
+        >>> import polars as pl
+        >>> processor = RangeBarProcessor(250)
+        >>> for trade_batch in stream_binance_trades("BTCUSDT", "2024-01-01", "2024-01-01"):
+        ...     arrow_batch = processor.process_trades_streaming_arrow(trade_batch)
+        ...     df = pl.from_arrow(arrow_batch)  # Zero-copy!
+        ...     process_batch(df)
+
+        Notes
+        -----
+        Requires the `arrow-export` feature to be enabled (default in v8.0+).
+        """
+        if not trades:
+            # Return empty batch with correct schema
+            from ._core import bars_to_arrow
+
+            return bars_to_arrow([])
+
+        return self._processor.process_trades_streaming_arrow(trades)
+
 
 def process_trades_to_dataframe(
     trades: list[dict[str, int | float]] | pd.DataFrame,
