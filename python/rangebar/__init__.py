@@ -82,6 +82,7 @@ __all__ = [
     "detect_asset_class",
     "get_n_range_bars",
     "get_range_bars",
+    "get_range_bars_pandas",
     "precompute_range_bars",
     "process_trades_to_dataframe",
     "validate_continuity",
@@ -2255,6 +2256,70 @@ def get_range_bars(
         symbol=symbol,
     )
     return bars_df
+
+
+def get_range_bars_pandas(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    threshold_decimal_bps: int | str = 250,
+    **kwargs: Any,
+) -> pd.DataFrame:
+    """Get range bars as pandas DataFrame (deprecated compatibility shim).
+
+    .. deprecated:: 8.0
+        Use ``get_range_bars(materialize=True)`` directly instead.
+        This function will be removed in v9.0.
+
+    This function exists for backward compatibility with code written before
+    the streaming API was introduced. It simply calls ``get_range_bars()``
+    with ``materialize=True`` and returns the result.
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol (e.g., "BTCUSDT")
+    start_date : str
+        Start date in YYYY-MM-DD format
+    end_date : str
+        End date in YYYY-MM-DD format
+    threshold_decimal_bps : int or str, default=250
+        Threshold in decimal basis points
+    **kwargs
+        Additional arguments passed to ``get_range_bars()``
+
+    Returns
+    -------
+    pd.DataFrame
+        OHLCV DataFrame ready for backtesting.py
+
+    Examples
+    --------
+    Instead of:
+
+    >>> df = get_range_bars_pandas("BTCUSDT", "2024-01-01", "2024-06-30")
+
+    Use:
+
+    >>> df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30", materialize=True)
+    """
+    import warnings
+
+    warnings.warn(
+        "get_range_bars_pandas() is deprecated. "
+        "Use get_range_bars(materialize=True) instead. "
+        "This function will be removed in v9.0.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return get_range_bars(
+        symbol,
+        start_date,
+        end_date,
+        threshold_decimal_bps,
+        materialize=True,
+        **kwargs,
+    )
 
 
 def precompute_range_bars(

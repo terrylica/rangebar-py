@@ -28,7 +28,7 @@ __version__ : Package version string.
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from enum import Enum, IntEnum
-from typing import Literal, overload
+from typing import Any, Literal, overload
 
 import pandas as pd
 import polars as pl
@@ -584,6 +584,40 @@ def get_range_bars(
         - Threshold computed from bar OPEN price only
         - Breaching trade included in closing bar
         - No future information used in bar construction
+    """
+
+def get_range_bars_pandas(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    threshold_decimal_bps: (
+        int | Literal["micro", "tight", "standard", "medium", "wide", "macro"]
+    ) = 250,
+    **kwargs: Any,  # noqa: ANN401
+) -> pd.DataFrame:
+    """Get range bars as pandas DataFrame (deprecated compatibility shim).
+
+    .. deprecated:: 8.0
+        Use ``get_range_bars(materialize=True)`` directly instead.
+        This function will be removed in v9.0.
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol (e.g., "BTCUSDT")
+    start_date : str
+        Start date in YYYY-MM-DD format
+    end_date : str
+        End date in YYYY-MM-DD format
+    threshold_decimal_bps : int or str, default=250
+        Threshold in decimal basis points
+    **kwargs
+        Additional arguments passed to ``get_range_bars()``
+
+    Returns
+    -------
+    pd.DataFrame
+        OHLCV DataFrame ready for backtesting.py
     """
 
 def get_n_range_bars(
