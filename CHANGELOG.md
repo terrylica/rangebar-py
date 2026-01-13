@@ -1,3 +1,11 @@
+## [8.0.1](https://github.com/terrylica/rangebar-py/compare/v8.0.0...v8.0.1) (2026-01-13)
+
+
+### Bug Fixes
+
+* rename aggregation_efficiency to aggregation_density ([c8bc1d8](https://github.com/terrylica/rangebar-py/commit/c8bc1d864d27e5094f210a67c0a647ef9c10f5ed))
+* rename aggregation_efficiency to aggregation_density in schema ([9d33b10](https://github.com/terrylica/rangebar-py/commit/9d33b106ed87a9f1875e580d103c4199f58bc419))
+
 # [8.0.0](https://github.com/terrylica/rangebar-py/compare/v7.1.3...v8.0.0) (2026-01-13)
 
 
