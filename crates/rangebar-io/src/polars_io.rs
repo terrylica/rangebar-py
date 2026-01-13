@@ -352,7 +352,7 @@ mod tests {
                 trade_intensity: 0.0,
                 volume_per_trade: 0.0,
                 aggression_ratio: 0.0,
-                aggregation_efficiency_f64: 0.0,
+                aggregation_density_f64: 0.0,
                 turnover_imbalance: 0.0,
             },
             RangeBar {
@@ -385,7 +385,7 @@ mod tests {
                 trade_intensity: 0.0,
                 volume_per_trade: 0.0,
                 aggression_ratio: 0.0,
-                aggregation_efficiency_f64: 0.0,
+                aggregation_density_f64: 0.0,
                 turnover_imbalance: 0.0,
             },
         ]
