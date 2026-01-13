@@ -5,10 +5,10 @@ set -euo pipefail
 
 echo "=== Semantic Release ==="
 
-# Ensure npm dependencies
+# Ensure bun dependencies
 if [ ! -d node_modules ]; then
-  echo "Installing npm dependencies..."
-  npm install
+  echo "Installing dependencies via bun..."
+  bun install
 fi
 
 # Verify git remote uses SSH with correct identity
@@ -44,4 +44,4 @@ if [ -z "$GH_PAT" ]; then
 fi
 
 echo "Running semantic-release..."
-GITHUB_TOKEN="$GH_PAT" GH_TOKEN="$GH_PAT" npx semantic-release --no-ci
+GITHUB_TOKEN="$GH_PAT" GH_TOKEN="$GH_PAT" bun run semantic-release --no-ci
