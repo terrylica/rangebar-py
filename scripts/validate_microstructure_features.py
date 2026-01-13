@@ -32,7 +32,7 @@ MICROSTRUCTURE_FEATURE_COLS = [
     "trade_intensity",
     "volume_per_trade",
     "aggression_ratio",
-    "aggregation_efficiency",
+    "aggregation_density",
     "turnover_imbalance",
 ]
 
@@ -160,7 +160,7 @@ def _fetch_bars(
         print(f"ERROR: Could not import rangebar: {e}")
         print("Make sure rangebar-py is installed: pip install rangebar-py")
         return None
-    except Exception as e:
+    except (ValueError, RuntimeError, ConnectionError) as e:
         print(f"ERROR: Failed to fetch bars: {e}")
         return None
     else:

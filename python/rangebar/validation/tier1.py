@@ -23,7 +23,7 @@ FEATURE_COLS = [
     "trade_intensity",
     "volume_per_trade",
     "aggression_ratio",
-    "aggregation_efficiency",
+    "aggregation_density",
     "turnover_imbalance",
 ]
 
