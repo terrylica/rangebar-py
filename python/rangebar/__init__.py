@@ -1110,14 +1110,19 @@ def process_trades_polars(
     # This avoids converting unused columns to Python objects
     trades_minimal = trades.select(columns)
 
-    # Convert to trades list
-    trades_list = trades_minimal.to_dicts()
-
-    # Process through Rust layer
+    # MEM-002: Process in chunks to bound memory (2.5 GB → ~50 MB per chunk)
+    # Chunked .to_dicts() avoids materializing 1M+ trade dicts at once
+    chunk_size = 100_000
     processor = RangeBarProcessor(threshold_decimal_bps)
-    bars = processor.process_trades(trades_list)
+    all_bars: list[dict] = []
 
-    return processor.to_dataframe(bars)
+    n_rows = len(trades_minimal)
+    for start in range(0, n_rows, chunk_size):
+        chunk = trades_minimal.slice(start, chunk_size).to_dicts()
+        bars = processor.process_trades_streaming(chunk)
+        all_bars.extend(bars)
+
+    return processor.to_dataframe(all_bars)
 
 
 # Re-export ClickHouse components for convenience
@@ -2758,14 +2763,22 @@ def _process_binance_trades(
     # Select only required columns
     trades_minimal = trades.select(columns)
 
-    # Convert to trades list and process
-    trades_list = trades_minimal.to_dicts()
-
     # Use provided processor or create new one
     if processor is None:
         processor = RangeBarProcessor(threshold_decimal_bps, symbol=symbol)
 
-    bars = processor.process_trades(trades_list)
+    # MEM-002: Process in chunks to bound memory (2.5 GB → ~50 MB per chunk)
+    # Chunked .to_dicts() avoids materializing 1M+ trade dicts at once
+    chunk_size = 100_000
+    all_bars: list[dict] = []
+
+    n_rows = len(trades_minimal)
+    for start in range(0, n_rows, chunk_size):
+        chunk = trades_minimal.slice(start, chunk_size).to_dicts()
+        bars = processor.process_trades_streaming(chunk)
+        all_bars.extend(bars)
+
+    bars = all_bars
 
     if not bars:
         empty_df = pd.DataFrame(
