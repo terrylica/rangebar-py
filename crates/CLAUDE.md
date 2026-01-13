@@ -8,16 +8,16 @@
 
 ## Quick Reference
 
-| Crate | Purpose | Key Types |
-|-------|---------|-----------|
-| `rangebar-core` | Core algorithm | `RangeBarProcessor`, `RangeBar`, `FixedPoint` |
-| `rangebar-providers` | Data sources | `HistoricalDataLoader`, `ExnessFetcher` |
-| `rangebar-io` | I/O operations | Polars integration |
-| `rangebar-streaming` | Real-time | `StreamingProcessor` |
-| `rangebar-batch` | Batch analytics | `BatchAnalysisEngine` |
-| `rangebar-config` | Configuration | `Settings` |
-| `rangebar-cli` | CLI tools | (disabled for PyPI) |
-| `rangebar` | Meta-crate | v4.0 compatibility |
+| Crate                | Purpose         | Key Types                                     |
+| -------------------- | --------------- | --------------------------------------------- |
+| `rangebar-core`      | Core algorithm  | `RangeBarProcessor`, `RangeBar`, `FixedPoint` |
+| `rangebar-providers` | Data sources    | `HistoricalDataLoader`, `ExnessFetcher`       |
+| `rangebar-io`        | I/O operations  | Polars integration                            |
+| `rangebar-streaming` | Real-time       | `StreamingProcessor`                          |
+| `rangebar-batch`     | Batch analytics | `BatchAnalysisEngine`                         |
+| `rangebar-config`    | Configuration   | `Settings`                                    |
+| `rangebar-cli`       | CLI tools       | (disabled for PyPI)                           |
+| `rangebar`           | Meta-crate      | v4.0 compatibility                            |
 
 ---
 
@@ -49,18 +49,18 @@ rangebar-cli         rangebar-batch      rangebar-streaming
 
 10 features computed in Rust during bar construction:
 
-| # | Feature | Formula | Range |
-|---|---------|---------|-------|
-| 1 | `duration_us` | (close_time - open_time) * 1000 | [0, +inf) |
-| 2 | `ofi` | (buy_vol - sell_vol) / total | [-1, 1] |
-| 3 | `vwap_close_deviation` | (close - vwap) / (high - low) | ~[-1, 1] |
-| 4 | `price_impact` | abs(close - open) / volume | [0, +inf) |
-| 5 | `kyle_lambda_proxy` | (close - open) / (buy_vol - sell_vol) | (-inf, +inf) |
-| 6 | `trade_intensity` | trade_count / duration_sec | [0, +inf) |
-| 7 | `volume_per_trade` | volume / trade_count | [0, +inf) |
-| 8 | `aggression_ratio` | buy_count / sell_count | [0, 100] |
-| 9 | `aggregation_efficiency` | individual_count / agg_count | [1, +inf) |
-| 10 | `turnover_imbalance` | (buy_turn - sell_turn) / volume | [-1, 1] |
+| #   | Feature                | Formula                                     | Range        |
+| --- | ---------------------- | ------------------------------------------- | ------------ |
+| 1   | `duration_us`          | (close_time - open_time) \* 1000            | [0, +inf)    |
+| 2   | `ofi`                  | (buy_vol - sell_vol) / total                | [-1, 1]      |
+| 3   | `vwap_close_deviation` | (close - vwap) / (high - low)               | ~[-1, 1]     |
+| 4   | `price_impact`         | abs(close - open) / volume                  | [0, +inf)    |
+| 5   | `kyle_lambda_proxy`    | ((close-open)/open) / (imbalance/total_vol) | (-inf, +inf) |
+| 6   | `trade_intensity`      | trade_count / duration_sec                  | [0, +inf)    |
+| 7   | `volume_per_trade`     | volume / trade_count                        | [0, +inf)    |
+| 8   | `aggression_ratio`     | buy_count / sell_count                      | [0, 100]     |
+| 9   | `aggregation_density`  | individual_count / agg_count                | [1, +inf)    |
+| 10  | `turnover_imbalance`   | (buy_turn - sell_turn) / volume             | [-1, 1]      |
 
 **Edge cases**: Division by zero returns 0.0 (no information).
 
@@ -88,12 +88,14 @@ Core algorithm with minimal dependencies.
   - `api` - utoipa OpenAPI schemas
 
 **Key types**:
+
 - `AggTrade` - Input trade data
 - `RangeBar` - Output bar with OHLCV + microstructure
 - `FixedPoint` - 8-decimal fixed-point arithmetic
 - `RangeBarProcessor` - Stateful processor
 
 **Key properties**:
+
 - Non-lookahead breach detection
 - Temporal integrity (breach tick in closing bar)
 - Streaming-friendly (maintains state between calls)
@@ -142,6 +144,7 @@ Export formats: CSV, Parquet, Arrow IPC
 #### rangebar-cli (disabled)
 
 6 CLI binaries preserved as source, not built for PyPI:
+
 - `tier1-symbol-discovery`
 - `rangebar-analyze`
 - `data-structure-validator`
@@ -279,6 +282,7 @@ let processor = RangeBarProcessor::new(threshold_decimal_bps)
 ```
 
 **Python exception types**:
+
 - `ValueError`: Invalid input (negative threshold, missing fields)
 - `RuntimeError`: Processing errors (unsorted trades, internal failures)
 - `KeyError`: Missing required dictionary keys

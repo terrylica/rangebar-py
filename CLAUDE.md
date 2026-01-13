@@ -6,16 +6,16 @@
 
 ## Quick Reference
 
-| Task | Entry Point | Details |
-|------|-------------|---------|
-| Generate range bars | `get_range_bars()` | [Python API](#python-api) |
-| Understand architecture | [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md) | 8-crate workspace |
-| Work with Rust crates | [crates/CLAUDE.md](/crates/CLAUDE.md) | Crate details, microstructure |
-| Work with Python layer | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) | API, caching, validation |
-| Release workflow | [docs/development/RELEASE.md](/docs/development/RELEASE.md) | mise tasks, PyPI |
-| Performance monitoring | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics |
-| Project context | [docs/CONTEXT.md](/docs/CONTEXT.md) | Why this project exists |
-| API reference | [docs/api.md](/docs/api.md) | Full Python API docs |
+| Task                    | Entry Point                                                         | Details                       |
+| ----------------------- | ------------------------------------------------------------------- | ----------------------------- |
+| Generate range bars     | `get_range_bars()`                                                  | [Python API](#python-api)     |
+| Understand architecture | [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)                       | 8-crate workspace             |
+| Work with Rust crates   | [crates/CLAUDE.md](/crates/CLAUDE.md)                               | Crate details, microstructure |
+| Work with Python layer  | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)             | API, caching, validation      |
+| Release workflow        | [docs/development/RELEASE.md](/docs/development/RELEASE.md)         | mise tasks, PyPI              |
+| Performance monitoring  | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics           |
+| Project context         | [docs/CONTEXT.md](/docs/CONTEXT.md)                                 | Why this project exists       |
+| API reference           | [docs/api.md](/docs/api.md)                                         | Full Python API docs          |
 
 ---
 
@@ -60,12 +60,12 @@ df = get_n_range_bars("BTCUSDT", n_bars=10000)
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30", include_microstructure=True)
 ```
 
-| API | Use Case | Details |
-|-----|----------|---------|
-| `get_range_bars()` | Date range, backtesting | [docs/api.md](/docs/api.md#get_range_bars) |
-| `get_n_range_bars()` | Exact N bars, ML | [docs/api.md](/docs/api.md#get_n_range_bars) |
-| `process_trades_polars()` | Polars DataFrames, 2-3x faster | [docs/api.md](/docs/api.md#process_trades_polars) |
-| `process_trades_chunked()` | Large datasets >10M trades | [docs/api.md](/docs/api.md#process_trades_chunked) |
+| API                        | Use Case                       | Details                                            |
+| -------------------------- | ------------------------------ | -------------------------------------------------- |
+| `get_range_bars()`         | Date range, backtesting        | [docs/api.md](/docs/api.md#get_range_bars)         |
+| `get_n_range_bars()`       | Exact N bars, ML               | [docs/api.md](/docs/api.md#get_n_range_bars)       |
+| `process_trades_polars()`  | Polars DataFrames, 2-3x faster | [docs/api.md](/docs/api.md#process_trades_polars)  |
+| `process_trades_chunked()` | Large datasets >10M trades     | [docs/api.md](/docs/api.md#process_trades_chunked) |
 
 **Full API reference**: [docs/api.md](/docs/api.md)
 
@@ -86,6 +86,7 @@ rangebar-py/
 ```
 
 **Key files**:
+
 - `src/lib.rs` - PyO3 bindings (Rust→Python bridge)
 - `python/rangebar/__init__.py` - Public Python API
 - `crates/rangebar-core/src/processor.rs` - Core algorithm
@@ -123,18 +124,18 @@ mise run bench:validate     # Verify 1M ticks < 100ms
 
 10 market microstructure features computed in Rust during bar construction:
 
-| Feature | Formula | Range |
-|---------|---------|-------|
-| `duration_us` | (close_time - open_time) * 1000 | [0, +inf) |
-| `ofi` | (buy_vol - sell_vol) / total | [-1, 1] |
-| `vwap_close_deviation` | (close - vwap) / range | ~[-1, 1] |
-| `price_impact` | abs(close - open) / volume | [0, +inf) |
-| `kyle_lambda_proxy` | (close - open) / imbalance | (-inf, +inf) |
-| `trade_intensity` | trades / duration_sec | [0, +inf) |
-| `volume_per_trade` | volume / trade_count | [0, +inf) |
-| `aggression_ratio` | buy_count / sell_count | [0, 100] |
-| `aggregation_efficiency` | individual_count / agg_count | [1, +inf) |
-| `turnover_imbalance` | (buy_turn - sell_turn) / volume | [-1, 1] |
+| Feature                | Formula                                     | Range        |
+| ---------------------- | ------------------------------------------- | ------------ |
+| `duration_us`          | (close_time - open_time) \* 1000            | [0, +inf)    |
+| `ofi`                  | (buy_vol - sell_vol) / total                | [-1, 1]      |
+| `vwap_close_deviation` | (close - vwap) / range                      | ~[-1, 1]     |
+| `price_impact`         | abs(close - open) / volume                  | [0, +inf)    |
+| `kyle_lambda_proxy`    | ((close-open)/open) / (imbalance/total_vol) | (-inf, +inf) |
+| `trade_intensity`      | trades / duration_sec                       | [0, +inf)    |
+| `volume_per_trade`     | volume / trade_count                        | [0, +inf)    |
+| `aggression_ratio`     | buy_count / sell_count                      | [0, 100]     |
+| `aggregation_density`  | individual_count / agg_count                | [1, +inf)    |
+| `turnover_imbalance`   | (buy_turn - sell_turn) / volume             | [-1, 1]      |
 
 **Full details**: [crates/CLAUDE.md](/crates/CLAUDE.md#microstructure-features-v70)
 
@@ -144,12 +145,12 @@ mise run bench:validate     # Verify 1M ticks < 100ms
 
 ## Common Errors
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `RangeBarProcessor has no attribute X` | Outdated binding | `maturin develop` |
-| `Invalid threshold_decimal_bps` | Wrong units | Use 250 for 0.25% |
-| `High < Low` assertion | Bad input data | Check sorting |
-| `dtype mismatch (double[pyarrow] vs float64)` | Cache issue | Fixed in v2.2.0 |
+| Error                                         | Cause            | Fix               |
+| --------------------------------------------- | ---------------- | ----------------- |
+| `RangeBarProcessor has no attribute X`        | Outdated binding | `maturin develop` |
+| `Invalid threshold_decimal_bps`               | Wrong units      | Use 250 for 0.25% |
+| `High < Low` assertion                        | Bad input data   | Check sorting     |
+| `dtype mismatch (double[pyarrow] vs float64)` | Cache issue      | Fixed in v2.2.0   |
 
 ---
 
@@ -157,18 +158,18 @@ mise run bench:validate     # Verify 1M ticks < 100ms
 
 ### CLAUDE.md Files (Hub-and-Spoke)
 
-| Directory | CLAUDE.md | Purpose |
-|-----------|-----------|---------|
-| `/` | This file | Hub, quick reference |
-| `/crates/` | [crates/CLAUDE.md](/crates/CLAUDE.md) | Rust workspace, microstructure |
+| Directory           | CLAUDE.md                                               | Purpose                         |
+| ------------------- | ------------------------------------------------------- | ------------------------------- |
+| `/`                 | This file                                               | Hub, quick reference            |
+| `/crates/`          | [crates/CLAUDE.md](/crates/CLAUDE.md)                   | Rust workspace, microstructure  |
 | `/python/rangebar/` | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) | Python API, caching, validation |
 
 ### Documentation Index
 
-| Document | Purpose |
-|----------|---------|
-| [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md) | System design, dependency graph |
-| [docs/CONTEXT.md](/docs/CONTEXT.md) | Why this project exists, backtesting.py |
-| [docs/api.md](/docs/api.md) | Python API reference |
-| [docs/development/RELEASE.md](/docs/development/RELEASE.md) | Release workflow, mise tasks |
-| [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics, viability |
+| Document                                                            | Purpose                                 |
+| ------------------------------------------------------------------- | --------------------------------------- |
+| [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)                       | System design, dependency graph         |
+| [docs/CONTEXT.md](/docs/CONTEXT.md)                                 | Why this project exists, backtesting.py |
+| [docs/api.md](/docs/api.md)                                         | Python API reference                    |
+| [docs/development/RELEASE.md](/docs/development/RELEASE.md)         | Release workflow, mise tasks            |
+| [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics, viability          |
