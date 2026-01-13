@@ -20,14 +20,14 @@ This plan provides a comprehensive, prioritized remediation roadmap.
 
 ## Issue Tracker
 
-| ID      | Location                       | Impact    | Priority | Status | PR  |
-| ------- | ------------------------------ | --------- | -------- | ------ | --- |
-| MEM-001 | `_timestamp_to_year_month`     | 13.4 GB   | P0       | Open   | -   |
-| MEM-002 | `.to_dicts()` unbounded        | 2.5 GB    | P0       | Open   | -   |
-| MEM-003 | `.collect()` full materialize  | 14.3 GB   | P1       | Open   | -   |
-| MEM-004 | Rust `fetch_binance_aggtrades` | Unbounded | P1       | Open   | -   |
-| MEM-005 | Test suite process isolation   | 52 GB     | P1       | Open   | -   |
-| MEM-006 | `pd.concat()` memory spike     | 2x        | P2       | Open   | -   |
+| ID      | Location                       | Impact    | Priority | Status   | Commit  |
+| ------- | ------------------------------ | --------- | -------- | -------- | ------- |
+| MEM-001 | `_timestamp_to_year_month`     | 13.4 GB   | P0       | **Done** | 39245c5 |
+| MEM-002 | `.to_dicts()` unbounded        | 2.5 GB    | P0       | **Done** | d190d83 |
+| MEM-003 | `.collect()` full materialize  | 14.3 GB   | P1       | Open     | -       |
+| MEM-004 | Rust `fetch_binance_aggtrades` | Unbounded | P1       | Open     | -       |
+| MEM-005 | Test suite process isolation   | 52 GB     | P1       | **Done** | pending |
+| MEM-006 | `pd.concat()` memory spike     | 2x        | P2       | Open     | -       |
 
 ---
 
