@@ -31,6 +31,7 @@ from .tunnel import SSHTunnel
 
 if TYPE_CHECKING:
     import clickhouse_connect
+    import polars as pl
 
 
 @dataclass(frozen=True)
@@ -265,7 +266,7 @@ class RangeBarCache(ClickHouseClientMixin):
             "trade_intensity",
             "volume_per_trade",
             "aggression_ratio",
-            "aggregation_efficiency",
+            "aggregation_density",
             "turnover_imbalance",
         ]
         for col in optional:
@@ -280,7 +281,7 @@ class RangeBarCache(ClickHouseClientMixin):
             df[columns],
         )
 
-        # Return actual rows written per ClickHouse (not len(df) which is what we sent)
+        # Return actual rows written per ClickHouse
         return summary.written_rows
 
     def get_range_bars(self, key: CacheKey) -> pd.DataFrame | None:
@@ -304,7 +305,7 @@ class RangeBarCache(ClickHouseClientMixin):
                 low as Low,
                 close as Close,
                 volume as Volume
-            FROM rangebar_cache.range_bars
+            FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold_decimal_bps:UInt32}
               AND source_start_ts = {start_ts:Int64}
@@ -354,7 +355,7 @@ class RangeBarCache(ClickHouseClientMixin):
         """
         query = """
             SELECT count() > 0
-            FROM rangebar_cache.range_bars
+            FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold_decimal_bps:UInt32}
               AND source_start_ts = {start_ts:Int64}
@@ -492,7 +493,7 @@ class RangeBarCache(ClickHouseClientMixin):
         """
         query = """
             SELECT timestamp_ms, open, high, low, close, volume
-            FROM rangebar_cache.range_bars
+            FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}
               AND timestamp_ms < {before_ts:Int64}
@@ -557,7 +558,7 @@ class RangeBarCache(ClickHouseClientMixin):
             # Split path: with end_ts filter
             query = """
                 SELECT count()
-                FROM rangebar_cache.range_bars
+                FROM rangebar_cache.range_bars FINAL
                 WHERE symbol = {symbol:String}
                   AND threshold_decimal_bps = {threshold:UInt32}
                   AND timestamp_ms < {end_ts:Int64}
@@ -574,7 +575,7 @@ class RangeBarCache(ClickHouseClientMixin):
             # Split path: no end_ts filter (most recent)
             query = """
                 SELECT count()
-                FROM rangebar_cache.range_bars
+                FROM rangebar_cache.range_bars FINAL
                 WHERE symbol = {symbol:String}
                   AND threshold_decimal_bps = {threshold:UInt32}
             """
@@ -649,7 +650,7 @@ class RangeBarCache(ClickHouseClientMixin):
             trade_intensity,
             volume_per_trade,
             aggression_ratio,
-            aggregation_efficiency,
+            aggregation_density,
             turnover_imbalance
         """
 
@@ -657,7 +658,7 @@ class RangeBarCache(ClickHouseClientMixin):
             # Split path: with end_ts filter
             query = f"""
                 SELECT {base_cols}
-                FROM rangebar_cache.range_bars
+                FROM rangebar_cache.range_bars FINAL
                 WHERE symbol = {{symbol:String}}
                   AND threshold_decimal_bps = {{threshold:UInt32}}
                   AND timestamp_ms < {{end_ts:Int64}}
@@ -677,7 +678,7 @@ class RangeBarCache(ClickHouseClientMixin):
             # Split path: no end_ts filter (most recent)
             query = f"""
                 SELECT {base_cols}
-                FROM rangebar_cache.range_bars
+                FROM rangebar_cache.range_bars FINAL
                 WHERE symbol = {{symbol:String}}
                   AND threshold_decimal_bps = {{threshold:UInt32}}
                 ORDER BY timestamp_ms DESC
@@ -723,7 +724,7 @@ class RangeBarCache(ClickHouseClientMixin):
                 "trade_intensity",
                 "volume_per_trade",
                 "aggression_ratio",
-                "aggregation_efficiency",
+                "aggregation_density",
                 "turnover_imbalance",
             ]
             for col in microstructure_cols:
@@ -755,7 +756,7 @@ class RangeBarCache(ClickHouseClientMixin):
         """
         query = """
             SELECT min(timestamp_ms)
-            FROM rangebar_cache.range_bars
+            FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}
         """
@@ -792,7 +793,7 @@ class RangeBarCache(ClickHouseClientMixin):
         """
         query = """
             SELECT max(timestamp_ms)
-            FROM rangebar_cache.range_bars
+            FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}
         """
@@ -861,13 +862,13 @@ class RangeBarCache(ClickHouseClientMixin):
             trade_intensity,
             volume_per_trade,
             aggression_ratio,
-            aggregation_efficiency,
+            aggregation_density,
             turnover_imbalance
         """
 
         query = f"""
             SELECT {base_cols}
-            FROM rangebar_cache.range_bars
+            FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {{symbol:String}}
               AND threshold_decimal_bps = {{threshold:UInt32}}
               AND timestamp_ms >= {{start_ts:Int64}}
@@ -912,7 +913,7 @@ class RangeBarCache(ClickHouseClientMixin):
                 "trade_intensity",
                 "volume_per_trade",
                 "aggression_ratio",
-                "aggregation_efficiency",
+                "aggregation_density",
                 "turnover_imbalance",
             ]
             for col in microstructure_cols:
@@ -1018,7 +1019,7 @@ class RangeBarCache(ClickHouseClientMixin):
             "trade_intensity",
             "volume_per_trade",
             "aggression_ratio",
-            "aggregation_efficiency",
+            "aggregation_density",
             "turnover_imbalance",
         ]
         for col in optional:
@@ -1034,4 +1035,145 @@ class RangeBarCache(ClickHouseClientMixin):
         )
 
         # Return actual rows written per ClickHouse (not len(df) which is what we sent)
+        return summary.written_rows
+
+    def store_bars_batch(
+        self,
+        symbol: str,
+        threshold_decimal_bps: int,
+        bars: pl.DataFrame,
+        version: str = "",
+    ) -> int:
+        """Store a batch of bars using Arrow for efficient streaming writes.
+
+        This method is optimized for incremental streaming cache writes
+        (Phase 4.3). It uses Arrow for zero-copy data transfer to ClickHouse.
+
+        Parameters
+        ----------
+        symbol : str
+            Trading symbol (e.g., "BTCUSDT")
+        threshold_decimal_bps : int
+            Threshold in decimal basis points
+        bars : pl.DataFrame
+            Polars DataFrame with OHLCV columns (from streaming processing)
+        version : str
+            rangebar-core version for cache invalidation
+
+        Returns
+        -------
+        int
+            Number of rows inserted
+
+        Examples
+        --------
+        >>> from rangebar.clickhouse import RangeBarCache
+        >>> with RangeBarCache() as cache:
+        ...     # Stream bars and write incrementally
+        ...     for batch in stream_range_bars("BTCUSDT", "2024-01-01", "2024-01-07"):
+        ...         written = cache.store_bars_batch(
+        ...             "BTCUSDT", 250, batch, version="7.1.3"
+        ...         )
+        ...         print(f"Wrote {written} bars")
+        """
+        import polars as pl
+
+        if bars.is_empty():
+            return 0
+
+        # Normalize column names (lowercase)
+        df = bars.rename({c: c.lower() for c in bars.columns if c != c.lower()})
+
+        # Handle timestamp conversion from datetime to milliseconds
+        if "timestamp" in df.columns:
+            # Check if it's already datetime or string
+            if df["timestamp"].dtype == pl.Datetime:
+                df = df.with_columns(
+                    (pl.col("timestamp").dt.epoch(time_unit="ms"))
+                    .cast(pl.Int64)
+                    .alias("timestamp_ms")
+                ).drop("timestamp")
+            elif df["timestamp"].dtype == pl.Utf8:
+                df = df.with_columns(
+                    pl.col("timestamp")
+                    .str.to_datetime(format="%Y-%m-%dT%H:%M:%S%.f%:z")
+                    .dt.epoch(time_unit="ms")
+                    .cast(pl.Int64)
+                    .alias("timestamp_ms")
+                ).drop("timestamp")
+
+        # Add cache metadata
+        df = df.with_columns(
+            pl.lit(symbol).alias("symbol"),
+            pl.lit(threshold_decimal_bps).alias("threshold_decimal_bps"),
+            pl.lit(version).alias("rangebar_version"),
+        )
+
+        # Add source bounds and cache_key
+        if "timestamp_ms" in df.columns and len(df) > 0:
+            start_ts = df["timestamp_ms"].min()
+            end_ts = df["timestamp_ms"].max()
+            key_str = f"{symbol}_{threshold_decimal_bps}_{start_ts}_{end_ts}"
+            cache_key = hashlib.md5(key_str.encode()).hexdigest()
+
+            df = df.with_columns(
+                pl.lit(start_ts).alias("source_start_ts"),
+                pl.lit(end_ts).alias("source_end_ts"),
+                pl.lit(cache_key).alias("cache_key"),
+            )
+        else:
+            df = df.with_columns(
+                pl.lit(0).alias("source_start_ts"),
+                pl.lit(0).alias("source_end_ts"),
+                pl.lit("").alias("cache_key"),
+            )
+
+        # Define columns for insertion
+        columns = [
+            "symbol",
+            "threshold_decimal_bps",
+            "timestamp_ms",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "cache_key",
+            "rangebar_version",
+            "source_start_ts",
+            "source_end_ts",
+        ]
+
+        # Add optional microstructure columns if present
+        optional = [
+            "vwap",
+            "buy_volume",
+            "sell_volume",
+            "individual_trade_count",
+            "agg_record_count",
+            "duration_us",
+            "ofi",
+            "vwap_close_deviation",
+            "price_impact",
+            "kyle_lambda_proxy",
+            "trade_intensity",
+            "volume_per_trade",
+            "aggression_ratio",
+            "aggregation_density",
+            "turnover_imbalance",
+        ]
+        for col in optional:
+            if col in df.columns:
+                columns.append(col)
+
+        # Filter to existing columns
+        columns = [c for c in columns if c in df.columns]
+
+        # Use Arrow for efficient insert (zero-copy)
+        arrow_table = df.select(columns).to_arrow()
+        summary = self.client.insert_arrow(
+            "rangebar_cache.range_bars",
+            arrow_table,
+        )
+
         return summary.written_rows
