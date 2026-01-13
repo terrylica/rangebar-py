@@ -19,6 +19,16 @@
 -- Note: New installations do not need this migration.
 
 -- ============================================================================
+-- Migration for v7.2.0 (Issue #32: rename aggregation_efficiency)
+-- ============================================================================
+-- Run this ONCE if upgrading from rangebar-py v7.1.x with existing cache:
+--
+-- ALTER TABLE rangebar_cache.range_bars
+--     RENAME COLUMN aggregation_efficiency TO aggregation_density;
+--
+-- Note: New installations do not need this migration.
+
+-- ============================================================================
 -- Computed Range Bars Cache (Tier 2)
 -- ============================================================================
 -- Stores computed range bars with all parameters as cache key
@@ -53,7 +63,7 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
     trade_intensity Float64 DEFAULT 0,
     volume_per_trade Float64 DEFAULT 0,
     aggression_ratio Float64 DEFAULT 0,
-    aggregation_efficiency Float64 DEFAULT 1,
+    aggregation_density Float64 DEFAULT 1,
     turnover_imbalance Float64 DEFAULT 0,
 
     -- Cache metadata
