@@ -178,10 +178,11 @@ pub struct RangeBar {
     #[serde(default)]
     pub aggression_ratio: f64,
 
-    /// Aggregation Efficiency: individual_trade_count / agg_record_count
-    /// Proxy for trade fragmentation (replaces trade_size_std)
+    /// Aggregation Density: individual_trade_count / agg_record_count
+    /// Average number of individual trades per AggTrade record (Issue #32 rename)
+    /// Higher values = more fragmented trades; Lower values = more consolidated orders
     #[serde(default)]
-    pub aggregation_efficiency_f64: f64,
+    pub aggregation_density_f64: f64,
 
     /// Turnover Imbalance: (buy_turnover - sell_turnover) / total_turnover
     /// Dollar-weighted OFI, Range: [-1.0, +1.0]
@@ -249,13 +250,13 @@ impl RangeBar {
             trade_intensity: 0.0,
             volume_per_trade: 0.0,
             aggression_ratio: 0.0,
-            aggregation_efficiency_f64: 0.0,
+            aggregation_density_f64: 0.0,
             turnover_imbalance: 0.0,
         }
     }
 
-    /// Average number of individual trades per AggTrade record (aggregation efficiency)
-    pub fn aggregation_efficiency(&self) -> f64 {
+    /// Average number of individual trades per AggTrade record (aggregation density)
+    pub fn aggregation_density(&self) -> f64 {
         if self.agg_record_count == 0 {
             0.0
         } else {
@@ -334,7 +335,7 @@ impl RangeBar {
     /// | trade_intensity | trade_count / duration_seconds | Engle & Russell (1998) |
     /// | volume_per_trade | volume / trade_count | Barclay & Warner (1993) |
     /// | aggression_ratio | buy_trades / sell_trades | Lee & Ready (1991) |
-    /// | aggregation_efficiency_f64 | trade_count / agg_count | (proxy) |
+    /// | aggregation_density_f64 | trade_count / agg_count | (proxy) |
     /// | turnover_imbalance | (buy_turn - sell_turn) / total_turn | (proxy) |
     pub fn compute_microstructure_features(&mut self) {
         // Extract values for computation
@@ -379,13 +380,22 @@ impl RangeBar {
             0.0
         };
 
-        // 5. Kyle's Lambda Proxy
+        // 5. Kyle's Lambda Proxy (percentage returns formula - Issue #32)
+        // Formula: ((close - open) / open) / ((buy_vol - sell_vol) / total_vol)
+        // Creates dimensionally consistent ratio: percentage return per unit of normalized imbalance
+        // Reference: Kyle (1985), normalized for cross-asset comparability
         let imbalance = buy_vol - sell_vol;
-        self.kyle_lambda_proxy = if imbalance.abs() > f64::EPSILON {
-            (close - open) / imbalance
+        let normalized_imbalance = if total_vol > f64::EPSILON {
+            imbalance / total_vol
         } else {
             0.0
         };
+        self.kyle_lambda_proxy =
+            if normalized_imbalance.abs() > f64::EPSILON && open.abs() > f64::EPSILON {
+                ((close - open) / open) / normalized_imbalance
+            } else {
+                0.0
+            };
 
         // 6. Trade Intensity (trades per second)
         // Note: duration_us is in microseconds, convert to seconds
@@ -413,8 +423,9 @@ impl RangeBar {
             1.0 // No trades = neutral
         };
 
-        // 9. Aggregation Efficiency (proxy for trade fragmentation)
-        self.aggregation_efficiency_f64 = if agg_count > f64::EPSILON {
+        // 9. Aggregation Density (Issue #32 rename: was aggregation_efficiency)
+        // Measures average trades per AggTrade record (higher = more fragmented)
+        self.aggregation_density_f64 = if agg_count > f64::EPSILON {
             trade_count / agg_count
         } else {
             1.0
@@ -869,7 +880,7 @@ mod tests {
     }
 
     #[test]
-    fn test_aggregation_efficiency() {
+    fn test_aggregation_density() {
         // Create a bar with multiple individual trades per agg record
         let trade = test_utils::create_test_agg_trade_with_range(
             1,
@@ -886,9 +897,9 @@ mod tests {
 
         // individual_trade_count / agg_record_count = 10 / 1 = 10.0
         assert!(
-            (bar.aggregation_efficiency_f64 - 10.0).abs() < 0.01,
+            (bar.aggregation_density_f64 - 10.0).abs() < 0.01,
             "Aggregation efficiency should be 10.0, got {}",
-            bar.aggregation_efficiency_f64
+            bar.aggregation_density_f64
         );
     }
 

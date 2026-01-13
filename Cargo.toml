@@ -69,6 +69,14 @@ sha2 = "0.10"
 # Analytics (optional)
 polars = { version = "0.51.0", features = ["lazy", "temporal", "strings", "parquet", "csv", "ipc", "rolling_window"] }
 
+# Arrow ecosystem (for streaming architecture)
+# NOTE: pyo3-arrow 0.5.1 is the last version compatible with pyo3 0.22
+# arrow 53.x is required by pyo3-arrow 0.5.1
+arrow = "53"
+arrow-array = "53"
+arrow-schema = "53"
+pyo3-arrow = "0.5.1"
+
 # Streaming statistics (optional)
 rolling-stats = "0.1"
 tdigests = "1.0"
@@ -121,18 +129,28 @@ rangebar-providers = { path = "crates/rangebar-providers", optional = true, feat
 tokio = { version = "1.0", features = ["rt-multi-thread"], optional = true }
 
 # PyO3 for Python bindings
-pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
+# NOTE: abi3 removed - pyo3-arrow requires buffer protocol (not in limited ABI)
+# This means per-Python-version wheels instead of universal wheel
+pyo3 = { version = "0.22", features = ["extension-module"] }
 
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+# Arrow ecosystem (streaming architecture)
+arrow = { workspace = true, optional = true }
+arrow-array = { workspace = true, optional = true }
+arrow-schema = { workspace = true, optional = true }
+pyo3-arrow = { workspace = true, optional = true }
+
 [features]
-# Default features: Include data-providers so PyPI users get the full API
-default = ["data-providers"]
+# Default features: Include data-providers and arrow-export so PyPI users get the full API
+default = ["data-providers", "arrow-export"]
 # Enable data fetching from all providers (Binance + Exness)
 data-providers = ["rangebar-providers", "tokio"]
+# Arrow export for streaming architecture (memory-efficient)
+arrow-export = ["arrow", "arrow-array", "arrow-schema", "pyo3-arrow", "rangebar-core/arrow"]
 # Legacy feature aliases
 exness = ["data-providers"]
 binance = ["data-providers"]

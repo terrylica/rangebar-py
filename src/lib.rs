@@ -6,6 +6,12 @@ use rangebar_core::{
     RangeBar, RangeBarProcessor,
 };
 
+// Arrow export support (feature-gated)
+#[cfg(feature = "arrow-export")]
+use pyo3_arrow::PyRecordBatch;
+#[cfg(feature = "arrow-export")]
+use rangebar_core::{aggtrades_to_record_batch, rangebar_vec_to_record_batch};
+
 #[cfg(feature = "data-providers")]
 use rangebar_providers::exness::{
     ExnessInstrument, ExnessRangeBar, ExnessRangeBarBuilder, ExnessTick, SpreadStats,
@@ -13,7 +19,7 @@ use rangebar_providers::exness::{
 };
 
 #[cfg(feature = "data-providers")]
-use rangebar_providers::binance::HistoricalDataLoader;
+use rangebar_providers::binance::{HistoricalDataLoader, IntraDayChunkIterator};
 
 /// Convert f64 to `FixedPoint` (8 decimal precision)
 fn f64_to_fixed_point(value: f64) -> FixedPoint {
@@ -123,7 +129,7 @@ fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject> {
     dict.set_item("trade_intensity", bar.trade_intensity)?;
     dict.set_item("volume_per_trade", bar.volume_per_trade)?;
     dict.set_item("aggression_ratio", bar.aggression_ratio)?;
-    dict.set_item("aggregation_efficiency", bar.aggregation_efficiency_f64)?;
+    dict.set_item("aggregation_density", bar.aggregation_density_f64)?;
     dict.set_item("turnover_imbalance", bar.turnover_imbalance)?;
 
     Ok(dict.into())
@@ -354,7 +360,7 @@ fn dict_to_rangebar(_py: Python, dict: &Bound<PyDict>) -> PyResult<RangeBar> {
         trade_intensity: 0.0,
         volume_per_trade: 0.0,
         aggression_ratio: 0.0,
-        aggregation_efficiency_f64: 0.0,
+        aggregation_density_f64: 0.0,
         turnover_imbalance: 0.0,
     })
 }
@@ -592,6 +598,68 @@ impl PyRangeBarProcessor {
         }
 
         Ok(bars)
+    }
+
+    /// Process aggregated trades into range bars with Arrow output (streaming mode)
+    ///
+    /// Same as `process_trades_streaming()` but returns Arrow RecordBatch for
+    /// zero-copy transfer to Polars. This is the recommended method for
+    /// memory-efficient processing of large datasets.
+    ///
+    /// Args:
+    ///     trades: List of trade dicts with keys: timestamp (ms), price, quantity
+    ///
+    /// Returns:
+    ///     Arrow RecordBatch containing completed range bars (30 columns)
+    ///
+    /// Raises:
+    ///     `KeyError`: If required trade fields are missing
+    ///     `RuntimeError`: If trade processing fails
+    ///
+    /// Example:
+    ///     ```python
+    ///     from rangebar._core import stream_binance_trades, PyRangeBarProcessor
+    ///     import polars as pl
+    ///
+    ///     processor = PyRangeBarProcessor(250, symbol="BTCUSDT")
+    ///
+    ///     for trades_batch in stream_binance_trades("BTCUSDT", "2024-01-01", "2024-01-31"):
+    ///         arrow_batch = processor.process_trades_streaming_arrow(trades_batch)
+    ///         df = pl.from_arrow(arrow_batch)  # Zero-copy!
+    ///         # Process df...
+    ///     ```
+    #[cfg(feature = "arrow-export")]
+    fn process_trades_streaming_arrow(
+        &mut self,
+        py: Python,
+        trades: Vec<Bound<PyDict>>,
+    ) -> PyResult<PyRecordBatch> {
+        if trades.is_empty() {
+            // Return empty RecordBatch with correct schema
+            let empty_batch = rangebar_vec_to_record_batch(&[]);
+            return Ok(PyRecordBatch::new(empty_batch));
+        }
+
+        // Convert Python dicts to AggTrade
+        let agg_trades: Vec<AggTrade> = trades
+            .iter()
+            .enumerate()
+            .map(|(i, trade_dict)| dict_to_agg_trade(py, trade_dict, i))
+            .collect::<PyResult<Vec<_>>>()?;
+
+        // Process each trade individually to maintain state
+        let mut bars = Vec::new();
+        for trade in agg_trades {
+            match self.processor.process_single_trade(trade) {
+                Ok(Some(bar)) => bars.push(bar),
+                Ok(None) => {} // No bar completed yet
+                Err(e) => return Err(PyRuntimeError::new_err(format!("Processing failed: {e}"))),
+            }
+        }
+
+        // Convert to Arrow RecordBatch
+        let batch = rangebar_vec_to_record_batch(&bars);
+        Ok(PyRecordBatch::new(batch))
     }
 
     /// Create checkpoint for cross-file continuation
@@ -948,12 +1016,215 @@ mod exness_bindings {
     }
 }
 
+// ============================================================================
+// Arrow Export Bindings (feature-gated)
+// ============================================================================
+
+#[cfg(feature = "arrow-export")]
+mod arrow_bindings {
+    use super::*;
+
+    /// Convert a list of range bar dicts to an Arrow RecordBatch.
+    ///
+    /// This is the primary export function for streaming range bars to Python
+    /// with zero-copy semantics. The resulting RecordBatch can be converted
+    /// directly to Polars/PyArrow DataFrames.
+    ///
+    /// Args:
+    ///     bars: List of range bar dicts (as returned by `process_trades()`)
+    ///
+    /// Returns:
+    ///     Arrow RecordBatch with 30 columns including all microstructure features
+    ///
+    /// Example:
+    ///     ```python
+    ///     import polars as pl
+    ///     from rangebar._core import bars_to_arrow
+    ///
+    ///     # Get bars as dicts (traditional way)
+    ///     bars = processor.process_trades(trades)
+    ///
+    ///     # Convert to Arrow RecordBatch for zero-copy to Polars
+    ///     arrow_batch = bars_to_arrow(bars)
+    ///     df = pl.from_arrow(arrow_batch)  # Zero-copy!
+    ///     ```
+    #[pyfunction]
+    pub fn bars_to_arrow(py: Python, bars: Vec<Bound<PyDict>>) -> PyResult<PyRecordBatch> {
+        if bars.is_empty() {
+            // Return empty RecordBatch with correct schema
+            let empty_batch = rangebar_vec_to_record_batch(&[]);
+            return Ok(PyRecordBatch::new(empty_batch));
+        }
+
+        // Convert Python dicts to Rust RangeBars
+        let rust_bars: Vec<RangeBar> = bars
+            .iter()
+            .enumerate()
+            .map(|(i, bar_dict)| dict_to_rangebar_full(py, bar_dict, i))
+            .collect::<PyResult<Vec<_>>>()?;
+
+        // Convert to Arrow RecordBatch
+        let batch = rangebar_vec_to_record_batch(&rust_bars);
+        Ok(PyRecordBatch::new(batch))
+    }
+
+    /// Convert a list of trade dicts to an Arrow RecordBatch.
+    ///
+    /// Converts trade data directly to Arrow format for efficient streaming.
+    ///
+    /// Args:
+    ///     trades: List of trade dicts with keys: timestamp, price, quantity, etc.
+    ///
+    /// Returns:
+    ///     Arrow RecordBatch with 8 columns for trade data
+    #[pyfunction]
+    pub fn trades_to_arrow(py: Python, trades: Vec<Bound<PyDict>>) -> PyResult<PyRecordBatch> {
+        if trades.is_empty() {
+            let empty_batch = aggtrades_to_record_batch(&[]);
+            return Ok(PyRecordBatch::new(empty_batch));
+        }
+
+        // Convert Python dicts to Rust AggTrades
+        let rust_trades: Vec<AggTrade> = trades
+            .iter()
+            .enumerate()
+            .map(|(i, trade_dict)| dict_to_agg_trade(py, trade_dict, i))
+            .collect::<PyResult<Vec<_>>>()?;
+
+        // Convert to Arrow RecordBatch
+        let batch = aggtrades_to_record_batch(&rust_trades);
+        Ok(PyRecordBatch::new(batch))
+    }
+
+    /// Convert Python dict to Rust `RangeBar` (full conversion with all fields)
+    fn dict_to_rangebar_full(
+        _py: Python,
+        dict: &Bound<PyDict>,
+        index: usize,
+    ) -> PyResult<RangeBar> {
+        // Helper to extract f64 with error context
+        fn get_f64(dict: &Bound<PyDict>, key: &str, index: usize) -> PyResult<f64> {
+            dict.get_item(key)?
+                .ok_or_else(|| PyKeyError::new_err(format!("Bar {index}: missing '{key}'")))?
+                .extract()
+        }
+
+        // Helper to extract i64 with error context
+        fn get_i64(dict: &Bound<PyDict>, key: &str, index: usize) -> PyResult<i64> {
+            dict.get_item(key)?
+                .ok_or_else(|| PyKeyError::new_err(format!("Bar {index}: missing '{key}'")))?
+                .extract()
+        }
+
+        // Helper to extract u32 with default
+        fn get_u32_opt(dict: &Bound<PyDict>, key: &str, default: u32) -> PyResult<u32> {
+            Ok(dict
+                .get_item(key)?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(default))
+        }
+
+        // Helper to extract f64 with default
+        fn get_f64_opt(dict: &Bound<PyDict>, key: &str, default: f64) -> PyResult<f64> {
+            Ok(dict
+                .get_item(key)?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(default))
+        }
+
+        // Core OHLCV
+        let open = get_f64(dict, "open", index)?;
+        let high = get_f64(dict, "high", index)?;
+        let low = get_f64(dict, "low", index)?;
+        let close = get_f64(dict, "close", index)?;
+        let volume = get_f64(dict, "volume", index)?;
+
+        // Timestamps - try close_time first, then open_time
+        let close_time = dict
+            .get_item("close_time")?
+            .and_then(|v| v.extract::<i64>().ok())
+            .unwrap_or(0);
+        let open_time = dict
+            .get_item("open_time")?
+            .and_then(|v| v.extract::<i64>().ok())
+            .unwrap_or(close_time);
+
+        // Trade tracking
+        let individual_trade_count = get_u32_opt(dict, "individual_trade_count", 0)?;
+        let agg_record_count = get_u32_opt(dict, "agg_record_count", 0)?;
+        let first_trade_id = get_i64(dict, "first_trade_id", index).unwrap_or(0);
+        let last_trade_id = get_i64(dict, "last_trade_id", index).unwrap_or(0);
+
+        // Order flow
+        let buy_volume = get_f64_opt(dict, "buy_volume", 0.0)?;
+        let sell_volume = get_f64_opt(dict, "sell_volume", 0.0)?;
+        let buy_trade_count = get_u32_opt(dict, "buy_trade_count", 0)?;
+        let sell_trade_count = get_u32_opt(dict, "sell_trade_count", 0)?;
+        let vwap = get_f64_opt(dict, "vwap", 0.0)?;
+
+        // Microstructure features
+        let duration_us = dict
+            .get_item("duration_us")?
+            .and_then(|v| v.extract::<i64>().ok())
+            .unwrap_or(0);
+        let ofi = get_f64_opt(dict, "ofi", 0.0)?;
+        let vwap_close_deviation = get_f64_opt(dict, "vwap_close_deviation", 0.0)?;
+        let price_impact = get_f64_opt(dict, "price_impact", 0.0)?;
+        let kyle_lambda_proxy = get_f64_opt(dict, "kyle_lambda_proxy", 0.0)?;
+        let trade_intensity = get_f64_opt(dict, "trade_intensity", 0.0)?;
+        let volume_per_trade = get_f64_opt(dict, "volume_per_trade", 0.0)?;
+        let aggression_ratio = get_f64_opt(dict, "aggression_ratio", 0.0)?;
+        let aggregation_density_f64 = get_f64_opt(dict, "aggregation_density", 0.0)?;
+        let turnover_imbalance = get_f64_opt(dict, "turnover_imbalance", 0.0)?;
+
+        Ok(RangeBar {
+            open_time,
+            close_time,
+            open: f64_to_fixed_point(open),
+            high: f64_to_fixed_point(high),
+            low: f64_to_fixed_point(low),
+            close: f64_to_fixed_point(close),
+            volume: f64_to_fixed_point(volume),
+            turnover: 0, // Not typically stored in dict
+            individual_trade_count,
+            agg_record_count,
+            first_trade_id,
+            last_trade_id,
+            data_source: rangebar_core::DataSource::BinanceFuturesUM,
+            buy_volume: f64_to_fixed_point(buy_volume),
+            sell_volume: f64_to_fixed_point(sell_volume),
+            buy_trade_count,
+            sell_trade_count,
+            vwap: f64_to_fixed_point(vwap),
+            buy_turnover: 0, // Not typically stored in dict
+            sell_turnover: 0,
+            duration_us,
+            ofi,
+            vwap_close_deviation,
+            price_impact,
+            kyle_lambda_proxy,
+            trade_intensity,
+            volume_per_trade,
+            aggression_ratio,
+            aggregation_density_f64,
+            turnover_imbalance,
+        })
+    }
+}
+
 /// Python module
 #[pymodule]
 fn _core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyRangeBarProcessor>()?;
     m.add_class::<PyPositionVerification>()?;
+
+    // Add Arrow export functions if feature enabled
+    #[cfg(feature = "arrow-export")]
+    {
+        m.add_function(wrap_pyfunction!(arrow_bindings::bars_to_arrow, m)?)?;
+        m.add_function(wrap_pyfunction!(arrow_bindings::trades_to_arrow, m)?)?;
+    }
 
     // Add Exness classes if feature enabled
     #[cfg(feature = "data-providers")]
@@ -962,8 +1233,13 @@ fn _core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<exness_bindings::PyValidationStrictness>()?;
         m.add_class::<exness_bindings::PyExnessRangeBarBuilder>()?;
         m.add_class::<binance_bindings::PyMarketType>()?;
+        m.add_class::<binance_bindings::PyBinanceTradeStream>()?;
         m.add_function(wrap_pyfunction!(
             binance_bindings::fetch_binance_aggtrades,
+            m
+        )?)?;
+        m.add_function(wrap_pyfunction!(
+            binance_bindings::stream_binance_trades,
             m
         )?)?;
     }
@@ -1085,6 +1361,178 @@ mod binance_bindings {
         }
 
         Ok(results)
+    }
+
+    // ========================================================================
+    // Streaming Trade Iterator (Phase 2: Memory-Efficient Architecture)
+    // ========================================================================
+
+    /// Iterator over Binance aggTrades in hour-based chunks.
+    ///
+    /// Memory-efficient streaming that yields trade batches instead of loading
+    /// entire date ranges. Each iteration returns trades for a configurable
+    /// hour window (default: 6 hours).
+    ///
+    /// # Memory Efficiency
+    ///
+    /// | Chunk Size | Peak Memory | Reduction |
+    /// |------------|-------------|-----------|
+    /// | 24 hours   | ~213 MB     | 1x        |
+    /// | 6 hours    | ~46 MB      | 4.6x      |
+    /// | 1 hour     | ~15 MB      | 14x       |
+    ///
+    /// # Example
+    ///
+    /// ```python
+    /// from rangebar._core import stream_binance_trades
+    ///
+    /// for trades_batch in stream_binance_trades("BTCUSDT", "2024-01-01", "2024-01-07"):
+    ///     # Each batch is ~46 MB (6 hours of trades)
+    ///     print(f"Processing {len(trades_batch)} trades")
+    ///     bars = processor.process_trades_streaming(trades_batch)
+    /// ```
+    #[pyclass(name = "BinanceTradeStream")]
+    pub struct PyBinanceTradeStream {
+        inner: IntraDayChunkIterator,
+        symbol: String,
+    }
+
+    #[pymethods]
+    impl PyBinanceTradeStream {
+        /// Create a new trade stream.
+        ///
+        /// Args:
+        ///     symbol: Trading pair (e.g., "BTCUSDT")
+        ///     start_date: Start date as "YYYY-MM-DD"
+        ///     end_date: End date as "YYYY-MM-DD"
+        ///     chunk_hours: Hours per chunk (1, 6, 12, or 24). Default: 6.
+        ///     market_type: Market type (Spot, FuturesUM, FuturesCM). Default: Spot.
+        #[new]
+        #[pyo3(signature = (symbol, start_date, end_date, chunk_hours = 6, market_type = PyMarketType::Spot))]
+        fn new(
+            symbol: &str,
+            start_date: &str,
+            end_date: &str,
+            chunk_hours: u32,
+            market_type: PyMarketType,
+        ) -> PyResult<Self> {
+            // Parse dates
+            let start = NaiveDate::parse_from_str(start_date, "%Y-%m-%d")
+                .map_err(|e| PyValueError::new_err(format!("Invalid start_date format: {e}")))?;
+            let end = NaiveDate::parse_from_str(end_date, "%Y-%m-%d")
+                .map_err(|e| PyValueError::new_err(format!("Invalid end_date format: {e}")))?;
+
+            if start > end {
+                return Err(PyValueError::new_err("start_date must be <= end_date"));
+            }
+
+            if chunk_hours == 0 || chunk_hours > 24 {
+                return Err(PyValueError::new_err("chunk_hours must be 1-24"));
+            }
+
+            let loader = HistoricalDataLoader::new_with_market(symbol, market_type.to_market_str());
+            let inner = IntraDayChunkIterator::new(loader, start, end, chunk_hours);
+
+            Ok(Self {
+                inner,
+                symbol: symbol.to_uppercase(),
+            })
+        }
+
+        /// Get the symbol being streamed.
+        #[getter]
+        fn symbol(&self) -> &str {
+            &self.symbol
+        }
+
+        /// Get the current date being processed.
+        #[getter]
+        fn current_date(&self) -> String {
+            self.inner.current_date().format("%Y-%m-%d").to_string()
+        }
+
+        /// Get the current hour within the day.
+        #[getter]
+        fn current_hour(&self) -> u32 {
+            self.inner.current_hour()
+        }
+
+        #[allow(clippy::missing_const_for_fn)]
+        fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+            slf
+        }
+
+        /// Get next chunk of trades.
+        ///
+        /// Returns:
+        ///     List of trade dicts, or None if exhausted.
+        ///
+        /// Raises:
+        ///     RuntimeError: If data fetching fails.
+        fn __next__(&mut self, py: Python) -> PyResult<Option<Vec<PyObject>>> {
+            match self.inner.next() {
+                Some(Ok(trades)) => {
+                    // Convert AggTrades to Python dicts
+                    let mut results = Vec::with_capacity(trades.len());
+                    for trade in &trades {
+                        let dict = PyDict::new_bound(py);
+                        // Convert microseconds to milliseconds for Python API
+                        dict.set_item("timestamp", trade.timestamp / 1000)?;
+                        dict.set_item("price", trade.price.to_f64())?;
+                        dict.set_item("quantity", trade.volume.to_f64())?;
+                        dict.set_item("agg_trade_id", trade.agg_trade_id)?;
+                        dict.set_item("first_trade_id", trade.first_trade_id)?;
+                        dict.set_item("last_trade_id", trade.last_trade_id)?;
+                        dict.set_item("is_buyer_maker", trade.is_buyer_maker)?;
+                        results.push(dict.into());
+                    }
+                    Ok(Some(results))
+                }
+                Some(Err(e)) => Err(PyRuntimeError::new_err(format!("Data fetch error: {e}"))),
+                None => Ok(None),
+            }
+        }
+    }
+
+    /// Stream Binance aggTrades data in memory-efficient chunks.
+    ///
+    /// Returns an iterator that yields trade batches instead of loading
+    /// the entire date range into memory. This is the recommended way to
+    /// process large date ranges.
+    ///
+    /// Args:
+    ///     symbol: Trading pair (e.g., "BTCUSDT")
+    ///     start_date: Start date as "YYYY-MM-DD"
+    ///     end_date: End date as "YYYY-MM-DD"
+    ///     chunk_hours: Hours per chunk (1, 6, 12, or 24). Default: 6.
+    ///     market_type: Market type (Spot, FuturesUM, FuturesCM). Default: Spot.
+    ///
+    /// Returns:
+    ///     Iterator yielding lists of trade dicts.
+    ///
+    /// Example:
+    ///     ```python
+    ///     from rangebar._core import stream_binance_trades, PyRangeBarProcessor
+    ///
+    ///     processor = PyRangeBarProcessor(250, symbol="BTCUSDT")
+    ///
+    ///     for trades_batch in stream_binance_trades("BTCUSDT", "2024-01-01", "2024-01-31"):
+    ///         bars = processor.process_trades_streaming(trades_batch)
+    ///         # Process bars...
+    ///
+    ///     # Get final incomplete bar
+    ///     final_bar = processor.get_incomplete_bar()
+    ///     ```
+    #[pyfunction]
+    #[pyo3(signature = (symbol, start_date, end_date, chunk_hours = 6, market_type = PyMarketType::Spot))]
+    pub fn stream_binance_trades(
+        symbol: &str,
+        start_date: &str,
+        end_date: &str,
+        chunk_hours: u32,
+        market_type: PyMarketType,
+    ) -> PyResult<PyBinanceTradeStream> {
+        PyBinanceTradeStream::new(symbol, start_date, end_date, chunk_hours, market_type)
     }
 }
 

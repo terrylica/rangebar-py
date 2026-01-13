@@ -27,6 +27,9 @@ pub mod symbols;
 pub mod websocket;
 
 // Re-export commonly used types
-pub use historical::{detect_csv_headers, python_bool, CsvAggTrade, HistoricalDataLoader};
+pub use historical::{
+    detect_csv_headers, python_bool, CsvAggTrade, HistoricalDataLoader, HistoricalError,
+    IntraDayChunkIterator,
+};
 pub use symbols::{get_tier1_symbols, get_tier1_usdt_pairs, is_tier1_symbol, TIER1_SYMBOLS};
 pub use websocket::{BinanceWebSocketStream, WebSocketError};

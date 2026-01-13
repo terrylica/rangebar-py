@@ -75,11 +75,12 @@ pub mod exness;
 // Both paths are supported and equivalent.
 
 // Binance provider re-exports (alphabetically sorted)
-// Includes: historical data loading, Tier-1 symbol discovery, WebSocket streaming
+// Includes: historical data loading, Tier-1 symbol discovery, WebSocket streaming, intra-day chunking
 #[cfg(feature = "binance")]
 pub use binance::{
     detect_csv_headers, get_tier1_symbols, get_tier1_usdt_pairs, is_tier1_symbol, python_bool,
-    BinanceWebSocketStream, CsvAggTrade, HistoricalDataLoader, WebSocketError, TIER1_SYMBOLS,
+    BinanceWebSocketStream, CsvAggTrade, HistoricalDataLoader, HistoricalError,
+    IntraDayChunkIterator, WebSocketError, TIER1_SYMBOLS,
 };
 
 // Exness provider re-exports (alphabetically sorted)
