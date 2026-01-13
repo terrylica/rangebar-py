@@ -1884,6 +1884,9 @@ def get_range_bars(
     end_date: str,
     threshold_decimal_bps: int | str = 250,
     *,
+    # Streaming options (v8.0+)
+    materialize: bool = True,
+    batch_size: int = 10_000,
     # Data source configuration
     source: str = "binance",
     market: str = "spot",
@@ -1896,7 +1899,7 @@ def get_range_bars(
     use_cache: bool = True,
     fetch_if_missing: bool = True,
     cache_dir: str | None = None,
-) -> pd.DataFrame:
+) -> pd.DataFrame | Iterator[pl.DataFrame]:
     """Get range bars for a symbol with automatic data fetching and caching.
 
     This is the single entry point for all range bar generation. It supports
@@ -1919,6 +1922,13 @@ def get_range_bars(
         - String preset: "micro" (1bps), "tight" (5bps), "standard" (10bps),
           "medium" (25bps), "wide" (50bps), "macro" (100bps)
         Valid range: 1-100,000 (0.001% to 100%)
+    materialize : bool, default=True
+        If True, return a single pd.DataFrame (legacy behavior).
+        If False, return an Iterator[pl.DataFrame] that yields batches
+        of bars for memory-efficient streaming (v8.0+).
+    batch_size : int, default=10_000
+        Number of bars per batch when materialize=False.
+        Each batch is ~500 KB. Only used in streaming mode.
 
     source : str, default="binance"
         Data source: "binance" or "exness"
@@ -1955,11 +1965,16 @@ def get_range_bars(
 
     Returns
     -------
-    pd.DataFrame
-        OHLCV DataFrame ready for backtesting.py, with:
-        - DatetimeIndex (timestamp)
-        - Columns: Open, High, Low, Close, Volume
-        - (if include_microstructure) Additional columns
+    pd.DataFrame or Iterator[pl.DataFrame]
+        If materialize=True (default): Single pd.DataFrame ready for
+        backtesting.py, with DatetimeIndex and OHLCV columns.
+
+        If materialize=False: Iterator yielding pl.DataFrame batches
+        (batch_size bars each) for memory-efficient streaming. Convert
+        to pandas with: ``pl.concat(list(iterator)).to_pandas()``
+
+        Columns: Open, High, Low, Close, Volume
+        (if include_microstructure) Additional columns
 
     Raises
     ------
@@ -2010,6 +2025,21 @@ def get_range_bars(
     >>> df = get_range_bars("BTCUSDT", "2024-01-01", "2024-12-31")
     >>> bt = Backtest(df, MyStrategy, cash=10000, commission=0.0002)
     >>> stats = bt.run()
+
+    Streaming mode for large datasets (v8.0+):
+
+    >>> import polars as pl
+    >>> # Memory-efficient: yields ~500 KB batches
+    >>> for batch in get_range_bars(
+    ...     "BTCUSDT", "2024-01-01", "2024-06-30",
+    ...     materialize=False,
+    ...     batch_size=10_000,
+    ... ):
+    ...     process_batch(batch)  # batch is pl.DataFrame
+    ...
+    >>> # Or collect to single DataFrame:
+    >>> batches = list(get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", materialize=False))
+    >>> df = pl.concat(batches).to_pandas()
 
     Notes
     -----
@@ -2113,6 +2143,29 @@ def get_range_bars(
     # Convert to milliseconds for cache lookup
     start_ts = int(start_dt.timestamp() * 1000)
     end_ts = int((end_dt.timestamp() + 86399) * 1000)  # End of day
+
+    # -------------------------------------------------------------------------
+    # Streaming mode (v8.0+): Return generator instead of materializing
+    # -------------------------------------------------------------------------
+    if not materialize:
+        if source == "exness":
+            msg = (
+                "Streaming mode (materialize=False) is not yet supported for Exness. "
+                "Use materialize=True or use Binance source."
+            )
+            raise ValueError(msg)
+
+        # Binance streaming: yields batches directly from network
+        return _stream_range_bars_binance(
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            threshold_decimal_bps=threshold_decimal_bps,
+            market=market_normalized,
+            batch_size=batch_size,
+            include_microstructure=include_microstructure,
+            include_incomplete=include_incomplete,
+        )
 
     # -------------------------------------------------------------------------
     # Check ClickHouse bar cache first (Issue #21: fast path for precomputed bars)
@@ -2660,14 +2713,177 @@ def precompute_range_bars(
     )
 
 
+def _stream_range_bars_binance(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    threshold_decimal_bps: int,
+    market: str,
+    batch_size: int = 10_000,
+    include_microstructure: bool = False,
+    include_incomplete: bool = False,
+) -> Iterator[pl.DataFrame]:
+    """Stream range bars in batches using memory-efficient chunked processing.
+
+    This is the internal generator for Phase 4 streaming API. It:
+    1. Streams trades in 6-hour chunks from Binance via stream_binance_trades()
+    2. Processes each chunk to bars via process_trades_streaming_arrow()
+    3. Yields batches of bars as Polars DataFrames
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol (e.g., "BTCUSDT")
+    start_date : str
+        Start date "YYYY-MM-DD"
+    end_date : str
+        End date "YYYY-MM-DD"
+    threshold_decimal_bps : int
+        Range bar threshold (250 = 0.25%)
+    market : str
+        Normalized market type: "spot", "um", or "cm"
+    batch_size : int, default=10_000
+        Number of bars per yielded DataFrame (~500 KB each)
+    include_microstructure : bool, default=False
+        Include microstructure columns in output
+    include_incomplete : bool, default=False
+        Include the final incomplete bar
+
+    Yields
+    ------
+    pl.DataFrame
+        Batches of range bars (OHLCV format, backtesting.py compatible)
+
+    Memory Usage
+    ------------
+    Peak: ~50 MB (6-hour trade chunk + bar buffer)
+    Per yield: ~500 KB (10,000 bars)
+    """
+    import polars as pl
+
+    try:
+        from ._core import MarketType, stream_binance_trades
+    except ImportError as e:
+        msg = (
+            "Streaming requires the 'data-providers' feature. "
+            "Rebuild with: maturin develop --features data-providers"
+        )
+        raise RuntimeError(msg) from e
+
+    # Map market string to enum
+    market_enum = {
+        "spot": MarketType.Spot,
+        "um": MarketType.FuturesUM,
+        "cm": MarketType.FuturesCM,
+    }[market]
+
+    # Create processor with symbol for checkpoint support
+    processor = RangeBarProcessor(threshold_decimal_bps, symbol=symbol)
+    bar_buffer: list[dict] = []
+
+    # Stream trades in 6-hour chunks
+    for trade_batch in stream_binance_trades(
+        symbol, start_date, end_date, chunk_hours=6, market_type=market_enum
+    ):
+        # Process to bars via Arrow (zero-copy to Polars)
+        arrow_batch = processor.process_trades_streaming_arrow(trade_batch)
+        bars_df = pl.from_arrow(arrow_batch)
+
+        if not bars_df.is_empty():
+            # Add to buffer
+            bar_buffer.extend(bars_df.to_dicts())
+
+        # Yield when buffer reaches batch_size
+        while len(bar_buffer) >= batch_size:
+            batch = bar_buffer[:batch_size]
+            bar_buffer = bar_buffer[batch_size:]
+            yield _bars_list_to_polars(batch, include_microstructure)
+
+    # Handle incomplete bar at end
+    if include_incomplete:
+        incomplete = processor.get_incomplete_bar()
+        if incomplete:
+            bar_buffer.append(incomplete)
+
+    # Yield remaining bars
+    if bar_buffer:
+        yield _bars_list_to_polars(bar_buffer, include_microstructure)
+
+
+def _bars_list_to_polars(
+    bars: list[dict],
+    include_microstructure: bool = False,
+) -> pl.DataFrame:
+    """Convert list of bar dicts to Polars DataFrame in backtesting.py format.
+
+    Parameters
+    ----------
+    bars : list[dict]
+        List of bar dictionaries from processor
+    include_microstructure : bool
+        Include microstructure columns
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame with OHLCV columns (capitalized), DatetimeIndex
+    """
+    import polars as pl
+
+    if not bars:
+        return pl.DataFrame()
+
+    df = pl.DataFrame(bars)
+
+    # Convert timestamp to datetime
+    if "timestamp" in df.columns:
+        df = df.with_columns(
+            pl.col("timestamp")
+            .str.to_datetime(format="%Y-%m-%dT%H:%M:%S%.f%:z")
+            .alias("timestamp")
+        )
+
+    # Rename to backtesting.py format
+    rename_map = {
+        "open": "Open",
+        "high": "High",
+        "low": "Low",
+        "close": "Close",
+        "volume": "Volume",
+    }
+    df = df.rename({k: v for k, v in rename_map.items() if k in df.columns})
+
+    # Select columns
+    base_cols = ["timestamp", "Open", "High", "Low", "Close", "Volume"]
+    if include_microstructure:
+        # Include all columns
+        return df
+    # Only OHLCV columns
+    available = [c for c in base_cols if c in df.columns]
+    return df.select(available)
+
+
 def _fetch_binance(
     symbol: str,
     start_date: str,
     end_date: str,
     market: str,
 ) -> pl.DataFrame:
-    """Fetch Binance aggTrades data (internal)."""
+    """Fetch Binance aggTrades data (internal).
+
+    DEPRECATED: Use stream_binance_trades() for memory-efficient streaming.
+    This function loads all trades into memory at once.
+    """
+    import warnings
+
     import polars as pl
+
+    warnings.warn(
+        "_fetch_binance() is deprecated. Use stream_binance_trades() for "
+        "memory-efficient streaming. This function will be removed in v9.0.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     try:
         from ._core import MarketType, fetch_binance_aggtrades

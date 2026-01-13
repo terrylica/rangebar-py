@@ -25,12 +25,13 @@ THRESHOLD_DECIMAL_MAX : Maximum valid threshold (100,000 = 10,000bps).
 __version__ : Package version string.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from enum import Enum, IntEnum
-from typing import Literal
+from typing import Literal, overload
 
 import pandas as pd
+import polars as pl
 
 # ============================================================================
 # Exceptions and Warnings
@@ -376,6 +377,7 @@ def validate_continuity_tiered(
 # Main API
 # ============================================================================
 
+@overload
 def get_range_bars(
     symbol: str,
     start_date: str,
@@ -384,6 +386,48 @@ def get_range_bars(
         int | Literal["micro", "tight", "standard", "medium", "wide", "macro"]
     ) = 250,
     *,
+    materialize: Literal[True] = ...,
+    batch_size: int = ...,
+    source: Literal["binance", "exness"] = ...,
+    market: Literal["spot", "futures-um", "futures-cm", "um", "cm"] = ...,
+    validation: Literal["permissive", "strict", "paranoid"] = ...,
+    include_incomplete: bool = ...,
+    include_microstructure: bool = ...,
+    use_cache: bool = ...,
+    fetch_if_missing: bool = ...,
+    cache_dir: str | None = ...,
+) -> pd.DataFrame: ...
+@overload
+def get_range_bars(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    threshold_decimal_bps: (
+        int | Literal["micro", "tight", "standard", "medium", "wide", "macro"]
+    ) = 250,
+    *,
+    materialize: Literal[False],
+    batch_size: int = ...,
+    source: Literal["binance", "exness"] = ...,
+    market: Literal["spot", "futures-um", "futures-cm", "um", "cm"] = ...,
+    validation: Literal["permissive", "strict", "paranoid"] = ...,
+    include_incomplete: bool = ...,
+    include_microstructure: bool = ...,
+    use_cache: bool = ...,
+    fetch_if_missing: bool = ...,
+    cache_dir: str | None = ...,
+) -> Iterator[pl.DataFrame]: ...
+def get_range_bars(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    threshold_decimal_bps: (
+        int | Literal["micro", "tight", "standard", "medium", "wide", "macro"]
+    ) = 250,
+    *,
+    # Streaming options (v8.0+)
+    materialize: bool = True,
+    batch_size: int = 10_000,
     # Data source configuration
     source: Literal["binance", "exness"] = "binance",
     market: Literal["spot", "futures-um", "futures-cm", "um", "cm"] = "spot",
@@ -396,7 +440,7 @@ def get_range_bars(
     use_cache: bool = True,
     fetch_if_missing: bool = True,
     cache_dir: str | None = None,
-) -> pd.DataFrame:
+) -> pd.DataFrame | Iterator[pl.DataFrame]:
     """Get range bars for a symbol with automatic data fetching and caching.
 
     This is the single entry point for all range bar generation. It supports
@@ -419,6 +463,13 @@ def get_range_bars(
         - String preset: "micro" (1bps), "tight" (5bps), "standard" (10bps),
           "medium" (25bps), "wide" (50bps), "macro" (100bps)
         Valid range: 1-100,000 (0.001% to 100%)
+    materialize : bool, default=True
+        If True, return a single pd.DataFrame (legacy behavior).
+        If False, return an Iterator[pl.DataFrame] that yields batches
+        of bars for memory-efficient streaming (v8.0+).
+    batch_size : int, default=10_000
+        Number of bars per batch when materialize=False.
+        Each batch is ~500 KB. Only used in streaming mode.
 
     source : str, default="binance"
         Data source: "binance" or "exness"
@@ -449,7 +500,7 @@ def get_range_bars(
         - (Issue #25) trade_intensity: Trades per second
         - (Issue #25) volume_per_trade: Average trade size
         - (Issue #25) aggression_ratio: Buy/sell trade count ratio
-        - (Issue #25) aggregation_efficiency: Trade fragmentation proxy
+        - (Issue #25) aggregation_density: Trade fragmentation proxy
         - (Issue #25) turnover_imbalance: Dollar-weighted OFI [-1, 1]
     use_cache : bool, default=True
         Cache tick data locally in Parquet format.
@@ -461,11 +512,15 @@ def get_range_bars(
 
     Returns
     -------
-    pd.DataFrame
-        OHLCV DataFrame ready for backtesting.py, with:
-        - DatetimeIndex (timestamp)
-        - Columns: Open, High, Low, Close, Volume
-        - (if include_microstructure) Additional columns
+    pd.DataFrame or Iterator[pl.DataFrame]
+        If materialize=True (default): Single pd.DataFrame ready for
+        backtesting.py, with DatetimeIndex and OHLCV columns.
+
+        If materialize=False: Iterator yielding pl.DataFrame batches
+        (batch_size bars each) for memory-efficient streaming.
+
+        Columns: Open, High, Low, Close, Volume
+        (if include_microstructure) Additional columns
 
     Raises
     ------
