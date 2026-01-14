@@ -15,12 +15,12 @@ categories = ["command-line-utilities", "finance"]
 
 [dependencies]
 # Internal crates (all previous phases)
-rangebar-core = { path = "../rangebar-core", version = "8.0", features = ["test-utils"] }
-rangebar-providers = { path = "../rangebar-providers", version = "8.0", features = ["all-providers"] }
-rangebar-config = { path = "../rangebar-config", version = "8.0" }
-rangebar-io = { path = "../rangebar-io", version = "8.0", features = ["parquet"] }
-rangebar-streaming = { path = "../rangebar-streaming", version = "8.0", features = ["all"] }
-rangebar-batch = { path = "../rangebar-batch", version = "8.0" }
+rangebar-core = { path = "../rangebar-core", version = "9.0", features = ["test-utils"] }
+rangebar-providers = { path = "../rangebar-providers", version = "9.0", features = ["all-providers"] }
+rangebar-config = { path = "../rangebar-config", version = "9.0" }
+rangebar-io = { path = "../rangebar-io", version = "9.0", features = ["parquet"] }
+rangebar-streaming = { path = "../rangebar-streaming", version = "9.0", features = ["all"] }
+rangebar-batch = { path = "../rangebar-batch", version = "9.0" }
 
 # CLI framework
 clap.workspace = true

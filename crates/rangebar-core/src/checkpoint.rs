@@ -85,10 +85,27 @@ pub struct Checkpoint {
     // === MONITORING (1 field) ===
     /// Anomaly summary counts for debugging
     pub anomaly_summary: AnomalySummary,
+
+    // === BEHAVIOR FLAGS (1 field) ===
+    /// Prevent bars from closing on same timestamp as they opened (Issue #36)
+    ///
+    /// When true (default): A bar cannot close until a trade arrives with a
+    /// different timestamp than the bar's open_time. This prevents flash crash
+    /// scenarios from creating thousands of bars at identical timestamps.
+    ///
+    /// When false: Legacy v8 behavior - bars can close immediately on breach.
+    #[serde(default = "default_prevent_same_timestamp_close")]
+    pub prevent_same_timestamp_close: bool,
+}
+
+/// Default value for prevent_same_timestamp_close (true = timestamp gating enabled)
+fn default_prevent_same_timestamp_close() -> bool {
+    true
 }
 
 impl Checkpoint {
     /// Create a new checkpoint with the given parameters
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         symbol: String,
         threshold_decimal_bps: u32,
@@ -97,6 +114,7 @@ impl Checkpoint {
         last_timestamp_us: i64,
         last_trade_id: Option<i64>,
         price_hash: u64,
+        prevent_same_timestamp_close: bool,
     ) -> Self {
         Self {
             symbol,
@@ -107,6 +125,7 @@ impl Checkpoint {
             last_trade_id,
             price_hash,
             anomaly_summary: AnomalySummary::default(),
+            prevent_same_timestamp_close,
         }
     }
 
@@ -302,12 +321,14 @@ mod tests {
             1640995200000000, // timestamp in microseconds
             Some(12345),
             0,
+            true, // prevent_same_timestamp_close
         );
 
         assert_eq!(checkpoint.symbol, "BTCUSDT");
         assert_eq!(checkpoint.threshold_decimal_bps, 250);
         assert!(!checkpoint.has_incomplete_bar());
         assert_eq!(checkpoint.last_trade_id, Some(12345));
+        assert!(checkpoint.prevent_same_timestamp_close);
     }
 
     #[test]
@@ -320,18 +341,62 @@ mod tests {
             1640995200000000,
             None, // Exness has no trade IDs
             12345678,
+            true, // prevent_same_timestamp_close
         );
 
         // Serialize to JSON
         let json = serde_json::to_string(&checkpoint).unwrap();
         assert!(json.contains("EURUSD"));
         assert!(json.contains("\"threshold_decimal_bps\":10"));
+        assert!(json.contains("\"prevent_same_timestamp_close\":true"));
 
         // Deserialize back
         let restored: Checkpoint = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.symbol, "EURUSD");
         assert_eq!(restored.threshold_decimal_bps, 10);
         assert_eq!(restored.price_hash, 12345678);
+        assert!(restored.prevent_same_timestamp_close);
+    }
+
+    #[test]
+    fn test_checkpoint_serialization_toggle_false() {
+        let checkpoint = Checkpoint::new(
+            "BTCUSDT".to_string(),
+            100, // 10bps
+            None,
+            None,
+            1640995200000000,
+            Some(999),
+            12345678,
+            false, // Legacy behavior
+        );
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&checkpoint).unwrap();
+        assert!(json.contains("\"prevent_same_timestamp_close\":false"));
+
+        // Deserialize back
+        let restored: Checkpoint = serde_json::from_str(&json).unwrap();
+        assert!(!restored.prevent_same_timestamp_close);
+    }
+
+    #[test]
+    fn test_checkpoint_deserialization_default() {
+        // Test that old checkpoints without the field default to true
+        let json = r#"{
+            "symbol": "BTCUSDT",
+            "threshold_decimal_bps": 100,
+            "incomplete_bar": null,
+            "thresholds": null,
+            "last_timestamp_us": 1640995200000000,
+            "last_trade_id": 12345,
+            "price_hash": 0,
+            "anomaly_summary": {"gaps_detected": 0, "overlaps_detected": 0, "timestamp_anomalies": 0}
+        }"#;
+
+        let checkpoint: Checkpoint = serde_json::from_str(json).unwrap();
+        // Missing field should default to true (new behavior)
+        assert!(checkpoint.prevent_same_timestamp_close);
     }
 
     #[test]

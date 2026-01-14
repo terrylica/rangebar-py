@@ -36,10 +36,22 @@ pub struct RangeBarProcessor {
     /// Flag indicating this processor was created from a checkpoint
     /// When true, process_agg_trade_records will continue from existing bar state
     resumed_from_checkpoint: bool,
+
+    /// Prevent bars from closing on same timestamp as they opened (Issue #36)
+    ///
+    /// When true (default): A bar cannot close until a trade arrives with a
+    /// different timestamp than the bar's open_time. This prevents "instant bars"
+    /// during flash crashes where multiple trades occur at the same millisecond.
+    ///
+    /// When false: Legacy behavior - bars can close on any breach regardless
+    /// of timestamp, which may produce bars with identical timestamps.
+    prevent_same_timestamp_close: bool,
 }
 
 impl RangeBarProcessor {
     /// Create new processor with given threshold
+    ///
+    /// Uses default behavior: `prevent_same_timestamp_close = true` (Issue #36)
     ///
     /// # Arguments
     ///
@@ -53,6 +65,31 @@ impl RangeBarProcessor {
     /// Prior to v3.0.0, `threshold_decimal_bps` was in 1bps units.
     /// **Migration**: Multiply all threshold values by 10.
     pub fn new(threshold_decimal_bps: u32) -> Result<Self, ProcessingError> {
+        Self::with_options(threshold_decimal_bps, true)
+    }
+
+    /// Create new processor with explicit timestamp gating control
+    ///
+    /// # Arguments
+    ///
+    /// * `threshold_decimal_bps` - Threshold in **decimal basis points**
+    /// * `prevent_same_timestamp_close` - If true, bars cannot close until
+    ///   timestamp advances from open_time. This prevents "instant bars" during
+    ///   flash crashes. Set to false for legacy behavior (pre-v9).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Default behavior (v9+): timestamp gating enabled
+    /// let processor = RangeBarProcessor::new(250)?;
+    ///
+    /// // Legacy behavior: allow instant bars
+    /// let processor = RangeBarProcessor::with_options(250, false)?;
+    /// ```
+    pub fn with_options(
+        threshold_decimal_bps: u32,
+        prevent_same_timestamp_close: bool,
+    ) -> Result<Self, ProcessingError> {
         // Validation bounds (v3.0.0: decimal bps units)
         // Min: 1 × 0.1bps = 0.1bps = 0.001%
         // Max: 100,000 × 0.1bps = 10,000bps = 100%
@@ -75,7 +112,13 @@ impl RangeBarProcessor {
             last_timestamp_us: 0,
             anomaly_summary: AnomalySummary::default(),
             resumed_from_checkpoint: false,
+            prevent_same_timestamp_close,
         })
+    }
+
+    /// Get the prevent_same_timestamp_close setting
+    pub fn prevent_same_timestamp_close(&self) -> bool {
+        self.prevent_same_timestamp_close
     }
 
     /// Process a single trade and return completed bar if any
@@ -114,12 +157,20 @@ impl RangeBarProcessor {
             }
             Some(bar_state) => {
                 // Check for threshold breach
-                if bar_state.bar.is_breach(
+                let price_breaches = bar_state.bar.is_breach(
                     trade.price,
                     bar_state.upper_threshold,
                     bar_state.lower_threshold,
-                ) {
-                    // Breach detected - close current bar
+                );
+
+                // Timestamp gate (Issue #36): prevent bars from closing on same timestamp
+                // This eliminates "instant bars" during flash crashes where multiple trades
+                // occur at the same millisecond.
+                let timestamp_allows_close = !self.prevent_same_timestamp_close
+                    || trade.timestamp != bar_state.bar.open_time;
+
+                if price_breaches && timestamp_allows_close {
+                    // Breach detected AND timestamp changed - close current bar
                     bar_state.bar.update_with_trade(&trade);
 
                     // Validation: Ensure high/low include open/close extremes
@@ -138,7 +189,7 @@ impl RangeBarProcessor {
 
                     Ok(Some(completed_bar))
                 } else {
-                    // No breach - update existing bar
+                    // Either no breach OR same timestamp (gate active) - update existing bar
                     bar_state.bar.update_with_trade(&trade);
                     Ok(None)
                 }
@@ -262,12 +313,20 @@ impl RangeBarProcessor {
                 }
                 Some(ref mut bar_state) => {
                     // Check if this AggTrade record breaches the threshold
-                    if bar_state.bar.is_breach(
+                    let price_breaches = bar_state.bar.is_breach(
                         agg_record.price,
                         bar_state.upper_threshold,
                         bar_state.lower_threshold,
-                    ) {
-                        // Breach detected - update bar with breaching record (includes microstructure)
+                    );
+
+                    // Timestamp gate (Issue #36): prevent bars from closing on same timestamp
+                    // This eliminates "instant bars" during flash crashes where multiple trades
+                    // occur at the same millisecond.
+                    let timestamp_allows_close = !self.prevent_same_timestamp_close
+                        || agg_record.timestamp != bar_state.bar.open_time;
+
+                    if price_breaches && timestamp_allows_close {
+                        // Breach detected AND timestamp changed - update bar with breaching record
                         bar_state.bar.update_with_trade(agg_record);
 
                         // Validation: Ensure high/low include open/close extremes
@@ -285,7 +344,7 @@ impl RangeBarProcessor {
                         current_bar = None;
                         defer_open = true; // Next record will open new bar
                     } else {
-                        // No breach: normal update with microstructure calculations
+                        // Either no breach OR same timestamp (gate active) - normal update
                         bar_state.bar.update_with_trade(agg_record);
                     }
                 }
@@ -348,6 +407,7 @@ impl RangeBarProcessor {
             self.last_timestamp_us,
             self.last_trade_id,
             self.price_window.compute_hash(),
+            self.prevent_same_timestamp_close,
         )
     }
 
@@ -392,6 +452,7 @@ impl RangeBarProcessor {
             last_timestamp_us: checkpoint.last_timestamp_us,
             anomaly_summary: checkpoint.anomaly_summary,
             resumed_from_checkpoint: true, // Signal to continue from existing bar state
+            prevent_same_timestamp_close: checkpoint.prevent_same_timestamp_close,
         })
     }
 
@@ -1086,10 +1147,14 @@ pub struct ExportRangeBarProcessor {
     threshold_decimal_bps: u32,
     current_bar: Option<InternalRangeBar>,
     completed_bars: Vec<RangeBar>,
+    /// Prevent bars from closing on same timestamp as they opened (Issue #36)
+    prevent_same_timestamp_close: bool,
 }
 
 impl ExportRangeBarProcessor {
     /// Create new export processor with given threshold
+    ///
+    /// Uses default behavior: `prevent_same_timestamp_close = true` (Issue #36)
     ///
     /// # Arguments
     ///
@@ -1103,6 +1168,14 @@ impl ExportRangeBarProcessor {
     /// Prior to v3.0.0, `threshold_decimal_bps` was in 1bps units.
     /// **Migration**: Multiply all threshold values by 10.
     pub fn new(threshold_decimal_bps: u32) -> Result<Self, ProcessingError> {
+        Self::with_options(threshold_decimal_bps, true)
+    }
+
+    /// Create new export processor with explicit timestamp gating control
+    pub fn with_options(
+        threshold_decimal_bps: u32,
+        prevent_same_timestamp_close: bool,
+    ) -> Result<Self, ProcessingError> {
         // Validation bounds (v3.0.0: decimal bps units)
         // Min: 1 × 0.1bps = 0.1bps = 0.001%
         // Max: 100,000 × 0.1bps = 10,000bps = 100%
@@ -1121,6 +1194,7 @@ impl ExportRangeBarProcessor {
             threshold_decimal_bps,
             current_bar: None,
             completed_bars: Vec::new(),
+            prevent_same_timestamp_close,
         })
     }
 
@@ -1221,7 +1295,13 @@ impl ExportRangeBarProcessor {
         }
 
         // CRITICAL: Fixed-point threshold breach detection (matches proven 100% compliance algorithm)
-        if price_val >= upper_threshold || price_val <= lower_threshold {
+        let price_breaches = price_val >= upper_threshold || price_val <= lower_threshold;
+
+        // Timestamp gate (Issue #36): prevent bars from closing on same timestamp
+        let timestamp_allows_close =
+            !self.prevent_same_timestamp_close || trade.timestamp != bar.open_time;
+
+        if price_breaches && timestamp_allows_close {
             // Close current bar and move to completed
             // SAFETY: current_bar guaranteed Some - checked at line 688/734
             let completed_bar = self.current_bar.take().unwrap();

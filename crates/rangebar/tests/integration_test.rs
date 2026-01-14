@@ -102,9 +102,11 @@ fn test_tier1_symbol_integration() {
 }
 
 #[test]
-fn test_zero_duration_bars_are_valid() {
-    // Test that zero-duration bars are properly handled (NOTABUG verification)
-    let mut processor = RangeBarProcessor::new(100).expect("Failed to create processor"); // 0.1% threshold for easier testing
+fn test_zero_duration_bars_with_legacy_behavior() {
+    // Test that zero-duration bars are properly handled when timestamp gating is DISABLED
+    // (Legacy v8 behavior: prevent_same_timestamp_close=false)
+    let mut processor =
+        RangeBarProcessor::with_options(100, false).expect("Failed to create processor"); // 0.1% threshold for easier testing
 
     // Create trades with identical timestamps that breach threshold
     let same_timestamp = 1609459200000;
@@ -138,7 +140,8 @@ fn test_zero_duration_bars_are_valid() {
         .process_agg_trade_records(&trades)
         .expect("Failed to process trades");
 
-    // Should produce a zero-duration bar (open_time == close_time)
+    // With legacy behavior (prevent_same_timestamp_close=false),
+    // should produce a zero-duration bar (open_time == close_time)
     assert_eq!(range_bars.len(), 1, "Should produce exactly one range bar");
     let bar = &range_bars[0];
     assert_eq!(bar.open_time, bar.close_time, "Zero-duration bar is valid");
@@ -147,6 +150,110 @@ fn test_zero_duration_bars_are_valid() {
         bar.close, breach_price,
         "Close should be breach trade price"
     );
+}
+
+#[test]
+fn test_same_timestamp_no_close_default_behavior() {
+    // Test Issue #36: With default behavior (prevent_same_timestamp_close=true),
+    // bars cannot close on the same timestamp they opened
+    let mut processor = RangeBarProcessor::new(100).expect("Failed to create processor");
+
+    // Create trades with identical timestamps that would breach threshold
+    let same_timestamp = 1609459200000;
+    let base_price = FixedPoint::from_str("50000.00000000").unwrap();
+    let breach_price = FixedPoint::from_str("50100.00000000").unwrap(); // +0.2% breach
+
+    let trades = vec![
+        AggTrade {
+            agg_trade_id: 1,
+            price: base_price,
+            volume: FixedPoint::from_str("1.0").unwrap(),
+            first_trade_id: 1,
+            last_trade_id: 1,
+            timestamp: same_timestamp,
+            is_buyer_maker: false,
+            is_best_match: None,
+        },
+        AggTrade {
+            agg_trade_id: 2,
+            price: breach_price,
+            volume: FixedPoint::from_str("1.0").unwrap(),
+            first_trade_id: 2,
+            last_trade_id: 2,
+            timestamp: same_timestamp, // Same timestamp - bar should NOT close
+            is_buyer_maker: false,
+            is_best_match: None,
+        },
+    ];
+
+    let range_bars = processor
+        .process_agg_trade_records(&trades)
+        .expect("Failed to process trades");
+
+    // With default behavior (prevent_same_timestamp_close=true),
+    // NO bar should be closed because timestamp hasn't changed
+    assert_eq!(
+        range_bars.len(),
+        0,
+        "No bar should close when timestamp gate is active"
+    );
+
+    // The incomplete bar should exist and contain both trades
+    let incomplete = processor.get_incomplete_bar();
+    assert!(incomplete.is_some(), "Should have incomplete bar");
+    let bar = incomplete.unwrap();
+    assert_eq!(bar.open, base_price, "Open should be first trade price");
+    assert_eq!(bar.high, breach_price, "High should be breach price");
+    assert_eq!(
+        bar.close, breach_price,
+        "Close should be breach price (accumulated)"
+    );
+}
+
+#[test]
+fn test_different_timestamp_closes_bar() {
+    // Test that bars close normally when timestamps differ
+    let mut processor = RangeBarProcessor::new(100).expect("Failed to create processor");
+
+    let base_price = FixedPoint::from_str("50000.00000000").unwrap();
+    let breach_price = FixedPoint::from_str("50100.00000000").unwrap(); // +0.2% breach
+
+    let trades = vec![
+        AggTrade {
+            agg_trade_id: 1,
+            price: base_price,
+            volume: FixedPoint::from_str("1.0").unwrap(),
+            first_trade_id: 1,
+            last_trade_id: 1,
+            timestamp: 1609459200000,
+            is_buyer_maker: false,
+            is_best_match: None,
+        },
+        AggTrade {
+            agg_trade_id: 2,
+            price: breach_price,
+            volume: FixedPoint::from_str("1.0").unwrap(),
+            first_trade_id: 2,
+            last_trade_id: 2,
+            timestamp: 1609459200001, // Different timestamp - bar should close
+            is_buyer_maker: false,
+            is_best_match: None,
+        },
+    ];
+
+    let range_bars = processor
+        .process_agg_trade_records(&trades)
+        .expect("Failed to process trades");
+
+    // Bar should close because timestamp changed
+    assert_eq!(
+        range_bars.len(),
+        1,
+        "Bar should close when timestamp differs"
+    );
+    let bar = &range_bars[0];
+    assert_eq!(bar.open, base_price);
+    assert_eq!(bar.close, breach_price);
 }
 
 #[test]

@@ -342,6 +342,12 @@ class RangeBarProcessor:
         Valid range: [1, 100_000] (0.001% to 100%)
     symbol : str, optional
         Trading symbol (e.g., "BTCUSDT"). Required for checkpoint creation.
+    prevent_same_timestamp_close : bool, default=True
+        Timestamp gating for flash crash prevention (Issue #36).
+        If True (default): A bar cannot close on the same timestamp it opened.
+        This prevents flash crash scenarios from creating thousands of bars
+        at identical timestamps. If False: Legacy v8 behavior where bars can
+        close immediately on breach regardless of timestamp.
 
     Raises
     ------
@@ -390,7 +396,13 @@ class RangeBarProcessor:
     - Price hash verification detects gaps in data stream
     """
 
-    def __init__(self, threshold_decimal_bps: int, symbol: str | None = None) -> None:
+    def __init__(
+        self,
+        threshold_decimal_bps: int,
+        symbol: str | None = None,
+        *,
+        prevent_same_timestamp_close: bool = True,
+    ) -> None:
         """Initialize processor with given threshold.
 
         Parameters
@@ -399,11 +411,16 @@ class RangeBarProcessor:
             Threshold in decimal basis points (250 = 25bps = 0.25%)
         symbol : str, optional
             Trading symbol for checkpoint creation
+        prevent_same_timestamp_close : bool, default=True
+            Timestamp gating for flash crash prevention (Issue #36)
         """
         # Validation happens in Rust layer, which raises PyValueError
-        self._processor = _PyRangeBarProcessor(threshold_decimal_bps, symbol)
+        self._processor = _PyRangeBarProcessor(
+            threshold_decimal_bps, symbol, prevent_same_timestamp_close
+        )
         self.threshold_decimal_bps = threshold_decimal_bps
         self.symbol = symbol
+        self.prevent_same_timestamp_close = prevent_same_timestamp_close
 
     @classmethod
     def from_checkpoint(cls, checkpoint: dict) -> RangeBarProcessor:
@@ -440,6 +457,10 @@ class RangeBarProcessor:
         instance._processor = _PyRangeBarProcessor.from_checkpoint(checkpoint)
         instance.threshold_decimal_bps = checkpoint["threshold_decimal_bps"]
         instance.symbol = checkpoint.get("symbol")
+        # Default to True for old checkpoints without this field
+        instance.prevent_same_timestamp_close = checkpoint.get(
+            "prevent_same_timestamp_close", True
+        )
         return instance
 
     def process_trades(
@@ -1906,6 +1927,8 @@ def get_range_bars(
     # Processing options
     include_incomplete: bool = False,
     include_microstructure: bool = False,
+    # Timestamp gating (Issue #36)
+    prevent_same_timestamp_close: bool = True,
     # Caching options
     use_cache: bool = True,
     fetch_if_missing: bool = True,
@@ -1962,6 +1985,13 @@ def get_range_bars(
         - vwap: Volume-weighted average price
         - trade_count: Number of trades in bar
         - (Exness) spread_min, spread_max, spread_avg: Spread statistics
+    prevent_same_timestamp_close : bool, default=True
+        Timestamp gating for flash crash prevention (Issue #36).
+        If True (default): A bar cannot close on the same timestamp it opened.
+        This prevents flash crash scenarios from creating thousands of bars
+        at identical timestamps. If False: Legacy v8 behavior where bars can
+        close immediately on breach regardless of timestamp. Use False for
+        comparative analysis between old and new behavior.
     use_cache : bool, default=True
         Cache tick data locally in Parquet format.
     fetch_if_missing : bool, default=True
@@ -2176,6 +2206,7 @@ def get_range_bars(
             batch_size=batch_size,
             include_microstructure=include_microstructure,
             include_incomplete=include_incomplete,
+            prevent_same_timestamp_close=prevent_same_timestamp_close,
         )
 
     # -------------------------------------------------------------------------
@@ -2254,6 +2285,7 @@ def get_range_bars(
         include_incomplete,
         include_microstructure,
         symbol=symbol,
+        prevent_same_timestamp_close=prevent_same_timestamp_close,
     )
     return bars_df
 
@@ -2796,6 +2828,7 @@ def _stream_range_bars_binance(
     batch_size: int = 10_000,
     include_microstructure: bool = False,
     include_incomplete: bool = False,
+    prevent_same_timestamp_close: bool = True,
 ) -> Iterator[pl.DataFrame]:
     """Stream range bars in batches using memory-efficient chunked processing.
 
@@ -2852,7 +2885,11 @@ def _stream_range_bars_binance(
     }[market]
 
     # Create processor with symbol for checkpoint support
-    processor = RangeBarProcessor(threshold_decimal_bps, symbol=symbol)
+    processor = RangeBarProcessor(
+        threshold_decimal_bps,
+        symbol=symbol,
+        prevent_same_timestamp_close=prevent_same_timestamp_close,
+    )
     bar_buffer: list[dict] = []
 
     # Stream trades in 6-hour chunks
@@ -3048,6 +3085,7 @@ def _process_binance_trades(
     *,
     processor: RangeBarProcessor | None = None,
     symbol: str | None = None,
+    prevent_same_timestamp_close: bool = True,
 ) -> tuple[pd.DataFrame, RangeBarProcessor]:
     """Process Binance trades to range bars (internal).
 
@@ -3107,7 +3145,11 @@ def _process_binance_trades(
 
     # Use provided processor or create new one
     if processor is None:
-        processor = RangeBarProcessor(threshold_decimal_bps, symbol=symbol)
+        processor = RangeBarProcessor(
+            threshold_decimal_bps,
+            symbol=symbol,
+            prevent_same_timestamp_close=prevent_same_timestamp_close,
+        )
 
     # MEM-002: Process in chunks to bound memory (2.5 GB → ~50 MB per chunk)
     # Chunked .to_dicts() avoids materializing 1M+ trade dicts at once
@@ -3231,6 +3273,7 @@ def get_n_range_bars(  # noqa: PLR0911
     source: str = "binance",
     market: str = "spot",
     include_microstructure: bool = False,
+    prevent_same_timestamp_close: bool = True,
     use_cache: bool = True,
     fetch_if_missing: bool = True,
     max_lookback_days: int = 90,
@@ -3266,6 +3309,10 @@ def get_n_range_bars(  # noqa: PLR0911
         Market type (Binance only): "spot", "futures-um", or "futures-cm"
     include_microstructure : bool, default=False
         Include microstructure columns (vwap, buy_volume, sell_volume)
+    prevent_same_timestamp_close : bool, default=True
+        Timestamp gating for flash crash prevention (Issue #36).
+        If True (default): A bar cannot close on the same timestamp it opened.
+        If False: Legacy v8 behavior for comparative analysis.
     use_cache : bool, default=True
         Use ClickHouse cache for bar retrieval/storage
     fetch_if_missing : bool, default=True
@@ -3494,6 +3541,7 @@ def get_n_range_bars(  # noqa: PLR0911
                         current_bars=bars_df,
                         current_count=available_count,
                         chunk_size=chunk_size,
+                        prevent_same_timestamp_close=prevent_same_timestamp_close,
                     )
 
                     if bars_df is not None and len(bars_df) >= n_bars:
@@ -3596,6 +3644,7 @@ def _fill_gap_and_cache(
     current_bars: pd.DataFrame | None,
     current_count: int,  # noqa: ARG001 - used for logging/debugging
     chunk_size: int = 100_000,  # noqa: ARG001 - reserved for future chunked processing
+    prevent_same_timestamp_close: bool = True,
 ) -> pd.DataFrame | None:
     """Fill gap in cache by fetching and processing additional data.
 
@@ -3741,6 +3790,7 @@ def _fill_gap_and_cache(
             False,
             include_microstructure,
             symbol=symbol,
+            prevent_same_timestamp_close=prevent_same_timestamp_close,
         )
 
         # Phase 4: Store with unified cache key

@@ -198,6 +198,12 @@ fn checkpoint_to_dict(py: Python, checkpoint: &Checkpoint) -> PyResult<PyObject>
     // Has incomplete bar flag
     dict.set_item("has_incomplete_bar", checkpoint.has_incomplete_bar())?;
 
+    // Behavior flags (Issue #36)
+    dict.set_item(
+        "prevent_same_timestamp_close",
+        checkpoint.prevent_same_timestamp_close,
+    )?;
+
     Ok(dict.into())
 }
 
@@ -283,6 +289,13 @@ fn dict_to_checkpoint(py: Python, dict: &Bound<PyDict>) -> PyResult<Checkpoint> 
         AnomalySummary::default()
     };
 
+    // Extract behavior flags (Issue #36)
+    // Default to true (new behavior) if not present in checkpoint
+    let prevent_same_timestamp_close: bool = dict
+        .get_item("prevent_same_timestamp_close")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(true);
+
     Ok(Checkpoint {
         symbol,
         threshold_decimal_bps,
@@ -292,6 +305,7 @@ fn dict_to_checkpoint(py: Python, dict: &Bound<PyDict>) -> PyResult<Checkpoint> 
         last_trade_id,
         price_hash,
         anomaly_summary,
+        prevent_same_timestamp_close,
     })
 }
 
@@ -468,14 +482,23 @@ impl PyRangeBarProcessor {
     /// Args:
     ///     `threshold_decimal_bps`: Threshold in decimal basis points (250 = 25bps = 0.25%)
     ///     symbol: Optional symbol for checkpoint creation (e.g., "BTCUSDT")
+    ///     `prevent_same_timestamp_close`: If True (default), bars cannot close on the
+    ///         same timestamp they opened. This prevents flash crash scenarios from
+    ///         creating thousands of bars at identical timestamps. Set to False for
+    ///         legacy v8 behavior for comparative analysis. (Issue #36)
     ///
     /// Raises:
     ///     `ValueError`: If threshold is out of range [1, `100_000`]
     #[new]
-    #[pyo3(signature = (threshold_decimal_bps, symbol = None))]
-    fn new(threshold_decimal_bps: u32, symbol: Option<String>) -> PyResult<Self> {
-        let processor = RangeBarProcessor::new(threshold_decimal_bps)
-            .map_err(|e| PyValueError::new_err(format!("Failed to create processor: {e}")))?;
+    #[pyo3(signature = (threshold_decimal_bps, symbol = None, prevent_same_timestamp_close = true))]
+    fn new(
+        threshold_decimal_bps: u32,
+        symbol: Option<String>,
+        prevent_same_timestamp_close: bool,
+    ) -> PyResult<Self> {
+        let processor =
+            RangeBarProcessor::with_options(threshold_decimal_bps, prevent_same_timestamp_close)
+                .map_err(|e| PyValueError::new_err(format!("Failed to create processor: {e}")))?;
 
         Ok(Self {
             processor,
@@ -751,6 +774,15 @@ impl PyRangeBarProcessor {
     #[getter]
     fn symbol(&self) -> Option<String> {
         self.symbol.clone()
+    }
+
+    /// Get prevent_same_timestamp_close setting
+    ///
+    /// Returns True if bars cannot close on the same timestamp they opened
+    /// (timestamp gating enabled, default). Returns False for legacy v8 behavior.
+    #[getter]
+    fn prevent_same_timestamp_close(&self) -> bool {
+        self.processor.prevent_same_timestamp_close()
     }
 }
 

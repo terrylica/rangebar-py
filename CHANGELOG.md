@@ -1,3 +1,17 @@
+# [9.0.0](https://github.com/terrylica/rangebar-py/compare/v8.0.1...v9.0.0) (2026-01-14)
+
+
+* feat!: add timestamp-gated breach detection to eliminate duplicate timestamps ([f57fa81](https://github.com/terrylica/rangebar-py/commit/f57fa81a705cb566d77dada17d36d8026a4752fd)), closes [#36](https://github.com/terrylica/rangebar-py/issues/36)
+
+
+### BREAKING CHANGES
+
+* Default behavior now prevents bars from closing at the
+same timestamp they opened. Set prevent_same_timestamp_close=False for
+previous behavior.
+
+See: docs/analysis/2025-10-10-flash-crash.md
+
 ## [8.0.1](https://github.com/terrylica/rangebar-py/compare/v8.0.0...v8.0.1) (2026-01-13)
 
 

@@ -14,7 +14,7 @@ keywords = ["binance", "exness", "trading", "data-provider"]
 categories = ["finance", "api-bindings"]
 
 [dependencies]
-rangebar-core = { path = "../rangebar-core", version = "8.0" }
+rangebar-core = { path = "../rangebar-core", version = "9.0" }
 
 # Serialization
 serde.workspace = true
