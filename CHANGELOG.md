@@ -1,3 +1,10 @@
+## [9.0.1](https://github.com/terrylica/rangebar-py/compare/v9.0.0...v9.0.1) (2026-01-14)
+
+
+### Bug Fixes
+
+* establish Cargo.toml as single source of truth for version ([3c68614](https://github.com/terrylica/rangebar-py/commit/3c68614dc4a277d8e6ee6154b5f4487f2bb2bb69))
+
 # [9.0.0](https://github.com/terrylica/rangebar-py/compare/v8.0.1...v9.0.0) (2026-01-14)
 
 
