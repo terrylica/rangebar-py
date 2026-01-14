@@ -247,35 +247,67 @@ if [[ ! -f "pyproject.toml" ]]; then
     exit 1
 fi
 
-# Extract package name and version from pyproject.toml
+# Extract package name from pyproject.toml
 PACKAGE_NAME=$(grep '^name = ' pyproject.toml | sed 's/name = "\(.*\)"/\1/' | head -1)
-CURRENT_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/' | head -1)
 
 if [[ -z "${PACKAGE_NAME}" ]]; then
     echo "   ERROR: Could not extract package name from pyproject.toml"
     exit 1
 fi
 
+# Extract version - check for dynamic version first (maturin pulls from Cargo.toml)
+if grep -q 'dynamic = \["version"\]' pyproject.toml; then
+    # SSoT: Cargo.toml [workspace.package] version is the source of truth
+    if [[ -f "Cargo.toml" ]]; then
+        CURRENT_VERSION=$(grep -A5 '\[workspace.package\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\(.*\)"/\1/')
+        if [[ -z "${CURRENT_VERSION}" ]]; then
+            # Fallback to [package] version
+            CURRENT_VERSION=$(grep -A10 '\[package\]' Cargo.toml | grep -E '^version' | head -1 | sed 's/.*= "\(.*\)"/\1/')
+        fi
+    fi
+else
+    # Static version in pyproject.toml
+    CURRENT_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/' | head -1)
+fi
+
 if [[ -z "${CURRENT_VERSION}" ]]; then
-    echo "   ERROR: Could not extract version from pyproject.toml"
+    echo "   ERROR: Could not extract version from pyproject.toml or Cargo.toml"
     exit 1
 fi
 
 echo "   Package: ${PACKAGE_NAME}"
 echo "   Version: v${CURRENT_VERSION}"
 
-# Step 2: Clean old builds - safe glob handling
-# ADR: /docs/adr/2025-12-07-idempotency-backup-traceability.md
-echo -e "\n Step 2: Cleaning old builds..."
-rm -rf dist/ build/ 2>/dev/null || true
-find . -maxdepth 1 -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
-echo "   Cleaned"
+# Step 2: Check for existing wheels or build
+echo -e "\n Step 2: Checking for pre-built wheels..."
 
-# Step 3: Build package
-echo -e "\n Step 3: Building package..."
-echo "   Using: $UV_CMD"
-$UV_CMD build 2>&1 | grep -E "(Building|Successfully built)" || $UV_CMD build
-echo "   Built: dist/${PACKAGE_NAME}-${CURRENT_VERSION}*"
+# Check if wheels for current version exist in dist/
+WHEEL_COUNT=$(find dist/ -name "${PACKAGE_NAME}-${CURRENT_VERSION}-*.whl" 2>/dev/null | wc -l | tr -d ' ')
+
+if [[ "${WHEEL_COUNT}" -gt 0 ]]; then
+    echo "   Found ${WHEEL_COUNT} pre-built wheel(s) for v${CURRENT_VERSION}"
+    find dist/ -name "${PACKAGE_NAME}-${CURRENT_VERSION}-*.whl" -print0 2>/dev/null | while IFS= read -r -d '' f; do echo "     - $(basename "$f")"; done
+    echo "   Skipping build (use pre-built wheels from release workflow)"
+else
+    # No wheels found - build with uv (for pure Python projects)
+    # For maturin projects, run 'mise run release:build-all' first
+    echo "   No pre-built wheels found"
+
+    # Check if this is a maturin project
+    if grep -q '\[tool.maturin\]' pyproject.toml; then
+        echo ""
+        echo "   ERROR: This is a maturin project - wheels must be pre-built"
+        echo "   Run 'mise run release:build-all' first to build platform wheels"
+        exit 1
+    fi
+
+    echo -e "\n Step 3: Building package..."
+    echo "   Using: $UV_CMD"
+    rm -rf dist/ build/ 2>/dev/null || true
+    find . -maxdepth 1 -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
+    $UV_CMD build 2>&1 | grep -E "(Building|Successfully built)" || $UV_CMD build
+    echo "   Built: dist/${PACKAGE_NAME}-${CURRENT_VERSION}*"
+fi
 
 # Step 4: Publish to PyPI using Doppler token
 echo -e "\n Step 4: Publishing to PyPI..."
