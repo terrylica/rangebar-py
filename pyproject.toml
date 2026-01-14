@@ -4,7 +4,8 @@ build-backend = "maturin"
 
 [project]
 name = "rangebar"
-version = "9.0.0"
+# SSoT: Version is pulled from Cargo.toml by maturin (dynamic = ["version"])
+dynamic = ["version"]
 description = "Python bindings for rangebar: Non-lookahead range bar construction for cryptocurrency trading"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -201,8 +202,12 @@ ignore = [
 ]
 
 [tool.semantic_release]
+# SSoT: Cargo.toml is the single source of truth for version
+# - workspace.package.version: Inherited by all workspace crates (via version.workspace = true)
+# - package.version: The PyO3 extension crate (rangebar-py) version
+# - pyproject.toml uses dynamic = ["version"] to pull from Cargo.toml at build time
 version_toml = [
-    "pyproject.toml:project.version",
+    "Cargo.toml:workspace.package.version",
     "Cargo.toml:package.version"
 ]
 build_command = "pip install build && python -m build --sdist"
