@@ -1429,7 +1429,6 @@ wheels = [
 
 [[package]]
 name = "rangebar"
-version = "9.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "arro3-core" },
@@ -1476,7 +1475,7 @@ requires-dist = [
     { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1" },
 ]
-provides-extras = ["backtesting", "exness", "dev"]
+provides-extras = ["backtesting", "dev", "exness"]
 
 [package.metadata.requires-dev]
 dev = [

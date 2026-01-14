@@ -446,21 +446,3 @@ print("OK: basic processing works")
 [tasks.smoke]
 description = "Run all smoke tests"
 depends = ["smoke:import", "smoke:process"]
-
-# =============================================================================
-# Version SSoT Verification Tasks
-# =============================================================================
-# SSoT Architecture:
-# - Cargo.toml [workspace.package] version = SSoT
-# - Cargo.toml [package] version = Same as workspace (for PyO3 crate)
-# - All workspace crates: version.workspace = true (inherit)
-# - pyproject.toml: dynamic = ["version"] (maturin pulls from Cargo.toml)
-# - Internal path deps: NO version constraints (they use the path)
-
-[tasks."version:check"]
-description = "Verify version SSoT (Cargo.toml is source of truth)"
-run = "./scripts/version-check.sh"
-
-[tasks."version:show"]
-description = "Show version from all sources"
-run = "./scripts/version-show.sh"
