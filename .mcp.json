@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "mise": {
+      "command": "mise",
+      "args": ["mcp"],
+      "env": {
+        "MISE_EXPERIMENTAL": "1"
+      }
+    },
+    "shell": {
+      "command": "uvx",
+      "args": ["mcp-shell-server"],
+      "env": {
+        "ALLOW_COMMANDS": "mise,git,jq,cargo,uv,maturin,pytest,cat,ls,grep,head,tail,fd"
+      }
+    }
+  }
+}

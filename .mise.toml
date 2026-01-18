@@ -9,11 +9,12 @@
 GH_ACCOUNT = "terrylica"
 GH_CONFIG_DIR = "{{ env.HOME }}/.config/gh/profiles/terrylica"
 
-# GitHub token for gh CLI operations (uses profile-specific auth)
+# GitHub token for gh CLI operations (uses file-based loading to prevent process storms)
+# ADR: 2026-01-15-mise-env-token-loading-patterns.md
 # NOTE: For semantic-release, use `mise run release:version` which fetches
 # the PAT from Doppler dynamically to avoid stale token issues.
-GH_TOKEN = "{{ exec(command='gh auth token --hostname github.com 2>/dev/null || echo \"\"') | trim }}"
-GITHUB_TOKEN = "{{ exec(command='gh auth token --hostname github.com 2>/dev/null || echo \"\"') | trim }}"
+GH_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/gh-token-terrylica') | trim }}"
+GITHUB_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/gh-token-terrylica') | trim }}"
 
 # =============================================================================
 # Doppler Configuration (SSoT for secrets)
