@@ -319,8 +319,8 @@ def test_backtesting_py_format():
 
 ## References
 
-- **Upstream repo**: https://github.com/terrylica/rangebar
-- **Crate dependency**: See `Cargo.toml` for current version (rangebar-core = "6.0")
+- **Rust crates**: <https://github.com/terrylica/rangebar-py/tree/main/crates>
+- **Crate location**: See `crates/rangebar-core/` for implementation
 - **Key modules**:
   - `src/types.rs` - AggTrade, RangeBar definitions
   - `src/processor.rs` - RangeBarProcessor implementation

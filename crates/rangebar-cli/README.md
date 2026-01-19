@@ -162,7 +162,7 @@ Current version: **6.1.0** (modular crate architecture with checkpoint system)
 ## Documentation
 
 - Architecture: [`/docs/ARCHITECTURE.md`](/docs/ARCHITECTURE.md)
-- Algorithm spec: [`/docs/specifications/algorithm-spec.md`](/docs/specifications/algorithm-spec.md)
+- Algorithm spec: [`/docs/rangebar_core_api.md`](/docs/rangebar_core_api.md)
 - Each tool has comprehensive `--help` documentation
 
 ## License

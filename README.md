@@ -1,6 +1,6 @@
 # rangebar-py
 
-Python bindings for the [rangebar](https://github.com/terrylica/rangebar) Rust crate via PyO3/maturin.
+Python bindings for the [rangebar](https://github.com/terrylica/rangebar-py/tree/main/crates) Rust crates via PyO3/maturin.
 
 [![PyPI](https://img.shields.io/pypi/v/rangebar.svg)](https://pypi.org/project/rangebar/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/terrylica/rangebar-py/blob/main/LICENSE)
@@ -8,13 +8,13 @@ Python bindings for the [rangebar](https://github.com/terrylica/rangebar) Rust c
 
 ## Links
 
-| Resource | URL |
-|----------|-----|
-| PyPI | https://pypi.org/project/rangebar/ |
-| Repository | https://github.com/terrylica/rangebar-py |
-| Performance Dashboard | https://terrylica.github.io/rangebar-py/ |
-| Upstream Rust Crate | https://github.com/terrylica/rangebar |
-| Issues | https://github.com/terrylica/rangebar-py/issues |
+| Resource              | URL                                                         |
+| --------------------- | ----------------------------------------------------------- |
+| PyPI                  | <https://pypi.org/project/rangebar/>                        |
+| Repository            | <https://github.com/terrylica/rangebar-py>                  |
+| Performance Dashboard | <https://terrylica.github.io/rangebar-py/>                  |
+| Rust Crates           | <https://github.com/terrylica/rangebar-py/tree/main/crates> |
+| Issues                | <https://github.com/terrylica/rangebar-py/issues>           |
 
 ## Installation
 
@@ -69,6 +69,7 @@ df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", include_microstructur
 ```
 
 **Parameters**:
+
 - `symbol`: Trading symbol (e.g., "BTCUSDT", "ETHUSDT")
 - `start_date`: Start date in YYYY-MM-DD format
 - `end_date`: End date in YYYY-MM-DD format
@@ -99,6 +100,7 @@ df = get_n_range_bars("BTCUSDT", n_bars=1000, max_lookback_days=30)
 ```
 
 **Parameters**:
+
 - `symbol`: Trading symbol (e.g., "BTCUSDT")
 - `n_bars`: Number of bars to retrieve (must be > 0)
 - `threshold_decimal_bps`: Threshold in decimal basis points or preset name (default: 250)
@@ -113,6 +115,7 @@ df = get_n_range_bars("BTCUSDT", n_bars=1000, max_lookback_days=30)
 **Returns**: pandas DataFrame with exactly `n_bars` rows (or fewer if insufficient data), sorted chronologically
 
 **Cache behavior**:
+
 - **Fast path**: If ClickHouse cache has >= n_bars, returns immediately (~50ms)
 - **Slow path**: Fetches additional data, computes bars, stores in cache
 
@@ -120,14 +123,14 @@ df = get_n_range_bars("BTCUSDT", n_bars=1000, max_lookback_days=30)
 
 Use string presets for common threshold values:
 
-| Preset | Value | Percentage | Use Case |
-|--------|-------|------------|----------|
-| `"micro"` | 10 | 0.01% (1bps) | Scalping |
-| `"tight"` | 50 | 0.05% (5bps) | Day trading |
-| `"standard"` | 100 | 0.1% (10bps) | Swing trading |
-| `"medium"` | 250 | 0.25% (25bps) | Default |
-| `"wide"` | 500 | 0.5% (50bps) | Position trading |
-| `"macro"` | 1000 | 1% (100bps) | Long-term |
+| Preset       | Value | Percentage    | Use Case         |
+| ------------ | ----- | ------------- | ---------------- |
+| `"micro"`    | 10    | 0.01% (1bps)  | Scalping         |
+| `"tight"`    | 50    | 0.05% (5bps)  | Day trading      |
+| `"standard"` | 100   | 0.1% (10bps)  | Swing trading    |
+| `"medium"`   | 250   | 0.25% (25bps) | Default          |
+| `"wide"`     | 500   | 0.5% (50bps)  | Position trading |
+| `"macro"`    | 1000  | 1% (100bps)   | Long-term        |
 
 ```python
 from rangebar import get_range_bars, THRESHOLD_PRESETS
@@ -232,12 +235,12 @@ pytest tests/
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [Examples](https://github.com/terrylica/rangebar-py/tree/main/examples) | Usage examples |
-| [CLAUDE.md](https://github.com/terrylica/rangebar-py/blob/main/CLAUDE.md) | Project context |
-| [Architecture Decisions](https://github.com/terrylica/rangebar-py/tree/main/docs/decisions) | ADRs |
-| [Performance Guide](https://github.com/terrylica/rangebar-py/blob/main/docs/PERFORMANCE.md) | Benchmark methodology |
+| Document                                                                                                | Description           |
+| ------------------------------------------------------------------------------------------------------- | --------------------- |
+| [Examples](https://github.com/terrylica/rangebar-py/tree/main/examples)                                 | Usage examples        |
+| [CLAUDE.md](https://github.com/terrylica/rangebar-py/blob/main/CLAUDE.md)                               | Project context       |
+| [Architecture](https://github.com/terrylica/rangebar-py/blob/main/docs/ARCHITECTURE.md)                 | System design         |
+| [Performance Guide](https://github.com/terrylica/rangebar-py/blob/main/docs/development/PERFORMANCE.md) | Benchmark methodology |
 
 ## License
 

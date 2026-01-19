@@ -93,10 +93,10 @@
 //!
 //! ## Links
 //!
-//! - [GitHub Repository](https://github.com/terrylica/rangebar)
-//! - [API Documentation](https://docs.rs/rangebar)
-//! - [Changelog](https://github.com/terrylica/rangebar/blob/main/CHANGELOG.md)
-//! - [Algorithm Specification](https://github.com/terrylica/rangebar/blob/main/docs/specifications/algorithm-spec.md)
+//! - [GitHub Repository](https://github.com/terrylica/rangebar-py)
+//! - [API Documentation](https://github.com/terrylica/rangebar-py/blob/main/docs/api.md)
+//! - [Changelog](https://github.com/terrylica/rangebar-py/blob/main/CHANGELOG.md)
+//! - [Core API Reference](https://github.com/terrylica/rangebar-py/blob/main/docs/rangebar_core_api.md)
 
 // Re-export core (always available)
 pub use rangebar_core as core;

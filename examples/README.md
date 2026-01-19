@@ -81,8 +81,8 @@ agg_trade_id,price,quantity,first_trade_id,last_trade_id,timestamp,is_buyer_make
 
 **Download Binance Data**:
 
-- https://data.binance.vision/?prefix=data/spot/monthly/aggTrades/
-- https://data.binance.vision/?prefix=data/futures/um/monthly/aggTrades/
+- <https://data.binance.vision/?prefix=data/spot/monthly/aggTrades/>
+- <https://data.binance.vision/?prefix=data/futures/um/monthly/aggTrades/>
 
 **Output**:
 
@@ -227,11 +227,11 @@ df = processor.to_dataframe(bars)
 ## Threshold Selection Guide
 
 | threshold_decimal_bps | Percentage | Use Case                     |
-| ------------- | ---------- | ---------------------------- |
-| 100           | 0.1%       | High-frequency, scalping     |
-| 250           | 0.25%      | **Default**, general purpose |
-| 500           | 0.5%       | Swing trading                |
-| 1000          | 1.0%       | Position trading             |
+| --------------------- | ---------- | ---------------------------- |
+| 100                   | 0.1%       | High-frequency, scalping     |
+| 250                   | 0.25%      | **Default**, general purpose |
+| 500                   | 0.5%       | Swing trading                |
+| 1000                  | 1.0%       | Position trading             |
 
 **Recommendation**: Start with `threshold_decimal_bps=250` (0.25%) and adjust based on:
 
@@ -317,11 +317,10 @@ df = processor.to_dataframe(bars)  # ✅ Converts to DatetimeIndex
 
 - **Main README**: See `../README.md` for installation and overview
 - **API Documentation**: See `../docs/api.md` for detailed API reference
-- **rangebar-core**: https://github.com/terrylica/rangebar (upstream Rust crate)
-- **backtesting.py**: https://kernc.github.io/backtesting.py/
+- **rangebar-core**: <https://github.com/terrylica/rangebar-py/tree/main/crates/rangebar-core> (Rust core)
+- **backtesting.py**: <https://kernc.github.io/backtesting.py/>
 
 ## Support
 
-- **Issues**: https://github.com/terrylica/rangebar-py/issues
-- **Discussions**: https://github.com/terrylica/rangebar-py/discussions
-- **Documentation**: https://github.com/terrylica/rangebar-py#readme
+- **Issues**: <https://github.com/terrylica/rangebar-py/issues>
+- **Documentation**: <https://github.com/terrylica/rangebar-py#readme>

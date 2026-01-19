@@ -336,9 +336,7 @@ Duration: 50.66s
 
 ## Related Documents
 
-- [Plan: Memory-Efficient Streaming Architecture](/.claude/plans/functional-kindling-gosling.md)
-- [Memory Profiling Findings](tmp/MEMORY_PROFILING_FINDINGS.md) (gitignored)
-- [Phase 0 Summary](tmp/PHASE_0_SUMMARY.md) (gitignored)
+- Memory profiling findings and phase summaries were temporary analysis files (gitignored)
 
 ---
 

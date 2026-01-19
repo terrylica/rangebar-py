@@ -7,7 +7,7 @@
 //! **Why This Matters**: Ensures non-lookahead bias and algorithmic correctness
 //! across all scenarios (edge cases, large datasets, multiple thresholds).
 //!
-//! **Reference**: `/Users/terryli/eon/rangebar/docs/specifications/algorithm-spec.md`
+//! **Reference**: `/docs/rangebar_core_api.md`
 
 use rangebar_core::{FixedPoint, RangeBar, RangeBarProcessor};
 

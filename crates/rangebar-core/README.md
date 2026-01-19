@@ -6,7 +6,7 @@ Core algorithm and types for non-lookahead range bar construction from tick data
 
 `rangebar-core` provides the fundamental algorithm for constructing range bars - a time-independent charting technique with non-lookahead bias guarantees.
 
-**Algorithm Specification**: [`/docs/specifications/algorithm-spec.md`](/docs/specifications/algorithm-spec.md) (authoritative)
+**Algorithm Specification**: [`/docs/rangebar_core_api.md`](/docs/rangebar_core_api.md) (authoritative)
 
 ## Key Features
 
@@ -80,7 +80,7 @@ let bars = processor.process_agg_trade_records(&trades)?;
 
 ### Algorithm Invariants
 
-See [`/docs/specifications/algorithm-spec.md`](/docs/specifications/algorithm-spec.md) for complete specification.
+See [`/docs/rangebar_core_api.md`](/docs/rangebar_core_api.md) for complete specification.
 
 **Breach Consistency Invariant**:
 
