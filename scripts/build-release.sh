@@ -80,7 +80,7 @@ build_macos_arm64() {
     for pyver in "${PYTHON_VERSIONS[@]}"; do
         if command -v "$pyver" &> /dev/null; then
             log_info "Building for $pyver..."
-            run_cmd maturin build --release --profile wheel -i "$pyver"
+            run_cmd maturin build --profile wheel -i "$pyver"
         else
             log_warn "Python interpreter not found: $pyver (skipping)"
         fi
@@ -182,7 +182,7 @@ build_linux_x86_64() {
         for pyver in python3.10 python3.11 python3.12; do
             if command -v \$pyver &> /dev/null; then
                 echo \"Building for \$pyver...\"
-                uvx maturin build --release --profile wheel --compatibility manylinux_2_17 -i \$pyver
+                uvx maturin build --profile wheel --compatibility manylinux_2_17 -i \$pyver
             else
                 echo \"Skipping \$pyver (not found)\"
             fi

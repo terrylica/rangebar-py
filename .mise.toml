@@ -268,7 +268,7 @@ run = "./scripts/publish-wheels.sh"
 
 [tasks."release:local"]
 description = "Build local wheel only (macOS ARM64)"
-run = "maturin build --release --profile wheel"
+run = "maturin build --profile wheel"
 
 [tasks."release:sdist"]
 description = "Build source distribution"
