@@ -33,7 +33,12 @@ dependencies = [
     "platformdirs>=4.0",        # Cross-platform cache directory
     "clickhouse-connect>=0.8",  # ClickHouse cache layer (Tier 2)
     "arro3-core>=0.6.5",
+    "click>=8.0",               # CLI framework (#42)
+    "requests>=2.28",           # Telegram notifications (#41)
 ]
+
+[project.scripts]
+rangebar = "rangebar.cli:main"
 
 [project.optional-dependencies]
 backtesting = ["backtesting>=0.3"]
@@ -199,6 +204,30 @@ ignore = [
     "TRY300",  # Consider moving to else block
     "ANN001",  # Missing type annotation
     "ANN201",  # Missing return type annotation
+]
+"python/rangebar/cli.py" = [
+    "PLC0415", # Lazy imports (CLI only loads modules when needed)
+    "TRY300",  # Consider moving to else block
+]
+"python/rangebar/checkpoint.py" = [
+    "PLC0415", # Lazy imports (avoid circular imports)
+    "PLR0913", # Too many arguments (resumable population API)
+    "UP035",   # Import from collections.abc (typing.Iterator is fine)
+    "PTH105",  # os.replace for atomic operations
+    "PTH108",  # os.unlink for cleanup
+    "SIM105",  # contextlib.suppress (explicit try-except is clearer)
+]
+"python/rangebar/hooks.py" = [
+    "ANN401",  # Any type in kwargs (details are intentionally flexible)
+    "UP035",   # Import from collections.abc (typing.Callable is fine for compatibility)
+]
+"python/rangebar/notify/*.py" = [
+    "PLC0415", # Lazy imports (optional requests dependency)
+    "TID252",  # Relative imports from parent (intentional for subpackage)
+    "TRY300",  # Consider moving to else block
+]
+"python/rangebar/validation/post_storage.py" = [
+    "PLC0415", # Lazy imports (avoid import-time overhead)
 ]
 
 [tool.semantic_release]

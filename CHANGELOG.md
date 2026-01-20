@@ -1,3 +1,12 @@
+## [9.0.2](https://github.com/terrylica/rangebar-py/compare/v9.0.1...v9.0.2) (2026-01-20)
+
+
+### Bug Fixes
+
+* prevent process storms with read_file() for GitHub tokens ([d9cd3c1](https://github.com/terrylica/rangebar-py/commit/d9cd3c1d73a51ad4841cfd3127ffddb26daa381a))
+* remove conflicting --release flag with --profile wheel ([f13b002](https://github.com/terrylica/rangebar-py/commit/f13b002c6b3d450ce20b22e8b05bd2550a9b19c4))
+* update publish script for dynamic version SSoT ([7c190c2](https://github.com/terrylica/rangebar-py/commit/7c190c2b259a847eb9faef979ffe99891151ba33))
+
 ## [9.0.1](https://github.com/terrylica/rangebar-py/compare/v9.0.0...v9.0.1) (2026-01-14)
 
 ### Bug Fixes
