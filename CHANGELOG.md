@@ -1,3 +1,10 @@
+# [9.1.0](https://github.com/terrylica/rangebar-py/compare/v9.0.2...v9.1.0) (2026-01-20)
+
+
+### Features
+
+* **cache:** implement GitHub issues [#35](https://github.com/terrylica/rangebar-py/issues/35)-42 cache reliability and UX improvements ([1143634](https://github.com/terrylica/rangebar-py/commit/11436340225466b343d593cebdb09df644e306ca)), closes [#35-42](https://github.com/terrylica/rangebar-py/issues/35-42)
+
 ## [9.0.2](https://github.com/terrylica/rangebar-py/compare/v9.0.1...v9.0.2) (2026-01-20)
 
 
