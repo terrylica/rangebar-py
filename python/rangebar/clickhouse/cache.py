@@ -15,12 +15,17 @@ supports multiple GPU workstations via SSH aliases.
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass
 from importlib import resources
 from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ..exceptions import (
+    CacheReadError,
+    CacheWriteError,
+)
 from .client import get_client
 from .mixin import ClickHouseClientMixin
 from .preflight import (
@@ -32,6 +37,8 @@ from .tunnel import SSHTunnel
 if TYPE_CHECKING:
     import clickhouse_connect
     import polars as pl
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -207,9 +214,22 @@ class RangeBarCache(ClickHouseClientMixin):
         -------
         int
             Number of rows inserted
+
+        Raises
+        ------
+        CacheWriteError
+            If the insert operation fails.
         """
         if bars.empty:
+            logger.debug("Skipping cache write for %s: empty DataFrame", key.symbol)
             return 0
+
+        logger.debug(
+            "Writing %d bars to cache for %s @ %d bps",
+            len(bars),
+            key.symbol,
+            key.threshold_decimal_bps,
+        )
 
         df = bars.copy()
 
@@ -276,13 +296,31 @@ class RangeBarCache(ClickHouseClientMixin):
         # Filter to existing columns
         columns = [c for c in columns if c in df.columns]
 
-        summary = self.client.insert_df(
-            "rangebar_cache.range_bars",
-            df[columns],
-        )
-
-        # Return actual rows written per ClickHouse
-        return summary.written_rows
+        try:
+            summary = self.client.insert_df(
+                "rangebar_cache.range_bars",
+                df[columns],
+            )
+            written = summary.written_rows
+            logger.info(
+                "Cached %d bars for %s @ %d bps",
+                written,
+                key.symbol,
+                key.threshold_decimal_bps,
+            )
+            return written
+        except (OSError, RuntimeError) as e:
+            logger.exception(
+                "Cache write failed for %s @ %d bps",
+                key.symbol,
+                key.threshold_decimal_bps,
+            )
+            msg = f"Failed to write bars for {key.symbol}: {e}"
+            raise CacheWriteError(
+                msg,
+                symbol=key.symbol,
+                operation="write",
+            ) from e
 
     def get_range_bars(self, key: CacheKey) -> pd.DataFrame | None:
         """Get cached range bars.
@@ -296,6 +334,11 @@ class RangeBarCache(ClickHouseClientMixin):
         -------
         pd.DataFrame | None
             OHLCV DataFrame if found, None otherwise
+
+        Raises
+        ------
+        CacheReadError
+            If the query fails due to database errors.
         """
         query = """
             SELECT
@@ -312,19 +355,45 @@ class RangeBarCache(ClickHouseClientMixin):
               AND source_end_ts = {end_ts:Int64}
             ORDER BY timestamp_ms
         """
-        # Use Arrow-optimized query for 3x faster DataFrame creation
-        df = self.client.query_df_arrow(
-            query,
-            parameters={
-                "symbol": key.symbol,
-                "threshold_decimal_bps": key.threshold_decimal_bps,
-                "start_ts": key.start_ts,
-                "end_ts": key.end_ts,
-            },
-        )
+        try:
+            # Use Arrow-optimized query for 3x faster DataFrame creation
+            df = self.client.query_df_arrow(
+                query,
+                parameters={
+                    "symbol": key.symbol,
+                    "threshold_decimal_bps": key.threshold_decimal_bps,
+                    "start_ts": key.start_ts,
+                    "end_ts": key.end_ts,
+                },
+            )
+        except (OSError, RuntimeError) as e:
+            logger.exception(
+                "Cache read failed for %s @ %d bps",
+                key.symbol,
+                key.threshold_decimal_bps,
+            )
+            msg = f"Failed to read bars for {key.symbol}: {e}"
+            raise CacheReadError(
+                msg,
+                symbol=key.symbol,
+                operation="read",
+            ) from e
 
         if df.empty:
+            logger.debug(
+                "Cache miss for %s @ %d bps (key: %s)",
+                key.symbol,
+                key.threshold_decimal_bps,
+                key.hash_key[:8],
+            )
             return None
+
+        logger.debug(
+            "Cache hit: %d bars for %s @ %d bps",
+            len(df),
+            key.symbol,
+            key.threshold_decimal_bps,
+        )
 
         # Convert to TZ-aware UTC DatetimeIndex (Issue #20: consistent timestamps)
         df["timestamp"] = pd.to_datetime(df["timestamp_ms"], unit="ms", utc=True)
@@ -839,6 +908,11 @@ class RangeBarCache(ClickHouseClientMixin):
         pd.DataFrame | None
             OHLCV DataFrame with TZ-aware UTC timestamps if found, None otherwise.
             Returns None if no bars exist in the range.
+
+        Raises
+        ------
+        CacheReadError
+            If the query fails due to database errors.
         """
         # Build column list
         base_cols = """
@@ -876,18 +950,45 @@ class RangeBarCache(ClickHouseClientMixin):
             ORDER BY timestamp_ms
         """
 
-        df = self.client.query_df_arrow(
-            query,
-            parameters={
-                "symbol": symbol,
-                "threshold": threshold_decimal_bps,
-                "start_ts": start_ts,
-                "end_ts": end_ts,
-            },
-        )
+        try:
+            df = self.client.query_df_arrow(
+                query,
+                parameters={
+                    "symbol": symbol,
+                    "threshold": threshold_decimal_bps,
+                    "start_ts": start_ts,
+                    "end_ts": end_ts,
+                },
+            )
+        except (OSError, RuntimeError) as e:
+            logger.exception(
+                "Cache read failed for %s @ %d bps (range query)",
+                symbol,
+                threshold_decimal_bps,
+            )
+            msg = f"Failed to read bars for {symbol}: {e}"
+            raise CacheReadError(
+                msg,
+                symbol=symbol,
+                operation="read_range",
+            ) from e
 
         if df.empty:
+            logger.debug(
+                "Cache miss for %s @ %d bps (range: %d-%d)",
+                symbol,
+                threshold_decimal_bps,
+                start_ts,
+                end_ts,
+            )
             return None
+
+        logger.debug(
+            "Cache hit: %d bars for %s @ %d bps (range query)",
+            len(df),
+            symbol,
+            threshold_decimal_bps,
+        )
 
         # Convert to TZ-aware UTC DatetimeIndex (matches get_range_bars output)
         df["timestamp"] = pd.to_datetime(df["timestamp_ms"], unit="ms", utc=True)
@@ -949,9 +1050,22 @@ class RangeBarCache(ClickHouseClientMixin):
         -------
         int
             Number of rows inserted
+
+        Raises
+        ------
+        CacheWriteError
+            If the insert operation fails.
         """
         if bars.empty:
+            logger.debug("Skipping bulk cache write for %s: empty DataFrame", symbol)
             return 0
+
+        logger.debug(
+            "Bulk writing %d bars to cache for %s @ %d bps",
+            len(bars),
+            symbol,
+            threshold_decimal_bps,
+        )
 
         df = bars.copy()
 
@@ -1029,13 +1143,31 @@ class RangeBarCache(ClickHouseClientMixin):
         # Filter to existing columns
         columns = [c for c in columns if c in df.columns]
 
-        summary = self.client.insert_df(
-            "rangebar_cache.range_bars",
-            df[columns],
-        )
-
-        # Return actual rows written per ClickHouse (not len(df) which is what we sent)
-        return summary.written_rows
+        try:
+            summary = self.client.insert_df(
+                "rangebar_cache.range_bars",
+                df[columns],
+            )
+            written = summary.written_rows
+            logger.info(
+                "Bulk cached %d bars for %s @ %d bps",
+                written,
+                symbol,
+                threshold_decimal_bps,
+            )
+            return written
+        except (OSError, RuntimeError) as e:
+            logger.exception(
+                "Bulk cache write failed for %s @ %d bps",
+                symbol,
+                threshold_decimal_bps,
+            )
+            msg = f"Failed to bulk write bars for {symbol}: {e}"
+            raise CacheWriteError(
+                msg,
+                symbol=symbol,
+                operation="bulk_write",
+            ) from e
 
     def store_bars_batch(
         self,

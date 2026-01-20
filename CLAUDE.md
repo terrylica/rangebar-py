@@ -154,15 +154,44 @@ mise run bench:validate     # Verify 1M ticks < 100ms
 
 ---
 
+## Cache Population
+
+To populate ClickHouse cache with range bar data (for remote hosts or new thresholds):
+
+```python
+from rangebar import get_range_bars
+
+df = get_range_bars(
+    "BTCUSDT",
+    start_date="2023-06-01",
+    end_date="2025-12-01",
+    threshold_decimal_bps=100,
+    use_cache=True,
+    fetch_if_missing=True,
+)
+```
+
+**Full documentation**: [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md)
+
+**Host-specific cache status**:
+
+| Host        | Thresholds | Notes            |
+| ----------- | ---------- | ---------------- |
+| bigblack    | 100, 700   | Primary GPU host |
+| littleblack | 700        | Secondary host   |
+
+---
+
 ## Navigation
 
 ### CLAUDE.md Files (Hub-and-Spoke)
 
-| Directory           | CLAUDE.md                                               | Purpose                         |
-| ------------------- | ------------------------------------------------------- | ------------------------------- |
-| `/`                 | This file                                               | Hub, quick reference            |
-| `/crates/`          | [crates/CLAUDE.md](/crates/CLAUDE.md)                   | Rust workspace, microstructure  |
-| `/python/rangebar/` | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) | Python API, caching, validation |
+| Directory                      | CLAUDE.md                                                                     | Purpose                         |
+| ------------------------------ | ----------------------------------------------------------------------------- | ------------------------------- |
+| `/`                            | This file                                                                     | Hub, quick reference            |
+| `/crates/`                     | [crates/CLAUDE.md](/crates/CLAUDE.md)                                         | Rust workspace, microstructure  |
+| `/python/rangebar/`            | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)                       | Python API, caching, validation |
+| `/python/rangebar/clickhouse/` | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | Cache population, status        |
 
 ### Documentation Index
 

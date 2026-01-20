@@ -1,6 +1,7 @@
 # rangebar-py API Reference
 
 <!-- Version controlled by semantic-release via pyproject.toml -->
+
 **Last Updated**: 2026-01-08
 
 ---
@@ -833,6 +834,75 @@ trades = pd.DataFrame({
 df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 ```
 
+### Q: Why did I get 97K bars during a flash crash? (Issue #36)
+
+**A**: This is expected behavior for range bars during extreme volatility events.
+
+During a flash crash (e.g., BTC dropping 15% in minutes), the price rapidly crosses the threshold many times. Each threshold breach creates a new bar. For example:
+
+- **Normal day**: BTC moves 2% total → ~80 bars with 250bps threshold
+- **Flash crash**: BTC moves 15% in 10 minutes → hundreds of threshold breaches → thousands of bars
+
+This is actually a **feature, not a bug**:
+
+1. **Information-preserving**: Each bar represents equal price movement (threshold size)
+2. **No lookahead bias**: Bars close at threshold breach, not at arbitrary times
+3. **Volatility-adaptive**: More bars during volatile periods = more granular data for backtesting
+
+**Practical implications for backtesting**:
+
+```python
+# Flash crash day will have many more bars than quiet day
+quiet_day = get_range_bars("BTCUSDT", "2024-01-15", "2024-01-15")  # ~200 bars
+crash_day = get_range_bars("BTCUSDT", "2024-03-05", "2024-03-05")  # ~5,000 bars (hypothetical crash)
+```
+
+**References**:
+
+- Mandelbrot & Hudson (2004): "The (Mis)behavior of Markets" - fat tails and volatility clustering
+- Easley, López de Prado & O'Hara (2012): "The Volume Clock" - information-based sampling
+
+**If you want fewer bars during volatile periods**: Increase threshold or use time-based bars (but lose the benefits of information-based sampling).
+
+### Q: What are the expected ranges for microstructure features? (Issue #32)
+
+**A**: Range bar microstructure features have documented value ranges:
+
+| Feature                | Expected Range | Interpretation                                       |
+| ---------------------- | -------------- | ---------------------------------------------------- |
+| `duration_us`          | [0, +∞)        | Microseconds; 0 = instantaneous bar (rapid trades)   |
+| `ofi`                  | [-1, 1]        | Order Flow Imbalance; -1 = all sells, +1 = all buys  |
+| `vwap_close_deviation` | ~[-1, 1]       | Can exceed ±1 during gaps; near 0 = close near VWAP  |
+| `price_impact`         | [0, +∞)        | Price change per unit volume; higher = more impact   |
+| `kyle_lambda_proxy`    | (-∞, +∞)       | Market impact coefficient; bounded for typical data  |
+| `trade_intensity`      | [0, +∞)        | Trades per second; higher = more active              |
+| `volume_per_trade`     | [0, +∞)        | Average trade size; institutional vs retail          |
+| `aggression_ratio`     | [0, 100]       | Buy count / sell count (capped at 100)               |
+| `aggregation_density`  | [1, +∞)        | Individual trades per agg record; 1 = no aggregation |
+| `turnover_imbalance`   | [-1, 1]        | Buy-sell turnover difference normalized              |
+
+**Out-of-range values indicate data issues**:
+
+```python
+from rangebar.validation.tier1 import validate_tier1
+
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", include_microstructure=True)
+result = validate_tier1(df)
+
+if not result["tier1_passed"]:
+    print("Validation failed:", result)
+    # Check specific bounds violations
+    if not result["ofi_bounded"]:
+        print("OFI values outside [-1, 1] - possible data corruption")
+```
+
+**Academic references for feature formulas**:
+
+- **OFI**: Cont, Kukanov & Stoikov (2014) - "The Price Impact of Order Book Events"
+- **Kyle Lambda**: Kyle (1985) - "Continuous Auctions and Insider Trading"
+- **Trade Intensity**: Hasbrouck (1991) - "Measuring the Information Content of Stock Trades"
+- **Aggression Ratio**: Biais, Hillion & Spatt (1995) - "An Empirical Analysis of the Limit Order Book"
+
 ---
 
 ## Changelog
@@ -851,5 +921,7 @@ See [CHANGELOG.md](/CHANGELOG.md) for version history.
 ---
 
 **Last Updated**: 2026-01-08
+
 <!-- API Version: See pyproject.toml (SSoT controlled by semantic-release) -->
+
 **License**: MIT

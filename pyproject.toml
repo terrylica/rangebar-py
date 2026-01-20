@@ -178,6 +178,7 @@ ignore = [
     "PD901",   # Generic variable name 'df'
     "TRY300",  # Consider moving to else block
     "E501",    # Line too long (docstring examples)
+    "E402",    # Module-level import not at top (lazy imports after __all__)
 ]
 "python/rangebar/clickhouse/*.py" = [
     "PD901",   # Generic variable name 'df' (common in data processing)
@@ -188,6 +189,7 @@ ignore = [
     "PYI034",  # Self return type
     "PLR2004", # Magic values (port numbers, etc.)
     "PLC0415", # Lazy imports for optional dependencies
+    "TID252",  # Relative imports from parent (intentional for package structure)
 ]
 "python/rangebar/exness.py" = [
     "PD901",   # Generic variable name 'df'
@@ -208,6 +210,7 @@ ignore = [
 "python/rangebar/cli.py" = [
     "PLC0415", # Lazy imports (CLI only loads modules when needed)
     "TRY300",  # Consider moving to else block
+    "PD901",   # Generic variable name 'df' (common in data processing)
 ]
 "python/rangebar/checkpoint.py" = [
     "PLC0415", # Lazy imports (avoid circular imports)
@@ -216,6 +219,7 @@ ignore = [
     "PTH105",  # os.replace for atomic operations
     "PTH108",  # os.unlink for cleanup
     "SIM105",  # contextlib.suppress (explicit try-except is clearer)
+    "PD901",   # Generic variable name 'df' (common in data processing)
 ]
 "python/rangebar/hooks.py" = [
     "ANN401",  # Any type in kwargs (details are intentionally flexible)
@@ -228,6 +232,15 @@ ignore = [
 ]
 "python/rangebar/validation/post_storage.py" = [
     "PLC0415", # Lazy imports (avoid import-time overhead)
+]
+"python/rangebar/validation/__init__.py" = [
+    "E501",    # Line too long (docstring)
+]
+"python/rangebar/validation/tier2.py" = [
+    "PLC0415", # Lazy imports (optional statsmodels/scipy/sklearn dependencies)
+]
+"python/rangebar/storage/parquet.py" = [
+    "PLC0415", # Lazy imports (pyarrow inside generator for streaming)
 ]
 
 [tool.semantic_release]

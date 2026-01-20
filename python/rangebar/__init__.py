@@ -83,11 +83,15 @@ __all__ = [
     "get_n_range_bars",
     "get_range_bars",
     "get_range_bars_pandas",
+    "populate_cache_resumable",
     "precompute_range_bars",
     "process_trades_to_dataframe",
     "validate_continuity",
     "validate_continuity_tiered",
 ]
+
+# Re-export checkpoint API per plan (#40)
+from .checkpoint import populate_cache_resumable
 
 # Continuity tolerance: 0.01% relative difference allowed (floating-point precision)
 CONTINUITY_TOLERANCE_PCT = 0.0001
@@ -2287,6 +2291,50 @@ def get_range_bars(
         symbol=symbol,
         prevent_same_timestamp_close=prevent_same_timestamp_close,
     )
+
+    # -------------------------------------------------------------------------
+    # Write computed bars to ClickHouse cache (Issue #37)
+    # -------------------------------------------------------------------------
+    # Cache write is non-blocking: failures don't affect the return value.
+    # The computation succeeded, so we return bars even if caching fails.
+    if use_cache and bars_df is not None and not bars_df.empty:
+        try:
+            from .clickhouse import RangeBarCache
+            from .exceptions import CacheError, CacheWriteError
+
+            with RangeBarCache() as cache:
+                # Use store_bars_bulk for bars computed without exact CacheKey
+                written = cache.store_bars_bulk(
+                    symbol=symbol,
+                    threshold_decimal_bps=threshold_decimal_bps,
+                    bars=bars_df,
+                    version="",  # Version tracked elsewhere
+                )
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.info(
+                    "Cached %d bars for %s @ %d bps",
+                    written,
+                    symbol,
+                    threshold_decimal_bps,
+                )
+        except ImportError:
+            # ClickHouse not available - skip caching
+            pass
+        except ConnectionError:
+            # ClickHouse connection failed - skip caching
+            pass
+        except (CacheError, OSError, RuntimeError) as e:
+            # Log but don't fail - cache is optimization layer
+            # CacheError: All cache-specific errors
+            # OSError: Network/disk errors
+            # RuntimeError: ClickHouse driver errors
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning("Cache write failed (non-fatal): %s", e)
+
     return bars_df
 
 
