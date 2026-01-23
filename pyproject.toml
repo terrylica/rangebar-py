@@ -8,7 +8,7 @@ name = "rangebar"
 dynamic = ["version"]
 description = "Python bindings for rangebar: Non-lookahead range bar construction for cryptocurrency trading"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 license = { text = "MIT" }
 authors = [
     { name = "Terry Li" }
@@ -18,9 +18,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Financial and Insurance Industry",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Rust",
     "Topic :: Office/Business :: Financial :: Investment",
 ]
@@ -88,18 +86,18 @@ skip_covered = false
 
 [tool.mypy]
 strict = true
-python_version = "3.10"
+python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 
 [tool.black]
 line-length = 88
-target-version = ["py310", "py311", "py312"]
+target-version = ["py313"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = [

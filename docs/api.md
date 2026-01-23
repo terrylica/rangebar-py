@@ -709,8 +709,8 @@ IDE support:
 
 ### Python Versions
 
-- **Supported**: 3.9, 3.10, 3.11, 3.12
-- **Tested**: 3.11 (development), 3.12 (CI)
+- **Supported**: 3.13
+- **Tested**: 3.13 (development)
 
 ### pandas Versions
 

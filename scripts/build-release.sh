@@ -8,7 +8,7 @@
 #   - Source distribution (sdist)
 #
 # Builds per-Python-version wheels (abi3 removed for Arrow export support).
-# Supports: Python 3.10, 3.11, 3.12
+# Supports: Python 3.13
 # =============================================================================
 
 set -euo pipefail
@@ -23,7 +23,7 @@ SKIP_VERIFY="${SKIP_VERIFY:-false}"
 SKIP_MACOS_X86="${SKIP_MACOS_X86:-true}"  # x86_64 not needed - ARM64 only
 
 # Python versions to build for (abi3 removed, need per-version wheels)
-PYTHON_VERSIONS=("python3.10" "python3.11" "python3.12")
+PYTHON_VERSIONS=("python3.13")
 
 # Project paths
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -174,12 +174,12 @@ build_linux_x86_64() {
         "$PROJECT_DIR/" "${LINUX_BUILD_USER}@${LINUX_BUILD_HOST}:${remote_dir}/"
 
     # Build on remote for each Python version
-    log_info "Building wheels on ${LINUX_BUILD_HOST} for Python 3.10, 3.11, 3.12..."
+    log_info "Building wheels on ${LINUX_BUILD_HOST} for Python 3.13..."
     run_cmd ssh "${LINUX_BUILD_USER}@${LINUX_BUILD_HOST}" "
         cd ${remote_dir} || exit 1
         export PATH=\$HOME/.cargo/bin:\$HOME/.local/bin:\$PATH
-        # Build for each Python version available on remote
-        for pyver in python3.10 python3.11 python3.12; do
+        # Build for Python 3.13 only
+        for pyver in python3.13; do
             if command -v \$pyver &> /dev/null; then
                 echo \"Building for \$pyver...\"
                 uvx maturin build --profile wheel --compatibility manylinux_2_17 -i \$pyver

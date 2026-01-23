@@ -22,7 +22,7 @@ Python bindings for the [rangebar](https://github.com/terrylica/rangebar-py/tree
 pip install rangebar
 ```
 
-Pre-built wheels: Linux (x86_64), macOS (ARM64), Python 3.10+
+Pre-built wheels: Linux (x86_64), macOS (ARM64), Python 3.13
 
 Source build requires Rust toolchain and maturin.
 
@@ -205,7 +205,7 @@ for bars_df in process_trades_chunked(iter(trades), chunk_size=50_000):
 
 ## Requirements
 
-**Runtime**: Python >= 3.10, pandas >= 2.0, numpy >= 1.24, polars >= 1.0
+**Runtime**: Python >= 3.13, pandas >= 2.0, numpy >= 1.24, polars >= 1.0
 
 **Optional**: backtesting >= 0.3 (for backtesting integration)
 

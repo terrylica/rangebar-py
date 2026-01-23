@@ -40,7 +40,7 @@ for batch in get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30"):
 v8.0 removes `abi3` (Python stable ABI) to enable Arrow export features.
 This means:
 
-- Wheels are built for each Python version (3.10, 3.11, 3.12)
+- Wheels are built for Python 3.13
 - Slightly larger download for each Python version
 - No change to API or functionality
 

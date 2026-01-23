@@ -46,7 +46,7 @@ LINUX_MIN_RUST_VERSION = "1.90"
 # =============================================================================
 
 [tools]
-python = "3.11"
+python = "3.13"
 rust = "1.90"
 node = "22"          # Required for semantic-release
 uv = "latest"        # Required for publish workflow
@@ -279,10 +279,10 @@ run = "maturin sdist"
 # =============================================================================
 
 [tasks."release:macos-arm64"]
-description = "Build macOS ARM64 wheels for Python 3.10, 3.11, 3.12 (native)"
+description = "Build macOS ARM64 wheels for Python 3.13 (native)"
 run = """
-echo "=== Building macOS ARM64 wheels (per-Python-version) ==="
-for pyver in python3.10 python3.11 python3.12; do
+echo "=== Building macOS ARM64 wheels (Python 3.13) ==="
+for pyver in python3.13; do
     if command -v $pyver &> /dev/null; then
         echo "Building for $pyver..."
         maturin build --profile wheel -i $pyver
@@ -308,10 +308,10 @@ echo "OK: Remote Rust version: $REMOTE_RUST"
 """
 
 [tasks."release:linux"]
-description = "Build Linux x86_64 wheels for Python 3.10, 3.11, 3.12 on remote host (Docker manylinux)"
+description = "Build Linux x86_64 wheels for Python 3.13 on remote host (Docker manylinux)"
 depends = ["release:linux-preflight"]
 run = """
-echo "=== Building Linux x86_64 Wheels (Docker manylinux, per-Python-version) ==="
+echo "=== Building Linux x86_64 Wheels (Docker manylinux, Python 3.13) ==="
 PROJECT_DIR="$(pwd)"
 REMOTE_DIR="${LINUX_BUILD_DIR}-$$"
 
@@ -326,8 +326,8 @@ rsync -az --delete \
     "$PROJECT_DIR/" "$LINUX_BUILD_USER@$LINUX_BUILD_HOST:$REMOTE_DIR/"
 
 # Build using manylinux Docker container for glibc compatibility
-# Build for Python 3.10, 3.11, 3.12 (abi3 removed, need per-version wheels)
-ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" 'cd '"$REMOTE_DIR"' && docker run --rm -v $(pwd):/io -w /io quay.io/pypa/manylinux2014_x86_64 bash -c "yum install -y openssl-devel perl-IPC-Cmd && curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && /opt/python/cp311-cp311/bin/pip install maturin && for pyver in cp310-cp310 cp311-cp311 cp312-cp312; do /opt/python/cp311-cp311/bin/maturin build --profile wheel --compatibility manylinux2014 -i /opt/python/\\$pyver/bin/python; done"'
+# Build for Python 3.13 only (abi3 removed, need per-version wheels)
+ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" 'cd '"$REMOTE_DIR"' && docker run --rm -v $(pwd):/io -w /io quay.io/pypa/manylinux2014_x86_64 bash -c "yum install -y openssl-devel perl-IPC-Cmd && curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && /opt/python/cp313-cp313/bin/pip install maturin && /opt/python/cp313-cp313/bin/maturin build --profile wheel --compatibility manylinux2014 -i /opt/python/cp313-cp313/bin/python"'
 
 mkdir -p dist/
 scp "$LINUX_BUILD_USER@$LINUX_BUILD_HOST:$REMOTE_DIR/target/wheels/*manylinux*.whl" dist/
