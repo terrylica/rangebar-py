@@ -1,3 +1,26 @@
+# [10.0.0](https://github.com/terrylica/rangebar-py/compare/v9.1.0...v10.0.0) (2026-01-23)
+
+
+### Build System
+
+* **python:** drop Python 3.10-3.12, require Python 3.13 only ([a648fba](https://github.com/terrylica/rangebar-py/commit/a648fba87743a92beb99e697877a30ba07117ef3))
+
+
+### BREAKING CHANGES
+
+* **python:** Minimum Python version raised from 3.10 to 3.13.
+
+Updates across all configuration and documentation:
+- pyproject.toml: requires-python, classifiers, mypy/black/ruff targets
+- .mise.toml: python tool version, build task descriptions, Docker commands
+- scripts/build-release.sh: PYTHON_VERSIONS array
+- README.md: pre-built wheels, runtime requirements
+- docs/api.md: Python versions compatibility
+- docs/migration-v8.md: wheel build note
+
+SRED-Type: support-work
+SRED-Claim: RANGEBAR-BUILD
+
 # [9.1.0](https://github.com/terrylica/rangebar-py/compare/v9.0.2...v9.1.0) (2026-01-20)
 
 
