@@ -33,6 +33,7 @@ dependencies = [
     "arro3-core>=0.6.5",
     "click>=8.0",               # CLI framework (#42)
     "requests>=2.28",           # Telegram notifications (#41)
+    "loguru>=0.7.0",            # Structured NDJSON logging (#43)
 ]
 
 [project.scripts]
@@ -234,11 +235,20 @@ ignore = [
 "python/rangebar/validation/__init__.py" = [
     "E501",    # Line too long (docstring)
 ]
+"python/rangebar/logging.py" = [
+    "PLC0415", # Lazy imports (loguru, socket, uuid for optional/deferred loading)
+    "PLW0603", # Global statement for lazy logger initialization singleton
+]
 "python/rangebar/validation/tier2.py" = [
     "PLC0415", # Lazy imports (optional statsmodels/scipy/sklearn dependencies)
 ]
 "python/rangebar/storage/parquet.py" = [
     "PLC0415", # Lazy imports (pyarrow inside generator for streaming)
+]
+"python/rangebar/storage/checksum_registry.py" = [
+    "PLR0913", # Too many arguments (create factory method needs all fields)
+    "PLC0415", # Lazy imports (avoid circular import with notify)
+    "TID252",  # Relative imports from parent (intentional for package structure)
 ]
 
 [tool.semantic_release]

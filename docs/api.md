@@ -71,6 +71,7 @@ def get_range_bars(
     source: str = "binance",
     market: str = "spot",
     include_microstructure: bool = False,
+    verify_checksum: bool = True,
     use_cache: bool = True,
 ) -> pd.DataFrame
 ```
@@ -86,6 +87,7 @@ def get_range_bars(
 - **source**: Data source - `"binance"` or `"exness"` (default: `"binance"`)
 - **market**: Market type - `"spot"`, `"futures-um"`, `"futures-cm"` (default: `"spot"`)
 - **include_microstructure**: Include vwap, buy_volume, sell_volume (default: False)
+- **verify_checksum**: Verify SHA-256 checksum of downloaded data (default: True). Enabled by default for data integrity. Set to False for faster downloads when integrity is verified elsewhere. (Issue #43)
 - **use_cache**: Cache tick data locally (default: True)
 
 ### Returns

@@ -393,6 +393,8 @@ def get_range_bars(
     validation: Literal["permissive", "strict", "paranoid"] = ...,
     include_incomplete: bool = ...,
     include_microstructure: bool = ...,
+    prevent_same_timestamp_close: bool = ...,
+    verify_checksum: bool = ...,
     use_cache: bool = ...,
     fetch_if_missing: bool = ...,
     cache_dir: str | None = ...,
@@ -413,6 +415,8 @@ def get_range_bars(
     validation: Literal["permissive", "strict", "paranoid"] = ...,
     include_incomplete: bool = ...,
     include_microstructure: bool = ...,
+    prevent_same_timestamp_close: bool = ...,
+    verify_checksum: bool = ...,
     use_cache: bool = ...,
     fetch_if_missing: bool = ...,
     cache_dir: str | None = ...,
@@ -436,6 +440,9 @@ def get_range_bars(
     # Processing options
     include_incomplete: bool = False,
     include_microstructure: bool = False,
+    prevent_same_timestamp_close: bool = True,
+    # Data integrity (Issue #43)
+    verify_checksum: bool = True,
     # Caching options
     use_cache: bool = True,
     fetch_if_missing: bool = True,
@@ -502,6 +509,12 @@ def get_range_bars(
         - (Issue #25) aggression_ratio: Buy/sell trade count ratio
         - (Issue #25) aggregation_density: Trade fragmentation proxy
         - (Issue #25) turnover_imbalance: Dollar-weighted OFI [-1, 1]
+    prevent_same_timestamp_close : bool, default=True
+        Prevent consecutive bars from having identical timestamps.
+    verify_checksum : bool, default=True
+        Verify SHA-256 checksum of downloaded data (Issue #43).
+        Enabled by default for data integrity. Set to False for
+        faster downloads when data integrity is verified elsewhere.
     use_cache : bool, default=True
         Cache tick data locally in Parquet format.
     cache_dir : str or None, default=None

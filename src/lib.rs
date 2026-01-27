@@ -1321,18 +1321,25 @@ mod binance_bindings {
     ///     start_date: Start date as "YYYY-MM-DD"
     ///     end_date: End date as "YYYY-MM-DD"
     ///     market_type: Market type (Spot, FuturesUM, FuturesCM)
+    ///     verify_checksum: Verify SHA-256 checksum of downloaded data (Issue #43).
+    ///         Default: True. Set to False for faster downloads when data integrity
+    ///         is verified elsewhere.
     ///
     /// Returns:
     ///     List of trade dicts with keys: timestamp, price, quantity, agg_trade_id,
     ///     first_trade_id, last_trade_id, is_buyer_maker
+    ///
+    /// Raises:
+    ///     RuntimeError: If checksum verification fails (data corruption detected)
     #[pyfunction]
-    #[pyo3(signature = (symbol, start_date, end_date, market_type = PyMarketType::Spot))]
+    #[pyo3(signature = (symbol, start_date, end_date, market_type = PyMarketType::Spot, verify_checksum = true))]
     pub fn fetch_binance_aggtrades(
         py: Python,
         symbol: &str,
         start_date: &str,
         end_date: &str,
         market_type: PyMarketType,
+        verify_checksum: bool,
     ) -> PyResult<Vec<PyObject>> {
         // Parse dates
         let start = NaiveDate::parse_from_str(start_date, "%Y-%m-%d")
@@ -1351,14 +1358,25 @@ mod binance_bindings {
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {e}")))?;
 
-        // Load each day in the range
+        // Load each day in the range (with checksum verification per Issue #43)
         let mut all_trades = Vec::new();
         let mut current_date = start;
 
         while current_date <= end {
-            let day_result = rt.block_on(loader.load_single_day_trades(current_date));
+            let day_result = rt.block_on(
+                loader.load_single_day_trades_with_checksum(current_date, verify_checksum),
+            );
             match day_result {
                 Ok(mut day_trades) => all_trades.append(&mut day_trades),
+                Err(rangebar_providers::binance::HistoricalError::ChecksumMismatch {
+                    date,
+                    message,
+                }) => {
+                    // Checksum mismatch is a hard error - data corruption detected
+                    return Err(PyRuntimeError::new_err(format!(
+                        "Checksum verification failed for {date}: {message}"
+                    )));
+                }
                 Err(e) => {
                     // Skip days with no data (weekends, holidays, etc.)
                     eprintln!("Warning: No data for {current_date}: {e}");
@@ -1413,6 +1431,12 @@ mod binance_bindings {
     /// | 6 hours    | ~46 MB      | 4.6x      |
     /// | 1 hour     | ~15 MB      | 14x       |
     ///
+    /// # Checksum Verification (Issue #43)
+    ///
+    /// By default, SHA-256 checksums are verified for each downloaded file.
+    /// Set `verify_checksum=False` to disable for faster downloads when
+    /// data integrity is verified elsewhere.
+    ///
     /// # Example
     ///
     /// ```python
@@ -1439,14 +1463,18 @@ mod binance_bindings {
         ///     end_date: End date as "YYYY-MM-DD"
         ///     chunk_hours: Hours per chunk (1, 6, 12, or 24). Default: 6.
         ///     market_type: Market type (Spot, FuturesUM, FuturesCM). Default: Spot.
+        ///     verify_checksum: Verify SHA-256 checksum of downloaded data (Issue #43).
+        ///         Default: True. Set to False for faster downloads when data integrity
+        ///         is verified elsewhere.
         #[new]
-        #[pyo3(signature = (symbol, start_date, end_date, chunk_hours = 6, market_type = PyMarketType::Spot))]
+        #[pyo3(signature = (symbol, start_date, end_date, chunk_hours = 6, market_type = PyMarketType::Spot, verify_checksum = true))]
         fn new(
             symbol: &str,
             start_date: &str,
             end_date: &str,
             chunk_hours: u32,
             market_type: PyMarketType,
+            verify_checksum: bool,
         ) -> PyResult<Self> {
             // Parse dates
             let start = NaiveDate::parse_from_str(start_date, "%Y-%m-%d")
@@ -1463,7 +1491,13 @@ mod binance_bindings {
             }
 
             let loader = HistoricalDataLoader::new_with_market(symbol, market_type.to_market_str());
-            let inner = IntraDayChunkIterator::new(loader, start, end, chunk_hours);
+            let inner = IntraDayChunkIterator::with_checksum(
+                loader,
+                start,
+                end,
+                chunk_hours,
+                verify_checksum,
+            );
 
             Ok(Self {
                 inner,
@@ -1538,6 +1572,9 @@ mod binance_bindings {
     ///     end_date: End date as "YYYY-MM-DD"
     ///     chunk_hours: Hours per chunk (1, 6, 12, or 24). Default: 6.
     ///     market_type: Market type (Spot, FuturesUM, FuturesCM). Default: Spot.
+    ///     verify_checksum: Verify SHA-256 checksum of downloaded data (Issue #43).
+    ///         Default: True. Set to False for faster downloads when data integrity
+    ///         is verified elsewhere.
     ///
     /// Returns:
     ///     Iterator yielding lists of trade dicts.
@@ -1556,15 +1593,23 @@ mod binance_bindings {
     ///     final_bar = processor.get_incomplete_bar()
     ///     ```
     #[pyfunction]
-    #[pyo3(signature = (symbol, start_date, end_date, chunk_hours = 6, market_type = PyMarketType::Spot))]
+    #[pyo3(signature = (symbol, start_date, end_date, chunk_hours = 6, market_type = PyMarketType::Spot, verify_checksum = true))]
     pub fn stream_binance_trades(
         symbol: &str,
         start_date: &str,
         end_date: &str,
         chunk_hours: u32,
         market_type: PyMarketType,
+        verify_checksum: bool,
     ) -> PyResult<PyBinanceTradeStream> {
-        PyBinanceTradeStream::new(symbol, start_date, end_date, chunk_hours, market_type)
+        PyBinanceTradeStream::new(
+            symbol,
+            start_date,
+            end_date,
+            chunk_hours,
+            market_type,
+            verify_checksum,
+        )
     }
 }
 

@@ -28,9 +28,12 @@ use serde::Deserialize;
 use std::io::{Cursor, Read};
 use std::time::Duration;
 use thiserror::Error;
+use tracing::{debug, info, warn};
 use zip::ZipArchive;
 
 use rangebar_core::{normalize_timestamp, AggTrade, FixedPoint};
+
+use super::checksum::{self, ChecksumError};
 
 /// Errors that can occur during historical data loading
 #[derive(Debug, Error)]
@@ -58,6 +61,12 @@ pub enum HistoricalError {
     /// Tokio runtime error
     #[error("Runtime error: {0}")]
     RuntimeError(String),
+
+    /// Checksum verification failed (Issue #43)
+    /// This indicates data corruption - the downloaded file does not match
+    /// the SHA-256 checksum provided by Binance.
+    #[error("Checksum verification failed for {date}: {message}")]
+    ChecksumMismatch { date: String, message: String },
 }
 
 #[derive(Debug, Deserialize)]
@@ -258,9 +267,37 @@ impl HistoricalDataLoader {
     }
 
     /// Load single day trades with typed error (for IntraDayChunkIterator)
+    ///
+    /// # Arguments
+    ///
+    /// * `date` - The date to load trades for
+    /// * `verify_checksum` - If true, verify SHA-256 checksum of downloaded data (Issue #43)
     pub async fn load_single_day_trades_typed(
         &self,
         date: NaiveDate,
+    ) -> Result<Vec<AggTrade>, HistoricalError> {
+        self.load_single_day_trades_with_checksum(date, true).await
+    }
+
+    /// Load single day trades with optional checksum verification
+    ///
+    /// # Arguments
+    ///
+    /// * `date` - The date to load trades for
+    /// * `verify_checksum` - If true, verify SHA-256 checksum of downloaded data (Issue #43)
+    ///
+    /// # Checksum Verification Behavior
+    ///
+    /// | Scenario | Behavior | Rationale |
+    /// |----------|----------|-----------|
+    /// | Checksum matches | Continue | Success |
+    /// | Checksum mismatch | Hard error | Data corruption detected |
+    /// | Checksum file 404 | Soft warning, continue | Old data may not have checksums |
+    /// | Network timeout | Soft warning, continue | Network issues shouldn't block |
+    pub async fn load_single_day_trades_with_checksum(
+        &self,
+        date: NaiveDate,
+        verify_checksum: bool,
     ) -> Result<Vec<AggTrade>, HistoricalError> {
         let date_str = date.format("%Y-%m-%d").to_string();
         let url = format!(
@@ -269,6 +306,14 @@ impl HistoricalDataLoader {
             self.symbol,
             self.symbol,
             date_str
+        );
+
+        debug!(
+            event_type = "download_start",
+            symbol = %self.symbol,
+            date = %date_str,
+            verify_checksum = verify_checksum,
+            "Downloading aggTrades data"
         );
 
         let response = tokio::time::timeout(Duration::from_secs(30), self.client.get(&url).send())
@@ -295,6 +340,53 @@ impl HistoricalDataLoader {
                 date: date_str.clone(),
                 message: e.to_string(),
             })?;
+
+        // Checksum verification (Issue #43)
+        if verify_checksum {
+            match checksum::fetch_and_verify(&self.client, &url, &zip_bytes).await {
+                Ok(result) if result.verified => {
+                    info!(
+                        event_type = "checksum_verified",
+                        symbol = %self.symbol,
+                        date = %date_str,
+                        hash = %result.actual,
+                        "Checksum verified successfully"
+                    );
+                }
+                Ok(result) if result.skipped => {
+                    warn!(
+                        event_type = "checksum_skipped",
+                        symbol = %self.symbol,
+                        date = %date_str,
+                        "Checksum verification skipped (file not available)"
+                    );
+                }
+                Ok(_) => {}
+                Err(ChecksumError::Mismatch { expected, actual }) => {
+                    return Err(HistoricalError::ChecksumMismatch {
+                        date: date_str,
+                        message: format!("expected {expected}, got {actual}"),
+                    });
+                }
+                Err(ChecksumError::InvalidFormat(msg)) => {
+                    return Err(HistoricalError::ChecksumMismatch {
+                        date: date_str,
+                        message: format!("invalid checksum format: {msg}"),
+                    });
+                }
+                Err(e) => {
+                    // NotAvailable and FetchFailed are soft errors (already logged)
+                    warn!(
+                        event_type = "checksum_error",
+                        symbol = %self.symbol,
+                        date = %date_str,
+                        error = %e,
+                        "Checksum verification error (continuing anyway)"
+                    );
+                }
+            }
+        }
+
         let cursor = Cursor::new(zip_bytes);
         let mut archive = ZipArchive::new(cursor)?;
 
@@ -316,6 +408,15 @@ impl HistoricalDataLoader {
         }
 
         day_trades.sort_by_key(|trade| trade.timestamp);
+
+        info!(
+            event_type = "download_complete",
+            symbol = %self.symbol,
+            date = %date_str,
+            trade_count = day_trades.len(),
+            "Downloaded and parsed aggTrades"
+        );
+
         Ok(day_trades)
     }
 }
@@ -371,6 +472,8 @@ pub struct IntraDayChunkIterator {
     runtime: tokio::runtime::Runtime,
     /// Whether iteration has completed
     exhausted: bool,
+    /// Whether to verify checksums (Issue #43)
+    verify_checksum: bool,
 }
 
 impl IntraDayChunkIterator {
@@ -392,6 +495,29 @@ impl IntraDayChunkIterator {
         end_date: NaiveDate,
         chunk_hours: u32,
     ) -> Self {
+        Self::with_checksum(loader, start_date, end_date, chunk_hours, true)
+    }
+
+    /// Create a new intra-day chunk iterator with configurable checksum verification
+    ///
+    /// # Arguments
+    ///
+    /// * `loader` - Historical data loader configured with symbol and market
+    /// * `start_date` - First date to process (inclusive)
+    /// * `end_date` - Last date to process (inclusive)
+    /// * `chunk_hours` - Hours per chunk (1, 6, 12, or 24). Recommended: 6.
+    /// * `verify_checksum` - If true, verify SHA-256 checksum of downloaded data (Issue #43)
+    ///
+    /// # Panics
+    ///
+    /// Panics if chunk_hours is 0 or greater than 24.
+    pub fn with_checksum(
+        loader: HistoricalDataLoader,
+        start_date: NaiveDate,
+        end_date: NaiveDate,
+        chunk_hours: u32,
+        verify_checksum: bool,
+    ) -> Self {
         assert!(
             chunk_hours > 0 && chunk_hours <= 24,
             "chunk_hours must be 1-24"
@@ -411,6 +537,7 @@ impl IntraDayChunkIterator {
             day_trades: None,
             runtime,
             exhausted: false,
+            verify_checksum,
         }
     }
 
@@ -467,11 +594,13 @@ impl Iterator for IntraDayChunkIterator {
                     return None;
                 }
 
-                // Load entire day into cache
-                match self
-                    .runtime
-                    .block_on(self.loader.load_single_day_trades_typed(self.current_date))
-                {
+                // Load entire day into cache (with checksum verification per Issue #43)
+                match self.runtime.block_on(
+                    self.loader.load_single_day_trades_with_checksum(
+                        self.current_date,
+                        self.verify_checksum,
+                    ),
+                ) {
                     Ok(trades) => {
                         self.day_trades = Some(trades);
                         self.current_hour = 0;

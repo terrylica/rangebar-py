@@ -97,6 +97,8 @@ rangebar-py/
 
 ## Development Commands
 
+**mise patterns**: `Skill(itp:mise-configuration)` | `Skill(itp:mise-tasks)`
+
 ```bash
 # Setup (mise manages all tools)
 mise install

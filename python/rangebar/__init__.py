@@ -91,6 +91,8 @@ __all__ = [
 ]
 
 # Re-export checkpoint API per plan (#40)
+from datetime import UTC
+
 from .checkpoint import populate_cache_resumable
 
 # Continuity tolerance: 0.01% relative difference allowed (floating-point precision)
@@ -1933,6 +1935,8 @@ def get_range_bars(
     include_microstructure: bool = False,
     # Timestamp gating (Issue #36)
     prevent_same_timestamp_close: bool = True,
+    # Data integrity (Issue #43)
+    verify_checksum: bool = True,
     # Caching options
     use_cache: bool = True,
     fetch_if_missing: bool = True,
@@ -1996,6 +2000,12 @@ def get_range_bars(
         at identical timestamps. If False: Legacy v8 behavior where bars can
         close immediately on breach regardless of timestamp. Use False for
         comparative analysis between old and new behavior.
+    verify_checksum : bool, default=True
+        Verify SHA-256 checksum of downloaded data (Issue #43).
+        If True (default): Verify downloaded ZIP files against Binance-provided
+        checksums to detect data corruption early. If verification fails,
+        raises RuntimeError. If False: Skip checksum verification for faster
+        downloads (use when data integrity is verified elsewhere).
     use_cache : bool, default=True
         Cache tick data locally in Parquet format.
     fetch_if_missing : bool, default=True
@@ -2211,6 +2221,7 @@ def get_range_bars(
             include_microstructure=include_microstructure,
             include_incomplete=include_incomplete,
             prevent_same_timestamp_close=prevent_same_timestamp_close,
+            verify_checksum=verify_checksum,
         )
 
     # -------------------------------------------------------------------------
@@ -2877,6 +2888,7 @@ def _stream_range_bars_binance(
     include_microstructure: bool = False,
     include_incomplete: bool = False,
     prevent_same_timestamp_close: bool = True,
+    verify_checksum: bool = True,
 ) -> Iterator[pl.DataFrame]:
     """Stream range bars in batches using memory-efficient chunked processing.
 
@@ -2942,7 +2954,12 @@ def _stream_range_bars_binance(
 
     # Stream trades in 6-hour chunks
     for trade_batch in stream_binance_trades(
-        symbol, start_date, end_date, chunk_hours=6, market_type=market_enum
+        symbol,
+        start_date,
+        end_date,
+        chunk_hours=6,
+        market_type=market_enum,
+        verify_checksum=verify_checksum,
     ):
         # Process to bars via Arrow (zero-copy to Polars)
         arrow_batch = processor.process_trades_streaming_arrow(trade_batch)
@@ -3730,9 +3747,9 @@ def _fill_gap_and_cache(
 
     # Determine end date for fetching
     if end_ts is not None:
-        end_dt = datetime.fromtimestamp(end_ts / 1000, tz=timezone.utc)
+        end_dt = datetime.fromtimestamp(end_ts / 1000, tz=UTC)
     else:
-        end_dt = datetime.now(tz=timezone.utc)
+        end_dt = datetime.now(tz=UTC)
 
     # Get oldest bar timestamp to know where to start fetching
     oldest_ts = cache.get_oldest_bar_timestamp(symbol, threshold)
@@ -3763,7 +3780,7 @@ def _fill_gap_and_cache(
         for _attempt in range(max_attempts):
             # Calculate fetch range
             if oldest_ts is not None:
-                fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=timezone.utc)
+                fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=UTC)
             else:
                 fetch_end_dt = end_dt
 
@@ -3884,7 +3901,7 @@ def _fill_gap_and_cache(
 
         # Calculate fetch range
         if oldest_ts is not None:
-            fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=timezone.utc)
+            fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=UTC)
         else:
             fetch_end_dt = end_dt
 
@@ -3957,9 +3974,9 @@ def _fetch_and_compute_bars(
 
     # Determine end date
     if end_ts is not None:
-        end_dt = datetime.fromtimestamp(end_ts / 1000, tz=timezone.utc)
+        end_dt = datetime.fromtimestamp(end_ts / 1000, tz=UTC)
     else:
-        end_dt = datetime.now(tz=timezone.utc)
+        end_dt = datetime.now(tz=UTC)
 
     # Estimate ticks needed using heuristic
     base_ticks_per_bar = 2500
@@ -3984,7 +4001,7 @@ def _fetch_and_compute_bars(
 
         for _attempt in range(max_attempts):
             if oldest_ts is not None:
-                fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=timezone.utc)
+                fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=UTC)
             else:
                 fetch_end_dt = end_dt
 
@@ -4063,7 +4080,7 @@ def _fetch_and_compute_bars(
         days_to_fetch = min(days_to_fetch, max_lookback_days)
 
         if oldest_ts is not None:
-            fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=timezone.utc)
+            fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=UTC)
         else:
             fetch_end_dt = end_dt
 

@@ -41,6 +41,12 @@ chrono.workspace = true
 # Error handling
 thiserror.workspace = true
 
+# Data integrity (Issue #43)
+sha2.workspace = true
+
+# Observability
+tracing.workspace = true
+
 [features]
 default = ["binance"]
 binance = ["tokio-tungstenite", "tokio-stream", "futures-util"]
