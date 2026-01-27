@@ -3063,10 +3063,19 @@ def _concat_pandas_via_polars(dfs: list[pd.DataFrame]) -> pd.DataFrame:
     if len(dfs) == 1:
         return dfs[0]
 
-    # Convert to Polars, concat, convert back
-    # This is more memory-efficient than pd.concat for large DataFrames
+    # Convert to Polars
     pl_dfs = [pl.from_pandas(df.reset_index()) for df in dfs]
-    combined = pl.concat(pl_dfs)
+
+    # Normalize datetime columns to consistent precision (μs) before concat
+    # This prevents SchemaError when months have mixed precision (Issue #44)
+    def _normalize_temporal_precision(pldf: pl.DataFrame) -> pl.DataFrame:
+        for col in pldf.columns:
+            if pldf[col].dtype.is_temporal():
+                pldf = pldf.with_columns(pl.col(col).dt.cast_time_unit("us"))
+        return pldf
+
+    normalized = [_normalize_temporal_precision(pldf) for pldf in pl_dfs]
+    combined = pl.concat(normalized)
 
     # Sort by timestamp/index column
     index_col = "timestamp" if "timestamp" in combined.columns else combined.columns[0]
