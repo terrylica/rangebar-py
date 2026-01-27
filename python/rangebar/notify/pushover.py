@@ -31,7 +31,7 @@ def send_critical_alert(
 
     Uses:
     - Priority 2 (emergency) - requires acknowledgment
-    - Persistent sound for maximum attention
+    - Dune custom sound for maximum attention
     - Retry every 60s for 1 hour until acknowledged
 
     Args:
@@ -51,7 +51,7 @@ def send_critical_alert(
         "priority": 2,  # Emergency - requires acknowledgment
         "retry": 60,  # Retry every 60 seconds
         "expire": 3600,  # Stop retrying after 1 hour
-        "sound": "persistent",  # Persistent alert sound
+        "sound": "dune",  # Dune custom sound for maximum attention
     }
 
     if url:
