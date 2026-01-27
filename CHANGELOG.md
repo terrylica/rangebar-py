@@ -1,3 +1,10 @@
+# [10.1.0](https://github.com/terrylica/rangebar-py/compare/v10.0.0...v10.1.0) (2026-01-27)
+
+
+### Features
+
+* **checksum:** add SHA-256 verification for Binance downloads ([#43](https://github.com/terrylica/rangebar-py/issues/43)) ([21da3b6](https://github.com/terrylica/rangebar-py/commit/21da3b6d6bf2bd3453640bd6deaf0021fd09fea8))
+
 # [10.0.0](https://github.com/terrylica/rangebar-py/compare/v9.1.0...v10.0.0) (2026-01-23)
 
 
