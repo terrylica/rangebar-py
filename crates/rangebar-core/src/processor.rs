@@ -537,6 +537,36 @@ impl RangeBarProcessor {
 
         Ok(())
     }
+
+    /// Reset processor state at an ouroboros boundary (year/month/week).
+    ///
+    /// Clears the incomplete bar and position tracking while preserving
+    /// the threshold configuration. Use this when starting fresh at a
+    /// known boundary for reproducibility.
+    ///
+    /// # Returns
+    ///
+    /// The orphaned incomplete bar (if any) so caller can decide
+    /// whether to include it in results with `is_orphan=True` flag.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // At year boundary (Jan 1 00:00:00 UTC)
+    /// let orphaned = processor.reset_at_ouroboros();
+    /// if let Some(bar) = orphaned {
+    ///     // Handle incomplete bar from previous year
+    /// }
+    /// // Continue processing new year's data with clean state
+    /// ```
+    pub fn reset_at_ouroboros(&mut self) -> Option<RangeBar> {
+        let orphaned = self.current_bar_state.take().map(|state| state.bar);
+        self.price_window = PriceWindow::new();
+        self.last_trade_id = None;
+        self.last_timestamp_us = 0;
+        self.resumed_from_checkpoint = false;
+        orphaned
+    }
 }
 
 /// Internal state for a range bar being built

@@ -784,6 +784,33 @@ impl PyRangeBarProcessor {
     fn prevent_same_timestamp_close(&self) -> bool {
         self.processor.prevent_same_timestamp_close()
     }
+
+    /// Reset processor state at an ouroboros boundary.
+    ///
+    /// Clears the incomplete bar and position tracking while preserving
+    /// the threshold configuration. Use this when starting fresh at a
+    /// known boundary (year/month/week) for reproducibility.
+    ///
+    /// Returns:
+    ///     The orphaned incomplete bar as a dict (if any), or None.
+    ///     Mark returned bars with `is_orphan=True` for ML filtering.
+    ///
+    /// Example:
+    ///     ```python
+    ///     # At year boundary (Jan 1 00:00:00 UTC)
+    ///     orphaned = processor.reset_at_ouroboros()
+    ///     if orphaned:
+    ///         orphaned["is_orphan"] = True
+    ///         orphaned["ouroboros_boundary"] = "2024-01-01T00:00:00Z"
+    ///         orphaned["reason"] = "year_boundary"
+    ///     # Continue processing with clean state
+    ///     ```
+    fn reset_at_ouroboros(&mut self, py: Python) -> PyResult<Option<PyObject>> {
+        match self.processor.reset_at_ouroboros() {
+            Some(bar) => Ok(Some(rangebar_to_dict(py, &bar)?)),
+            None => Ok(None),
+        }
+    }
 }
 
 // ============================================================================
