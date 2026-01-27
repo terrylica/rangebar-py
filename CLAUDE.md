@@ -204,3 +204,18 @@ df = get_range_bars(
 | [docs/api.md](/docs/api.md)                                         | Python API reference                    |
 | [docs/development/RELEASE.md](/docs/development/RELEASE.md)         | Release workflow, mise tasks            |
 | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics, viability          |
+
+---
+
+## Terminology
+
+| Term                          | Acronym | Definition                                                                                                                                                                                                                                           | Unit/Range        |
+| ----------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| **Ouroboros**                 | -       | Cyclical reset boundary for range bar construction. Named after the Greek serpent eating its tail (οὐροβόρος), representing cyclical nature. Resets processor state at year/month/week boundaries for reproducibility and cache-friendly processing. | year, month, week |
+| **Ouroboros Boundary**        | -       | Specific timestamp where processor state resets: year (Jan 1 00:00 UTC), month (1st 00:00 UTC), or week (Sunday 00:00 UTC for crypto, dynamic first tick for Forex).                                                                                 | timestamp         |
+| **Orphaned Bar**              | -       | Incomplete range bar at an ouroboros boundary. Marked with `is_orphan=True` and includes metadata: `ouroboros_boundary`, `expected_duration_us`, `reason`.                                                                                           | -                 |
+| **Dynamic Ouroboros**         | -       | Forex-specific ouroboros mode where the reset point is the first available tick after weekend market gap, automatically handling DST shifts.                                                                                                         | timestamp         |
+| **Exchange Session Sydney**   | -       | Boolean flag indicating Sydney exchange market session was active during bar construction. Column: `exchange_session_sydney`.                                                                                                                        | bool              |
+| **Exchange Session Tokyo**    | -       | Boolean flag indicating Tokyo exchange market session was active during bar construction. Column: `exchange_session_tokyo`.                                                                                                                          | bool              |
+| **Exchange Session London**   | -       | Boolean flag indicating London exchange market session was active during bar construction. Column: `exchange_session_london`.                                                                                                                        | bool              |
+| **Exchange Session New York** | -       | Boolean flag indicating New York exchange market session was active during bar construction. Column: `exchange_session_newyork`.                                                                                                                     | bool              |
