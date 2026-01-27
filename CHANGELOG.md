@@ -1,3 +1,30 @@
+# [11.0.0](https://github.com/terrylica/rangebar-py/compare/v10.1.0...v11.0.0) (2026-01-27)
+
+
+### Bug Fixes
+
+* **polars:** normalize datetime precision before concat ([#44](https://github.com/terrylica/rangebar-py/issues/44)) ([716af12](https://github.com/terrylica/rangebar-py/commit/716af12387500c58e9b7370109818162a270ca39))
+* **pushover:** use Dune custom sound for critical alerts ([13485b8](https://github.com/terrylica/rangebar-py/commit/13485b8ab4c847fb46181aa10e75e230c9187958)), closes [#43](https://github.com/terrylica/rangebar-py/issues/43)
+
+
+### Features
+
+* **ouroboros:** add reset_at_ouroboros method for reproducible bar construction ([8ba9113](https://github.com/terrylica/rangebar-py/commit/8ba9113f36a0dd5eb37fcfed241656248fb399da))
+* **ouroboros:** implement mandatory cyclical reset boundaries for reproducible range bars ([1337bed](https://github.com/terrylica/rangebar-py/commit/1337bed2eac4e592a5699824d314dae6814cf183))
+
+
+### BREAKING CHANGES
+
+* **ouroboros:** get_range_bars() now requires ouroboros parameter.
+Default is "year", which resets processor state at January 1 boundaries.
+Different ouroboros modes cache separately to prevent mixing.
+
+Resolves reproducibility issue: identical parameters now produce
+identical bar sequences across different execution times.
+
+SRED-Type: experimental-development
+SRED-Claim: OUROBOROS
+
 # [10.1.0](https://github.com/terrylica/rangebar-py/compare/v10.0.0...v10.1.0) (2026-01-27)
 
 
