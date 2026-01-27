@@ -72,7 +72,7 @@
 //! # {
 //! use rangebar::streaming::StreamingProcessor;
 //!
-//! let threshold_decimal_bps = 250; // 25 bps = 0.25% range bars
+//! let threshold_decimal_bps = 250; // 250 dbps = 0.25% range bars
 //! let processor = StreamingProcessor::new(threshold_decimal_bps);
 //! // Real-time processing with bounded memory
 //! # }

@@ -23,7 +23,7 @@ import logging
 import os
 import tempfile
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
 
@@ -71,12 +71,8 @@ class PopulationCheckpoint:
     end_date: str
     last_completed_date: str
     bars_written: int = 0
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
-    updated_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -97,7 +93,7 @@ class PopulationCheckpoint:
         path : Path
             Path to save checkpoint file.
         """
-        self.updated_at = datetime.now(timezone.utc).isoformat()
+        self.updated_at = datetime.now(UTC).isoformat()
         data = json.dumps(self.to_dict(), indent=2)
 
         # Ensure parent directory exists
@@ -346,7 +342,7 @@ def populate_cache_resumable(
                 created_at=(
                     checkpoint.created_at
                     if checkpoint
-                    else datetime.now(timezone.utc).isoformat()
+                    else datetime.now(UTC).isoformat()
                 ),
             )
             checkpoint.save(checkpoint_path)

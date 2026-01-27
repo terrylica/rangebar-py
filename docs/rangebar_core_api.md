@@ -106,13 +106,13 @@ impl RangeBarProcessor {
 }
 ```
 
-**Threshold Units**:
+**Threshold Units**: <!-- SSoT-OK -->
 
-- **v3.0.0+ uses decimal basis point units**
-- `250` = 25 bps = 0.25% price movement
-- `100` = 10 bps = 0.10% price movement
-- `1` = 0.1 bps = 0.001% (minimum)
-- `100,000` = 10,000 bps = 100% (maximum)
+- Uses decimal basis point (dbps) units
+- `250` = 250 dbps = 0.25% price movement
+- `100` = 100 dbps = 0.10% price movement
+- `1` = 1 dbps = 0.001% (minimum)
+- `100,000` = 100,000 dbps = 100% (maximum)
 
 ### FixedPoint (Precision Type)
 

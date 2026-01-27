@@ -14,7 +14,7 @@ fn test_cross_boundary_bar_continuation_with_real_data() {
     let trades = load_btcusdt_test_data().expect("Failed to load BTCUSDT test data");
     println!("Loaded {} real BTCUSDT trades", trades.len());
 
-    // Use 250 decimal bps = 25 bps = 0.25% threshold
+    // Use 250 dbps = 0.25% threshold
     let threshold = 250;
 
     // === FULL PROCESSING (baseline) ===

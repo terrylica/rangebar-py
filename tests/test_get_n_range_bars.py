@@ -681,7 +681,7 @@ class TestBarContinuity:
         from rangebar import validate_continuity
 
         # Create DataFrame with intentional large discontinuity (>5%)
-        # With 250 bps (2.5%) threshold + 0.5% tolerance = 3% max allowed
+        # With 250 dbps (0.25%) threshold + 0.5% tolerance = 0.75% max allowed
         # Gap from 100.0 to 106.0 = 6% gap - should be detected
         df = pd.DataFrame(
             {

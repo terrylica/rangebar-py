@@ -220,9 +220,7 @@ pub enum CheckpointError {
     },
 
     /// Threshold mismatch between checkpoint and processor
-    #[error(
-        "Threshold mismatch: checkpoint has {checkpoint} decimal bps, expected {expected} decimal bps"
-    )]
+    #[error("Threshold mismatch: checkpoint has {checkpoint} dbps, expected {expected} dbps")]
     ThresholdMismatch { checkpoint: u32, expected: u32 },
 
     /// Price hash mismatch indicates wrong position in data stream

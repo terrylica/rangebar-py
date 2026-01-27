@@ -139,7 +139,7 @@ if price_breaches_threshold {
 
 - **Symbol**: BTCUSDT
 - **Date Range**: 2025-10-10 00:00:00 UTC to 2025-10-11 00:00:00 UTC
-- **Threshold**: 100 decimal basis points (10 bps = 0.1%)
+- **Threshold**: 100 dbps = 0.1%
 - **Source**: Binance aggTrades via rangebar-py Tier 1 cache
 
 ### Test Configuration
@@ -188,7 +188,7 @@ df_new = get_range_bars(
 | **Duplicate timestamps**       | 21,559            | 0                 | **-100%**     |
 | **Max bars at same timestamp** | 54                | 1                 | **Fixed**     |
 | **Zero-duration bars**         | 21,559 (21.86%)   | 0 (0.00%)         | **-100%**     |
-| **Max bar range (bps)**        | 294.5             | 511.6             | +73.7%        |
+| **Max bar range (dbps)**       | 2945              | 5116              | +73.7%        |
 | **Price range**                | $102,000-$122,550 | $102,000-$122,550 | **Identical** |
 | **Total volume**               | 103,637.09        | 103,550.48        | -0.08%        |
 | **Index uniqueness**           | False             | True              | **Fixed**     |
@@ -254,11 +254,11 @@ Bars are now longer on average because trades at the same timestamp are consolid
 #### 6. Range Expansion
 
 ```
-Legacy max range: 294.5 bps
-New max range:    511.6 bps (+73.7%)
+Legacy max range: 2945 dbps
+New max range:    5116 dbps (+73.7%)
 ```
 
-Bars now capture larger price movements when multiple trades occur at the same timestamp. A bar that would have been split into 5 bars at 100 bps each is now a single bar capturing the full 500 bps move.
+Bars now capture larger price movements when multiple trades occur at the same timestamp. A bar that would have been split into 5 bars at 1000 dbps each is now a single bar capturing the full 5000 dbps move.
 
 #### 7. Data Integrity Verification
 

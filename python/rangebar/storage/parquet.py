@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 import shutil
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -133,7 +133,7 @@ class TickStorage:
 
     def _timestamp_to_year_month(self, timestamp_ms: int) -> str:
         """Convert millisecond timestamp to year-month string."""
-        dt = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+        dt = datetime.fromtimestamp(timestamp_ms / 1000, tz=UTC)
         return dt.strftime("%Y-%m")
 
     def write_ticks(
@@ -674,10 +674,8 @@ class TickStorage:
         - Data is NOT automatically downloaded - use get_range_bars() first
         - Each LazyFrame can be collected independently for O(month) memory
         """
-        start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(
-            tzinfo=timezone.utc
-        )
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=UTC)
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=UTC)
 
         current = start_dt.replace(day=1)
         while current <= end_dt:

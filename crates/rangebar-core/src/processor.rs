@@ -1,7 +1,7 @@
 //! Core range bar processing algorithm
 //!
 //! Implements non-lookahead bias range bar construction where bars close when
-//! price moves ±threshold bps from the bar's OPEN price.
+//! price moves ±threshold dbps from the bar's OPEN price.
 
 use crate::checkpoint::{
     AnomalySummary, Checkpoint, CheckpointError, PositionVerification, PriceWindow,
@@ -90,9 +90,9 @@ impl RangeBarProcessor {
         threshold_decimal_bps: u32,
         prevent_same_timestamp_close: bool,
     ) -> Result<Self, ProcessingError> {
-        // Validation bounds (v3.0.0: decimal bps units)
-        // Min: 1 × 0.1bps = 0.1bps = 0.001%
-        // Max: 100,000 × 0.1bps = 10,000bps = 100%
+        // Validation bounds (v3.0.0: dbps units)
+        // Min: 1 dbps = 0.001%
+        // Max: 100,000 dbps = 100%
         if threshold_decimal_bps < 1 {
             return Err(ProcessingError::InvalidThreshold {
                 threshold_decimal_bps,
@@ -617,7 +617,7 @@ pub enum ProcessingError {
     EmptyData,
 
     #[error(
-        "Invalid threshold: {threshold_decimal_bps} (decimal bps). Valid range: 1-100,000 (0.001%-100%)"
+        "Invalid threshold: {threshold_decimal_bps} dbps. Valid range: 1-100,000 dbps (0.001%-100%)"
     )]
     InvalidThreshold { threshold_decimal_bps: u32 },
 }
@@ -642,7 +642,7 @@ impl From<ProcessingError> for PyErr {
             ProcessingError::InvalidThreshold {
                 threshold_decimal_bps,
             } => pyo3::exceptions::PyValueError::new_err(format!(
-                "Invalid threshold: {} (decimal bps). Valid range: 1-100,000 (0.001%-100%)",
+                "Invalid threshold: {} dbps. Valid range: 1-100,000 dbps (0.001%-100%)",
                 threshold_decimal_bps
             )),
         }
@@ -656,9 +656,9 @@ mod tests {
 
     #[test]
     fn test_single_bar_no_breach() {
-        let mut processor = RangeBarProcessor::new(250).unwrap(); // 250 × 0.1bps = 25bps
+        let mut processor = RangeBarProcessor::new(250).unwrap(); // 250 dbps = 0.25%
 
-        // Create trades that stay within 25 bps threshold
+        // Create trades that stay within 250 dbps threshold
         let trades = scenarios::no_breach_sequence(250);
 
         // Test strict algorithm compliance: no bars should be created without breach
@@ -688,7 +688,7 @@ mod tests {
 
     #[test]
     fn test_exact_breach_upward() {
-        let mut processor = RangeBarProcessor::new(250).unwrap(); // 250 × 0.1bps = 25bps
+        let mut processor = RangeBarProcessor::new(250).unwrap(); // 250 dbps = 0.25%
 
         let trades = scenarios::exact_breach_upward(250);
 
@@ -703,7 +703,7 @@ mod tests {
         // First bar should close at breach
         let bar1 = &bars[0];
         assert_eq!(bar1.open.to_string(), "50000.00000000");
-        // Breach at 25 bps = 0.25% = 50000 * 1.0025 = 50125
+        // Breach at 250 dbps = 0.25% = 50000 * 1.0025 = 50125
         assert_eq!(bar1.close.to_string(), "50125.00000000"); // Breach tick included
         assert_eq!(bar1.high.to_string(), "50125.00000000");
         assert_eq!(bar1.low.to_string(), "50000.00000000");
@@ -1206,9 +1206,9 @@ impl ExportRangeBarProcessor {
         threshold_decimal_bps: u32,
         prevent_same_timestamp_close: bool,
     ) -> Result<Self, ProcessingError> {
-        // Validation bounds (v3.0.0: decimal bps units)
-        // Min: 1 × 0.1bps = 0.1bps = 0.001%
-        // Max: 100,000 × 0.1bps = 10,000bps = 100%
+        // Validation bounds (v3.0.0: dbps units)
+        // Min: 1 dbps = 0.001%
+        // Max: 100,000 dbps = 100%
         if threshold_decimal_bps < 1 {
             return Err(ProcessingError::InvalidThreshold {
                 threshold_decimal_bps,
@@ -1289,7 +1289,7 @@ impl ExportRangeBarProcessor {
         let trade_turnover = (trade.price.to_f64() * trade.volume.to_f64()) as i128;
 
         // CRITICAL FIX: Use fixed-point integer arithmetic for precise threshold calculation
-        // v3.0.0: threshold now in decimal bps, using BASIS_POINTS_SCALE = 100_000
+        // v3.0.0: threshold now in dbps, using BASIS_POINTS_SCALE = 100_000
         let price_val = trade.price.0;
         let bar_open_val = bar.open.0;
         let threshold_decimal_bps = self.threshold_decimal_bps as i64;

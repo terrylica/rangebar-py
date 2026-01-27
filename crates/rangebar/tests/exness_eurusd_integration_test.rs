@@ -404,7 +404,7 @@ async fn test_eurusd_type_safe_api() {
 
     let mut builder_typed = ExnessRangeBarBuilder::for_instrument(
         ExnessInstrument::EURUSD,
-        5, // 0.5 bps
+        5, // 5 dbps = 0.005%
         ValidationStrictness::Strict,
     )
     .expect("Type-safe builder failed");

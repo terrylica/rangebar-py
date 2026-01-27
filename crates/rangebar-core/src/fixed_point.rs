@@ -10,7 +10,7 @@ use std::str::FromStr;
 pub const SCALE: i64 = 100_000_000;
 
 /// Scale factor for decimal basis points (v3.0.0: 100,000)
-/// Prior to v3.0.0, this was 10,000 (1bps units). Now 100,000 (decimal bps).
+/// Prior to v3.0.0, this was 10,000 (1 dbps units). Now 100,000 (dbps).
 /// Migration: multiply all threshold_decimal_bps values by 10.
 pub const BASIS_POINTS_SCALE: u32 = 100_000;
 
@@ -106,11 +106,11 @@ impl FixedPoint {
     ///
     /// # Breaking Change (v3.0.0)
     ///
-    /// Prior to v3.0.0, `threshold_decimal_bps` was in 1bps units.
+    /// Prior to v3.0.0, `threshold_decimal_bps` was in 1 dbps units.
     /// **Migration**: Multiply all threshold values by 10.
     pub fn compute_range_thresholds(&self, threshold_decimal_bps: u32) -> (FixedPoint, FixedPoint) {
         // Calculate threshold delta: price * (threshold_decimal_bps / 100,000)
-        // v3.0.0: threshold now in decimal bps (e.g., 250 = 25bps)
+        // v3.0.0: threshold now in dbps (e.g., 250 dbps = 0.25%)
         let delta = (self.0 as i128 * threshold_decimal_bps as i128) / BASIS_POINTS_SCALE as i128;
         let delta = delta as i64;
 

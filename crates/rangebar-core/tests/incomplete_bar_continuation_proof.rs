@@ -90,7 +90,7 @@ fn test_incomplete_bar_continues_across_year_boundary() {
         }
     };
 
-    let threshold = 250; // 25 bps = 0.25%
+    let threshold = 250; // 250 dbps = 0.25%
 
     // ═══════════════════════════════════════════════════════════════════
     // STEP 1: Process Dec 31 and capture the incomplete bar at boundary

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Show ClickHouse cache statistics for range bars."""
 
+from datetime import UTC
+
 from rangebar.clickhouse.cache import RangeBarCache
 
 
@@ -28,15 +30,13 @@ def main() -> None:
     for row in result.result_rows[:10]:
         symbol, threshold, bars, earliest_ms, latest_ms = row
         # Convert ms to readable date
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        earliest = datetime.fromtimestamp(earliest_ms / 1000, tz=timezone.utc).strftime(
+        earliest = datetime.fromtimestamp(earliest_ms / 1000, tz=UTC).strftime(
             "%Y-%m-%d"
         )
-        latest = datetime.fromtimestamp(latest_ms / 1000, tz=timezone.utc).strftime(
-            "%Y-%m-%d"
-        )
-        print(f"  {symbol} @ {threshold}bps: {bars:,} bars ({earliest} to {latest})")
+        latest = datetime.fromtimestamp(latest_ms / 1000, tz=UTC).strftime("%Y-%m-%d")
+        print(f"  {symbol} @ {threshold} dbps: {bars:,} bars ({earliest} to {latest})")
 
     max_display = 10
     if len(result.result_rows) > max_display:

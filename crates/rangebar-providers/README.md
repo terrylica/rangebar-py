@@ -77,7 +77,7 @@ let ticks = fetcher.fetch_month(2024, 10).await?;
 
 // Build range bars from ticks
 let mut builder = ExnessRangeBarBuilder::new(
-    5,  // 0.5 BPS threshold (5 × 0.1 BPS)
+    5,  // 5 dbps threshold = 0.005%
     "EURUSD",
     ValidationStrictness::Standard
 )?;

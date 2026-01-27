@@ -213,7 +213,7 @@ pub mod scenarios {
     use super::*;
 
     /// Creates trades that should produce no range bars (all within threshold)
-    /// v3.0.0: threshold now in decimal bps (divide by 100,000)
+    /// v3.0.0: threshold now in dbps (divide by 100,000)
     pub fn no_breach_sequence(threshold_decimal_bps: u32) -> Vec<AggTrade> {
         let max_change = (threshold_decimal_bps as f64 / 100_000.0) * 0.8; // Stay within threshold
         AggTradeBuilder::new()
@@ -224,7 +224,7 @@ pub mod scenarios {
     }
 
     /// Creates trades that should produce exactly one range bar
-    /// v3.0.0: threshold now in decimal bps (divide by 100,000)
+    /// v3.0.0: threshold now in dbps (divide by 100,000)
     pub fn single_breach_sequence(threshold_decimal_bps: u32) -> Vec<AggTrade> {
         let breach_change = (threshold_decimal_bps as f64 / 100_000.0) * 1.2; // Exceed threshold
         AggTradeBuilder::new()
@@ -239,7 +239,7 @@ pub mod scenarios {
     }
 
     /// Creates trades for exact threshold breach testing
-    /// v3.0.0: threshold now in decimal bps (divide by 100,000)
+    /// v3.0.0: threshold now in dbps (divide by 100,000)
     pub fn exact_breach_upward(threshold_decimal_bps: u32) -> Vec<AggTrade> {
         let breach_change = threshold_decimal_bps as f64 / 100_000.0; // Exact threshold
         AggTradeBuilder::new()
@@ -251,7 +251,7 @@ pub mod scenarios {
     }
 
     /// Creates trades for exact threshold breach testing (downward)
-    /// v3.0.0: threshold now in decimal bps (divide by 100,000)
+    /// v3.0.0: threshold now in dbps (divide by 100,000)
     pub fn exact_breach_downward(threshold_decimal_bps: u32) -> Vec<AggTrade> {
         let breach_change = threshold_decimal_bps as f64 / 100_000.0; // Exact threshold
         AggTradeBuilder::new()

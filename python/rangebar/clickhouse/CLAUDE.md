@@ -85,7 +85,7 @@ result = client.query('''
     GROUP BY symbol, threshold_decimal_bps
 ''')
 for row in result.result_rows:
-    print(f"{row[0]} @ {row[1]}bps: {row[2]:,} bars")
+    print(f"{row[0]} @ {row[1]} dbps: {row[2]:,} bars")
 ```
 
 ---

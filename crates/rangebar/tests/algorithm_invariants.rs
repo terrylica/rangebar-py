@@ -20,7 +20,7 @@ use rangebar_core::{FixedPoint, RangeBar, RangeBarProcessor};
 /// # Arguments
 ///
 /// * `bars` - Completed range bars to validate
-/// * `threshold_decimal_bps` - Threshold in decimal bps (250 = 25bps = 0.25%)
+/// * `threshold_decimal_bps` - Threshold in dbps (250 dbps = 0.25%)
 ///
 /// # Returns
 ///
@@ -29,7 +29,7 @@ fn validate_breach_consistency_invariant(
     bars: &[RangeBar],
     threshold_decimal_bps: u32,
 ) -> Result<(), String> {
-    const BASIS_POINTS_SCALE: i64 = 100_000; // v3.0.0: decimal bps
+    const BASIS_POINTS_SCALE: i64 = 100_000; // v3.0.0: dbps
 
     for (i, bar) in bars.iter().enumerate() {
         // Compute thresholds from open (fixed throughout bar lifetime)
@@ -53,7 +53,7 @@ fn validate_breach_consistency_invariant(
                 "Breach Consistency Invariant VIOLATION at bar {}: \
                  High breached (high={} >= upper_threshold={}), \
                  but close={} != high. \
-                 Bar: open={}, high={}, low={}, close={}, threshold={}bps ({}×0.1bps)",
+                 Bar: open={}, high={}, low={}, close={}, threshold={} dbps",
                 i,
                 FixedPoint(high_val),
                 FixedPoint(upper_threshold),
@@ -62,7 +62,6 @@ fn validate_breach_consistency_invariant(
                 bar.high,
                 bar.low,
                 bar.close,
-                threshold_decimal_bps as f64 / 10.0,
                 threshold_decimal_bps
             ));
         }
@@ -73,7 +72,7 @@ fn validate_breach_consistency_invariant(
                 "Breach Consistency Invariant VIOLATION at bar {}: \
                  Low breached (low={} <= lower_threshold={}), \
                  but close={} != low. \
-                 Bar: open={}, high={}, low={}, close={}, threshold={}bps ({}×0.1bps)",
+                 Bar: open={}, high={}, low={}, close={}, threshold={} dbps",
                 i,
                 FixedPoint(low_val),
                 FixedPoint(lower_threshold),
@@ -82,7 +81,6 @@ fn validate_breach_consistency_invariant(
                 bar.high,
                 bar.low,
                 bar.close,
-                threshold_decimal_bps as f64 / 10.0,
                 threshold_decimal_bps
             ));
         }
@@ -195,10 +193,10 @@ mod invariant_tests {
         let bars = processor.process_agg_trade_records(&trades).unwrap();
 
         println!(
-            "Processed {} trades into {} bars (threshold={}bps)",
+            "Processed {} trades into {} bars (threshold={} dbps)",
             trades.len(),
             bars.len(),
-            threshold_decimal_bps as f64 / 10.0
+            threshold_decimal_bps
         );
 
         validate_breach_consistency_invariant(&bars, threshold_decimal_bps)
@@ -208,7 +206,7 @@ mod invariant_tests {
     /// Test breach consistency invariant with multiple threshold values
     #[test]
     fn test_invariant_multiple_thresholds() {
-        // Test thresholds: 0.2bps (HFT), 1bps, 10bps, 25bps, 100bps
+        // Test thresholds: 2 dbps (HFT), 10 dbps, 100 dbps, 250 dbps, 1000 dbps
         let thresholds = vec![2, 10, 100, 250, 1000];
 
         let trades = generators::create_massive_realistic_dataset(100_000);
@@ -220,16 +218,15 @@ mod invariant_tests {
             validate_breach_consistency_invariant(&bars, threshold_decimal_bps).unwrap_or_else(
                 |err| {
                     panic!(
-                        "Invariant violation at threshold {}bps: {}",
-                        threshold_decimal_bps as f64 / 10.0,
-                        err
+                        "Invariant violation at threshold {} dbps: {}",
+                        threshold_decimal_bps, err
                     )
                 },
             );
 
             println!(
-                "✓ Threshold {}bps: {} bars generated, all satisfy invariant",
-                threshold_decimal_bps as f64 / 10.0,
+                "✓ Threshold {} dbps: {} bars generated, all satisfy invariant",
+                threshold_decimal_bps,
                 bars.len()
             );
         }
@@ -238,7 +235,7 @@ mod invariant_tests {
     /// Test breach consistency invariant on multi-day boundary dataset
     #[test]
     fn test_invariant_multi_day_boundaries() {
-        let threshold_decimal_bps = 250; // 25bps = 0.25%
+        let threshold_decimal_bps = 250; // 250 dbps = 0.25%
         let mut processor = RangeBarProcessor::new(threshold_decimal_bps).unwrap();
 
         let trades = generators::create_multi_day_boundary_dataset(7); // 7 days
@@ -506,16 +503,15 @@ mod invariant_tests {
             validate_breach_consistency_invariant(&bars, threshold_decimal_bps).unwrap_or_else(
                 |err| {
                     panic!(
-                        "Invariant violation at boundary threshold {}bps: {}",
-                        threshold_decimal_bps as f64 / 10.0,
-                        err
+                        "Invariant violation at boundary threshold {} dbps: {}",
+                        threshold_decimal_bps, err
                     )
                 },
             );
 
             println!(
-                "✓ Boundary threshold {}bps: {} bars, all valid",
-                threshold_decimal_bps as f64 / 10.0,
+                "✓ Boundary threshold {} dbps: {} bars, all valid",
+                threshold_decimal_bps,
                 bars.len()
             );
         }

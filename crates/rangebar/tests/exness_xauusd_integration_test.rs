@@ -89,9 +89,9 @@ async fn test_xauusd_end_to_end_with_artifacts() {
     );
     println!("  Tight spread: {:.1}%", tight_spread_pct);
 
-    // === Gate 5: Bar Generation (0.5 bps threshold) ===
-    println!("\nGate 5: Generating range bars (0.5 bps)...");
-    let threshold = 5; // 0.5 bps in 0.1bps units
+    // === Gate 5: Bar Generation (5 dbps threshold) ===
+    println!("\nGate 5: Generating range bars (5 dbps)...");
+    let threshold = 5; // 5 dbps = 0.005%
     let mut builder = ExnessRangeBarBuilder::for_instrument(
         ExnessInstrument::XAUUSD,
         threshold,
@@ -170,7 +170,7 @@ async fn test_xauusd_multi_threshold_scaling() {
     println!("Fetched {} ticks", ticks.len());
 
     // Test multiple thresholds
-    let thresholds = [2, 5, 10, 50, 100]; // 0.2, 0.5, 1.0, 5.0, 10.0 bps
+    let thresholds = [2, 5, 10, 50, 100]; // 2, 5, 10, 50, 100 dbps
     let mut bar_counts = Vec::new();
 
     for &threshold in &thresholds {
@@ -187,18 +187,17 @@ async fn test_xauusd_multi_threshold_scaling() {
             .count();
         bar_counts.push(count);
 
-        let bps = threshold as f64 / 10.0;
-        println!("  {:.1} bps: {} bars", bps, count);
+        println!("  {} dbps: {} bars", threshold, count);
     }
 
     // Verify threshold scaling: narrower threshold → more bars
     for i in 1..bar_counts.len() {
         assert!(
             bar_counts[i - 1] >= bar_counts[i],
-            "Threshold scaling violated: {} bps ({} bars) should produce >= bars than {} bps ({} bars)",
-            thresholds[i - 1] as f64 / 10.0,
+            "Threshold scaling violated: {} dbps ({} bars) should produce >= bars than {} dbps ({} bars)",
+            thresholds[i - 1],
             bar_counts[i - 1],
-            thresholds[i] as f64 / 10.0,
+            thresholds[i],
             bar_counts[i]
         );
     }

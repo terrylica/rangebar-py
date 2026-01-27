@@ -22,8 +22,8 @@ Real-time streaming processor for range bars with bounded memory and circuit bre
 use rangebar_streaming::StreamingProcessor;
 use futures::stream::StreamExt;
 
-// Create processor with 25 BPS (0.25%) threshold
-let mut processor = StreamingProcessor::new(250)?; // v3.0.0: 250 = 25 BPS
+// Create processor with 0.25% threshold
+let mut processor = StreamingProcessor::new(250)?; // 250 dbps = 0.25%
 
 // Process async stream
 let metrics = processor.process_stream(agg_trade_stream).await?;

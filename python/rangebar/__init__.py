@@ -1,3 +1,4 @@
+# polars-exception: backtesting.py requires Pandas DataFrames for OHLCV data
 """rangebar: Python bindings for range bar construction.
 
 This package provides high-performance range bar construction for cryptocurrency
@@ -70,6 +71,9 @@ __all__ = [
     "ContinuityWarning",
     "GapInfo",
     "GapTier",
+    "OrphanedBarMetadata",
+    "OuroborosBoundary",
+    "OuroborosMode",
     "PositionVerification",
     "PrecomputeProgress",
     "PrecomputeResult",
@@ -81,6 +85,7 @@ __all__ = [
     "__version__",
     "detect_asset_class",
     "get_n_range_bars",
+    "get_ouroboros_boundaries",
     "get_range_bars",
     "get_range_bars_pandas",
     "populate_cache_resumable",
@@ -94,6 +99,14 @@ __all__ = [
 from datetime import UTC
 
 from .checkpoint import populate_cache_resumable
+
+# Re-export ouroboros API (cyclical reset boundaries for reproducibility)
+from .ouroboros import (
+    OrphanedBarMetadata,
+    OuroborosBoundary,
+    OuroborosMode,
+    get_ouroboros_boundaries,
+)
 
 # Continuity tolerance: 0.01% relative difference allowed (floating-point precision)
 CONTINUITY_TOLERANCE_PCT = 0.0001
@@ -298,8 +311,8 @@ def validate_continuity(
 
     discontinuities = []
 
-    # Convert threshold to percentage (250 bps = 2.5% = 0.025)
-    threshold_pct = threshold_decimal_bps / 10000.0
+    # Convert threshold to percentage (250 dbps = 0.25% = 0.0025)
+    threshold_pct = threshold_decimal_bps / 100000.0
 
     # Maximum allowed gap = threshold + tolerance
     # Within single session, gap should never exceed this
@@ -796,6 +809,31 @@ class RangeBarProcessor:
 
         return self._processor.process_trades_streaming_arrow(trades)
 
+    def reset_at_ouroboros(self) -> dict | None:
+        """Reset processor state at an ouroboros boundary.
+
+        Clears the incomplete bar and position tracking while preserving
+        the threshold configuration. Use this when starting fresh at a
+        known boundary (year/month/week) for reproducibility.
+
+        Returns
+        -------
+        dict or None
+            The orphaned incomplete bar (if any), or None.
+            Mark returned bars with `is_orphan=True` for ML filtering.
+
+        Examples
+        --------
+        >>> # At year boundary (Jan 1 00:00:00 UTC)
+        >>> orphaned = processor.reset_at_ouroboros()
+        >>> if orphaned:
+        ...     orphaned["is_orphan"] = True
+        ...     orphaned["ouroboros_boundary"] = "2024-01-01T00:00:00Z"
+        ...     orphaned["reason"] = "year_boundary"
+        >>> # Continue processing with clean state
+        """
+        return self._processor.reset_at_ouroboros()
+
 
 def process_trades_to_dataframe(
     trades: list[dict[str, int | float]] | pd.DataFrame,
@@ -1190,16 +1228,16 @@ TIER1_SYMBOLS: tuple[str, ...] = (
 )
 
 # Valid threshold range (from rangebar-core)
-THRESHOLD_DECIMAL_MIN = 1  # 1 decimal bps = 0.1bps = 0.001%
-THRESHOLD_DECIMAL_MAX = 100_000  # 10,000bps = 100%
+THRESHOLD_DECIMAL_MIN = 1  # 1 dbps = 0.001%
+THRESHOLD_DECIMAL_MAX = 100_000  # 100,000 dbps = 100%
 
 # Common threshold presets (in decimal basis points)
 THRESHOLD_PRESETS: dict[str, int] = {
-    "micro": 10,  # 1bps = 0.01% (scalping)
-    "tight": 50,  # 5bps = 0.05% (day trading)
-    "standard": 100,  # 10bps = 0.1% (swing trading)
-    "medium": 250,  # 25bps = 0.25% (default)
-    "wide": 500,  # 50bps = 0.5% (position trading)
+    "micro": 10,  # 10 dbps = 0.01% (scalping)
+    "tight": 50,  # 50 dbps = 0.05% (day trading)
+    "standard": 100,  # 100 dbps = 0.1% (swing trading)
+    "medium": 250,  # 250 dbps = 0.25% (default)
+    "wide": 500,  # 500 dbps = 0.5% (position trading)
     "macro": 1000,  # 100bps = 1% (long-term)
 }
 
@@ -1922,6 +1960,9 @@ def get_range_bars(
     end_date: str,
     threshold_decimal_bps: int | str = 250,
     *,
+    # Ouroboros: Cyclical reset boundaries (v11.0+)
+    ouroboros: Literal["year", "month", "week"] = "year",
+    include_orphaned_bars: bool = False,
     # Streaming options (v8.0+)
     materialize: bool = True,
     batch_size: int = 10_000,
@@ -1960,10 +2001,21 @@ def get_range_bars(
         End date in YYYY-MM-DD format.
     threshold_decimal_bps : int or str, default=250
         Threshold in decimal basis points. Can be:
-        - Integer: Direct value (250 = 25bps = 0.25%)
-        - String preset: "micro" (1bps), "tight" (5bps), "standard" (10bps),
-          "medium" (25bps), "wide" (50bps), "macro" (100bps)
-        Valid range: 1-100,000 (0.001% to 100%)
+        - Integer: Direct value (250 dbps = 0.25%)
+        - String preset: "micro" (10 dbps), "tight" (50 dbps), "standard" (100 dbps),
+          "medium" (250 dbps), "wide" (500 dbps), "macro" (1000 dbps)
+        Valid range: 1-100,000 dbps (0.001% to 100%)
+    ouroboros : {"year", "month", "week"}, default="year"
+        Cyclical reset boundary for reproducible bar construction (v11.0+).
+        Processor state resets at each boundary for deterministic results.
+        - "year" (default): Reset at January 1st 00:00:00 UTC (cryptocurrency)
+        - "month": Reset at 1st of each month 00:00:00 UTC
+        - "week": Reset at Sunday 00:00:00 UTC (required for Forex)
+        Named after the Greek serpent eating its tail (οὐροβόρος).
+    include_orphaned_bars : bool, default=False
+        Include incomplete bars from ouroboros boundaries.
+        If True, orphaned bars are included with ``is_orphan=True`` column.
+        Useful for analysis; filter with ``df[~df.get('is_orphan', False)]``.
     materialize : bool, default=True
         If True, return a single pd.DataFrame (legacy behavior).
         If False, return an Iterator[pl.DataFrame] that yields batches
@@ -2148,6 +2200,13 @@ def get_range_bars(
         raise ValueError(msg)
 
     # -------------------------------------------------------------------------
+    # Validate ouroboros mode (v11.0+)
+    # -------------------------------------------------------------------------
+    from .ouroboros import validate_ouroboros_mode
+
+    ouroboros = validate_ouroboros_mode(ouroboros)
+
+    # -------------------------------------------------------------------------
     # Validate source and market
     # -------------------------------------------------------------------------
     source = source.lower()
@@ -2232,12 +2291,14 @@ def get_range_bars(
             from .clickhouse import RangeBarCache
 
             with RangeBarCache() as cache:
+                # Ouroboros mode filter ensures cache isolation (Plan: sparkling-coalescing-dijkstra.md)
                 cached_bars = cache.get_bars_by_timestamp_range(
                     symbol=symbol,
                     threshold_decimal_bps=threshold_decimal_bps,
                     start_ts=start_ts,
                     end_ts=end_ts,
                     include_microstructure=include_microstructure,
+                    ouroboros_mode=ouroboros,
                 )
                 if cached_bars is not None and len(cached_bars) > 0:
                     # Fast path: return precomputed bars from ClickHouse (~50ms)
@@ -2282,9 +2343,10 @@ def get_range_bars(
         raise RuntimeError(msg)
 
     # -------------------------------------------------------------------------
-    # Process to range bars
+    # Process to range bars with Ouroboros boundaries (v11.0+)
     # -------------------------------------------------------------------------
     if source == "exness":
+        # Exness uses week ouroboros implicitly (aligns with Sunday market open)
         return _process_exness_ticks(
             tick_data,
             symbol,
@@ -2294,14 +2356,67 @@ def get_range_bars(
             include_microstructure,
         )
 
-    bars_df, _ = _process_binance_trades(
-        tick_data,
-        threshold_decimal_bps,
-        include_incomplete,
-        include_microstructure,
-        symbol=symbol,
-        prevent_same_timestamp_close=prevent_same_timestamp_close,
-    )
+    # Binance: Process with ouroboros segment iteration
+    from .ouroboros import iter_ouroboros_segments
+
+    all_bars: list[pd.DataFrame] = []
+    processor: RangeBarProcessor | None = None
+
+    for segment_start, segment_end, boundary in iter_ouroboros_segments(
+        start_dt.date(), end_dt.date(), ouroboros
+    ):
+        # Reset processor at ouroboros boundary
+        if boundary is not None and processor is not None:
+            orphaned_bar = processor.reset_at_ouroboros()
+            if include_orphaned_bars and orphaned_bar is not None:
+                # Add orphan metadata
+                orphaned_bar["is_orphan"] = True
+                orphaned_bar["ouroboros_boundary"] = boundary.timestamp
+                orphaned_bar["ouroboros_reason"] = boundary.reason
+                orphan_df = pd.DataFrame([orphaned_bar])
+                # Convert timestamp to datetime index
+                if "timestamp" in orphan_df.columns:
+                    orphan_df["timestamp"] = pd.to_datetime(
+                        orphan_df["timestamp"], unit="us", utc=True
+                    )
+                    orphan_df = orphan_df.set_index("timestamp")
+                all_bars.append(orphan_df)
+
+        # Filter tick data for this segment
+        # Note: Tick timestamps are in MILLISECONDS (not microseconds)
+        segment_start_ms = int(segment_start.timestamp() * 1_000)
+        segment_end_ms = int(segment_end.timestamp() * 1_000)
+
+        segment_ticks = tick_data.filter(
+            (pl.col("timestamp") >= segment_start_ms)
+            & (pl.col("timestamp") <= segment_end_ms)
+        )
+
+        if segment_ticks.is_empty():
+            continue
+
+        # Process segment (reuse processor for state continuity within segment)
+        segment_bars, processor = _process_binance_trades(
+            segment_ticks,
+            threshold_decimal_bps,
+            include_incomplete,
+            include_microstructure,
+            processor=processor,
+            symbol=symbol,
+            prevent_same_timestamp_close=prevent_same_timestamp_close,
+        )
+
+        if segment_bars is not None and not segment_bars.empty:
+            all_bars.append(segment_bars)
+
+    # Concatenate all segments
+    if not all_bars:
+        bars_df = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+    elif len(all_bars) == 1:
+        bars_df = all_bars[0]
+    else:
+        bars_df = pd.concat(all_bars, axis=0)
+        bars_df = bars_df.sort_index()
 
     # -------------------------------------------------------------------------
     # Write computed bars to ClickHouse cache (Issue #37)
@@ -2315,17 +2430,19 @@ def get_range_bars(
 
             with RangeBarCache() as cache:
                 # Use store_bars_bulk for bars computed without exact CacheKey
+                # Ouroboros mode determines cache key (Plan: sparkling-coalescing-dijkstra.md)
                 written = cache.store_bars_bulk(
                     symbol=symbol,
                     threshold_decimal_bps=threshold_decimal_bps,
                     bars=bars_df,
                     version="",  # Version tracked elsewhere
+                    ouroboros_mode=ouroboros,
                 )
                 import logging
 
                 logger = logging.getLogger(__name__)
                 logger.info(
-                    "Cached %d bars for %s @ %d bps",
+                    "Cached %d bars for %s @ %d dbps",
                     written,
                     symbol,
                     threshold_decimal_bps,

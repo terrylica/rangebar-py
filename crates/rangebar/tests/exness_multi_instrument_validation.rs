@@ -102,7 +102,7 @@ async fn test_all_10_instruments_consistency() {
         );
 
         println!(
-            "  Bars: {} / {} / {} (0.2/0.5/1.0 bps)",
+            "  Bars: {} / {} / {} (2/5/10 dbps)",
             results[instrument.symbol()].bar_counts[0],
             results[instrument.symbol()].bar_counts[1],
             results[instrument.symbol()].bar_counts[2]

@@ -98,7 +98,7 @@ Features:
 - Continuous date range support
 
 Output:
-- CSV range bar files: spot_{SYMBOL}_rangebar_{START}_{END}_{BBPS}bps.csv
+- CSV range bar files: spot_{SYMBOL}_rangebar_{START}_{END}_{DBPS}dbps.csv
 - JSON metadata: spot_batch_summary.json with execution statistics
 
 Examples:
@@ -117,7 +117,7 @@ struct Args {
     #[arg(long, default_value = "2024-10-31")]
     end_date: String,
 
-    /// Threshold in decimal basis points (e.g., 250 for 25bps = 0.25%)
+    /// Threshold in decimal basis points (e.g., 250 dbps = 0.25%)
     #[arg(long, default_value = "250")]
     threshold_decimal_bps: u32,
 
@@ -233,15 +233,15 @@ fn parse_output_statistics(output: &str) -> (Option<u64>, Option<u64>) {
     let mut total_bars = None;
 
     for line in output.lines() {
-        if line.contains("Total Trades:")
-            && let Some(trades_str) = line.split(':').nth(1)
-        {
-            total_trades = trades_str.trim().replace(',', "").parse().ok();
+        if line.contains("Total Trades:") {
+            if let Some(trades_str) = line.split(':').nth(1) {
+                total_trades = trades_str.trim().replace(',', "").parse().ok();
+            }
         }
-        if line.contains("Total Bars:")
-            && let Some(bars_str) = line.split(':').nth(1)
-        {
-            total_bars = bars_str.trim().replace(',', "").parse().ok();
+        if line.contains("Total Bars:") {
+            if let Some(bars_str) = line.split(':').nth(1) {
+                total_bars = bars_str.trim().replace(',', "").parse().ok();
+            }
         }
     }
 
@@ -251,14 +251,14 @@ fn parse_output_statistics(output: &str) -> (Option<u64>, Option<u64>) {
 fn find_output_files(output_dir: &str, symbol: &str, threshold_decimal_bps: u32) -> Vec<String> {
     let mut files = Vec::new();
 
-    // Expected filename patterns based on new BPS naming convention
+    // Expected filename patterns based on new DBPS naming convention
     let patterns = [
         format!(
-            "spot_{}_rangebar_*_{:04}bps.csv",
+            "spot_{}_rangebar_*_{:04}dbps.csv",
             symbol, threshold_decimal_bps
         ),
         format!(
-            "spot_{}_rangebar_*_{:04}bps.json",
+            "spot_{}_rangebar_*_{:04}dbps.json",
             symbol, threshold_decimal_bps
         ),
     ];
@@ -269,7 +269,7 @@ fn find_output_files(output_dir: &str, symbol: &str, threshold_decimal_bps: u32)
                 let filename = entry.file_name().to_string_lossy().to_string();
                 if filename.contains("spot_")
                     && filename.contains(symbol)
-                    && filename.contains(&format!("{:04}bps", threshold_decimal_bps))
+                    && filename.contains(&format!("{:04}dbps", threshold_decimal_bps))
                 {
                     files.push(filename);
                 }
@@ -353,9 +353,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Spot Tier-1 Range Bar Batch Processor");
     println!("📅 Date Range: {} to {}", args.start_date, args.end_date);
     println!(
-        "🎯 Threshold: {} bps ({:.2}%)",
+        "🎯 Threshold: {} dbps ({:.3}%)",
         args.threshold_decimal_bps,
-        args.threshold_decimal_bps as f64 / 100.0
+        args.threshold_decimal_bps as f64 / 1000.0
     );
     println!("📂 Output: {}", args.output_dir);
     println!("🔧 Workers: {}", args.workers);
@@ -425,10 +425,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         total_csv_files: csv_count,
         total_json_files: json_count,
         total_output_files: csv_count + json_count,
-        naming_convention: "spot_{SYMBOL}_rangebar_{STARTDATE}_{ENDDATE}_{BBPS}bps.{ext}"
+        naming_convention: "spot_{SYMBOL}_rangebar_{STARTDATE}_{ENDDATE}_{DBPS}dbps.{ext}"
             .to_string(),
         continuous_date_range: format!("{} to {}", args.start_date, args.end_date),
-        basis_points_format: format!("{:04}bps", config.threshold_decimal_bps),
+        basis_points_format: format!("{:04}dbps", config.threshold_decimal_bps),
     };
 
     // Create metadata

@@ -29,6 +29,17 @@
 -- Note: New installations do not need this migration.
 
 -- ============================================================================
+-- Migration for v10.x (Ouroboros: cyclical reset boundaries)
+-- ============================================================================
+-- Run this ONCE if upgrading from rangebar-py v9.x with existing cache:
+--
+-- ALTER TABLE rangebar_cache.range_bars
+--     ADD COLUMN ouroboros_mode LowCardinality(String) DEFAULT 'week';
+--
+-- Note: New installations do not need this migration.
+-- Plan: /Users/terryli/.claude/plans/sparkling-coalescing-dijkstra.md
+
+-- ============================================================================
 -- Computed Range Bars Cache (Tier 2)
 -- ============================================================================
 -- Stores computed range bars with all parameters as cache key
@@ -65,6 +76,9 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
     aggression_ratio Float64 DEFAULT 0,
     aggregation_density Float64 DEFAULT 1,
     turnover_imbalance Float64 DEFAULT 0,
+
+    -- Ouroboros (cyclical reset boundaries, v10.x)
+    ouroboros_mode LowCardinality(String) DEFAULT 'week',
 
     -- Cache metadata
     cache_key String,                        -- Hash of full parameters

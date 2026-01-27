@@ -165,6 +165,7 @@ ignore = [
     "PYI021",  # Docstrings in stubs (kept for documentation)
     "PYI034",  # Self return type (intentional RangeBarCache return)
     "E501",    # Line too long (docstring examples)
+    "E402",    # Module-level import not at top (organized by section)
 ]
 "python/rangebar/__init__.py" = [
     "F821",    # Forward references for type hints
@@ -187,6 +188,7 @@ ignore = [
     "ANN401",  # Any type in kwargs
     "PYI034",  # Self return type
     "PLR2004", # Magic values (port numbers, etc.)
+    "PLR0913", # Too many arguments (cache API needs symbol, threshold, timestamps, etc.)
     "PLC0415", # Lazy imports for optional dependencies
     "TID252",  # Relative imports from parent (intentional for package structure)
 ]
@@ -249,6 +251,10 @@ ignore = [
     "PLR0913", # Too many arguments (create factory method needs all fields)
     "PLC0415", # Lazy imports (avoid circular import with notify)
     "TID252",  # Relative imports from parent (intentional for package structure)
+]
+"python/rangebar/ouroboros.py" = [
+    "PLR2004", # Magic values (weekday numbers 5/6 for Saturday/Sunday, month 12)
+    "PLC0415", # Lazy imports (zoneinfo for exchange session detection)
 ]
 
 [tool.semantic_release]

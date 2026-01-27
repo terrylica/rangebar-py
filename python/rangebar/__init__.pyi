@@ -109,6 +109,100 @@ class PrecomputeResult:
 __version__: str
 
 # ============================================================================
+# Ouroboros: Cyclical Reset Boundaries for Reproducibility
+# Plan: /Users/terryli/.claude/plans/sparkling-coalescing-dijkstra.md
+# ============================================================================
+
+from datetime import date, datetime
+
+class OuroborosMode(str, Enum):
+    """Ouroboros granularity modes for reset boundaries.
+
+    Ouroboros (Greek: οὐροβόρος) represents cyclical reset boundaries
+    that enable reproducible range bar construction.
+    """
+
+    YEAR = "year"
+    """Reset at January 1 00:00:00 UTC each year."""
+    MONTH = "month"
+    """Reset at 1st of each month 00:00:00 UTC."""
+    WEEK = "week"
+    """Reset at Sunday 00:00:00 UTC each week (crypto) or first tick after market open (forex)."""
+
+@dataclass(frozen=True)
+class OuroborosBoundary:
+    """A single ouroboros reset boundary.
+
+    Represents a specific timestamp where the range bar processor should reset
+    its state to enable reproducible bar construction across segments.
+    """
+
+    timestamp: datetime
+    """UTC datetime of the boundary."""
+    mode: OuroborosMode
+    """Which granularity created this boundary."""
+    reason: str
+    """Human-readable reason (e.g., 'year_boundary', 'month_boundary')."""
+
+    @property
+    def timestamp_ms(self) -> int:
+        """Timestamp in milliseconds (for comparison with trade data)."""
+
+    @property
+    def timestamp_us(self) -> int:
+        """Timestamp in microseconds."""
+
+@dataclass
+class OrphanedBarMetadata:
+    """Metadata for orphaned bars at ouroboros boundaries.
+
+    Orphaned bars are incomplete bars that existed when the processor
+    was reset at an ouroboros boundary. They can be included or excluded
+    from results based on the `include_orphaned_bars` parameter.
+    """
+
+    is_orphan: bool = True
+    """Always True for orphaned bars."""
+    ouroboros_boundary: datetime | None = None
+    """Which boundary caused the orphan."""
+    reason: str | None = None
+    """Reason string: 'year_boundary', 'month_boundary', 'week_boundary'."""
+    expected_duration_us: int | None = None
+    """Expected duration if bar had completed normally."""
+
+def get_ouroboros_boundaries(
+    start: date,
+    end: date,
+    mode: Literal["year", "month", "week"],
+) -> list[OuroborosBoundary]:
+    """Return all ouroboros reset points within the date range.
+
+    Parameters
+    ----------
+    start : date
+        Start date (inclusive)
+    end : date
+        End date (inclusive)
+    mode : {"year", "month", "week"}
+        Ouroboros granularity
+
+    Returns
+    -------
+    list[OuroborosBoundary]
+        Sorted list of boundaries within the date range
+
+    Examples
+    --------
+    >>> from datetime import date
+    >>> from rangebar import get_ouroboros_boundaries
+    >>> boundaries = get_ouroboros_boundaries(date(2024, 1, 1), date(2024, 3, 31), "month")
+    >>> len(boundaries)
+    3
+    >>> boundaries[0].reason
+    'month_boundary'
+    """
+
+# ============================================================================
 # Configuration Constants
 # ============================================================================
 
@@ -386,6 +480,8 @@ def get_range_bars(
         int | Literal["micro", "tight", "standard", "medium", "wide", "macro"]
     ) = 250,
     *,
+    ouroboros: Literal["year", "month", "week"] = ...,
+    include_orphaned_bars: bool = ...,
     materialize: Literal[True] = ...,
     batch_size: int = ...,
     source: Literal["binance", "exness"] = ...,
@@ -408,6 +504,8 @@ def get_range_bars(
         int | Literal["micro", "tight", "standard", "medium", "wide", "macro"]
     ) = 250,
     *,
+    ouroboros: Literal["year", "month", "week"] = ...,
+    include_orphaned_bars: bool = ...,
     materialize: Literal[False],
     batch_size: int = ...,
     source: Literal["binance", "exness"] = ...,
@@ -429,6 +527,9 @@ def get_range_bars(
         int | Literal["micro", "tight", "standard", "medium", "wide", "macro"]
     ) = 250,
     *,
+    # Ouroboros: Cyclical reset boundaries (v11.0+)
+    ouroboros: Literal["year", "month", "week"] = "year",
+    include_orphaned_bars: bool = False,
     # Streaming options (v8.0+)
     materialize: bool = True,
     batch_size: int = 10_000,

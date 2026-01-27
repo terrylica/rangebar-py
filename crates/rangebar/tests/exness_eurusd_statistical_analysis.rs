@@ -209,7 +209,7 @@ fn compute_statistics(
 
 fn print_statistics(stats: &ThresholdStatistics) {
     println!(
-        "Threshold: {} ({} bps)",
+        "Threshold: {} ({} dbps)",
         stats.threshold_label, stats.threshold_decimal_bps
     );
     println!("────────────────────────────────────────");

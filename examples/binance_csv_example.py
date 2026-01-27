@@ -72,7 +72,7 @@ def load_binance_csv(csv_path: str, threshold_decimal_bps: int = 250) -> pd.Data
 
     # Convert to range bars
     print(
-        f"\nConverting to range bars (threshold = {threshold_decimal_bps * 0.1:.1f}bps = {threshold_decimal_bps * 0.001:.3f}%)..."
+        f"\nConverting to range bars (threshold = {threshold_decimal_bps} dbps = {threshold_decimal_bps * 0.001:.3f}%)..."
     )
 
     range_bars = process_trades_to_dataframe(

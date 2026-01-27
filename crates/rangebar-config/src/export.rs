@@ -144,7 +144,7 @@ impl ExportConfig {
     ) -> String {
         let ext = extension.unwrap_or_else(|| self.default_format.file_extension());
         let threshold_str = if self.include_threshold_in_filename {
-            format!("_{:04}bps", threshold_decimal_bps)
+            format!("_{:04}dbps", threshold_decimal_bps)
         } else {
             String::new()
         };
@@ -179,7 +179,7 @@ impl ExportConfig {
             }
             FileNamingPattern::Custom(pattern) => pattern
                 .replace("{symbol}", symbol)
-                .replace("{threshold}", &format!("{:04}bps", threshold_decimal_bps))
+                .replace("{threshold}", &format!("{:04}dbps", threshold_decimal_bps))
                 .replace("{extension}", ext)
                 .replace("{timestamp}", &self.format_current_timestamp()),
         }
@@ -261,7 +261,7 @@ mod tests {
         let mut config_simple = config.clone();
         config_simple.file_naming_pattern = FileNamingPattern::Simple;
         let filename = config_simple.generate_filename("BTCUSDT", 250, None, None, None);
-        assert_eq!(filename, "BTCUSDT_0250bps.csv");
+        assert_eq!(filename, "BTCUSDT_0250dbps.csv");
 
         // Test detailed pattern
         let filename_detailed = config.generate_filename(
@@ -273,7 +273,7 @@ mod tests {
         );
         assert_eq!(
             filename_detailed,
-            "BTCUSDT_0800bps_2024-01-01_to_2024-01-02.parquet"
+            "BTCUSDT_0800dbps_2024-01-01_to_2024-01-02.parquet"
         );
     }
 

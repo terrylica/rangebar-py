@@ -208,7 +208,7 @@ def example_with_shared_cache(trades: pd.DataFrame, symbol: str) -> None:
             )
             elapsed = time.perf_counter() - start
             print(
-                f"   Threshold {threshold:4d}bps: {len(df):5d} bars in {elapsed*1000:.1f}ms"
+                f"   Threshold {threshold:4d} dbps: {len(df):5d} bars in {elapsed*1000:.1f}ms"
             )
 
 

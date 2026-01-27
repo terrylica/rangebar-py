@@ -70,8 +70,8 @@ impl FixedPoint {
 ```rust
 use rangebar_core::{RangeBarProcessor, AggTrade};
 
-// Create processor with 25 BPS (0.25%) threshold
-// v3.0.0+ uses 0.1 BPS units: 250 = 25 BPS
+// Create processor with 0.25% threshold
+// v3.0.0+ uses dbps units: 250 dbps = 0.25%
 let mut processor = RangeBarProcessor::new(250)?;
 
 // Process trades
@@ -103,10 +103,10 @@ Current version: **6.1.0** (modular crate architecture with checkpoint system)
 
 ### Threshold Units (v3.0.0 Breaking Change)
 
-v3.0.0 changed threshold units from 1 BPS to 0.1 BPS:
+v3.0.0 changed threshold units from 1 bps to 1 dbps:
 
-- **Old API (v2.x)**: `new(25)` = 25 BPS = 0.25%
-- **New API (v3.0.0+)**: `new(250)` = 250 × 0.1 BPS = 25 BPS = 0.25%
+- **Old API (v2.x)**: `new(25)` = 25 bps (legacy) = 0.25%
+- **New API (v3.0.0+)**: `new(250)` = 250 dbps = 0.25%
 
 **Migration**: Multiply all threshold values by 10.
 

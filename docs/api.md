@@ -215,12 +215,12 @@ def process_trades_to_dataframe(
     - Other columns ignored
 
 - **threshold_decimal_bps**: `int`, default=250
-  - Range bar threshold in decimal basis point units
+  - Range bar threshold in decimal basis point (dbps) units
   - Examples:
-    - `100` = 10 bps = 0.1%
-    - `250` = 25 bps = 0.25% (recommended default)
-    - `500` = 50 bps = 0.5%
-    - `1000` = 100 bps = 1.0%
+    - `100` = 100 dbps = 0.1%
+    - `250` = 250 dbps = 0.25% (recommended default)
+    - `500` = 500 dbps = 0.5%
+    - `1000` = 1000 dbps = 1.0%
   - Must be positive (>0)
 
 #### Returns

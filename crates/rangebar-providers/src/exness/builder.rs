@@ -66,7 +66,7 @@ impl ExnessRangeBarBuilder {
     /// use rangebar_providers::exness::ValidationStrictness;
     ///
     /// let builder = ExnessRangeBarBuilder::new(
-    ///     250,                          // 250 decimal bps = 25bps = 0.25% (v3.0.0)
+    ///     250,                          // 250 dbps = 0.25% (v3.0.0)
     ///     "EURUSD_Raw_Spread",          // Exness Raw_Spread variant
     ///     ValidationStrictness::Strict  // Default level
     /// );
@@ -102,7 +102,7 @@ impl ExnessRangeBarBuilder {
     ///
     /// let builder = ExnessRangeBarBuilder::for_instrument(
     ///     ExnessInstrument::XAUUSD,
-    ///     50,                           // 5 decimal bps = 0.5bps = 0.005%
+    ///     50,                           // 50 dbps = 0.05%
     ///     ValidationStrictness::Strict,
     /// ).unwrap();
     /// ```
@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn test_builder_streaming_state() {
         let mut builder = ExnessRangeBarBuilder::new(
-            250, // 250 decimal bps = 25bps
+            250, // 250 dbps = 0.25%
             "EURUSD_Raw_Spread",
             ValidationStrictness::Strict,
         )

@@ -5,7 +5,7 @@ https://github.com/terrylica/rangebar/issues/5
 Problem:
 - Open: 85,372.00
 - High: 90,025.82 (+5.45% from open)
-- Threshold: 250 decimal bps = 0.25%
+- Threshold: 250 dbps = 0.25%
 - Expected max high: 85,585.43 (0.25% above open)
 - Actual: 21.8x the threshold
 """

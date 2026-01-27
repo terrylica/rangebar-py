@@ -48,7 +48,7 @@ fn test_btcusdt_data_integrity() {
 
 #[test]
 fn test_btcusdt_standard_threshold() {
-    // Test standard 25 bps (0.25%) threshold for real market data
+    // Test standard 25 dbps (0.025%) threshold for real market data
     let mut processor =
         RangeBarProcessor::new(25).expect("Failed to create processor with valid threshold");
     let trades = load_btcusdt_test_data().expect("Failed to load BTCUSDT test data");
@@ -63,7 +63,7 @@ fn test_btcusdt_standard_threshold() {
     );
 
     println!(
-        "BTCUSDT (25 bps): {} trades → {} range bars",
+        "BTCUSDT (25 dbps): {} trades → {} range bars",
         trades.len(),
         range_bars.len()
     );
@@ -74,7 +74,7 @@ fn test_btcusdt_standard_threshold() {
 
 #[test]
 fn test_btcusdt_medium_threshold() {
-    // Test medium 50 bps (0.5%) threshold
+    // Test medium 50 dbps (0.05%) threshold
     let mut processor =
         RangeBarProcessor::new(50).expect("Failed to create processor with valid threshold");
     let trades = load_btcusdt_test_data().expect("Failed to load BTCUSDT test data");
@@ -89,7 +89,7 @@ fn test_btcusdt_medium_threshold() {
     );
 
     println!(
-        "BTCUSDT (50 bps): {} trades → {} range bars",
+        "BTCUSDT (50 dbps): {} trades → {} range bars",
         trades.len(),
         range_bars.len()
     );
@@ -100,7 +100,7 @@ fn test_btcusdt_medium_threshold() {
 
 #[test]
 fn test_btcusdt_wide_threshold() {
-    // Test wide 100 bps (1.0%) threshold
+    // Test wide 100 dbps (0.1%) threshold
     let mut processor =
         RangeBarProcessor::new(100).expect("Failed to create processor with valid threshold");
     let trades = load_btcusdt_test_data().expect("Failed to load BTCUSDT test data");
@@ -115,7 +115,7 @@ fn test_btcusdt_wide_threshold() {
     );
 
     println!(
-        "BTCUSDT (100 bps): {} trades → {} range bars",
+        "BTCUSDT (100 dbps): {} trades → {} range bars",
         trades.len(),
         range_bars.len()
     );
@@ -146,22 +146,22 @@ fn test_btcusdt_threshold_scaling() {
 
     assert!(
         bars_25.len() >= bars_50.len(),
-        "25 bps should produce >= bars than 50 bps (got {} vs {})",
+        "25 dbps should produce >= bars than 50 dbps (got {} vs {})",
         bars_25.len(),
         bars_50.len()
     );
 
     assert!(
         bars_50.len() >= bars_100.len(),
-        "50 bps should produce >= bars than 100 bps (got {} vs {})",
+        "50 dbps should produce >= bars than 100 dbps (got {} vs {})",
         bars_50.len(),
         bars_100.len()
     );
 
     println!("BTCUSDT threshold scaling:");
-    println!("  25 bps: {} bars", bars_25.len());
-    println!("  50 bps: {} bars", bars_50.len());
-    println!(" 100 bps: {} bars", bars_100.len());
+    println!("  25 dbps: {} bars", bars_25.len());
+    println!("  50 dbps: {} bars", bars_50.len());
+    println!(" 100 dbps: {} bars", bars_100.len());
 }
 
 /// Validates OHLCV integrity for all range bars

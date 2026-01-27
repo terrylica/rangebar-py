@@ -112,7 +112,7 @@ fn test_cross_year_2023_2024_boundary() {
     println!("✓ agg_trade_id is continuous across year boundary");
 
     // === CROSS-YEAR CONTINUATION TEST ===
-    let threshold = 250; // 25 bps
+    let threshold = 250; // 250 dbps = 0.25%
 
     // Process Dec 31 data
     let mut processor = RangeBarProcessor::new(threshold).unwrap();

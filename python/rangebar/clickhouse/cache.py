@@ -47,25 +47,29 @@ class CacheKey:
 
     Uniquely identifies a set of computed range bars based on:
     - Symbol (e.g., "BTCUSDT")
-    - Threshold in basis points
+    - Threshold in decimal basis points (dbps)
     - Time range of source data
+    - Ouroboros mode for reproducibility
 
     Attributes
     ----------
     symbol : str
         Trading symbol
     threshold_decimal_bps : int
-        Threshold in decimal basis points (0.1bps = 0.001%)
+        Threshold in decimal basis points (1 dbps = 0.001%)
     start_ts : int
         Start timestamp in milliseconds
     end_ts : int
         End timestamp in milliseconds
+    ouroboros_mode : str
+        Ouroboros reset mode: "year", "month", or "week" (default: "year")
     """
 
     symbol: str
     threshold_decimal_bps: int
     start_ts: int
     end_ts: int
+    ouroboros_mode: str = "year"
 
     @property
     def hash_key(self) -> str:
@@ -78,7 +82,7 @@ class CacheKey:
         """
         key_str = (
             f"{self.symbol}_{self.threshold_decimal_bps}_"
-            f"{self.start_ts}_{self.end_ts}"
+            f"{self.start_ts}_{self.end_ts}_{self.ouroboros_mode}"
         )
         return hashlib.md5(key_str.encode()).hexdigest()
 
@@ -225,7 +229,7 @@ class RangeBarCache(ClickHouseClientMixin):
             return 0
 
         logger.debug(
-            "Writing %d bars to cache for %s @ %d bps",
+            "Writing %d bars to cache for %s @ %d dbps",
             len(bars),
             key.symbol,
             key.threshold_decimal_bps,
@@ -249,6 +253,7 @@ class RangeBarCache(ClickHouseClientMixin):
         # Add cache metadata
         df["symbol"] = key.symbol
         df["threshold_decimal_bps"] = key.threshold_decimal_bps
+        df["ouroboros_mode"] = key.ouroboros_mode
         df["cache_key"] = key.hash_key
         df["rangebar_version"] = version
         df["source_start_ts"] = key.start_ts
@@ -258,6 +263,7 @@ class RangeBarCache(ClickHouseClientMixin):
         columns = [
             "symbol",
             "threshold_decimal_bps",
+            "ouroboros_mode",
             "timestamp_ms",
             "open",
             "high",
@@ -303,7 +309,7 @@ class RangeBarCache(ClickHouseClientMixin):
             )
             written = summary.written_rows
             logger.info(
-                "Cached %d bars for %s @ %d bps",
+                "Cached %d bars for %s @ %d dbps",
                 written,
                 key.symbol,
                 key.threshold_decimal_bps,
@@ -311,7 +317,7 @@ class RangeBarCache(ClickHouseClientMixin):
             return written
         except (OSError, RuntimeError) as e:
             logger.exception(
-                "Cache write failed for %s @ %d bps",
+                "Cache write failed for %s @ %d dbps",
                 key.symbol,
                 key.threshold_decimal_bps,
             )
@@ -368,7 +374,7 @@ class RangeBarCache(ClickHouseClientMixin):
             )
         except (OSError, RuntimeError) as e:
             logger.exception(
-                "Cache read failed for %s @ %d bps",
+                "Cache read failed for %s @ %d dbps",
                 key.symbol,
                 key.threshold_decimal_bps,
             )
@@ -381,7 +387,7 @@ class RangeBarCache(ClickHouseClientMixin):
 
         if df.empty:
             logger.debug(
-                "Cache miss for %s @ %d bps (key: %s)",
+                "Cache miss for %s @ %d dbps (key: %s)",
                 key.symbol,
                 key.threshold_decimal_bps,
                 key.hash_key[:8],
@@ -389,7 +395,7 @@ class RangeBarCache(ClickHouseClientMixin):
             return None
 
         logger.debug(
-            "Cache hit: %d bars for %s @ %d bps",
+            "Cache hit: %d bars for %s @ %d dbps",
             len(df),
             key.symbol,
             key.threshold_decimal_bps,
@@ -883,6 +889,7 @@ class RangeBarCache(ClickHouseClientMixin):
         start_ts: int,
         end_ts: int,
         include_microstructure: bool = False,
+        ouroboros_mode: str = "year",
     ) -> pd.DataFrame | None:
         """Get bars within a timestamp range (for get_range_bars cache lookup).
 
@@ -902,6 +909,9 @@ class RangeBarCache(ClickHouseClientMixin):
             End timestamp in milliseconds (inclusive)
         include_microstructure : bool
             If True, includes vwap, buy_volume, sell_volume columns
+        ouroboros_mode : str
+            Ouroboros reset mode: "year", "month", or "week" (default: "year")
+            Plan: sparkling-coalescing-dijkstra.md
 
         Returns
         -------
@@ -940,11 +950,14 @@ class RangeBarCache(ClickHouseClientMixin):
             turnover_imbalance
         """
 
+        # Ouroboros mode filter ensures cache isolation between modes
+        # Plan: sparkling-coalescing-dijkstra.md
         query = f"""
             SELECT {base_cols}
             FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {{symbol:String}}
               AND threshold_decimal_bps = {{threshold:UInt32}}
+              AND ouroboros_mode = {{ouroboros_mode:String}}
               AND timestamp_ms >= {{start_ts:Int64}}
               AND timestamp_ms <= {{end_ts:Int64}}
             ORDER BY timestamp_ms
@@ -956,13 +969,14 @@ class RangeBarCache(ClickHouseClientMixin):
                 parameters={
                     "symbol": symbol,
                     "threshold": threshold_decimal_bps,
+                    "ouroboros_mode": ouroboros_mode,
                     "start_ts": start_ts,
                     "end_ts": end_ts,
                 },
             )
         except (OSError, RuntimeError) as e:
             logger.exception(
-                "Cache read failed for %s @ %d bps (range query)",
+                "Cache read failed for %s @ %d dbps (range query)",
                 symbol,
                 threshold_decimal_bps,
             )
@@ -975,7 +989,7 @@ class RangeBarCache(ClickHouseClientMixin):
 
         if df.empty:
             logger.debug(
-                "Cache miss for %s @ %d bps (range: %d-%d)",
+                "Cache miss for %s @ %d dbps (range: %d-%d)",
                 symbol,
                 threshold_decimal_bps,
                 start_ts,
@@ -984,7 +998,7 @@ class RangeBarCache(ClickHouseClientMixin):
             return None
 
         logger.debug(
-            "Cache hit: %d bars for %s @ %d bps (range query)",
+            "Cache hit: %d bars for %s @ %d dbps (range query)",
             len(df),
             symbol,
             threshold_decimal_bps,
@@ -1029,6 +1043,7 @@ class RangeBarCache(ClickHouseClientMixin):
         threshold_decimal_bps: int,
         bars: pd.DataFrame,
         version: str = "",
+        ouroboros_mode: str = "year",
     ) -> int:
         """Store bars without requiring CacheKey (for bar-count API).
 
@@ -1045,6 +1060,8 @@ class RangeBarCache(ClickHouseClientMixin):
             DataFrame with OHLCV columns (from rangebar processing)
         version : str
             rangebar-core version for cache invalidation
+        ouroboros_mode : str
+            Ouroboros reset mode: "year", "month", or "week" (default: "year")
 
         Returns
         -------
@@ -1061,7 +1078,7 @@ class RangeBarCache(ClickHouseClientMixin):
             return 0
 
         logger.debug(
-            "Bulk writing %d bars to cache for %s @ %d bps",
+            "Bulk writing %d bars to cache for %s @ %d dbps",
             len(bars),
             symbol,
             threshold_decimal_bps,
@@ -1082,19 +1099,22 @@ class RangeBarCache(ClickHouseClientMixin):
         # Normalize column names (lowercase)
         df.columns = df.columns.str.lower()
 
-        # Add cache metadata
+        # Add cache metadata (Ouroboros: Plan sparkling-coalescing-dijkstra.md)
         df["symbol"] = symbol
         df["threshold_decimal_bps"] = threshold_decimal_bps
+        df["ouroboros_mode"] = ouroboros_mode
         df["rangebar_version"] = version
 
         # For bulk storage without CacheKey, use timestamp range as source bounds
         if "timestamp_ms" in df.columns and len(df) > 0:
             df["source_start_ts"] = df["timestamp_ms"].min()
             df["source_end_ts"] = df["timestamp_ms"].max()
-            # Generate cache_key from symbol, threshold, and timestamp range
+            # Generate cache_key from symbol, threshold, ouroboros, and timestamp range
             start_ts = df["source_start_ts"].iloc[0]
             end_ts = df["source_end_ts"].iloc[0]
-            key_str = f"{symbol}_{threshold_decimal_bps}_{start_ts}_{end_ts}"
+            key_str = (
+                f"{symbol}_{threshold_decimal_bps}_{start_ts}_{end_ts}_{ouroboros_mode}"
+            )
             df["cache_key"] = hashlib.md5(key_str.encode()).hexdigest()
         else:
             df["source_start_ts"] = 0
@@ -1105,6 +1125,7 @@ class RangeBarCache(ClickHouseClientMixin):
         columns = [
             "symbol",
             "threshold_decimal_bps",
+            "ouroboros_mode",
             "timestamp_ms",
             "open",
             "high",
@@ -1150,7 +1171,7 @@ class RangeBarCache(ClickHouseClientMixin):
             )
             written = summary.written_rows
             logger.info(
-                "Bulk cached %d bars for %s @ %d bps",
+                "Bulk cached %d bars for %s @ %d dbps",
                 written,
                 symbol,
                 threshold_decimal_bps,
@@ -1158,7 +1179,7 @@ class RangeBarCache(ClickHouseClientMixin):
             return written
         except (OSError, RuntimeError) as e:
             logger.exception(
-                "Bulk cache write failed for %s @ %d bps",
+                "Bulk cache write failed for %s @ %d dbps",
                 symbol,
                 threshold_decimal_bps,
             )
@@ -1234,10 +1255,11 @@ class RangeBarCache(ClickHouseClientMixin):
                     .alias("timestamp_ms")
                 ).drop("timestamp")
 
-        # Add cache metadata
+        # Add cache metadata (ouroboros_mode defaults to "year" for batch storage)
         df = df.with_columns(
             pl.lit(symbol).alias("symbol"),
             pl.lit(threshold_decimal_bps).alias("threshold_decimal_bps"),
+            pl.lit("year").alias("ouroboros_mode"),  # Default for batch storage
             pl.lit(version).alias("rangebar_version"),
         )
 
@@ -1245,7 +1267,7 @@ class RangeBarCache(ClickHouseClientMixin):
         if "timestamp_ms" in df.columns and len(df) > 0:
             start_ts = df["timestamp_ms"].min()
             end_ts = df["timestamp_ms"].max()
-            key_str = f"{symbol}_{threshold_decimal_bps}_{start_ts}_{end_ts}"
+            key_str = f"{symbol}_{threshold_decimal_bps}_{start_ts}_{end_ts}_year"
             cache_key = hashlib.md5(key_str.encode()).hexdigest()
 
             df = df.with_columns(
@@ -1264,6 +1286,7 @@ class RangeBarCache(ClickHouseClientMixin):
         columns = [
             "symbol",
             "threshold_decimal_bps",
+            "ouroboros_mode",
             "timestamp_ms",
             "open",
             "high",

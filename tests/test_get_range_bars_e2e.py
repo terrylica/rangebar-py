@@ -500,7 +500,7 @@ class TestCompressionRatios:
         print("\n=== Compression Ratios (BTCUSDT, 1 day) ===")
         for preset, data in results.items():
             print(
-                f"  {preset} ({data['threshold_decimal_bps']} decimal bps): "
+                f"  {preset} ({data['threshold_decimal_bps']} dbps): "
                 f"{data['bar_count']} bars"
             )
 

@@ -12,7 +12,7 @@ The `rangebar` meta-crate provides a unified entry point to all rangebar functio
 use rangebar::prelude::*;
 
 // Core types and algorithm
-let mut processor = RangeBarProcessor::new(250)?; // 250 = 25 BPS = 0.25%
+let mut processor = RangeBarProcessor::new(250)?; // 250 dbps = 0.25%
 let bars = processor.process_agg_trade_records(&trades)?;
 
 // Data providers
@@ -134,8 +134,8 @@ Current version: **6.1.0** (modular crate architecture with checkpoint system)
 
 **Breaking Changes in v3.0.0**:
 
-- Threshold values changed from 1 BPS to 0.1 BPS units (multiply by 10)
-- Example: 25 BPS now requires `new(250)` instead of `new(25)`
+- Threshold values changed from 1 bps to 1 dbps units (multiply by 10)
+- Example: 0.25% now requires `new(250)` instead of `new(25)`
 
 ## Common Use Cases
 

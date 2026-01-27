@@ -32,7 +32,7 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -95,7 +95,7 @@ class HookPayload:
 
     event: HookEvent
     symbol: str
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     details: dict[str, Any] = field(default_factory=dict)
     is_failure: bool = False
 
@@ -214,7 +214,7 @@ def emit_hook(
     payload = HookPayload(
         event=event,
         symbol=symbol,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         details=details,
         is_failure=is_failure,
     )

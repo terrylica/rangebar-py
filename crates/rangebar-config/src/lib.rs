@@ -99,7 +99,7 @@ mod tests {
 
         // Verify all sections are present
         assert_eq!(settings.data.base_url, "https://data.binance.vision/data/");
-        // v3.0.0: threshold now 250 decimal bps = 25bps
+        // v3.0.0: threshold now 250 dbps = 0.25%
         assert_eq!(settings.algorithm.default_threshold_decimal_bps, 250);
         assert_eq!(
             settings.export.default_output_dir,

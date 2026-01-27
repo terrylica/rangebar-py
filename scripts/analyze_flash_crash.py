@@ -129,21 +129,22 @@ def analyze_flash_crash() -> tuple:
             "   [INFO] duration_us column not present (use include_microstructure=True)"
         )
 
-    # 6. Range size distribution (bps)
-    print("\n6. RANGE SIZE DISTRIBUTION (basis points)")
+    # 6. Range size distribution (dbps)
+    print("\n6. RANGE SIZE DISTRIBUTION (decimal basis points)")
     df_legacy_copy = df_legacy.copy()
     df_new_copy = df_new.copy()
-    df_legacy_copy["range_bps"] = (
+    # Calculate range in dbps (1 dbps = 0.001% = 0.00001)
+    df_legacy_copy["range_dbps"] = (
         (df_legacy_copy["High"] - df_legacy_copy["Low"])
         / df_legacy_copy["Open"]
-        * 10000
+        * 100000  # Convert to dbps
     )
-    df_new_copy["range_bps"] = (
-        (df_new_copy["High"] - df_new_copy["Low"]) / df_new_copy["Open"] * 10000
+    df_new_copy["range_dbps"] = (
+        (df_new_copy["High"] - df_new_copy["Low"]) / df_new_copy["Open"] * 100000
     )
 
-    print(f"   Legacy max range: {df_legacy_copy['range_bps'].max():.1f} bps")
-    print(f"   New max range:    {df_new_copy['range_bps'].max():.1f} bps")
+    print(f"   Legacy max range: {df_legacy_copy['range_dbps'].max():.1f} dbps")
+    print(f"   New max range:    {df_new_copy['range_dbps'].max():.1f} dbps")
     print("   (Larger range in new = consolidated cascade bars)")
 
     # 7. Price coverage verification

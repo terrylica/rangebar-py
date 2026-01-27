@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import click
 
@@ -52,7 +52,7 @@ def cli(verbose: bool) -> None:
     "-t",
     type=int,
     default=250,
-    help="Threshold in decimal bps (default: 250)",
+    help="Threshold in dbps (default: 250)",
 )
 def status(symbol: str, threshold: int) -> None:
     """Show cache status for a symbol.
@@ -75,7 +75,7 @@ def status(symbol: str, threshold: int) -> None:
             newest = cache.get_newest_bar_timestamp(symbol, threshold)
 
             click.echo(f"Symbol: {symbol}")
-            click.echo(f"Threshold: {threshold} bps")
+            click.echo(f"Threshold: {threshold} dbps")
             click.echo(f"Cached bars: {count:,}")
 
             if oldest and newest:
@@ -99,7 +99,7 @@ def status(symbol: str, threshold: int) -> None:
     "-t",
     type=int,
     default=250,
-    help="Threshold in decimal bps (default: 250)",
+    help="Threshold in dbps (default: 250)",
 )
 @click.option(
     "--notify/--no-notify",
@@ -137,7 +137,7 @@ def populate(
             click.echo("Warning: Telegram notifications not available", err=True)
 
     click.echo(f"Populating cache for {symbol} from {start} to {end}...")
-    click.echo(f"Threshold: {threshold} bps")
+    click.echo(f"Threshold: {threshold} dbps")
 
     try:
         from . import get_range_bars
@@ -166,7 +166,7 @@ def populate(
     "-t",
     type=int,
     default=None,
-    help="Threshold in decimal bps (default: all thresholds)",
+    help="Threshold in dbps (default: all thresholds)",
 )
 @click.option("--confirm", is_flag=True, help="Confirm deletion (required)")
 def clear(symbol: str, threshold: int | None, confirm: bool) -> None:
@@ -191,7 +191,7 @@ def clear(symbol: str, threshold: int | None, confirm: bool) -> None:
         with RangeBarCache() as cache:
             if threshold:
                 # Clear specific threshold
-                click.echo(f"Clearing cache for {symbol} @ {threshold} bps...")
+                click.echo(f"Clearing cache for {symbol} @ {threshold} dbps...")
 
                 # Get count before clearing
                 count = cache.count_bars(symbol, threshold)
@@ -204,9 +204,7 @@ def clear(symbol: str, threshold: int | None, confirm: bool) -> None:
                     symbol=symbol,
                     threshold_decimal_bps=threshold,
                     start_timestamp_ms=0,
-                    end_timestamp_ms=int(
-                        datetime.now(tz=timezone.utc).timestamp() * 1000
-                    ),
+                    end_timestamp_ms=int(datetime.now(tz=UTC).timestamp() * 1000),
                 )
                 click.echo(f"Cleared {count:,} bars (deletion is async)")
             else:

@@ -44,7 +44,7 @@ def test_process_single_trade():
 
 def test_process_trades_with_breach():
     """Test processing trades that breach threshold."""
-    processor = PyRangeBarProcessor(threshold_decimal_bps=250)  # 25bps = 0.25%
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)  # 250 dbps = 0.25%
 
     # Create trades where second trade breaches threshold
     # 42000 * 1.0025 = 42105 (upper breach)
@@ -76,7 +76,7 @@ def test_process_trades_with_breach():
 
 def test_process_trades_with_downward_breach():
     """Test processing trades with downward breach."""
-    processor = PyRangeBarProcessor(threshold_decimal_bps=250)  # 25bps = 0.25%
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)  # 250 dbps = 0.25%
 
     # Create trades where second trade breaches downward
     # 42000 * 0.9975 = 41895 (lower breach)
@@ -189,13 +189,13 @@ def test_unsorted_trades_error():
         },  # Earlier timestamp!
     ]
 
-    with pytest.raises(RuntimeError, match="Processing failed.*not sorted"):
+    with pytest.raises(RuntimeError, match=r"Processing failed.*not sorted"):
         processor.process_trades(trades)
 
 
 def test_timestamp_conversion_milliseconds_to_microseconds():
     """Test that timestamps are converted from milliseconds to microseconds."""
-    processor = PyRangeBarProcessor(threshold_decimal_bps=100)  # 10bps = 0.1%
+    processor = PyRangeBarProcessor(threshold_decimal_bps=100)  # 100 dbps = 0.1%
 
     # Use timestamp in milliseconds (Binance format)
     trades = [
@@ -238,7 +238,7 @@ def test_batch_vs_streaming_mode():
     The final incomplete bar is NOT returned unless using the
     _with_incomplete variant.
     """
-    processor = PyRangeBarProcessor(threshold_decimal_bps=250)  # 25bps = 0.25%
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)  # 250 dbps = 0.25%
 
     # Create trades where only first bar completes
     trades = [
@@ -265,6 +265,112 @@ def test_batch_vs_streaming_mode():
     assert bars[0]["open"] == 40000.0
     assert abs(bars[0]["close"] - 40100.0) < 0.01
     assert bars[0]["volume"] >= 1.5  # Contains at least trades 1 and 2
+
+
+# ============================================================================
+# Ouroboros: Reset at boundaries for reproducibility
+# Plan: /Users/terryli/.claude/plans/sparkling-coalescing-dijkstra.md
+# ============================================================================
+
+
+def test_reset_at_ouroboros_no_incomplete_bar():
+    """Test reset_at_ouroboros returns None when no incomplete bar exists."""
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)
+
+    # Process nothing - should have no incomplete bar
+    orphaned = processor.reset_at_ouroboros()
+    assert orphaned is None
+
+
+def test_reset_at_ouroboros_returns_incomplete_bar():
+    """Test reset_at_ouroboros returns the incomplete bar as a dict."""
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)
+
+    # Process a single trade (starts a bar but doesn't complete it)
+    trades = [{"timestamp": 1704067200000, "price": 42000.0, "quantity": 1.5}]
+    bars = processor.process_trades(trades)
+
+    # No completed bars (single trade can't breach)
+    assert len(bars) == 0
+
+    # Reset at ouroboros boundary - should return the incomplete bar
+    orphaned = processor.reset_at_ouroboros()
+
+    assert orphaned is not None
+    assert isinstance(orphaned, dict)
+    assert orphaned["open"] == 42000.0
+    assert orphaned["volume"] == 1.5
+
+
+def test_reset_at_ouroboros_clears_state():
+    """Test that reset_at_ouroboros clears processor state."""
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)
+
+    # Process a trade (starts an incomplete bar)
+    trades = [{"timestamp": 1704067200000, "price": 42000.0, "quantity": 1.5}]
+    processor.process_trades(trades)
+
+    # Reset at ouroboros
+    orphaned = processor.reset_at_ouroboros()
+    assert orphaned is not None
+
+    # Second reset should return None (state was cleared)
+    orphaned2 = processor.reset_at_ouroboros()
+    assert orphaned2 is None
+
+
+def test_reset_at_ouroboros_new_bar_starts_fresh():
+    """Test that after reset, new bars start fresh without carryover."""
+    processor = PyRangeBarProcessor(threshold_decimal_bps=250)  # 250 dbps = 0.25%
+
+    # Process trades for "December 31" - ends in incomplete bar
+    dec_trades = [
+        {"timestamp": 1704067000000, "price": 42000.0, "quantity": 1.0},
+        {
+            "timestamp": 1704067001000,
+            "price": 42050.0,
+            "quantity": 0.5,
+        },  # +0.12% (no breach)
+    ]
+    bars_dec = processor.process_trades(dec_trades)
+    assert len(bars_dec) == 0  # No completed bars yet
+
+    # Reset at year boundary (Jan 1 00:00:00 UTC)
+    orphaned = processor.reset_at_ouroboros()
+    assert orphaned is not None
+    assert orphaned["open"] == 42000.0
+
+    # Process trades for "January 1" - should start fresh
+    jan_trades = [
+        {"timestamp": 1704067200000, "price": 50000.0, "quantity": 1.0},
+        {
+            "timestamp": 1704067300000,
+            "price": 50125.0,
+            "quantity": 1.0,
+        },  # +0.25% breach!
+    ]
+    bars_jan = processor.process_trades(jan_trades)
+
+    # Should get 1 completed bar starting at 50000 (not 42000)
+    assert len(bars_jan) == 1
+    assert bars_jan[0]["open"] == 50000.0
+    assert abs(bars_jan[0]["close"] - 50125.0) < 0.01
+
+
+def test_reset_at_ouroboros_preserves_threshold():
+    """Test that reset_at_ouroboros preserves the threshold configuration."""
+    processor = PyRangeBarProcessor(threshold_decimal_bps=500)  # 500 dbps
+
+    # Process a trade
+    processor.process_trades(
+        [{"timestamp": 1704067200000, "price": 42000.0, "quantity": 1.0}]
+    )
+
+    # Reset
+    processor.reset_at_ouroboros()
+
+    # Threshold should be preserved
+    assert processor.threshold_decimal_bps == 500
 
 
 if __name__ == "__main__":
