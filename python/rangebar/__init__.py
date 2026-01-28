@@ -60,12 +60,17 @@ def _ensure_clickhouse_imports() -> None:
 
 
 __all__ = [
+    # Constants (from rangebar.constants - SSoT)
+    "ALL_OPTIONAL_COLUMNS",
     "ASSET_CLASS_MULTIPLIERS",
+    "EXCHANGE_SESSION_COLUMNS",
+    "MICROSTRUCTURE_COLUMNS",
     "THRESHOLD_DECIMAL_MAX",
     "THRESHOLD_DECIMAL_MIN",
     "THRESHOLD_PRESETS",
     "TIER1_SYMBOLS",
     "VALIDATION_PRESETS",
+    # Core classes
     "AssetClass",
     "ContinuityError",
     "ContinuityWarning",
@@ -83,11 +88,15 @@ __all__ = [
     "TieredValidationResult",
     "ValidationPreset",
     "__version__",
+    # Functions
     "detect_asset_class",
     "get_n_range_bars",
     "get_ouroboros_boundaries",
     "get_range_bars",
     "get_range_bars_pandas",
+    # Conversion utilities (from rangebar.conversion - SSoT)
+    "normalize_arrow_dtypes",
+    "normalize_temporal_precision",
     "populate_cache_resumable",
     "precompute_range_bars",
     "process_trades_to_dataframe",
@@ -104,11 +113,21 @@ from .checkpoint import populate_cache_resumable
 from .constants import (
     _CRYPTO_BASES,
     _FOREX_CURRENCIES,
+    ALL_OPTIONAL_COLUMNS,
+    EXCHANGE_SESSION_COLUMNS,
     MICROSTRUCTURE_COLUMNS,
     THRESHOLD_DECIMAL_MAX,
     THRESHOLD_DECIMAL_MIN,
     THRESHOLD_PRESETS,
     TIER1_SYMBOLS,
+)
+
+# Import conversion utilities from centralized module (SSoT)
+from .conversion import (
+    _bars_list_to_polars,
+    _concat_pandas_via_polars,
+    normalize_arrow_dtypes,
+    normalize_temporal_precision,
 )
 
 # Re-export ouroboros API (cyclical reset boundaries for reproducibility)
@@ -3036,10 +3055,6 @@ def _stream_range_bars_binance(
     # Yield remaining bars
     if bar_buffer:
         yield _bars_list_to_polars(bar_buffer, include_microstructure)
-
-
-# Import conversion utilities from dedicated module (SSoT)
-from .conversion import _bars_list_to_polars, _concat_pandas_via_polars
 
 
 def _fetch_binance(

@@ -2,7 +2,7 @@
 
 <!-- Version controlled by semantic-release via pyproject.toml -->
 
-**Last Updated**: 2026-01-08
+**Last Updated**: 2026-01-27
 
 ---
 
@@ -41,8 +41,18 @@ df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 
 ## Configuration Constants
 
+All constants are centralized in `rangebar.constants` (SSoT) and re-exported from the main package.
+
 ```python
-from rangebar import TIER1_SYMBOLS, THRESHOLD_PRESETS, THRESHOLD_DECIMAL_MIN, THRESHOLD_DECIMAL_MAX
+from rangebar import (
+    TIER1_SYMBOLS,
+    THRESHOLD_PRESETS,
+    THRESHOLD_DECIMAL_MIN,
+    THRESHOLD_DECIMAL_MAX,
+    MICROSTRUCTURE_COLUMNS,
+    EXCHANGE_SESSION_COLUMNS,
+    ALL_OPTIONAL_COLUMNS,
+)
 
 # 18 high-liquidity symbols available on all Binance markets
 TIER1_SYMBOLS  # ('AAVE', 'ADA', 'AVAX', 'BCH', 'BNB', 'BTC', ...)
@@ -53,6 +63,27 @@ THRESHOLD_PRESETS  # {'micro': 10, 'tight': 50, 'standard': 100, 'medium': 250, 
 # Valid threshold range
 THRESHOLD_DECIMAL_MIN  # 1 (0.001%)
 THRESHOLD_DECIMAL_MAX  # 100000 (100%)
+
+# Microstructure feature columns (v7.0+)
+MICROSTRUCTURE_COLUMNS  # ('vwap', 'buy_volume', 'sell_volume', 'duration_us', 'ofi', ...)
+
+# Exchange session columns (Ouroboros feature)
+EXCHANGE_SESSION_COLUMNS  # ('exchange_session_sydney', 'exchange_session_tokyo', ...)
+
+# All optional columns (microstructure + exchange sessions)
+ALL_OPTIONAL_COLUMNS  # Union of MICROSTRUCTURE_COLUMNS and EXCHANGE_SESSION_COLUMNS
+```
+
+### Direct Module Access
+
+For explicit imports, you can access constants directly from submodules:
+
+```python
+# Direct access to constants module
+from rangebar.constants import MICROSTRUCTURE_COLUMNS, THRESHOLD_PRESETS
+
+# Direct access to conversion utilities
+from rangebar.conversion import normalize_arrow_dtypes, normalize_temporal_precision
 ```
 
 ---
@@ -68,9 +99,11 @@ def get_range_bars(
     end_date: str,
     threshold_decimal_bps: int | str = 250,
     *,
+    ouroboros: Literal["year", "month", "week"] = "week",
     source: str = "binance",
     market: str = "spot",
     include_microstructure: bool = False,
+    include_orphaned_bars: bool = False,
     verify_checksum: bool = True,
     use_cache: bool = True,
 ) -> pd.DataFrame
@@ -84,9 +117,14 @@ def get_range_bars(
 - **threshold_decimal_bps**: Threshold in decimal basis points or preset name (default: 250)
   - Integer: `250` = 25bps = 0.25%
   - Preset: `"micro"`, `"tight"`, `"standard"`, `"medium"`, `"wide"`, `"macro"`
+- **ouroboros**: Reset mode for reproducible bar construction (default: `"week"`)
+  - `"week"`: Reset at Sunday 00:00:00 UTC (smallest granularity, default)
+  - `"month"`: Reset at 1st of each month 00:00:00 UTC
+  - `"year"`: Reset at January 1st 00:00:00 UTC
 - **source**: Data source - `"binance"` or `"exness"` (default: `"binance"`)
 - **market**: Market type - `"spot"`, `"futures-um"`, `"futures-cm"` (default: `"spot"`)
 - **include_microstructure**: Include vwap, buy_volume, sell_volume (default: False)
+- **include_orphaned_bars**: Include incomplete bars at ouroboros boundaries (default: False)
 - **verify_checksum**: Verify SHA-256 checksum of downloaded data (default: True). Enabled by default for data integrity. Set to False for faster downloads when integrity is verified elsewhere. (Issue #43)
 - **use_cache**: Cache tick data locally (default: True)
 
@@ -110,6 +148,75 @@ df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", market="futures-um")
 
 # With microstructure data
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", include_microstructure=True)
+
+# With year-based ouroboros (reproducible across researchers)
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-12-31", ouroboros="year")
+```
+
+---
+
+## Ouroboros: Reproducible Range Bar Construction
+
+The **Ouroboros** feature (named after the serpent eating its tail, representing cyclical boundaries) enables reproducible range bar construction by resetting processor state at deterministic boundaries.
+
+### Why Ouroboros?
+
+| Problem                    | How Ouroboros Helps                                    |
+| -------------------------- | ------------------------------------------------------ |
+| **Reproducibility**        | Two researchers starting from Jan 1 get identical bars |
+| **Cache granularity**      | Entire years/months/weeks can be cached independently  |
+| **Cross-study comparison** | Standardized starting points for academic/research use |
+
+### Ouroboros Modes
+
+| Mode      | Boundary                  | Use Case                                         |
+| --------- | ------------------------- | ------------------------------------------------ |
+| `"week"`  | Sunday 00:00:00 UTC       | Default, smallest granularity                    |
+| `"month"` | 1st of month 00:00:00 UTC | Monthly analysis                                 |
+| `"year"`  | January 1 00:00:00 UTC    | Annual reports, cross-researcher reproducibility |
+
+### Example: Year-Based Reproducibility
+
+```python
+from rangebar import get_range_bars
+
+# Two researchers with the same parameters get identical results
+df1 = get_range_bars("BTCUSDT", "2024-01-01", "2024-12-31", ouroboros="year")
+df2 = get_range_bars("BTCUSDT", "2024-01-01", "2024-12-31", ouroboros="year")
+assert df1.equals(df2)  # Guaranteed reproducibility!
+```
+
+### Orphaned Bars
+
+At ouroboros boundaries, incomplete bars are "orphaned" (reset). You can include these for analysis:
+
+```python
+df = get_range_bars(
+    "BTCUSDT",
+    "2023-12-01",
+    "2024-01-31",
+    ouroboros="year",
+    include_orphaned_bars=True,
+)
+
+# Orphaned bars have metadata
+orphans = df[df.get("is_orphan", False)]
+print(f"Orphaned bars at year boundary: {len(orphans)}")
+```
+
+### Programmatic Boundary Access
+
+```python
+from rangebar import get_ouroboros_boundaries
+from datetime import date
+
+# Get all week boundaries in a date range
+boundaries = get_ouroboros_boundaries(
+    start=date(2024, 1, 1),
+    end=date(2024, 1, 31),
+    mode="week",
+)
+# [datetime(2024, 1, 7), datetime(2024, 1, 14), datetime(2024, 1, 21), datetime(2024, 1, 28)]
 ```
 
 ---
@@ -661,6 +768,93 @@ for symbol, df in results.items():
 
 ---
 
+## Utility Functions
+
+### DataFrame Conversion Utilities
+
+These utilities are available from `rangebar.conversion` and re-exported from the main package.
+
+#### `normalize_arrow_dtypes()`
+
+Convert PyArrow dtypes to numpy for compatibility between ClickHouse cache and fresh computation.
+
+```python
+from rangebar import normalize_arrow_dtypes
+
+# ClickHouse returns double[pyarrow], process_trades returns float64
+# This function normalizes them to float64
+df = normalize_arrow_dtypes(df)
+
+# Normalize specific columns (e.g., microstructure features)
+from rangebar import MICROSTRUCTURE_COLUMNS
+df = normalize_arrow_dtypes(df, columns=list(MICROSTRUCTURE_COLUMNS))
+```
+
+**Parameters**:
+
+- **df**: `pd.DataFrame` - DataFrame potentially containing PyArrow dtypes
+- **columns**: `list[str] | None` - Columns to normalize. If None, normalizes OHLCV columns.
+
+**Returns**: `pd.DataFrame` with numpy dtypes
+
+#### `normalize_temporal_precision()`
+
+Normalize datetime columns to microsecond precision to prevent Polars `SchemaError` when concatenating DataFrames with mixed precision (Issue #44).
+
+```python
+from rangebar.conversion import normalize_temporal_precision
+import polars as pl
+
+# Before concatenating DataFrames from different sources
+normalized_dfs = [normalize_temporal_precision(df) for df in polars_dfs]
+combined = pl.concat(normalized_dfs)  # No SchemaError!
+```
+
+**Parameters**:
+
+- **pldf**: `pl.DataFrame` - Polars DataFrame to normalize
+
+**Returns**: `pl.DataFrame` with all datetime columns cast to microsecond precision
+
+---
+
+## Module Architecture
+
+rangebar-py follows a modular SSoT (Single Source of Truth) architecture:
+
+```
+rangebar/
+├── __init__.py           # Public API, re-exports from submodules
+├── constants.py          # SSoT: All constants (MICROSTRUCTURE_COLUMNS, PRESETS, etc.)
+├── conversion.py         # SSoT: DataFrame conversion utilities
+├── ouroboros.py          # Cyclical reset boundaries for reproducibility
+├── checkpoint.py         # Cache population with resume support
+├── clickhouse/           # ClickHouse cache layer
+│   ├── cache.py          # RangeBarCache class
+│   └── schema.sql        # Table schema
+└── validation/           # Microstructure feature validation
+    ├── tier1.py          # Fast validation (<30 sec)
+    └── tier2.py          # Statistical validation (~10 min)
+```
+
+### Import Patterns
+
+```python
+# Recommended: Import from main package (re-exports)
+from rangebar import (
+    get_range_bars,
+    MICROSTRUCTURE_COLUMNS,
+    normalize_arrow_dtypes,
+)
+
+# Alternative: Import directly from submodules
+from rangebar.constants import THRESHOLD_PRESETS
+from rangebar.conversion import normalize_temporal_precision
+from rangebar.ouroboros import get_ouroboros_boundaries
+```
+
+---
+
 ## Performance Considerations
 
 ### Throughput
@@ -922,7 +1116,7 @@ See [CHANGELOG.md](/CHANGELOG.md) for version history.
 
 ---
 
-**Last Updated**: 2026-01-08
+**Last Updated**: 2026-01-27
 
 <!-- API Version: See pyproject.toml (SSoT controlled by semantic-release) -->
 
