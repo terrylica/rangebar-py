@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 
 from ..constants import MICROSTRUCTURE_COLUMNS
+from ..conversion import normalize_arrow_dtypes
 from ..exceptions import (
     CacheReadError,
     CacheWriteError,
@@ -391,10 +392,7 @@ class RangeBarCache(ClickHouseClientMixin):
 
         # Convert PyArrow dtypes to numpy for compatibility with fresh computation
         # query_df_arrow returns double[pyarrow], but process_trades returns float64
-        ohlcv_cols = ["Open", "High", "Low", "Close", "Volume"]
-        for col in ohlcv_cols:
-            if col in df.columns:
-                df[col] = df[col].astype("float64")
+        df = normalize_arrow_dtypes(df)
 
         return df
 
@@ -763,31 +761,11 @@ class RangeBarCache(ClickHouseClientMixin):
         df = df.drop(columns=["timestamp_ms"])
 
         # Convert PyArrow dtypes to numpy for compatibility
-        ohlcv_cols = ["Open", "High", "Low", "Close", "Volume"]
-        for col in ohlcv_cols:
-            if col in df.columns:
-                df[col] = df[col].astype("float64")
+        df = normalize_arrow_dtypes(df)
 
         # Convert microstructure columns if present
         if include_microstructure:
-            microstructure_cols = [
-                "vwap",
-                "buy_volume",
-                "sell_volume",
-                "duration_us",
-                "ofi",
-                "vwap_close_deviation",
-                "price_impact",
-                "kyle_lambda_proxy",
-                "trade_intensity",
-                "volume_per_trade",
-                "aggression_ratio",
-                "aggregation_density",
-                "turnover_imbalance",
-            ]
-            for col in microstructure_cols:
-                if col in df.columns:
-                    df[col] = df[col].astype("float64")
+            df = normalize_arrow_dtypes(df, columns=list(MICROSTRUCTURE_COLUMNS))
 
         return df, available_count
 
@@ -993,30 +971,10 @@ class RangeBarCache(ClickHouseClientMixin):
         df = df.drop(columns=["timestamp_ms"])
 
         # Convert PyArrow dtypes to numpy float64 for compatibility
-        ohlcv_cols = ["Open", "High", "Low", "Close", "Volume"]
-        for col in ohlcv_cols:
-            if col in df.columns:
-                df[col] = df[col].astype("float64")
+        df = normalize_arrow_dtypes(df)
 
         if include_microstructure:
-            microstructure_cols = [
-                "vwap",
-                "buy_volume",
-                "sell_volume",
-                "duration_us",
-                "ofi",
-                "vwap_close_deviation",
-                "price_impact",
-                "kyle_lambda_proxy",
-                "trade_intensity",
-                "volume_per_trade",
-                "aggression_ratio",
-                "aggregation_density",
-                "turnover_imbalance",
-            ]
-            for col in microstructure_cols:
-                if col in df.columns:
-                    df[col] = df[col].astype("float64")
+            df = normalize_arrow_dtypes(df, columns=list(MICROSTRUCTURE_COLUMNS))
 
         return df
 
