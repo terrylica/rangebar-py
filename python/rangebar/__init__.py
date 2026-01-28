@@ -100,6 +100,17 @@ from datetime import UTC
 
 from .checkpoint import populate_cache_resumable
 
+# Import constants from centralized module (SSoT)
+from .constants import (
+    _CRYPTO_BASES,
+    _FOREX_CURRENCIES,
+    MICROSTRUCTURE_COLUMNS,
+    THRESHOLD_DECIMAL_MAX,
+    THRESHOLD_DECIMAL_MIN,
+    THRESHOLD_PRESETS,
+    TIER1_SYMBOLS,
+)
+
 # Re-export ouroboros API (cyclical reset boundaries for reproducibility)
 from .ouroboros import (
     OrphanedBarMetadata,
@@ -1202,44 +1213,8 @@ def process_trades_polars(
 
 
 # Re-export ClickHouse components for convenience
-# ============================================================================
-# Tier-1 Symbols (high-liquidity, available on all Binance markets)
-# ============================================================================
-
-TIER1_SYMBOLS: tuple[str, ...] = (
-    "AAVE",
-    "ADA",
-    "AVAX",
-    "BCH",
-    "BNB",
-    "BTC",
-    "DOGE",
-    "ETH",
-    "FIL",
-    "LINK",
-    "LTC",
-    "NEAR",
-    "SOL",
-    "SUI",
-    "UNI",
-    "WIF",
-    "WLD",
-    "XRP",
-)
-
-# Valid threshold range (from rangebar-core)
-THRESHOLD_DECIMAL_MIN = 1  # 1 dbps = 0.001%
-THRESHOLD_DECIMAL_MAX = 100_000  # 100,000 dbps = 100%
-
-# Common threshold presets (in decimal basis points)
-THRESHOLD_PRESETS: dict[str, int] = {
-    "micro": 10,  # 10 dbps = 0.01% (scalping)
-    "tight": 50,  # 50 dbps = 0.05% (day trading)
-    "standard": 100,  # 100 dbps = 0.1% (swing trading)
-    "medium": 250,  # 250 dbps = 0.25% (default)
-    "wide": 500,  # 500 dbps = 0.5% (position trading)
-    "macro": 1000,  # 100bps = 1% (long-term)
-}
+# NOTE: TIER1_SYMBOLS, THRESHOLD_PRESETS, THRESHOLD_DECIMAL_MIN/MAX
+# are imported from constants.py (SSoT) at the top of this file
 
 
 # =============================================================================
@@ -1306,47 +1281,7 @@ ASSET_CLASS_MULTIPLIERS: dict[AssetClass, float] = {
     AssetClass.UNKNOWN: 1.0,  # Default to crypto
 }
 
-# Common crypto base symbols for detection
-_CRYPTO_BASES: frozenset[str] = frozenset(
-    {
-        "BTC",
-        "ETH",
-        "BNB",
-        "SOL",
-        "XRP",
-        "ADA",
-        "DOGE",
-        "DOT",
-        "MATIC",
-        "AVAX",
-        "LINK",
-        "UNI",
-        "ATOM",
-        "LTC",
-        "ETC",
-        "XLM",
-        "ALGO",
-        "NEAR",
-        "FIL",
-        "APT",
-    }
-)
-
-# Common forex base/quote currencies
-_FOREX_CURRENCIES: frozenset[str] = frozenset(
-    {
-        "EUR",
-        "USD",
-        "GBP",
-        "JPY",
-        "CHF",
-        "AUD",
-        "NZD",
-        "CAD",
-        "SEK",
-        "NOK",
-    }
-)
+# NOTE: _CRYPTO_BASES and _FOREX_CURRENCIES are imported from constants.py (SSoT)
 
 
 def detect_asset_class(symbol: str) -> AssetClass:

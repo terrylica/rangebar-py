@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ..constants import MICROSTRUCTURE_COLUMNS
 from ..exceptions import (
     CacheReadError,
     CacheWriteError,
@@ -276,26 +277,8 @@ class RangeBarCache(ClickHouseClientMixin):
             "source_end_ts",
         ]
 
-        # Add optional microstructure columns if present
-        optional = [
-            "vwap",
-            "buy_volume",
-            "sell_volume",
-            "individual_trade_count",
-            "agg_record_count",
-            # Microstructure features (Issue #25)
-            "duration_us",
-            "ofi",
-            "vwap_close_deviation",
-            "price_impact",
-            "kyle_lambda_proxy",
-            "trade_intensity",
-            "volume_per_trade",
-            "aggression_ratio",
-            "aggregation_density",
-            "turnover_imbalance",
-        ]
-        for col in optional:
+        # Add optional microstructure columns if present (from constants.py SSoT)
+        for col in MICROSTRUCTURE_COLUMNS:
             if col in df.columns:
                 columns.append(col)
 
@@ -1138,26 +1121,8 @@ class RangeBarCache(ClickHouseClientMixin):
             "source_end_ts",
         ]
 
-        # Add optional microstructure columns if present
-        optional = [
-            "vwap",
-            "buy_volume",
-            "sell_volume",
-            "individual_trade_count",
-            "agg_record_count",
-            # Microstructure features (Issue #25)
-            "duration_us",
-            "ofi",
-            "vwap_close_deviation",
-            "price_impact",
-            "kyle_lambda_proxy",
-            "trade_intensity",
-            "volume_per_trade",
-            "aggression_ratio",
-            "aggregation_density",
-            "turnover_imbalance",
-        ]
-        for col in optional:
+        # Add optional microstructure columns if present (from constants.py SSoT)
+        for col in MICROSTRUCTURE_COLUMNS:
             if col in df.columns:
                 columns.append(col)
 
@@ -1299,25 +1264,8 @@ class RangeBarCache(ClickHouseClientMixin):
             "source_end_ts",
         ]
 
-        # Add optional microstructure columns if present
-        optional = [
-            "vwap",
-            "buy_volume",
-            "sell_volume",
-            "individual_trade_count",
-            "agg_record_count",
-            "duration_us",
-            "ofi",
-            "vwap_close_deviation",
-            "price_impact",
-            "kyle_lambda_proxy",
-            "trade_intensity",
-            "volume_per_trade",
-            "aggression_ratio",
-            "aggregation_density",
-            "turnover_imbalance",
-        ]
-        for col in optional:
+        # Add optional microstructure columns if present (from constants.py SSoT)
+        for col in MICROSTRUCTURE_COLUMNS:
             if col in df.columns:
                 columns.append(col)
 
