@@ -1164,6 +1164,134 @@ mod tests {
             "Incomplete bar should open at trade 3 price"
         );
     }
+
+    /// Issue #46: Verify streaming and batch paths produce identical bars
+    ///
+    /// The batch path (`process_agg_trade_records`) and streaming path
+    /// (`process_single_trade`) must produce identical OHLCV output for
+    /// the same input trades. This test catches regressions where the
+    /// breaching trade is double-counted or bar boundaries differ.
+    #[test]
+    fn test_streaming_batch_parity() {
+        let threshold = 250; // 250 dbps = 0.25%
+
+        // Build a sequence with multiple breaches
+        let trades = test_utils::AggTradeBuilder::new()
+            .add_trade(1, 1.0, 0)          // Open first bar at 50000
+            .add_trade(2, 1.001, 1000)     // +0.1% - accumulate
+            .add_trade(3, 1.003, 2000)     // +0.3% - breach (>0.25%)
+            .add_trade(4, 1.004, 3000)     // Opens second bar
+            .add_trade(5, 1.005, 4000)     // Accumulate
+            .add_trade(6, 1.008, 5000)     // +0.4% from bar 2 open - breach
+            .add_trade(7, 1.009, 6000)     // Opens third bar
+            .build();
+
+        // === BATCH PATH ===
+        let mut batch_processor = RangeBarProcessor::new(threshold).unwrap();
+        let batch_bars = batch_processor.process_agg_trade_records(&trades).unwrap();
+        let batch_incomplete = batch_processor.get_incomplete_bar();
+
+        // === STREAMING PATH ===
+        let mut stream_processor = RangeBarProcessor::new(threshold).unwrap();
+        let mut stream_bars: Vec<RangeBar> = Vec::new();
+        for trade in &trades {
+            if let Some(bar) = stream_processor.process_single_trade(trade.clone()).unwrap() {
+                stream_bars.push(bar);
+            }
+        }
+        let stream_incomplete = stream_processor.get_incomplete_bar();
+
+        // === VERIFY PARITY ===
+        assert_eq!(
+            batch_bars.len(),
+            stream_bars.len(),
+            "Batch and streaming should produce same number of completed bars"
+        );
+
+        for (i, (batch_bar, stream_bar)) in
+            batch_bars.iter().zip(stream_bars.iter()).enumerate()
+        {
+            assert_eq!(
+                batch_bar.open, stream_bar.open,
+                "Bar {i}: open price mismatch"
+            );
+            assert_eq!(
+                batch_bar.close, stream_bar.close,
+                "Bar {i}: close price mismatch"
+            );
+            assert_eq!(
+                batch_bar.high, stream_bar.high,
+                "Bar {i}: high price mismatch"
+            );
+            assert_eq!(
+                batch_bar.low, stream_bar.low,
+                "Bar {i}: low price mismatch"
+            );
+            assert_eq!(
+                batch_bar.volume, stream_bar.volume,
+                "Bar {i}: volume mismatch (double-counting?)"
+            );
+            assert_eq!(
+                batch_bar.open_time, stream_bar.open_time,
+                "Bar {i}: open_time mismatch"
+            );
+            assert_eq!(
+                batch_bar.close_time, stream_bar.close_time,
+                "Bar {i}: close_time mismatch"
+            );
+            assert_eq!(
+                batch_bar.individual_trade_count, stream_bar.individual_trade_count,
+                "Bar {i}: trade count mismatch"
+            );
+        }
+
+        // Verify incomplete bars match
+        match (batch_incomplete, stream_incomplete) {
+            (Some(b), Some(s)) => {
+                assert_eq!(b.open, s.open, "Incomplete bar: open mismatch");
+                assert_eq!(b.close, s.close, "Incomplete bar: close mismatch");
+                assert_eq!(b.volume, s.volume, "Incomplete bar: volume mismatch");
+            }
+            (None, None) => {} // Both finished cleanly
+            _ => panic!("Incomplete bar presence mismatch between batch and streaming"),
+        }
+    }
+
+    /// Issue #46: After breach, next trade opens new bar (not breaching trade)
+    #[test]
+    fn test_defer_open_new_bar_opens_with_next_trade() {
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+
+        // Trade 1: Opens bar at 50000
+        let t1 = test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1000);
+        assert!(processor.process_single_trade(t1).unwrap().is_none());
+
+        // Trade 2: Breaches threshold (+0.3%)
+        let t2 = test_utils::create_test_agg_trade(2, "50150.0", "2.0", 2000);
+        let bar = processor.process_single_trade(t2).unwrap();
+        assert!(bar.is_some(), "Should close bar on breach");
+
+        let closed_bar = bar.unwrap();
+        assert_eq!(closed_bar.open.to_string(), "50000.00000000");
+        assert_eq!(closed_bar.close.to_string(), "50150.00000000");
+
+        // After breach, no incomplete bar should exist
+        assert!(
+            processor.get_incomplete_bar().is_none(),
+            "No incomplete bar after breach - defer_open is true"
+        );
+
+        // Trade 3: Should open NEW bar (not the breaching trade)
+        let t3 = test_utils::create_test_agg_trade(3, "50100.0", "3.0", 3000);
+        assert!(processor.process_single_trade(t3).unwrap().is_none());
+
+        let incomplete = processor.get_incomplete_bar().unwrap();
+        assert_eq!(
+            incomplete.open.to_string(),
+            "50100.00000000",
+            "New bar should open at trade 3's price, not trade 2's"
+        );
+    }
 }
 
 /// Internal state for range bar construction with fixed-point precision
