@@ -1,3 +1,15 @@
+# [11.2.0](https://github.com/terrylica/rangebar-py/compare/v11.1.0...v11.2.0) (2026-01-29)
+
+
+### Bug Fixes
+
+* **cache:** add exchange session columns to store_range_bars write path ([65a7ecd](https://github.com/terrylica/rangebar-py/commit/65a7ecd9ee83c3fe485b410d80cae93e3e65cf2d))
+
+
+### Features
+
+* **api:** add exchange sessions and fix ClickHouse connectivity ([d76eb82](https://github.com/terrylica/rangebar-py/commit/d76eb82a5726043d2456df0de91707c37133d698)), closes [#8](https://github.com/terrylica/rangebar-py/issues/8)
+
 # [11.1.0](https://github.com/terrylica/rangebar-py/compare/v11.0.0...v11.1.0) (2026-01-29)
 
 
