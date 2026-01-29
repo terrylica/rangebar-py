@@ -22,7 +22,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from ..constants import MICROSTRUCTURE_COLUMNS
+from .._core import __version__
+from ..constants import MICROSTRUCTURE_COLUMNS, MIN_VERSION_FOR_MICROSTRUCTURE
 from ..conversion import normalize_arrow_dtypes
 from ..exceptions import (
     CacheReadError,
@@ -203,7 +204,7 @@ class RangeBarCache(ClickHouseClientMixin):
         self,
         key: CacheKey,
         bars: pd.DataFrame,
-        version: str = "",
+        version: str | None = None,
     ) -> int:
         """Store computed range bars in cache.
 
@@ -213,8 +214,9 @@ class RangeBarCache(ClickHouseClientMixin):
             Cache key identifying these bars
         bars : pd.DataFrame
             DataFrame with OHLCV columns (from rangebar processing)
-        version : str
-            rangebar-core version for cache invalidation
+        version : str | None
+            rangebar-core version for cache invalidation. If None (default),
+            uses current package version for schema evolution tracking.
 
         Returns
         -------
@@ -257,7 +259,7 @@ class RangeBarCache(ClickHouseClientMixin):
         df["threshold_decimal_bps"] = key.threshold_decimal_bps
         df["ouroboros_mode"] = key.ouroboros_mode
         df["cache_key"] = key.hash_key
-        df["rangebar_version"] = version
+        df["rangebar_version"] = version if version is not None else __version__
         df["source_start_ts"] = key.start_ts
         df["source_end_ts"] = key.end_ts
 
@@ -651,6 +653,7 @@ class RangeBarCache(ClickHouseClientMixin):
         n_bars: int,
         before_ts: int | None = None,
         include_microstructure: bool = False,
+        min_schema_version: str | None = None,
     ) -> tuple[pd.DataFrame | None, int]:
         """Get N bars from cache, ordered chronologically (oldest first).
 
@@ -670,6 +673,11 @@ class RangeBarCache(ClickHouseClientMixin):
             If None, gets most recent bars.
         include_microstructure : bool
             If True, includes vwap, buy_volume, sell_volume columns
+        min_schema_version : str | None
+            Minimum schema version required for cache hit. If specified,
+            only returns data with rangebar_version >= min_schema_version.
+            When include_microstructure=True and min_schema_version=None,
+            automatically requires version >= 7.0.0.
 
         Returns
         -------
@@ -710,6 +718,18 @@ class RangeBarCache(ClickHouseClientMixin):
             turnover_imbalance
         """
 
+        # Determine effective min version for schema evolution filtering
+        effective_min_version = min_schema_version
+        if include_microstructure and effective_min_version is None:
+            effective_min_version = MIN_VERSION_FOR_MICROSTRUCTURE
+
+        # Build version filter if specified
+        version_filter = ""
+        if effective_min_version:
+            version_filter = """
+              AND rangebar_version != ''
+              AND rangebar_version >= {min_version:String}"""
+
         if before_ts is not None:
             # Split path: with end_ts filter
             query = f"""
@@ -718,18 +738,19 @@ class RangeBarCache(ClickHouseClientMixin):
                 WHERE symbol = {{symbol:String}}
                   AND threshold_decimal_bps = {{threshold:UInt32}}
                   AND timestamp_ms < {{end_ts:Int64}}
+                  {version_filter}
                 ORDER BY timestamp_ms DESC
                 LIMIT {{n_bars:UInt64}}
             """
-            df = self.client.query_df_arrow(
-                query,
-                parameters={
-                    "symbol": symbol,
-                    "threshold": threshold_decimal_bps,
-                    "end_ts": before_ts,
-                    "n_bars": n_bars,
-                },
-            )
+            params: dict[str, str | int] = {
+                "symbol": symbol,
+                "threshold": threshold_decimal_bps,
+                "end_ts": before_ts,
+                "n_bars": n_bars,
+            }
+            if effective_min_version:
+                params["min_version"] = effective_min_version
+            df = self.client.query_df_arrow(query, parameters=params)
         else:
             # Split path: no end_ts filter (most recent)
             query = f"""
@@ -737,17 +758,18 @@ class RangeBarCache(ClickHouseClientMixin):
                 FROM rangebar_cache.range_bars FINAL
                 WHERE symbol = {{symbol:String}}
                   AND threshold_decimal_bps = {{threshold:UInt32}}
+                  {version_filter}
                 ORDER BY timestamp_ms DESC
                 LIMIT {{n_bars:UInt64}}
             """
-            df = self.client.query_df_arrow(
-                query,
-                parameters={
-                    "symbol": symbol,
-                    "threshold": threshold_decimal_bps,
-                    "n_bars": n_bars,
-                },
-            )
+            params = {
+                "symbol": symbol,
+                "threshold": threshold_decimal_bps,
+                "n_bars": n_bars,
+            }
+            if effective_min_version:
+                params["min_version"] = effective_min_version
+            df = self.client.query_df_arrow(query, parameters=params)
 
         if df.empty:
             return None, available_count
@@ -851,6 +873,7 @@ class RangeBarCache(ClickHouseClientMixin):
         end_ts: int,
         include_microstructure: bool = False,
         ouroboros_mode: str = "year",
+        min_schema_version: str | None = None,
     ) -> pd.DataFrame | None:
         """Get bars within a timestamp range (for get_range_bars cache lookup).
 
@@ -873,12 +896,17 @@ class RangeBarCache(ClickHouseClientMixin):
         ouroboros_mode : str
             Ouroboros reset mode: "year", "month", or "week" (default: "year")
             Plan: sparkling-coalescing-dijkstra.md
+        min_schema_version : str | None
+            Minimum schema version required for cache hit. If specified,
+            only returns data with rangebar_version >= min_schema_version.
+            When include_microstructure=True and min_schema_version=None,
+            automatically requires version >= 7.0.0.
 
         Returns
         -------
         pd.DataFrame | None
             OHLCV DataFrame with TZ-aware UTC timestamps if found, None otherwise.
-            Returns None if no bars exist in the range.
+            Returns None if no bars exist in the range or version mismatch.
 
         Raises
         ------
@@ -913,6 +941,20 @@ class RangeBarCache(ClickHouseClientMixin):
 
         # Ouroboros mode filter ensures cache isolation between modes
         # Plan: sparkling-coalescing-dijkstra.md
+
+        # Determine effective min version for schema evolution filtering
+        effective_min_version = min_schema_version
+        if include_microstructure and effective_min_version is None:
+            # Auto-require v7.0.0+ for microstructure features
+            effective_min_version = MIN_VERSION_FOR_MICROSTRUCTURE
+
+        # Build version filter if specified
+        version_filter = ""
+        if effective_min_version:
+            version_filter = """
+              AND rangebar_version != ''
+              AND rangebar_version >= {min_version:String}"""
+
         query = f"""
             SELECT {base_cols}
             FROM rangebar_cache.range_bars FINAL
@@ -921,20 +963,23 @@ class RangeBarCache(ClickHouseClientMixin):
               AND ouroboros_mode = {{ouroboros_mode:String}}
               AND timestamp_ms >= {{start_ts:Int64}}
               AND timestamp_ms <= {{end_ts:Int64}}
+              {version_filter}
             ORDER BY timestamp_ms
         """
 
+        # Build parameters
+        params: dict[str, str | int] = {
+            "symbol": symbol,
+            "threshold": threshold_decimal_bps,
+            "ouroboros_mode": ouroboros_mode,
+            "start_ts": start_ts,
+            "end_ts": end_ts,
+        }
+        if effective_min_version:
+            params["min_version"] = effective_min_version
+
         try:
-            df = self.client.query_df_arrow(
-                query,
-                parameters={
-                    "symbol": symbol,
-                    "threshold": threshold_decimal_bps,
-                    "ouroboros_mode": ouroboros_mode,
-                    "start_ts": start_ts,
-                    "end_ts": end_ts,
-                },
-            )
+            df = self.client.query_df_arrow(query, parameters=params)
         except (OSError, RuntimeError) as e:
             logger.exception(
                 "Cache read failed for %s @ %d dbps (range query)",
@@ -983,7 +1028,7 @@ class RangeBarCache(ClickHouseClientMixin):
         symbol: str,
         threshold_decimal_bps: int,
         bars: pd.DataFrame,
-        version: str = "",
+        version: str | None = None,
         ouroboros_mode: str = "year",
     ) -> int:
         """Store bars without requiring CacheKey (for bar-count API).
@@ -999,8 +1044,9 @@ class RangeBarCache(ClickHouseClientMixin):
             Threshold in decimal basis points
         bars : pd.DataFrame
             DataFrame with OHLCV columns (from rangebar processing)
-        version : str
-            rangebar-core version for cache invalidation
+        version : str | None
+            rangebar-core version for cache invalidation. If None (default),
+            uses current package version for schema evolution tracking.
         ouroboros_mode : str
             Ouroboros reset mode: "year", "month", or "week" (default: "year")
 
@@ -1044,7 +1090,7 @@ class RangeBarCache(ClickHouseClientMixin):
         df["symbol"] = symbol
         df["threshold_decimal_bps"] = threshold_decimal_bps
         df["ouroboros_mode"] = ouroboros_mode
-        df["rangebar_version"] = version
+        df["rangebar_version"] = version if version is not None else __version__
 
         # For bulk storage without CacheKey, use timestamp range as source bounds
         if "timestamp_ms" in df.columns and len(df) > 0:
@@ -1118,7 +1164,7 @@ class RangeBarCache(ClickHouseClientMixin):
         symbol: str,
         threshold_decimal_bps: int,
         bars: pl.DataFrame,
-        version: str = "",
+        version: str | None = None,
     ) -> int:
         """Store a batch of bars using Arrow for efficient streaming writes.
 
@@ -1133,8 +1179,9 @@ class RangeBarCache(ClickHouseClientMixin):
             Threshold in decimal basis points
         bars : pl.DataFrame
             Polars DataFrame with OHLCV columns (from streaming processing)
-        version : str
-            rangebar-core version for cache invalidation
+        version : str | None
+            rangebar-core version for cache invalidation. If None (default),
+            uses current package version for schema evolution tracking.
 
         Returns
         -------
@@ -1179,11 +1226,13 @@ class RangeBarCache(ClickHouseClientMixin):
                 ).drop("timestamp")
 
         # Add cache metadata (ouroboros_mode defaults to "year" for batch storage)
+        # Schema evolution: use __version__ if version not specified
+        effective_version = version if version is not None else __version__
         df = df.with_columns(
             pl.lit(symbol).alias("symbol"),
             pl.lit(threshold_decimal_bps).alias("threshold_decimal_bps"),
             pl.lit("year").alias("ouroboros_mode"),  # Default for batch storage
-            pl.lit(version).alias("rangebar_version"),
+            pl.lit(effective_version).alias("rangebar_version"),
         )
 
         # Add source bounds and cache_key

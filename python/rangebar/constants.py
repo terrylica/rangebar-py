@@ -15,6 +15,26 @@ SSoT (Single Source of Truth) for:
 from __future__ import annotations
 
 # =============================================================================
+# Schema Version Constants (Cache Evolution)
+# =============================================================================
+# Used for cache validation and schema evolution tracking.
+# Increment when schema changes require cache invalidation.
+#
+# Version history:
+# - 6.0.0: OHLCV only (legacy, pre-microstructure)
+# - 7.0.0: Added 15 microstructure columns (Issue #25)
+# - 10.0.0: Added ouroboros_mode column
+# - 11.0.0: Current version with modular architecture
+
+SCHEMA_VERSION_OHLCV_ONLY: str = "6.0.0"  # Pre-microstructure (legacy)
+SCHEMA_VERSION_MICROSTRUCTURE: str = "7.0.0"  # Added 15 microstructure columns
+SCHEMA_VERSION_OUROBOROS: str = "10.0.0"  # Added ouroboros_mode column
+
+# Minimum versions required for features
+MIN_VERSION_FOR_MICROSTRUCTURE: str = SCHEMA_VERSION_MICROSTRUCTURE
+MIN_VERSION_FOR_OUROBOROS: str = SCHEMA_VERSION_OUROBOROS
+
+# =============================================================================
 # Microstructure Columns (Issue #25, v7.0+)
 # =============================================================================
 # These columns are optional and only present when include_microstructure=True
