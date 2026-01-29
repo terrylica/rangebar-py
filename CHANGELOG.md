@@ -1,3 +1,11 @@
+## [11.2.1](https://github.com/terrylica/rangebar-py/compare/v11.2.0...v11.2.1) (2026-01-29)
+
+
+### Bug Fixes
+
+* **release:** enforce sequential task dependencies in release:full ([7ef30ea](https://github.com/terrylica/rangebar-py/commit/7ef30ea8b88517156eedecddde563b40a067d3a5))
+* **streaming:** defer new bar open after threshold breach (Issue [#46](https://github.com/terrylica/rangebar-py/issues/46)) ([938658c](https://github.com/terrylica/rangebar-py/commit/938658c6aad4dedc064b377fac10a29f9483c7a9))
+
 # [11.2.0](https://github.com/terrylica/rangebar-py/compare/v11.1.0...v11.2.0) (2026-01-29)
 
 
