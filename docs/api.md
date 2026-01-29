@@ -2,7 +2,7 @@
 
 <!-- Version controlled by semantic-release via pyproject.toml -->
 
-**Last Updated**: 2026-01-27
+**Last Updated**: 2026-01-29
 
 ---
 
@@ -950,17 +950,29 @@ rangebar-py follows a modular SSoT (Single Source of Truth) architecture:
 
 ```
 rangebar/
-├── __init__.py           # Public API, re-exports from submodules
-├── constants.py          # SSoT: All constants (MICROSTRUCTURE_COLUMNS, PRESETS, etc.)
-├── conversion.py         # SSoT: DataFrame conversion utilities
-├── ouroboros.py          # Cyclical reset boundaries for reproducibility
-├── checkpoint.py         # Cache population with resume support
-├── clickhouse/           # ClickHouse cache layer
-│   ├── cache.py          # RangeBarCache class
-│   └── schema.sql        # Table schema
-└── validation/           # Microstructure feature validation
-    ├── tier1.py          # Fast validation (<30 sec)
-    └── tier2.py          # Statistical validation (~10 min)
+├── __init__.py              # Public API (~200 lines, re-exports only)
+├── constants.py             # SSoT: All constants (MICROSTRUCTURE_COLUMNS, PRESETS, etc.)
+├── conversion.py            # SSoT: DataFrame conversion utilities
+├── ouroboros.py             # Cyclical reset boundaries + exchange sessions
+├── checkpoint.py            # Cache population with resume support
+├── processors/              # Range bar processing
+│   ├── core.py              # RangeBarProcessor class
+│   └── api.py               # process_trades_* functions
+├── orchestration/           # High-level data pipelines
+│   ├── range_bars.py        # get_range_bars() orchestration
+│   ├── count_bounded.py     # get_n_range_bars() + gap filling
+│   ├── precompute.py        # precompute_range_bars() pipeline
+│   ├── helpers.py           # Binance/Exness fetching helpers
+│   └── models.py            # PrecomputeProgress, PrecomputeResult
+├── clickhouse/              # ClickHouse cache layer
+│   ├── cache.py             # RangeBarCache class
+│   ├── bulk_operations.py   # BulkStoreMixin (store_bars_bulk/batch)
+│   ├── query_operations.py  # QueryOperationsMixin (get_n_bars, get_bars_by_timestamp_range)
+│   └── schema.sql           # Table schema
+└── validation/              # Microstructure feature validation
+    ├── continuity.py        # Continuity validation (8 dataclasses + functions)
+    ├── tier1.py             # Fast validation (<30 sec)
+    └── tier2.py             # Statistical validation (~10 min)
 ```
 
 ### Import Patterns
@@ -977,6 +989,9 @@ from rangebar import (
 from rangebar.constants import THRESHOLD_PRESETS
 from rangebar.conversion import normalize_temporal_precision
 from rangebar.ouroboros import get_ouroboros_boundaries
+from rangebar.processors import RangeBarProcessor
+from rangebar.orchestration import get_range_bars, precompute_range_bars
+from rangebar.validation.continuity import validate_continuity
 ```
 
 ---
@@ -1242,7 +1257,7 @@ See [CHANGELOG.md](/CHANGELOG.md) for version history.
 
 ---
 
-**Last Updated**: 2026-01-27
+**Last Updated**: 2026-01-29
 
 <!-- API Version: See pyproject.toml (SSoT controlled by semantic-release) -->
 

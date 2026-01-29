@@ -117,13 +117,15 @@ To add a threshold to a host, run the population script above on that host.
 
 ## Files
 
-| File           | Purpose                                                |
-| -------------- | ------------------------------------------------------ |
-| `cache.py`     | RangeBarCache class, cache operations                  |
-| `schema.sql`   | ClickHouse table schema (v7.0: 10 microstructure cols) |
-| `config.py`    | Connection configuration                               |
-| `preflight.py` | Installation checks                                    |
-| `tunnel.py`    | SSH tunnel support                                     |
+| File                  | Purpose                                                        |
+| --------------------- | -------------------------------------------------------------- |
+| `cache.py`            | RangeBarCache class, core cache operations                     |
+| `bulk_operations.py`  | BulkStoreMixin (store_bars_bulk, store_bars_batch)             |
+| `query_operations.py` | QueryOperationsMixin (get_n_bars, get_bars_by_timestamp_range) |
+| `schema.sql`          | ClickHouse table schema (v7.0: 10 microstructure cols)         |
+| `config.py`           | Connection configuration                                       |
+| `preflight.py`        | Installation checks                                            |
+| `tunnel.py`           | SSH tunnel support                                             |
 
 ---
 
