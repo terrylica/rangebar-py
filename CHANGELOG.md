@@ -1,3 +1,11 @@
+# [11.1.0](https://github.com/terrylica/rangebar-py/compare/v11.0.0...v11.1.0) (2026-01-29)
+
+
+### Features
+
+* **api:** expose process_trades_polars and enhance Polars documentation (Issue [#45](https://github.com/terrylica/rangebar-py/issues/45)) ([c821bb8](https://github.com/terrylica/rangebar-py/commit/c821bb8542ce2e05efaa552871f0b410b3b9bb7c))
+* **cache:** add schema evolution with staleness detection (Issue [#39](https://github.com/terrylica/rangebar-py/issues/39)) ([2a13f33](https://github.com/terrylica/rangebar-py/commit/2a13f33b45bf0a335621895db91ecac96cac8d5c))
+
 # [11.0.0](https://github.com/terrylica/rangebar-py/compare/v10.1.0...v11.0.0) (2026-01-27)
 
 
