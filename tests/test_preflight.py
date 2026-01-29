@@ -322,39 +322,47 @@ class TestDetectClickhouseState:
 class TestGetAvailableClickhouseHost:
     """Tests for get_available_clickhouse_host function."""
 
-    @patch("rangebar.clickhouse.preflight._is_port_open")
-    def test_localhost_available(self, mock_port: MagicMock) -> None:
+    @patch("rangebar.clickhouse.preflight._verify_clickhouse")
+    def test_localhost_available(self, mock_verify: MagicMock) -> None:
         """Test when localhost is available."""
-        mock_port.return_value = True
+        mock_verify.return_value = True
 
         result = get_available_clickhouse_host()
         assert result.host == "localhost"
         assert result.method == "local"
         assert result.port == 8123
 
-    @patch("rangebar.clickhouse.preflight._is_port_open")
+    @patch("rangebar.clickhouse.preflight._verify_clickhouse")
     @patch("rangebar.clickhouse.preflight._is_direct_available")
-    @patch.dict("os.environ", {"RANGEBAR_CH_HOSTS": "gpu1,gpu2"})
+    @patch.dict(
+        "os.environ",
+        {"RANGEBAR_CH_HOSTS": "gpu1,gpu2", "RANGEBAR_CH_PRIMARY": ""},
+        clear=True,
+    )
     def test_direct_available(
-        self, mock_direct: MagicMock, mock_port: MagicMock
+        self, mock_direct: MagicMock, mock_verify: MagicMock
     ) -> None:
         """Test when direct connection available."""
-        mock_port.return_value = False  # localhost not available
+        mock_verify.return_value = False  # localhost not available
         mock_direct.side_effect = [True]  # First host works
 
         result = get_available_clickhouse_host()
         assert result.host == "gpu1"
         assert result.method == "direct"
 
-    @patch("rangebar.clickhouse.preflight._is_port_open")
+    @patch("rangebar.clickhouse.preflight._verify_clickhouse")
     @patch("rangebar.clickhouse.preflight._is_direct_available")
     @patch("rangebar.clickhouse.preflight._is_ssh_available")
-    @patch.dict("os.environ", {"RANGEBAR_CH_HOSTS": "gpu1"})
+    @patch.dict(
+        "os.environ",
+        {"RANGEBAR_CH_HOSTS": "gpu1", "RANGEBAR_CH_PRIMARY": ""},
+        clear=True,
+    )
     def test_ssh_tunnel_fallback(
-        self, mock_ssh: MagicMock, mock_direct: MagicMock, mock_port: MagicMock
+        self, mock_ssh: MagicMock, mock_direct: MagicMock, mock_verify: MagicMock
     ) -> None:
         """Test SSH tunnel fallback."""
-        mock_port.return_value = False
+        mock_verify.return_value = False
         mock_direct.return_value = False
         mock_ssh.return_value = True
 
@@ -362,15 +370,15 @@ class TestGetAvailableClickhouseHost:
         assert result.host == "gpu1"
         assert result.method == "ssh_tunnel"
 
-    @patch("rangebar.clickhouse.preflight._is_port_open")
+    @patch("rangebar.clickhouse.preflight._verify_clickhouse")
     @patch("rangebar.clickhouse.preflight._is_direct_available")
     @patch("rangebar.clickhouse.preflight._is_ssh_available")
     @patch.dict("os.environ", {"RANGEBAR_CH_HOSTS": ""}, clear=True)
     def test_no_hosts_available(
-        self, mock_ssh: MagicMock, mock_direct: MagicMock, mock_port: MagicMock
+        self, mock_ssh: MagicMock, mock_direct: MagicMock, mock_verify: MagicMock
     ) -> None:
         """Test when no hosts available."""
-        mock_port.return_value = False
+        mock_verify.return_value = False
         mock_direct.return_value = False
         mock_ssh.return_value = False
 

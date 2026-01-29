@@ -259,7 +259,9 @@ def get_available_clickhouse_host() -> HostConnection:
 
     # AUTO mode: Try localhost first, then remote hosts
     # PRIORITY 1: Always check localhost first (prefer local execution)
-    if _is_port_open("localhost", 8123):
+    # NOTE: Use _verify_clickhouse() not _is_port_open() to verify
+    # it's actually ClickHouse, not another service (e.g., Chrome extension)
+    if _verify_clickhouse("localhost", 8123):
         return HostConnection(host="localhost", method="local")
 
     # PRIORITY 2-3: Try configured remote hosts
@@ -364,7 +366,8 @@ def _is_direct_available(host: str, port: int = 8123) -> bool:
         if ip and _is_port_open(ip, port, timeout=2.0):
             # Verify it's actually ClickHouse responding
             return _verify_clickhouse(ip, port)
-    except Exception:
+    except (OSError, TimeoutError, urllib.error.URLError):
+        # Network/connection errors are expected during preflight probing
         pass
     return False
 
@@ -454,7 +457,8 @@ def _verify_clickhouse(host: str, port: int) -> bool:
         )
         with urllib.request.urlopen(req, timeout=2) as resp:
             return resp.read().strip() == b"1"
-    except Exception:
+    except (OSError, TimeoutError, urllib.error.URLError):
+        # Network/connection errors expected during preflight probing
         return False
 
 
@@ -474,7 +478,8 @@ def _get_clickhouse_version() -> str | None:
         )
         with urllib.request.urlopen(req, timeout=2) as resp:
             return resp.read().decode().strip()
-    except Exception:
+    except (OSError, TimeoutError, urllib.error.URLError):
+        # Network/connection errors expected during preflight probing
         return None
 
 
@@ -494,5 +499,6 @@ def _has_rangebar_schema() -> bool:
         )
         with urllib.request.urlopen(req, timeout=2) as resp:
             return bool(resp.read().strip())
-    except Exception:
+    except (OSError, TimeoutError, urllib.error.URLError):
+        # Network/connection errors expected during preflight probing
         return False

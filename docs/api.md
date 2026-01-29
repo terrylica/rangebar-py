@@ -109,6 +109,7 @@ def get_range_bars(
     source: str = "binance",
     market: str = "spot",
     include_microstructure: bool = False,
+    include_exchange_sessions: bool = False,
     include_orphaned_bars: bool = False,
     verify_checksum: bool = True,
     use_cache: bool = True,
@@ -130,6 +131,7 @@ def get_range_bars(
 - **source**: Data source - `"binance"` or `"exness"` (default: `"binance"`)
 - **market**: Market type - `"spot"`, `"futures-um"`, `"futures-cm"` (default: `"spot"`)
 - **include_microstructure**: Include vwap, buy_volume, sell_volume (default: False)
+- **include_exchange_sessions**: Include exchange session flags (default: False). See [Exchange Sessions](#exchange-sessions) below.
 - **include_orphaned_bars**: Include incomplete bars at ouroboros boundaries (default: False)
 - **verify_checksum**: Verify SHA-256 checksum of downloaded data (default: True). Enabled by default for data integrity. Set to False for faster downloads when integrity is verified elsewhere. (Issue #43)
 - **use_cache**: Cache tick data locally (default: True)
@@ -157,7 +159,44 @@ df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", include_microstructur
 
 # With year-based ouroboros (reproducible across researchers)
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-12-31", ouroboros="year")
+
+# With exchange session flags
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", include_exchange_sessions=True)
+# Adds: exchange_session_sydney, exchange_session_tokyo, exchange_session_london, exchange_session_newyork
 ```
+
+---
+
+## Exchange Sessions
+
+When `include_exchange_sessions=True`, the output includes boolean columns indicating which traditional exchange market sessions were active at each bar's close time:
+
+| Column                     | Exchange | Local Hours           | Notes                          |
+| -------------------------- | -------- | --------------------- | ------------------------------ |
+| `exchange_session_sydney`  | ASX      | 10:00-16:00 AEDT/AEST | Australian Securities Exchange |
+| `exchange_session_tokyo`   | TSE      | 09:00-15:00 JST       | Tokyo Stock Exchange           |
+| `exchange_session_london`  | LSE      | 08:00-17:00 GMT/BST   | London Stock Exchange          |
+| `exchange_session_newyork` | NYSE     | 10:00-16:00 EST/EDT   | New York Stock Exchange        |
+
+**Use Cases**:
+
+- Analyze crypto volatility during traditional market hours
+- Identify session overlaps (e.g., London/NY overlap)
+- Feature engineering for ML models
+
+**Example**:
+
+```python
+df = get_range_bars("BTCUSDT", "2024-01-15", "2024-01-16", include_exchange_sessions=True)
+
+# Filter bars during London session only
+london_bars = df[df["exchange_session_london"]]
+
+# Find bars during London/NY overlap
+overlap_bars = df[df["exchange_session_london"] & df["exchange_session_newyork"]]
+```
+
+**Note**: Session detection uses `zoneinfo` for DST-aware timezone conversion. Session boundaries are hour-granularity approximations of actual exchange trading hours.
 
 ---
 

@@ -1944,6 +1944,7 @@ def get_range_bars(
     # Processing options
     include_incomplete: bool = False,
     include_microstructure: bool = False,
+    include_exchange_sessions: bool = False,  # Issue #8: Exchange session flags
     # Timestamp gating (Issue #36)
     prevent_same_timestamp_close: bool = True,
     # Data integrity (Issue #43)
@@ -2015,6 +2016,14 @@ def get_range_bars(
         - vwap: Volume-weighted average price
         - trade_count: Number of trades in bar
         - (Exness) spread_min, spread_max, spread_avg: Spread statistics
+    include_exchange_sessions : bool, default=False
+        Include traditional exchange market session flags (Issue #8).
+        When True, adds boolean columns indicating active sessions at bar close:
+        - exchange_session_sydney: ASX (10:00-16:00 Sydney time)
+        - exchange_session_tokyo: TSE (09:00-15:00 Tokyo time)
+        - exchange_session_london: LSE (08:00-17:00 London time)
+        - exchange_session_newyork: NYSE (10:00-16:00 New York time)
+        Useful for analyzing crypto/forex behavior during traditional market hours.
     prevent_same_timestamp_close : bool, default=True
         Timestamp gating for flash crash prevention (Issue #36).
         If True (default): A bar cannot close on the same timestamp it opened.
@@ -2405,6 +2414,42 @@ def get_range_bars(
     else:
         bars_df = pd.concat(all_bars, axis=0)
         bars_df = bars_df.sort_index()
+
+    # -------------------------------------------------------------------------
+    # Add exchange session flags (Issue #8)
+    # -------------------------------------------------------------------------
+    # Session flags indicate which traditional market sessions were active
+    # at bar close time. Useful for analyzing crypto/forex behavior.
+    if include_exchange_sessions and not bars_df.empty:
+        import warnings
+
+        from .ouroboros import get_active_exchange_sessions
+
+        # Compute session flags for each bar based on close timestamp (index)
+        session_data = {
+            "exchange_session_sydney": [],
+            "exchange_session_tokyo": [],
+            "exchange_session_london": [],
+            "exchange_session_newyork": [],
+        }
+        for ts in bars_df.index:
+            # Ensure timezone-aware UTC timestamp
+            if ts.tzinfo is None:
+                ts_utc = ts.tz_localize("UTC")
+            else:
+                ts_utc = ts.tz_convert("UTC")
+            # Suppress nanosecond warning - session detection is hour-granularity
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", "Discarding nonzero nanoseconds")
+                flags = get_active_exchange_sessions(ts_utc.to_pydatetime())
+            session_data["exchange_session_sydney"].append(flags.sydney)
+            session_data["exchange_session_tokyo"].append(flags.tokyo)
+            session_data["exchange_session_london"].append(flags.london)
+            session_data["exchange_session_newyork"].append(flags.newyork)
+
+        # Add columns to DataFrame
+        for col, values in session_data.items():
+            bars_df[col] = values
 
     # -------------------------------------------------------------------------
     # Write computed bars to ClickHouse cache (Issue #37)

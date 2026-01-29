@@ -489,6 +489,7 @@ def get_range_bars(
     validation: Literal["permissive", "strict", "paranoid"] = ...,
     include_incomplete: bool = ...,
     include_microstructure: bool = ...,
+    include_exchange_sessions: bool = ...,  # Issue #8
     prevent_same_timestamp_close: bool = ...,
     verify_checksum: bool = ...,
     use_cache: bool = ...,
@@ -513,6 +514,7 @@ def get_range_bars(
     validation: Literal["permissive", "strict", "paranoid"] = ...,
     include_incomplete: bool = ...,
     include_microstructure: bool = ...,
+    include_exchange_sessions: bool = ...,  # Issue #8
     prevent_same_timestamp_close: bool = ...,
     verify_checksum: bool = ...,
     use_cache: bool = ...,
@@ -541,6 +543,7 @@ def get_range_bars(
     # Processing options
     include_incomplete: bool = False,
     include_microstructure: bool = False,
+    include_exchange_sessions: bool = False,  # Issue #8: Exchange session flags
     prevent_same_timestamp_close: bool = True,
     # Data integrity (Issue #43)
     verify_checksum: bool = True,

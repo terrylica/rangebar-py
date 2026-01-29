@@ -25,6 +25,19 @@ DOPPLER_PYPI_PROJECT = "claude-config"
 DOPPLER_PYPI_CONFIG = "prd"
 
 # =============================================================================
+# ClickHouse Cache Configuration (SSoT for cache hosts)
+# =============================================================================
+# RANGEBAR_CH_HOSTS: SSH aliases for ClickHouse hosts (comma-separated)
+# RANGEBAR_CH_PRIMARY: Preferred host when multiple available
+# RANGEBAR_MODE: "auto" (default), "local", or "cloud"
+#
+# AUTO mode: Try localhost first, then SSH tunnel to remote hosts
+# LOCAL mode: Only use localhost:8123 (fails if unavailable)
+# CLOUD mode: Only use CLICKHOUSE_HOST env var (for cloud deployments)
+RANGEBAR_CH_HOSTS = "bigblack"
+RANGEBAR_CH_PRIMARY = "bigblack"
+
+# =============================================================================
 # Build Configuration
 # =============================================================================
 BENCH_DATA_DIR = "{{ env.PWD }}/bench-data"

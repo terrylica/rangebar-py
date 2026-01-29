@@ -40,6 +40,19 @@
 -- Plan: /Users/terryli/.claude/plans/sparkling-coalescing-dijkstra.md
 
 -- ============================================================================
+-- Migration for v12.x (Issue #8: Exchange sessions integration)
+-- ============================================================================
+-- Run this ONCE if upgrading from rangebar-py v11.x with existing cache:
+--
+-- ALTER TABLE rangebar_cache.range_bars
+--     ADD COLUMN exchange_session_sydney UInt8 DEFAULT 0,
+--     ADD COLUMN exchange_session_tokyo UInt8 DEFAULT 0,
+--     ADD COLUMN exchange_session_london UInt8 DEFAULT 0,
+--     ADD COLUMN exchange_session_newyork UInt8 DEFAULT 0;
+--
+-- Note: New installations do not need this migration.
+
+-- ============================================================================
 -- Computed Range Bars Cache (Tier 2)
 -- ============================================================================
 -- Stores computed range bars with all parameters as cache key
@@ -79,6 +92,12 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
 
     -- Ouroboros (cyclical reset boundaries, v10.x)
     ouroboros_mode LowCardinality(String) DEFAULT 'week',
+
+    -- Exchange session flags (Issue #8: indicates active traditional market sessions)
+    exchange_session_sydney UInt8 DEFAULT 0,
+    exchange_session_tokyo UInt8 DEFAULT 0,
+    exchange_session_london UInt8 DEFAULT 0,
+    exchange_session_newyork UInt8 DEFAULT 0,
 
     -- Cache metadata
     cache_key String,                        -- Hash of full parameters

@@ -363,25 +363,29 @@ class TestGetActiveExchangeSessions:
         assert flags.newyork is False
 
     def test_session_overlap_london_newyork(self):
-        """Test London/New York overlap (afternoon UTC)."""
-        # 2 PM UTC - both London (ends 4 PM) and NY (8 AM - 5 PM EST) active
-        ts = datetime(2024, 1, 15, 14, 0, 0, tzinfo=UTC)  # Monday
+        """Test London/New York overlap (afternoon UTC).
+
+        Issue #8: Corrected session hours
+        - London: 08:00-17:00 local (8am-5pm)
+        - New York: 10:00-16:00 local (10am-4pm, i.e. 15:00-21:00 UTC in winter)
+        Overlap occurs roughly 15:00-17:00 UTC (NY open, London still open)
+        """
+        # 15:30 UTC = 10:30 AM EST (NY open) and 3:30 PM London (still open)
+        ts = datetime(2024, 1, 15, 15, 30, 0, tzinfo=UTC)  # Monday
         flags = get_active_exchange_sessions(ts)
         assert flags.london is True
         assert flags.newyork is True
 
     def test_sydney_session(self):
-        """Test Sydney session (Sydney morning = late UTC)."""
-        # Sydney session: 7 AM - 4 PM AEDT (winter: UTC+11)
-        # 7 AM AEDT = 8 PM UTC previous day
-        ts = datetime(
-            2024, 1, 14, 20, 0, 0, tzinfo=UTC
-        )  # Sunday night UTC = Monday morning Sydney
-        # Actually Sunday in Sydney too, so should be False
-        # Let's use Tuesday morning Sydney = Monday night UTC
-        ts = datetime(
-            2024, 1, 15, 20, 0, 0, tzinfo=UTC
-        )  # Monday night UTC = Tuesday morning Sydney
+        """Test Sydney session (Sydney mid-morning = late UTC previous day).
+
+        Issue #8: Corrected session hours
+        - Sydney (ASX): 10:00-16:00 local (10am-4pm AEDT, UTC+11 in summer)
+        - 10 AM AEDT = 23:00 UTC previous day
+        - 12 PM AEDT = 01:00 UTC
+        """
+        # Tuesday 01:00 UTC = Tuesday 12:00 noon AEDT (Sydney session active)
+        ts = datetime(2024, 1, 16, 1, 0, 0, tzinfo=UTC)  # Tuesday UTC
         flags = get_active_exchange_sessions(ts)
         assert flags.sydney is True
 

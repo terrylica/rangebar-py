@@ -23,7 +23,11 @@ from typing import TYPE_CHECKING
 import pandas as pd
 
 from .._core import __version__
-from ..constants import MICROSTRUCTURE_COLUMNS, MIN_VERSION_FOR_MICROSTRUCTURE
+from ..constants import (
+    EXCHANGE_SESSION_COLUMNS,
+    MICROSTRUCTURE_COLUMNS,
+    MIN_VERSION_FOR_MICROSTRUCTURE,
+)
 from ..conversion import normalize_arrow_dtypes
 from ..exceptions import (
     CacheReadError,
@@ -872,6 +876,7 @@ class RangeBarCache(ClickHouseClientMixin):
         start_ts: int,
         end_ts: int,
         include_microstructure: bool = False,
+        include_exchange_sessions: bool = False,  # Issue #8
         ouroboros_mode: str = "year",
         min_schema_version: str | None = None,
     ) -> pd.DataFrame | None:
@@ -893,6 +898,8 @@ class RangeBarCache(ClickHouseClientMixin):
             End timestamp in milliseconds (inclusive)
         include_microstructure : bool
             If True, includes vwap, buy_volume, sell_volume columns
+        include_exchange_sessions : bool
+            If True, includes exchange_session_* columns (Issue #8)
         ouroboros_mode : str
             Ouroboros reset mode: "year", "month", or "week" (default: "year")
             Plan: sparkling-coalescing-dijkstra.md
@@ -937,6 +944,15 @@ class RangeBarCache(ClickHouseClientMixin):
             aggression_ratio,
             aggregation_density,
             turnover_imbalance
+        """
+
+        # Issue #8: Exchange session flags
+        if include_exchange_sessions:
+            base_cols += """,
+            exchange_session_sydney,
+            exchange_session_tokyo,
+            exchange_session_london,
+            exchange_session_newyork
         """
 
         # Ouroboros mode filter ensures cache isolation between modes
@@ -1130,6 +1146,11 @@ class RangeBarCache(ClickHouseClientMixin):
             if col in df.columns:
                 columns.append(col)
 
+        # Add optional exchange session columns if present (Issue #8)
+        for col in EXCHANGE_SESSION_COLUMNS:
+            if col in df.columns:
+                columns.append(col)
+
         # Filter to existing columns
         columns = [c for c in columns if c in df.columns]
 
@@ -1273,6 +1294,11 @@ class RangeBarCache(ClickHouseClientMixin):
 
         # Add optional microstructure columns if present (from constants.py SSoT)
         for col in MICROSTRUCTURE_COLUMNS:
+            if col in df.columns:
+                columns.append(col)
+
+        # Add optional exchange session columns if present (Issue #8)
+        for col in EXCHANGE_SESSION_COLUMNS:
             if col in df.columns:
                 columns.append(col)
 

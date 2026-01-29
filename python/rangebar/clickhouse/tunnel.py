@@ -150,18 +150,33 @@ class SSHTunnel:
         # Wait for tunnel to be ready
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            # Check if process died
-            if self._process.poll() is not None:
+            # Check if port is open first - handles SSH ControlMaster case
+            # where the ssh process exits immediately after handing off to master
+            if _is_port_open("localhost", self._local_port):
+                return self._local_port
+
+            # Check if process died with error (non-zero exit)
+            exit_code = self._process.poll()
+            if exit_code is not None:
+                # Exit code 0 with ControlMaster means forwarding was handed off
+                # to master connection - give it a moment to activate
+                if exit_code == 0:
+                    time.sleep(0.2)
+                    if _is_port_open("localhost", self._local_port):
+                        # Forwarding via ControlMaster succeeded, but we don't
+                        # own the process anymore - set to None so stop() is a no-op
+                        self._process = None
+                        return self._local_port
+                # Non-zero exit or port still not open after ControlMaster handoff
                 stderr = ""
                 if self._process.stderr:
                     stderr = self._process.stderr.read().decode()
-                msg = f"SSH tunnel to {self.ssh_alias} failed: {stderr}"
+                msg = (
+                    f"SSH tunnel to {self.ssh_alias} failed "
+                    f"(exit={exit_code}): {stderr}"
+                )
                 self._process = None
                 raise RuntimeError(msg)
-
-            # Check if port is open
-            if _is_port_open("localhost", self._local_port):
-                return self._local_port
 
             time.sleep(0.1)
 

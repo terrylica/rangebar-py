@@ -239,12 +239,14 @@ def iter_ouroboros_segments(
 # Exchange Market Sessions
 # ============================================================================
 
-# Market session hours in local time (approximate - DST varies)
+# Market session hours in local time (aligned with actual exchange hours)
+# Note: These are approximate for crypto; traditional markets have pre/post sessions
+# Issue #8: Exchange sessions integration (corrected per exchange schedules)
 EXCHANGE_SESSION_HOURS = {
-    "sydney": {"tz": "Australia/Sydney", "start": 7, "end": 16},
-    "tokyo": {"tz": "Asia/Tokyo", "start": 9, "end": 18},
-    "london": {"tz": "Europe/London", "start": 8, "end": 16},
-    "newyork": {"tz": "America/New_York", "start": 8, "end": 17},
+    "sydney": {"tz": "Australia/Sydney", "start": 10, "end": 16},   # ASX
+    "tokyo": {"tz": "Asia/Tokyo", "start": 9, "end": 15},           # TSE
+    "london": {"tz": "Europe/London", "start": 8, "end": 17},       # LSE
+    "newyork": {"tz": "America/New_York", "start": 10, "end": 16},  # NYSE
 }
 
 
