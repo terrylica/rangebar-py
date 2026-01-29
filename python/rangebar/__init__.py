@@ -65,6 +65,11 @@ __all__ = [
     "ASSET_CLASS_MULTIPLIERS",
     "EXCHANGE_SESSION_COLUMNS",
     "MICROSTRUCTURE_COLUMNS",
+    "MIN_VERSION_FOR_MICROSTRUCTURE",
+    "MIN_VERSION_FOR_OUROBOROS",
+    "SCHEMA_VERSION_MICROSTRUCTURE",
+    "SCHEMA_VERSION_OHLCV_ONLY",
+    "SCHEMA_VERSION_OUROBOROS",
     "THRESHOLD_DECIMAL_MAX",
     "THRESHOLD_DECIMAL_MIN",
     "THRESHOLD_PRESETS",
@@ -83,6 +88,7 @@ __all__ = [
     "PrecomputeProgress",
     "PrecomputeResult",
     "RangeBarProcessor",
+    "StalenessResult",
     "TierSummary",
     "TierThresholds",
     "TieredValidationResult",
@@ -90,6 +96,7 @@ __all__ = [
     "__version__",
     # Functions
     "detect_asset_class",
+    "detect_staleness",
     "get_n_range_bars",
     "get_ouroboros_boundaries",
     "get_range_bars",
@@ -99,6 +106,7 @@ __all__ = [
     "normalize_temporal_precision",
     "populate_cache_resumable",
     "precompute_range_bars",
+    "process_trades_polars",
     "process_trades_to_dataframe",
     "validate_continuity",
     "validate_continuity_tiered",
@@ -116,6 +124,11 @@ from .constants import (
     ALL_OPTIONAL_COLUMNS,
     EXCHANGE_SESSION_COLUMNS,
     MICROSTRUCTURE_COLUMNS,
+    MIN_VERSION_FOR_MICROSTRUCTURE,
+    MIN_VERSION_FOR_OUROBOROS,
+    SCHEMA_VERSION_MICROSTRUCTURE,
+    SCHEMA_VERSION_OHLCV_ONLY,
+    SCHEMA_VERSION_OUROBOROS,
     THRESHOLD_DECIMAL_MAX,
     THRESHOLD_DECIMAL_MIN,
     THRESHOLD_PRESETS,
@@ -137,6 +150,9 @@ from .ouroboros import (
     OuroborosMode,
     get_ouroboros_boundaries,
 )
+
+# Import staleness detection for cache validation (Issue #39: Schema Evolution)
+from .validation.cache_staleness import StalenessResult, detect_staleness
 
 # Continuity tolerance: 0.01% relative difference allowed (floating-point precision)
 CONTINUITY_TOLERANCE_PCT = 0.0001
@@ -2255,8 +2271,26 @@ def get_range_bars(
                     ouroboros_mode=ouroboros,
                 )
                 if cached_bars is not None and len(cached_bars) > 0:
-                    # Fast path: return precomputed bars from ClickHouse (~50ms)
-                    return cached_bars
+                    # Tier 0 validation: Content-based staleness detection (Issue #39)
+                    # This catches stale cached data from pre-v7.0 (e.g., VWAP=0)
+                    if include_microstructure:
+                        staleness = detect_staleness(
+                            cached_bars, require_microstructure=True
+                        )
+                        if staleness.is_stale:
+                            logger.warning(
+                                "Stale cache data detected for %s: %s. "
+                                "Falling through to recompute.",
+                                symbol,
+                                staleness.reason,
+                            )
+                            # Fall through to tick processing path
+                        else:
+                            # Fast path: return validated bars from ClickHouse (~50ms)
+                            return cached_bars
+                    else:
+                        # Fast path: return precomputed bars from ClickHouse (~50ms)
+                        return cached_bars
         except ImportError:
             # ClickHouse not available, fall through to tick processing
             pass
@@ -3564,8 +3598,25 @@ def get_n_range_bars(  # noqa: PLR0911
                 )
 
                 if bars_df is not None and len(bars_df) >= n_bars:
-                    # Cache hit - return exactly n_bars
-                    return _apply_validation(bars_df.tail(n_bars))
+                    # Tier 0 validation: Content-based staleness detection (Issue #39)
+                    if include_microstructure:
+                        staleness = detect_staleness(
+                            bars_df, require_microstructure=True
+                        )
+                        if staleness.is_stale:
+                            logger.warning(
+                                "Stale cache data detected for %s: %s. "
+                                "Falling through to recompute.",
+                                symbol,
+                                staleness.reason,
+                            )
+                            # Fall through to fetch_if_missing path
+                        else:
+                            # Cache hit - return exactly n_bars
+                            return _apply_validation(bars_df.tail(n_bars))
+                    else:
+                        # Cache hit - return exactly n_bars
+                        return _apply_validation(bars_df.tail(n_bars))
 
                 # Slow path: need to fetch more data
                 if fetch_if_missing:

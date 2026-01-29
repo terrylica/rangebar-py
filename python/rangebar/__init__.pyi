@@ -953,3 +953,87 @@ def precompute_range_bars(
     get_n_range_bars : Count-bounded bar retrieval (uses precomputed cache)
     get_range_bars : Date-bounded bar retrieval
     """
+
+def process_trades_polars(
+    trades: pl.DataFrame | pl.LazyFrame,
+    threshold_decimal_bps: int = 250,
+) -> pd.DataFrame:
+    """Process trades from Polars DataFrame (optimized pipeline).
+
+    This is the recommended API for Polars users. Uses lazy evaluation
+    and minimal dict conversion for best performance.
+
+    Parameters
+    ----------
+    trades : polars.DataFrame or polars.LazyFrame
+        Trade data with columns:
+        - timestamp: int64 (milliseconds since epoch)
+        - price: float
+        - quantity (or volume): float
+    threshold_decimal_bps : int, default=250
+        Threshold in decimal basis points (250 = 25bps = 0.25%)
+
+    Returns
+    -------
+    pd.DataFrame
+        OHLCV DataFrame ready for backtesting.py, with:
+        - DatetimeIndex (timestamp)
+        - Capitalized columns: Open, High, Low, Close, Volume
+
+    Examples
+    --------
+    With LazyFrame (predicate pushdown):
+
+    >>> import polars as pl
+    >>> from rangebar import process_trades_polars
+    >>> lazy_df = pl.scan_parquet("trades.parquet")
+    >>> lazy_filtered = lazy_df.filter(pl.col("timestamp") >= 1704067200000)
+    >>> df = process_trades_polars(lazy_filtered, threshold_decimal_bps=250)
+
+    With DataFrame:
+
+    >>> df = pl.read_parquet("trades.parquet")
+    >>> bars = process_trades_polars(df)
+
+    Notes
+    -----
+    Performance optimization:
+    - Only required columns are extracted (timestamp, price, quantity)
+    - Lazy evaluation: predicates pushed to I/O layer
+    - 2-3x faster than process_trades_to_dataframe() for Polars inputs
+
+    See Also
+    --------
+    process_trades_to_dataframe : Process trades from pandas DataFrame or dict list
+    get_range_bars : Full pipeline with data fetching and caching
+    """
+
+def process_trades_to_dataframe(
+    trades: list[dict] | pd.DataFrame,
+    threshold_decimal_bps: int = 250,
+    include_microstructure: bool = False,
+) -> pd.DataFrame:
+    """Process trades into range bars from pandas DataFrame or dict list.
+
+    Parameters
+    ----------
+    trades : list[dict] or pd.DataFrame
+        Trade data. If list[dict], each dict needs:
+        - timestamp: int (milliseconds since epoch)
+        - price: float
+        - quantity: float
+    threshold_decimal_bps : int, default=250
+        Threshold in decimal basis points (250 = 25bps = 0.25%)
+    include_microstructure : bool, default=False
+        Include microstructure columns (vwap, buy_volume, sell_volume)
+
+    Returns
+    -------
+    pd.DataFrame
+        OHLCV DataFrame ready for backtesting.py
+
+    See Also
+    --------
+    process_trades_polars : Faster alternative for Polars inputs
+    get_range_bars : Full pipeline with data fetching and caching
+    """

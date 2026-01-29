@@ -21,7 +21,7 @@ rangebar-py provides a high-level Python API for converting trade data to range 
 ## Quick Reference
 
 ```python
-from rangebar import get_range_bars, get_n_range_bars, process_trades_to_dataframe
+from rangebar import get_range_bars, get_n_range_bars, process_trades_polars
 
 # Date-bounded API - fetch and convert with date range
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
@@ -33,8 +33,14 @@ assert len(df) == 10000
 # With preset threshold
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30", threshold_decimal_bps="tight")
 
-# Using existing trade data
-df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
+# Polars API - 2-3x faster for Polars users (recommended)
+import polars as pl
+trades = pl.scan_parquet("trades.parquet")  # LazyFrame for predicate pushdown
+df = process_trades_polars(trades, threshold_decimal_bps=250)
+
+# Streaming mode - memory-efficient Iterator[pl.DataFrame]
+for batch in get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30", materialize=False):
+    process_batch(batch)  # Each batch is a pl.DataFrame
 ```
 
 ---
@@ -380,6 +386,87 @@ print(f"Generated {len(df)} range bars from {len(trades_df)} trades")
 - If no range bars are generated (price movement < threshold), returns empty DataFrame
 - Timestamp precision: microseconds (inherited from rangebar-core)
 - Price precision: 8 decimal places (fixed-point arithmetic)
+
+---
+
+### `process_trades_polars()`
+
+**Optimized API for Polars users - 2-3x faster than `process_trades_to_dataframe()`.**
+
+```python
+def process_trades_polars(
+    trades: pl.DataFrame | pl.LazyFrame,
+    threshold_decimal_bps: int = 250,
+) -> pd.DataFrame
+```
+
+#### Parameters
+
+- **trades**: `polars.DataFrame` or `polars.LazyFrame`
+  - Trade data with columns:
+    - `timestamp`: Unix timestamp in milliseconds (int64)
+    - `price`: Trade price (float)
+    - `quantity` or `volume`: Trade volume (float)
+    - `is_buyer_maker` (optional): For microstructure features
+
+- **threshold_decimal_bps**: `int`, default=250
+  - Range bar threshold in decimal basis points (dbps)
+
+#### Returns
+
+- **pd.DataFrame**
+  - OHLCV DataFrame with DatetimeIndex
+  - Columns: `["Open", "High", "Low", "Close", "Volume"]`
+  - Compatible with backtesting.py
+
+#### Performance Benefits
+
+| Feature                | Benefit                                   |
+| ---------------------- | ----------------------------------------- |
+| **LazyFrame support**  | Predicate pushdown - filter at I/O layer  |
+| **Minimal conversion** | Only required columns extracted           |
+| **Chunked processing** | 100K records per batch                    |
+| **Memory efficient**   | 10-100x reduction vs full materialization |
+
+#### Example
+
+```python
+import polars as pl
+from rangebar import process_trades_polars
+
+# With LazyFrame (predicate pushdown for efficient filtering)
+lazy_df = pl.scan_parquet("trades.parquet")
+lazy_filtered = lazy_df.filter(pl.col("timestamp") >= 1704067200000)
+df = process_trades_polars(lazy_filtered, threshold_decimal_bps=250)
+
+# With DataFrame
+df = pl.read_parquet("trades.parquet")
+bars = process_trades_polars(df)
+
+# With explicit column selection (minimal memory)
+lazy_df = pl.scan_parquet("trades/*.parquet").select([
+    pl.col("timestamp"),
+    pl.col("price"),
+    pl.col("quantity"),
+])
+bars = process_trades_polars(lazy_df.filter(pl.col("price") > 40000))
+```
+
+#### When to Use
+
+| Scenario              | Recommended API                            |
+| --------------------- | ------------------------------------------ |
+| Have Polars DataFrame | `process_trades_polars()`                  |
+| Have pandas DataFrame | `process_trades_to_dataframe()`            |
+| Have list of dicts    | `process_trades_to_dataframe()`            |
+| Large Parquet files   | `process_trades_polars()` with `LazyFrame` |
+| Streaming pipeline    | `get_range_bars(..., materialize=False)`   |
+
+#### Notes
+
+- Returns pandas DataFrame for backtesting.py compatibility
+- To get Polars output, use `get_range_bars(..., materialize=False)` which returns `Iterator[pl.DataFrame]`
+- Trades must be in chronological order
 
 ---
 

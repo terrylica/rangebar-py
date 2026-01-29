@@ -48,13 +48,18 @@ for chunk in data_stream:
 ## Python API
 
 ```python
-from rangebar import get_range_bars, get_n_range_bars
+from rangebar import get_range_bars, get_n_range_bars, process_trades_polars
 
 # Date-bounded (backtesting)
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
 
 # Count-bounded (ML training)
 df = get_n_range_bars("BTCUSDT", n_bars=10000)
+
+# Polars users (2-3x faster) - recommended for existing Polars data
+import polars as pl
+trades = pl.scan_parquet("trades.parquet")  # LazyFrame for predicate pushdown
+df = process_trades_polars(trades, threshold_decimal_bps=250)
 
 # With microstructure features (v7.0+)
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30", include_microstructure=True)

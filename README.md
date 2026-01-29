@@ -178,18 +178,29 @@ trades = pd.read_csv("BTCUSDT-aggTrades.csv")
 df = process_trades_to_dataframe(trades, threshold_decimal_bps=250)
 ```
 
-#### process_trades_polars
+#### process_trades_polars (Recommended for Polars Users)
 
-Optimized for Polars users with lazy evaluation:
+**2-3x faster** than `process_trades_to_dataframe()` with lazy evaluation and predicate pushdown:
 
 ```python
 import polars as pl
 from rangebar import process_trades_polars
 
-# LazyFrame with predicate pushdown
-lazy_df = pl.scan_parquet("trades.parquet").filter(pl.col("timestamp") >= start_ts)
+# LazyFrame - predicates pushed to I/O layer (10-100x memory reduction)
+lazy_df = pl.scan_parquet("trades/*.parquet").filter(pl.col("timestamp") >= start_ts)
 bars = process_trades_polars(lazy_df, threshold_decimal_bps=250)
+
+# Or with eager DataFrame
+df = pl.read_parquet("trades.parquet")
+bars = process_trades_polars(df)
 ```
+
+**Performance benefits**:
+
+- Predicate pushdown: filters applied at Parquet read, not after
+- Minimal conversion: only required columns extracted
+- Chunked processing: 100K records per batch
+- Memory efficient: avoids materializing full dataset
 
 #### process_trades_chunked
 
