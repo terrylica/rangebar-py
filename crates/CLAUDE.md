@@ -100,6 +100,33 @@ Core algorithm with minimal dependencies.
 - Temporal integrity (breach tick in closing bar)
 - Streaming-friendly (maintains state between calls)
 
+#### Range Bar Construction Algorithm
+
+How a range bar is built, step by step:
+
+1. **First trade arrives** → Opens a new bar. `open = high = low = close = trade.price`. Thresholds computed: `upper = open * (1 + threshold)`, `lower = open * (1 - threshold)`.
+
+2. **Subsequent trades arrive** → `update_with_trade()`: updates `close`, extends `high`/`low`, accumulates `volume`, `turnover`, `buy_volume`/`sell_volume`, `trade_count`, `vwap`.
+
+3. **Breach detected** → Trade price exceeds `upper` or `lower` threshold AND timestamp differs from `open_time` (Issue #36 timestamp gate). The breaching trade is **included in the closing bar** (its price/volume updates the bar), then the bar is finalized with `compute_microstructure_features()`.
+
+4. **After breach** → `defer_open = true`. The processor holds **no bar state**. The breaching trade does NOT open the next bar (Issue #46).
+
+5. **Next trade after breach** → Because `defer_open == true`, this trade opens a fresh bar. `defer_open` resets to `false`.
+
+**Key invariants**:
+
+| Rule                                   | Detail                                                                              |
+| -------------------------------------- | ----------------------------------------------------------------------------------- |
+| Breaching trade belongs to closing bar | Its OHLCV contribution is in the bar that closes                                    |
+| Next trade opens the new bar           | NOT the breaching trade (Issue #46, `defer_open`)                                   |
+| `bar.timestamp` = `close_time`         | Downstream consumers (pandas DatetimeIndex) use close time                          |
+| `bar.open_time` and `bar.close_time`   | Milliseconds UTC; close_time >= open_time always                                    |
+| Timestamp gate (Issue #36)             | Bar cannot close on same timestamp as it opened                                     |
+| Batch/streaming parity                 | `process_agg_trade_records()` and `process_single_trade()` produce identical output |
+| Checkpoint continuity                  | `defer_open` persists in checkpoints for cross-file processing                      |
+| Ouroboros reset                        | `reset_at_ouroboros()` clears bar state and resets `defer_open`                     |
+
 ### Layer 1: Data Access
 
 #### rangebar-providers
