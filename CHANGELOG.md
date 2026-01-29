@@ -1,3 +1,10 @@
+## [11.2.2](https://github.com/terrylica/rangebar-py/compare/v11.2.1...v11.2.2) (2026-01-29)
+
+
+### Bug Fixes
+
+* **scripts:** add OOM-safe cache regeneration script (Issue [#47](https://github.com/terrylica/rangebar-py/issues/47)) ([d182ed6](https://github.com/terrylica/rangebar-py/commit/d182ed6893bbf5585652bc53bd2aed020d2ae2e4))
+
 ## [11.2.1](https://github.com/terrylica/rangebar-py/compare/v11.2.0...v11.2.1) (2026-01-29)
 
 
