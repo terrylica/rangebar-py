@@ -86,7 +86,7 @@ pub struct Checkpoint {
     /// Anomaly summary counts for debugging
     pub anomaly_summary: AnomalySummary,
 
-    // === BEHAVIOR FLAGS (1 field) ===
+    // === BEHAVIOR FLAGS (2 fields) ===
     /// Prevent bars from closing on same timestamp as they opened (Issue #36)
     ///
     /// When true (default): A bar cannot close until a trade arrives with a
@@ -96,6 +96,14 @@ pub struct Checkpoint {
     /// When false: Legacy v8 behavior - bars can close immediately on breach.
     #[serde(default = "default_prevent_same_timestamp_close")]
     pub prevent_same_timestamp_close: bool,
+
+    /// Deferred bar open flag (Issue #46)
+    ///
+    /// When true: The last trade before checkpoint triggered a threshold breach.
+    /// On resume, the next trade should open a new bar instead of continuing.
+    /// This matches the batch path's `defer_open` semantics.
+    #[serde(default)]
+    pub defer_open: bool,
 }
 
 /// Default value for prevent_same_timestamp_close (true = timestamp gating enabled)
@@ -126,6 +134,7 @@ impl Checkpoint {
             price_hash,
             anomaly_summary: AnomalySummary::default(),
             prevent_same_timestamp_close,
+            defer_open: false,
         }
     }
 

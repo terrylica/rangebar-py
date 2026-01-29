@@ -204,6 +204,9 @@ fn checkpoint_to_dict(py: Python, checkpoint: &Checkpoint) -> PyResult<PyObject>
         checkpoint.prevent_same_timestamp_close,
     )?;
 
+    // Issue #46: Persist defer_open state for cross-session continuity
+    dict.set_item("defer_open", checkpoint.defer_open)?;
+
     Ok(dict.into())
 }
 
@@ -296,6 +299,12 @@ fn dict_to_checkpoint(py: Python, dict: &Bound<PyDict>) -> PyResult<Checkpoint> 
         .and_then(|v| v.extract().ok())
         .unwrap_or(true);
 
+    // Issue #46: Extract defer_open flag from checkpoint dict
+    let defer_open: bool = dict
+        .get_item("defer_open")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(false);
+
     Ok(Checkpoint {
         symbol,
         threshold_decimal_bps,
@@ -306,6 +315,7 @@ fn dict_to_checkpoint(py: Python, dict: &Bound<PyDict>) -> PyResult<Checkpoint> 
         price_hash,
         anomaly_summary,
         prevent_same_timestamp_close,
+        defer_open,
     })
 }
 

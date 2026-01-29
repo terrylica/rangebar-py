@@ -176,9 +176,9 @@ impl ExnessRangeBarBuilder {
             };
 
             // Reset spread stats for next bar (per-bar semantics)
-            // Note: Breaching tick opens new bar, so update stats with current tick
+            // Issue #46: Breaching tick belongs to closing bar only.
+            // Next tick will open the new bar and start accumulating spread stats.
             self.current_spread_stats = SpreadStats::new();
-            self.current_spread_stats.update(tick);
 
             Ok(Some(completed_bar))
         } else {
@@ -277,12 +277,15 @@ mod tests {
 
         let completed_bar = maybe_bar.unwrap();
 
-        // Verify spread stats were captured
+        // Verify spread stats were captured (all 3 ticks including breach)
         assert_eq!(completed_bar.spread_stats.tick_count, 3);
 
-        // Verify new bar has fresh spread stats
-        let new_incomplete = builder.get_incomplete_bar().unwrap();
-        assert_eq!(new_incomplete.spread_stats.tick_count, 1); // Just tick3
+        // Issue #46: After breach, no incomplete bar until next tick arrives.
+        // The breaching tick closes the current bar; the NEXT tick opens the new bar.
+        assert!(
+            builder.get_incomplete_bar().is_none(),
+            "No incomplete bar after breach - next tick opens new bar (Issue #46)"
+        );
     }
 
     #[test]

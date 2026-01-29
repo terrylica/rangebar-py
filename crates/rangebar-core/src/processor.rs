@@ -46,6 +46,17 @@ pub struct RangeBarProcessor {
     /// When false: Legacy behavior - bars can close on any breach regardless
     /// of timestamp, which may produce bars with identical timestamps.
     prevent_same_timestamp_close: bool,
+
+    /// Deferred bar open flag (Issue #46)
+    ///
+    /// When true: The previous trade triggered a threshold breach and closed a bar.
+    /// The next trade arriving via `process_single_trade()` should open a new bar
+    /// instead of being treated as a continuation.
+    ///
+    /// This matches the batch path's `defer_open` semantics in
+    /// `process_agg_trade_records()` where the breaching trade closes the current
+    /// bar and the NEXT trade opens the new bar.
+    defer_open: bool,
 }
 
 impl RangeBarProcessor {
@@ -113,6 +124,7 @@ impl RangeBarProcessor {
             anomaly_summary: AnomalySummary::default(),
             resumed_from_checkpoint: false,
             prevent_same_timestamp_close,
+            defer_open: false,
         })
     }
 
@@ -147,6 +159,16 @@ impl RangeBarProcessor {
         self.price_window.push(trade.price);
         self.last_trade_id = Some(trade.agg_trade_id);
         self.last_timestamp_us = trade.timestamp;
+
+        // Issue #46: If previous call triggered a breach, this trade opens the new bar.
+        // This matches the batch path's defer_open semantics - the breaching trade
+        // closes the current bar, and the NEXT trade opens the new bar.
+        if self.defer_open {
+            self.current_bar_state =
+                Some(RangeBarState::new(&trade, self.threshold_decimal_bps));
+            self.defer_open = false;
+            return Ok(None);
+        }
 
         match &mut self.current_bar_state {
             None => {
@@ -183,9 +205,10 @@ impl RangeBarProcessor {
                     bar_state.bar.compute_microstructure_features();
                     let completed_bar = bar_state.bar.clone();
 
-                    // Start new bar with breaching trade
-                    self.current_bar_state =
-                        Some(RangeBarState::new(&trade, self.threshold_decimal_bps));
+                    // Issue #46: Don't start new bar with breaching trade.
+                    // Next trade will open the new bar via defer_open.
+                    self.current_bar_state = None;
+                    self.defer_open = true;
 
                     Ok(Some(completed_bar))
                 } else {
@@ -399,7 +422,7 @@ impl RangeBarProcessor {
             None => (None, None),
         };
 
-        Checkpoint::new(
+        let mut checkpoint = Checkpoint::new(
             symbol.to_string(),
             self.threshold_decimal_bps,
             incomplete_bar,
@@ -408,7 +431,10 @@ impl RangeBarProcessor {
             self.last_trade_id,
             self.price_window.compute_hash(),
             self.prevent_same_timestamp_close,
-        )
+        );
+        // Issue #46: Persist defer_open state for cross-session continuity
+        checkpoint.defer_open = self.defer_open;
+        checkpoint
     }
 
     /// Resume processing from checkpoint
@@ -453,6 +479,7 @@ impl RangeBarProcessor {
             anomaly_summary: checkpoint.anomaly_summary,
             resumed_from_checkpoint: true, // Signal to continue from existing bar state
             prevent_same_timestamp_close: checkpoint.prevent_same_timestamp_close,
+            defer_open: checkpoint.defer_open, // Issue #46: Restore deferred open state
         })
     }
 
@@ -565,6 +592,7 @@ impl RangeBarProcessor {
         self.last_trade_id = None;
         self.last_timestamp_us = 0;
         self.resumed_from_checkpoint = false;
+        self.defer_open = false;
         orphaned
     }
 }
@@ -1179,6 +1207,8 @@ pub struct ExportRangeBarProcessor {
     completed_bars: Vec<RangeBar>,
     /// Prevent bars from closing on same timestamp as they opened (Issue #36)
     prevent_same_timestamp_close: bool,
+    /// Deferred bar open flag (Issue #46) - next trade opens new bar after breach
+    defer_open: bool,
 }
 
 impl ExportRangeBarProcessor {
@@ -1225,6 +1255,7 @@ impl ExportRangeBarProcessor {
             current_bar: None,
             completed_bars: Vec::new(),
             prevent_same_timestamp_close,
+            defer_open: false,
         })
     }
 
@@ -1238,6 +1269,14 @@ impl ExportRangeBarProcessor {
 
     /// Process single trade using proven fixed-point algorithm (100% breach consistency)
     fn process_single_trade_fixed_point(&mut self, trade: &AggTrade) {
+        // Issue #46: If previous trade triggered a breach, this trade opens the new bar.
+        // This matches the batch path's defer_open semantics.
+        if self.defer_open {
+            self.defer_open = false;
+            self.current_bar = None; // Clear any stale state
+            // Fall through to the is_none() branch below to start new bar
+        }
+
         if self.current_bar.is_none() {
             // Start new bar
             let trade_turnover = (trade.price.to_f64() * trade.volume.to_f64()) as i128;
@@ -1381,48 +1420,10 @@ impl ExportRangeBarProcessor {
 
             self.completed_bars.push(export_bar);
 
-            // Start new bar with breaching trade
-            let initial_buy_turnover = if trade.is_buyer_maker {
-                0
-            } else {
-                trade_turnover
-            };
-            let initial_sell_turnover = if trade.is_buyer_maker {
-                trade_turnover
-            } else {
-                0
-            };
-
-            self.current_bar = Some(InternalRangeBar {
-                open_time: trade.timestamp,
-                close_time: trade.timestamp,
-                open: trade.price,
-                high: trade.price,
-                low: trade.price,
-                close: trade.price,
-                volume: trade.volume,
-                turnover: trade_turnover,
-                individual_trade_count: 1,
-                agg_record_count: 1,
-                first_trade_id: trade.agg_trade_id,
-                last_trade_id: trade.agg_trade_id,
-                // Market microstructure fields
-                buy_volume: if trade.is_buyer_maker {
-                    FixedPoint(0)
-                } else {
-                    trade.volume
-                },
-                sell_volume: if trade.is_buyer_maker {
-                    trade.volume
-                } else {
-                    FixedPoint(0)
-                },
-                buy_trade_count: if trade.is_buyer_maker { 0 } else { 1 },
-                sell_trade_count: if trade.is_buyer_maker { 1 } else { 0 },
-                vwap: trade.price,
-                buy_turnover: initial_buy_turnover,
-                sell_turnover: initial_sell_turnover,
-            });
+            // Issue #46: Don't start new bar with breaching trade.
+            // Next trade will open the new bar via defer_open.
+            self.current_bar = None;
+            self.defer_open = true;
         }
     }
 
