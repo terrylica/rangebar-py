@@ -398,7 +398,8 @@ description = "Verify release configuration (GitHub, Doppler, SSH)"
 run = "./scripts/check-release-config.sh"
 
 [tasks."release:build-all"]
-description = "Build all platform wheels (Phase 3)"
+description = "Build all platform wheels (Phase 3 - runs AFTER version bump)"
+depends = ["release:version"]
 run = """
 echo "=== BUILD ALL PLATFORMS ==="
 mise run release:macos-arm64
@@ -408,8 +409,8 @@ ls -la dist/*.whl 2>/dev/null || true
 """
 
 [tasks."release:postflight"]
-description = "Verify and publish (Phase 4)"
-depends = ["smoke"]
+description = "Verify and publish (Phase 4 - runs AFTER builds)"
+depends = ["smoke", "release:build-all"]
 run = """
 echo "=== POSTFLIGHT ==="
 WHEEL_COUNT=$(find dist/ -name "*.whl" 2>/dev/null | wc -l | tr -d ' ')
@@ -421,6 +422,7 @@ echo "To publish: mise run publish"
 
 [tasks."release:version"]
 description = "Bump version via semantic-release with Doppler GitHub token"
+depends = ["release:sync"]
 run = "./scripts/semantic-release.sh"
 
 [tasks."release:dry"]
@@ -433,7 +435,10 @@ run = "./scripts/publish-to-pypi.sh"
 
 [tasks."release:full"]
 description = "Full 4-phase release workflow (versioning only - PyPI separate)"
-depends = ["release:preflight", "release:sync", "release:version", "release:build-all", "release:postflight"]
+# Dependency chain enforced via task-level depends:
+#   preflight → sync → version → build-all → postflight
+# Only need to list the leaf task; mise resolves the full chain.
+depends = ["release:postflight"]
 run = "echo 'Release complete! Next: mise run release:pypi'"
 
 # =============================================================================
