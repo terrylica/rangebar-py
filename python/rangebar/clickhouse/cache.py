@@ -24,6 +24,7 @@ import pandas as pd
 
 from .._core import __version__
 from ..constants import (
+    EXCHANGE_SESSION_COLUMNS,
     MICROSTRUCTURE_COLUMNS,
 )
 from ..conversion import normalize_arrow_dtypes
@@ -285,6 +286,11 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
 
         # Add optional microstructure columns if present (from constants.py SSoT)
         for col in MICROSTRUCTURE_COLUMNS:
+            if col in df.columns:
+                columns.append(col)
+
+        # Add optional exchange session columns if present (Issue #8)
+        for col in EXCHANGE_SESSION_COLUMNS:
             if col in df.columns:
                 columns.append(col)
 
