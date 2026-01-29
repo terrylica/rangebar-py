@@ -184,6 +184,21 @@ ignore = [
     "PLC0415", # Lazy imports for optional ClickHouse/Polars dependencies
     "PD901",   # Generic variable name 'df'
 ]
+"python/rangebar/orchestration/*.py" = [
+    "PLC0415", # Lazy imports for optional ClickHouse/Polars/Exness dependencies
+    "PLR0913", # Too many arguments (orchestration functions expose full API surface)
+    "PLR0912", # Too many branches (complex orchestration logic)
+    "PLR0915", # Too many statements (orchestration entry points)
+    "PLR0911", # Too many return statements (complex control flow)
+    "PD901",   # Generic variable name 'df'
+    "ARG001",  # Unused function arguments (reserved for future use / API stability)
+    "TRY300",  # Consider moving to else block
+    "SIM108",  # Ternary operator (readability preference)
+    "DTZ007",  # Naive datetime from strptime (intentional, dates are local)
+    "DTZ001",  # Naive datetime constructor (intentional for month boundaries)
+    "E501",    # Line too long (docstring examples, long comments)
+    "ANN401",  # Any type in kwargs (deprecated shim compatibility)
+]
 "python/rangebar/clickhouse/*.py" = [
     "PD901",   # Generic variable name 'df' (common in data processing)
     "RET504",  # Unnecessary assignment before return
