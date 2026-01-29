@@ -158,6 +158,13 @@ _FOREX_CURRENCIES: frozenset[str] = frozenset(
 )
 
 # =============================================================================
+# Continuity Validation Constants
+# =============================================================================
+
+# Default tolerance for junction continuity validation (0.01% = 0.0001)
+CONTINUITY_TOLERANCE_PCT: float = 0.0001
+
+# =============================================================================
 # Exchange Session Column Names (Ouroboros feature)
 # =============================================================================
 
