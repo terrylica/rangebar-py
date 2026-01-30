@@ -210,6 +210,16 @@ def emit_hook(
     ...     threshold_bps=250,
     ... )
     """
+    # Add memory snapshot to all hook payloads (Issue #49 T2.3)
+    try:
+        from rangebar.resource_guard import get_memory_info
+
+        mem = get_memory_info()
+        details["memory_rss_mb"] = mem.process_rss_mb
+        details["memory_pct"] = round(mem.usage_pct, 3)
+    except Exception:
+        logger.debug("Memory snapshot unavailable for hook payload", exc_info=True)
+
     is_failure = "FAILED" in event.name
     payload = HookPayload(
         event=event,
