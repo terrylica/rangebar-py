@@ -267,8 +267,6 @@ def get_range_bars(
     from datetime import datetime
     from pathlib import Path
 
-    import polars as pl
-
     from rangebar.storage.parquet import TickStorage
 
     # -------------------------------------------------------------------------
@@ -431,34 +429,24 @@ def get_range_bars(
     cache_symbol = f"{source}_{market_normalized}_{symbol}".upper()
 
     # -------------------------------------------------------------------------
-    # Fetch tick data (cache or network) - slow path
+    # Determine tick data source (cache or network)
     # -------------------------------------------------------------------------
-    tick_data: pl.DataFrame
+    has_cached_ticks = use_cache and storage.has_ticks(cache_symbol, start_ts, end_ts)
 
-    if use_cache and storage.has_ticks(cache_symbol, start_ts, end_ts):
-        tick_data = storage.read_ticks(cache_symbol, start_ts, end_ts)
-    elif fetch_if_missing:
-        if source == "binance":
-            tick_data = _fetch_binance(symbol, start_date, end_date, market_normalized)
-        else:  # exness
-            tick_data = _fetch_exness(symbol, start_date, end_date, validation)
-
-        # Cache the tick data
-        if use_cache and not tick_data.is_empty():
-            storage.write_ticks(cache_symbol, tick_data)
-    else:
-        # fetch_if_missing=False: Return empty DataFrame when no cached data
+    if not has_cached_ticks and not fetch_if_missing:
         return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
 
-    if tick_data.is_empty():
-        msg = f"No data available for {symbol} from {start_date} to {end_date}"
-        raise RuntimeError(msg)
-
-    # -------------------------------------------------------------------------
-    # Process to range bars with Ouroboros boundaries (v11.0+)
-    # -------------------------------------------------------------------------
+    # For Exness, load all ticks upfront (smaller datasets)
     if source == "exness":
-        # Exness uses week ouroboros implicitly (aligns with Sunday market open)
+        if has_cached_ticks:
+            tick_data = storage.read_ticks(cache_symbol, start_ts, end_ts)
+        else:
+            tick_data = _fetch_exness(symbol, start_date, end_date, validation)
+            if use_cache and not tick_data.is_empty():
+                storage.write_ticks(cache_symbol, tick_data)
+        if tick_data.is_empty():
+            msg = f"No data available for {symbol} from {start_date} to {end_date}"
+            raise RuntimeError(msg)
         return _process_exness_ticks(
             tick_data,
             symbol,
@@ -468,11 +456,16 @@ def get_range_bars(
             include_microstructure,
         )
 
-    # Binance: Process with ouroboros segment iteration
+    # -------------------------------------------------------------------------
+    # Binance: Process with ouroboros segment iteration (Issue #51)
+    # Load ticks per-segment to avoid OOM on large date ranges.
+    # Each segment loads only the ticks within its boundaries (~1 year max).
+    # -------------------------------------------------------------------------
     from rangebar.ouroboros import iter_ouroboros_segments
 
     all_bars: list[pd.DataFrame] = []
     processor: RangeBarProcessor | None = None
+    any_data_found = False
 
     for segment_start, segment_end, boundary in iter_ouroboros_segments(
         start_dt.date(), end_dt.date(), ouroboros
@@ -494,18 +487,29 @@ def get_range_bars(
                     orphan_df = orphan_df.set_index("timestamp")
                 all_bars.append(orphan_df)
 
-        # Filter tick data for this segment
-        # Note: Tick timestamps are in MILLISECONDS (not microseconds)
+        # Load tick data scoped to this segment (not the full range)
         segment_start_ms = int(segment_start.timestamp() * 1_000)
         segment_end_ms = int(segment_end.timestamp() * 1_000)
 
-        segment_ticks = tick_data.filter(
-            (pl.col("timestamp") >= segment_start_ms)
-            & (pl.col("timestamp") <= segment_end_ms)
-        )
+        if has_cached_ticks:
+            segment_ticks = storage.read_ticks(
+                cache_symbol, segment_start_ms, segment_end_ms
+            )
+        else:
+            # Fetch from network for this segment only
+            seg_start_str = segment_start.strftime("%Y-%m-%d")
+            seg_end_str = segment_end.strftime("%Y-%m-%d")
+            segment_ticks = _fetch_binance(
+                symbol, seg_start_str, seg_end_str, market_normalized
+            )
+            # Cache segment ticks
+            if use_cache and not segment_ticks.is_empty():
+                storage.write_ticks(cache_symbol, segment_ticks)
 
         if segment_ticks.is_empty():
             continue
+
+        any_data_found = True
 
         # Process segment (reuse processor for state continuity within segment)
         segment_bars, processor = _process_binance_trades(
@@ -520,6 +524,10 @@ def get_range_bars(
 
         if segment_bars is not None and not segment_bars.empty:
             all_bars.append(segment_bars)
+
+    if not any_data_found:
+        msg = f"No data available for {symbol} from {start_date} to {end_date}"
+        raise RuntimeError(msg)
 
     # Concatenate all segments
     if not all_bars:
