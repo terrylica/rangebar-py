@@ -145,8 +145,26 @@ def _fetch_binance(
     This function loads all trades into memory at once.
     """
     import warnings
+    from datetime import datetime
 
     import polars as pl
+
+    # MEM-007: Guard deprecated batch path with date range limit (Issue #49)
+    # This function loads ALL trades into a single DataFrame. For high-volume
+    # symbols (BTCUSDT), a single month can be ~6GB. Limit to 30 days.
+    max_days = 30
+    days = (
+        datetime.strptime(end_date, "%Y-%m-%d")
+        - datetime.strptime(start_date, "%Y-%m-%d")
+    ).days
+    if days > max_days:
+        msg = (
+            f"_fetch_binance() cannot safely load {days} days of data. "
+            f"This deprecated path loads all trades into memory at once "
+            f"(limit: {max_days} days). Use precompute_range_bars() or "
+            f"get_range_bars() with per-segment loading instead."
+        )
+        raise MemoryError(msg)
 
     warnings.warn(
         "_fetch_binance() is deprecated. Use stream_binance_trades() for "
