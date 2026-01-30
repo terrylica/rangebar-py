@@ -39,6 +39,7 @@ def precompute_range_bars(
     validate_on_complete: str = "error",
     continuity_tolerance_pct: float = 0.001,
     cache_dir: str | None = None,
+    max_memory_gb: float | None = None,
 ) -> PrecomputeResult:
     """Precompute continuous range bars for a date range (single-pass, guaranteed continuity).
 
@@ -82,6 +83,10 @@ def precompute_range_bars(
         The total allowed gap is threshold_pct + continuity_tolerance_pct.
     cache_dir : str or None, default=None
         Custom cache directory for tick data
+    max_memory_gb : float or None, default=None
+        Process-level memory cap in GB. Sets RLIMIT_AS so that
+        exceeding the limit raises MemoryError instead of OOM kill.
+        None disables the cap.
 
     Returns
     -------
@@ -120,6 +125,12 @@ def precompute_range_bars(
 
     from rangebar.clickhouse import CacheKey, RangeBarCache
     from rangebar.storage.parquet import TickStorage
+
+    # MEM-009: Set process-level memory cap if requested (Issue #49)
+    if max_memory_gb is not None:
+        from rangebar.resource_guard import set_memory_limit
+
+        set_memory_limit(max_gb=max_memory_gb)
 
     start_time = time.time()
 
