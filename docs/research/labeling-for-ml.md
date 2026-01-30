@@ -410,20 +410,20 @@ Three simultaneous barriers:
 ```
                   Triple Barrier Method (de Prado)
    ┌────────────────────────────────────────────────────────────┐
-103├ •• Price path ────•────────────────────────────────────────┤
-   │                ••• •                                       │
-   │              ••     •                                      │
-102┤            ••        •                                     │
-   │         •••           •••                                  │
-101┤      •••                 •••                               │
-   │     •                       •                              │
-   │   ••                         ••                        •   │
-100├•••─────────────────────────────•••──────────────────•••─•••┤
-   │                                   •••            •••       │
-   │                                      •          •          │
- 99┤                                       ••      ••           │
-   │                                         ••••••             │
- 98┤                                                            │
+103├ •• Price path ────────────────────────────•────────────────┤
+   │                                        ••• •               │
+   │                                       •     •              │
+102┤                                     ••       ••            │
+   │                                  •••           •           │
+101┤                               •••               ••         │
+   │                              •                    •        │
+   │                            ••                      ••      │
+100├•────────────────────────•••──────────────────────────••••••┤
+   │ •••                  •••                                   │
+   │    •                •                                      │
+ 99┤     ••            ••                                       │
+   │       •••      •••                                         │
+ 98┤          ••••••                                            │
    │                                                            │
    │                                                            │
  97├────────────────────────────────────────────────────────────┤
@@ -432,9 +432,10 @@ Three simultaneous barriers:
 Price                        Time (bars)
 ```
 
-- **Upper barrier (103)**: Profit target hit at bar 6 → Label = **+1**
-- **Lower barrier (97)**: Stop-loss (not touched)
 - **Entry price (100)**: Position opened at bar 0
+- **Drawdown to 98** (bars 4-5): Unrealized loss, but stop-loss not triggered
+- **Upper barrier (103)**: Profit target hit at bar 14 → Label = **+1**
+- **Lower barrier (97)**: Stop-loss (not touched)
 - **Vertical barrier**: Time limit at bar 19 (not reached)
 
 <details>
@@ -445,8 +446,8 @@ import re
 import plotext as plt
 
 x = list(range(20))
-y = [100, 100.5, 101, 101.5, 102, 102.5, 103, 102, 101.5, 101,
-     100.5, 100, 99.5, 99, 98.5, 99, 99.5, 100, 100.5, 100]
+y = [100, 99.5, 99, 98.5, 98, 98.5, 99, 99.5, 100, 100.5,
+     101, 101.5, 102, 102.5, 103, 102, 101, 100.5, 100, 100]
 
 plt.clear_figure()
 plt.plot(x, y, marker="dot", label="Price path")
