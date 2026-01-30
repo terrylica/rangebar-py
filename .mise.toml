@@ -398,14 +398,19 @@ description = "Verify release configuration (GitHub, Doppler, SSH)"
 run = "./scripts/check-release-config.sh"
 
 [tasks."release:build-all"]
-description = "Build all platform wheels (Phase 3 - runs AFTER version bump)"
+description = "Build all platform wheels + sdist (Phase 3 - runs AFTER version bump)"
 depends = ["release:version"]
 run = """
 echo "=== BUILD ALL PLATFORMS ==="
 mise run release:macos-arm64
 mise run release:linux
-echo "OK: All wheels built"
-ls -la dist/*.whl 2>/dev/null || true
+mise run release:sdist
+# Copy macOS wheel and sdist to dist/ (Linux wheel already lands there via scp)
+VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+cp -n target/wheels/rangebar-${VERSION}-*.whl dist/ 2>/dev/null || true
+cp -n target/wheels/rangebar-${VERSION}.tar.gz dist/ 2>/dev/null || true
+echo "OK: All wheels + sdist built"
+ls -la dist/rangebar-${VERSION}* 2>/dev/null || true
 """
 
 [tasks."release:postflight"]
@@ -431,15 +436,22 @@ run = "bun install --silent 2>/dev/null && GH_CONFIG_DIR=$HOME/.config/gh/profil
 
 [tasks."release:pypi"]
 description = "Publish to PyPI using Doppler credentials (local-only, ADR-0027)"
+depends = ["release:build-all"]
 run = "./scripts/publish-to-pypi.sh"
 
 [tasks."release:full"]
-description = "Full 4-phase release workflow (versioning only - PyPI separate)"
+description = "Full release workflow: version bump → build → smoke → publish to PyPI"
 # Dependency chain enforced via task-level depends:
 #   preflight → sync → version → build-all → postflight
-# Only need to list the leaf task; mise resolves the full chain.
-depends = ["release:postflight"]
-run = "echo 'Release complete! Next: mise run release:pypi'"
+#                                    ↓
+#                              release:pypi (publish)
+# mise resolves the full DAG automatically.
+depends = ["release:postflight", "release:pypi"]
+run = """
+echo '========================================='
+echo ' Release complete and published to PyPI!'
+echo '========================================='
+"""
 
 # =============================================================================
 # Smoke Test Tasks
