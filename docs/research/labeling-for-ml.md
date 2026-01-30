@@ -412,19 +412,19 @@ Three simultaneous barriers:
      ┌──────────────────────────────────────────────────────────┐
 105.0┤ •• Price path                                            │
      │                                                          │
-     │                                       •                  │
+     ├───────────────────────────────────────•──────────────────┤  ← MFE (104)
 103.5┤                                      • •••               │
-     ├────────────────────────────────────••─────•••────────────┤
+     ├────────────────────────────────────••─────•••────────────┤  ← Upper barrier (103)
 102.0┤                                 •••          •••         │
      │                                •                •        │
      │                              ••                  ••      │
 100.5┤                           •••                      •     │
-     ├•───────────────────────•••──────────────────────────••───┤
+     ├•───────────────────────•••──────────────────────────••───┤  ← Entry (100)
      │ •••                 •••                               •••│
  99.0┤    •••           •••                                     │
-     │       •••••••••••                                        │
+     ├───────•••••••••••────────────────────────────────────────┤  ← MAE (98)
  97.5┤                                                          │
-     ├──────────────────────────────────────────────────────────┤
+     ├──────────────────────────────────────────────────────────┤  ← Lower barrier (97)
      │                                                          │
  96.0┤                                                          │
      └┬─────────────┬──────────────┬─────────────┬─────────────┬┘
@@ -432,13 +432,19 @@ Three simultaneous barriers:
 Price                         Time (bars)
 ```
 
+**Barriers:**
+
+- **Upper barrier (103)**: Profit target (+pt × σ) — first touch at bar 12 → Label = **+1**
+- **Lower barrier (97)**: Stop-loss (-sl × σ) — not touched
 - **Entry price (100)**: Position opened at bar 0
-- **Drawdown to 98** (bars 4-5): Unrealized loss, but stop-loss not triggered
-- **Upper barrier (103)**: First touch at bar 12 → Label = **+1**
-- **Overshoot to 104** (bar 13): Price continues past barrier, then pulls back
-- **Lower barrier (97)**: Stop-loss (not touched)
+
+**Excursion metrics** (computed after trade closes):
+
+- **MAE (Maximum Adverse Excursion)**: 98 — worst drawdown during trade (2 points below entry)
+- **MFE (Maximum Favorable Excursion)**: 104 — best unrealized profit during trade (4 points above entry)
 
 Note: The label is determined by the **first barrier touched**, not the final price.
+MAE/MFE are useful for stop-loss and profit-target optimization.
 
 <details>
 <summary>plotext source</summary>
@@ -456,6 +462,8 @@ plt.plot(x, y, marker="dot", label="Price path")
 plt.hline(103)    # Upper barrier (+pt × σ)
 plt.hline(97)     # Lower barrier (-sl × σ)
 plt.hline(100)    # Entry price
+plt.hline(104)    # MFE level
+plt.hline(98)     # MAE level
 plt.ylim(96, 105)
 plt.title("Triple Barrier Method (de Prado)")
 plt.xlabel("Time (bars)")
