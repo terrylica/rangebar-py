@@ -410,17 +410,17 @@ Three simultaneous barriers:
 ```
 Price
   │
-  │  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  Upper barrier (+pt × σ)
+  │  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌  Upper barrier (+pt × σ)
   │                              ╱
   │                   ╱╲    ╱╲  ╱
   │             ╱╲ ╱    ╲  ╱  ╲╱
-  │  ──────────╱──╳──────╲╱─────────  Entry price
+  │  ───────────╱──╳──────╲╱────────  Entry price
   │           ╱
-  │  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  Lower barrier (-sl × σ)
+  │  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌  Lower barrier (-sl × σ)
   │
-  │           │                       │
-  │           Entry                   │  Vertical barrier (h bars)
-  └───────────┴───────────────────────┴──── Time/Bars
+  │           │                     │
+  │           Entry                 │  Vertical barrier (h bars)
+  └───────────┴─────────────────────┴──── Time/Bars
 ```
 
 | Barrier  | Hit First → Label | Meaning               |
