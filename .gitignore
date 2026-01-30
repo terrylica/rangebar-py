@@ -98,6 +98,7 @@ tmp/
 .lycheecache
 logs/
 node_modules/
+bun.lock
 
 # ClickHouse server runtime data (created when running `clickhouse server` locally)
 data/
