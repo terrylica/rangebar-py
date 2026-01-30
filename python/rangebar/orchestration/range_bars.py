@@ -62,6 +62,8 @@ def get_range_bars(
     use_cache: bool = True,
     fetch_if_missing: bool = True,
     cache_dir: str | None = None,
+    # Memory guards (Issue #49)
+    max_memory_mb: int | None = None,
 ) -> pd.DataFrame | Iterator[pl.DataFrame]:
     """Get range bars for a symbol with automatic data fetching and caching.
 
@@ -157,6 +159,11 @@ def get_range_bars(
         - macOS: ~/Library/Caches/rangebar/
         - Linux: ~/.cache/rangebar/
         - Windows: %LOCALAPPDATA%/terrylica/rangebar/Cache/
+    max_memory_mb : int or None, default=None
+        Memory budget in MB for tick data loading. If the estimated
+        in-memory size exceeds this limit, raises MemoryError. If None,
+        uses automatic detection (80% of available RAM). Set to 0 to
+        disable all memory guards.
 
     Returns
     -------
@@ -455,6 +462,39 @@ def get_range_bars(
             include_incomplete,
             include_microstructure,
         )
+
+    # -------------------------------------------------------------------------
+    # MEM-010: Pre-flight memory estimation (Issue #49)
+    # Check if cached tick data would fit in memory before loading.
+    # -------------------------------------------------------------------------
+    if has_cached_ticks and max_memory_mb != 0:
+        import warnings
+
+        from rangebar.resource_guard import estimate_tick_memory
+
+        estimate = estimate_tick_memory(
+            storage, cache_symbol, start_ts, end_ts
+        )
+        if estimate.recommendation == "will_oom":
+            msg = (
+                f"Loading {symbol} ({start_date} -> {end_date}) would "
+                f"require ~{estimate.estimated_memory_mb} MB "
+                f"(available: {estimate.system_available_mb} MB). "
+                f"Use precompute_range_bars() for streaming processing."
+            )
+            if max_memory_mb is not None:
+                estimate.check_or_raise(max_mb=max_memory_mb)
+            else:
+                raise MemoryError(msg)
+        elif estimate.recommendation == "streaming_recommended":
+            warnings.warn(
+                f"Large tick dataset for {symbol} "
+                f"(~{estimate.estimated_memory_mb} MB). "
+                f"Consider precompute_range_bars() for memory-safe "
+                f"processing.",
+                ResourceWarning,
+                stacklevel=2,
+            )
 
     # -------------------------------------------------------------------------
     # Binance: Process with ouroboros segment iteration (Issue #51)
