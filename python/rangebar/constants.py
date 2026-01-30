@@ -10,6 +10,7 @@ SSoT (Single Source of Truth) for:
 - THRESHOLD_DECIMAL_MIN/MAX: Valid threshold range
 - _CRYPTO_BASES: Known crypto base symbols for asset class detection
 - _FOREX_CURRENCIES: Known forex currencies for asset class detection
+- MEM_GUARDS: Memory guard registry (Issue #49)
 """
 
 from __future__ import annotations
@@ -184,3 +185,71 @@ ALL_OPTIONAL_COLUMNS: tuple[str, ...] = (
     *MICROSTRUCTURE_COLUMNS,
     *EXCHANGE_SESSION_COLUMNS,
 )
+
+# =============================================================================
+# Memory Guard Registry (Issue #49)
+# =============================================================================
+# Each guard prevents a specific memory exhaustion pattern.
+# Code references use "# MEM-XXX:" comments for traceability.
+#
+# Guards are organized by pipeline stage:
+#   Loading  → MEM-001, MEM-004, MEM-007, MEM-010
+#   Process  → MEM-002, MEM-003
+#   Concat   → MEM-006, MEM-008
+#   Test     → MEM-005
+#   Process  → MEM-009
+#
+# When adding a new guard, assign the next number and add an entry here.
+
+MEM_GUARDS: dict[str, dict[str, str]] = {
+    "MEM-001": {
+        "description": "Avoid map_elements() in Parquet parsing (native Polars ops)",
+        "location": "storage/parquet.py:185",
+        "stage": "loading",
+    },
+    "MEM-002": {
+        "description": "Process trades in 100K chunks (~15 MB each)",
+        "location": "orchestration/helpers.py:274, processors/api.py:371",
+        "stage": "processing",
+    },
+    "MEM-003": {
+        "description": "Select columns BEFORE .collect() on LazyFrame",
+        "location": "orchestration/helpers.py:236, processors/api.py:341",
+        "stage": "processing",
+    },
+    "MEM-004": {
+        "description": "Guard read_ticks() with size estimation before .collect()",
+        "location": "storage/parquet.py",
+        "stage": "loading",
+    },
+    "MEM-005": {
+        "description": "gc.collect() after each test to prevent accumulation",
+        "location": "tests/conftest.py:26",
+        "stage": "testing",
+    },
+    "MEM-006": {
+        "description": "Use Polars concat instead of pandas for memory efficiency",
+        "location": "conversion.py:107, orchestration/precompute.py:404",
+        "stage": "concatenation",
+    },
+    "MEM-007": {
+        "description": "Guard deprecated _fetch_binance() with date range limit",
+        "location": "orchestration/helpers.py:136",
+        "stage": "loading",
+    },
+    "MEM-008": {
+        "description": "Streaming bar accumulation (avoid holding all in memory)",
+        "location": "orchestration/range_bars.py",
+        "stage": "concatenation",
+    },
+    "MEM-009": {
+        "description": "Process-level RLIMIT_AS cap (MemoryError instead of OOM kill)",
+        "location": "resource_guard.py",
+        "stage": "process",
+    },
+    "MEM-010": {
+        "description": "Pre-flight memory estimation before tick loading",
+        "location": "resource_guard.py",
+        "stage": "loading",
+    },
+}
