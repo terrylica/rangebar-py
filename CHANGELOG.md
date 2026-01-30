@@ -1,3 +1,21 @@
+# [11.3.0](https://github.com/terrylica/rangebar-py/compare/v11.2.2...v11.3.0) (2026-01-30)
+
+
+### Bug Fixes
+
+* **clickhouse:** cast exchange session bools for ClickHouse insert (Issue [#50](https://github.com/terrylica/rangebar-py/issues/50)) ([24c5676](https://github.com/terrylica/rangebar-py/commit/24c56765e514aced311b335b3203fcc39c93ab1a))
+* **memory:** MEM-004 add size guard to read_ticks (Issue [#49](https://github.com/terrylica/rangebar-py/issues/49) T1.2) ([4aa54e5](https://github.com/terrylica/rangebar-py/commit/4aa54e50dc37f9ca0896a88cb896532473ae5f3d))
+* **memory:** MEM-007 guard deprecated _fetch_binance path (Issue [#49](https://github.com/terrylica/rangebar-py/issues/49) T1.3) ([fefd3ab](https://github.com/terrylica/rangebar-py/commit/fefd3ab19dfc4bb31c280ed120037b132e2a2817)), closes [hi#volume](https://github.com/hi/issues/volume)
+* **range-bars:** load ticks per-segment to prevent OOM (Issue [#51](https://github.com/terrylica/rangebar-py/issues/51)) ([6134fd8](https://github.com/terrylica/rangebar-py/commit/6134fd80e96d3230d54259b68542a45c1a7edc6f))
+
+
+### Features
+
+* **hooks:** add memory snapshot to hook payloads (Issue [#49](https://github.com/terrylica/rangebar-py/issues/49) T2.3) ([2ed58aa](https://github.com/terrylica/rangebar-py/commit/2ed58aad0ca40c6eba8aad24eb1e1a007f7e3a25))
+* **memory:** add memory cap to precompute_range_bars (Issue [#49](https://github.com/terrylica/rangebar-py/issues/49) T2.2) ([6199ff1](https://github.com/terrylica/rangebar-py/commit/6199ff1b50059f8e23a79564f8a89c3c5251ef91))
+* **memory:** integrate pre-flight estimation into get_range_bars (Issue [#49](https://github.com/terrylica/rangebar-py/issues/49) T2.1) ([aa33210](https://github.com/terrylica/rangebar-py/commit/aa3321090922c360db99e728f64cb7a55d2f95d0))
+* **memory:** MEM-009/010 resource guard module (Issue [#49](https://github.com/terrylica/rangebar-py/issues/49) T1.4+T1.5) ([c974f05](https://github.com/terrylica/rangebar-py/commit/c974f052e2b8175a374396306f793b1f7f013055))
+
 ## [11.2.2](https://github.com/terrylica/rangebar-py/compare/v11.2.1...v11.2.2) (2026-01-29)
 
 
