@@ -409,39 +409,44 @@ Three simultaneous barriers:
 
 ```
                   Triple Barrier Method (de Prado)
-     ┌──────────────────────────────────────────────────────────┐
-105.0┤ •• Price path                                            │
-     │                                                          │
-     ├───────────────────────────────────────•──────────────────┤  ← MFE (104)
-103.5┤                                      • •••               │
-     ├────────────────────────────────────••─────•••────────────┤  ← Upper barrier (103)
-102.0┤                                 •••          •••         │
-     │                                •                •        │
-     │                              ••                  ••      │
-100.5┤                           •••                      •     │
-     ├•───────────────────────•••──────────────────────────••───┤  ← Entry (100)
+     ┌─────────────────────────────────────────────────────────┬┐
+105.0┤ •• Price path                                           ││
+     │                                                         ││
+     ├───────────────────────────────────────•─────────────────┼┤  ← MFE (104)
+103.5┤                                      • •••              ││
+     ├────────────────────────────────────••─────•••───────────┼┤  ← Upper barrier (103)
+102.0┤                                 •••          •••        ││
+     │                                •                •       ││
+     │                              ••                  ••     ││
+100.5┤                           •••                      •    ││
+     ├•───────────────────────•••──────────────────────────••──┼┤  ← Entry (100)
      │ •••                 •••                               •••│
- 99.0┤    •••           •••                                     │
-     ├───────•••••••••••────────────────────────────────────────┤  ← MAE (98)
- 97.5┤                                                          │
-     ├──────────────────────────────────────────────────────────┤  ← Lower barrier (97)
-     │                                                          │
- 96.0┤                                                          │
-     └┬─────────────┬──────────────┬─────────────┬─────────────┬┘
+ 99.0┤    •••           •••                                    ││
+     ├───────•••••••••••───────────────────────────────────────┼┤  ← MAE (98)
+ 97.5┤                                                         ││
+     ├─────────────────────────────────────────────────────────┼┤  ← Lower barrier (97)
+     │                                                         ││
+ 96.0┤                                                         ││
+     └┬─────────────┬──────────────┬─────────────┬─────────────┴┘
      0.0           4.8            9.5          14.2         19.0
-Price                         Time (bars)
+Price                         Time (bars)                      ↑
+                                                    Vertical barrier (h bars)
 ```
 
-**Barriers:**
+**The Three Barriers:**
 
-- **Upper barrier (103)**: Profit target (+pt × σ) — first touch at bar 12 → Label = **+1**
-- **Lower barrier (97)**: Stop-loss (-sl × σ) — not touched
-- **Entry price (100)**: Position opened at bar 0
+| Barrier  | Level  | Description             | This Trade             |
+| -------- | ------ | ----------------------- | ---------------------- |
+| Upper    | 103    | Profit target (+pt × σ) | Hit at bar 12 → **+1** |
+| Lower    | 97     | Stop-loss (-sl × σ)     | Not touched            |
+| Vertical | bar 19 | Time limit (h bars)     | Not reached            |
 
 **Excursion metrics** (computed after trade closes):
 
-- **MAE (Maximum Adverse Excursion)**: 98 — worst drawdown during trade (2 points below entry)
-- **MFE (Maximum Favorable Excursion)**: 104 — best unrealized profit during trade (4 points above entry)
+| Metric | Value | Description                                       |
+| ------ | ----- | ------------------------------------------------- |
+| MAE    | 98    | Maximum Adverse Excursion (worst drawdown)        |
+| MFE    | 104   | Maximum Favorable Excursion (best unrealized P&L) |
 
 Note: The label is determined by the **first barrier touched**, not the final price.
 MAE/MFE are useful for stop-loss and profit-target optimization.
@@ -464,6 +469,7 @@ plt.hline(97)     # Lower barrier (-sl × σ)
 plt.hline(100)    # Entry price
 plt.hline(104)    # MFE level
 plt.hline(98)     # MAE level
+plt.vline(19)     # Vertical barrier (time limit)
 plt.ylim(96, 105)
 plt.title("Triple Barrier Method (de Prado)")
 plt.xlabel("Time (bars)")
