@@ -220,6 +220,10 @@ class TickStorage:
 
         return total_rows
 
+    # Default Parquet compression ratio (compressed → in-memory expansion)
+    # Empirically measured: Binance aggTrades Parquet files expand ~4x
+    _COMPRESSION_RATIO: float = 4.0
+
     def read_ticks(
         self,
         symbol: str,
@@ -227,6 +231,7 @@ class TickStorage:
         end_ts: int | None = None,
         *,
         timestamp_col: str = "timestamp",
+        max_memory_mb: int | None = None,
     ) -> pl.DataFrame:
         """Read tick data from Parquet files.
 
@@ -240,11 +245,20 @@ class TickStorage:
             End timestamp in milliseconds (inclusive)
         timestamp_col : str
             Name of the timestamp column
+        max_memory_mb : int | None
+            Memory budget in MB. If the estimated in-memory size exceeds
+            this limit, raises MemoryError with a suggestion to use
+            read_ticks_streaming(). None disables the guard.
 
         Returns
         -------
         pl.DataFrame
             Tick data filtered by time range
+
+        Raises
+        ------
+        MemoryError
+            If estimated memory exceeds max_memory_mb budget.
 
         Notes
         -----
@@ -273,6 +287,21 @@ class TickStorage:
 
         if not parquet_files:
             return pl.DataFrame()
+
+        # MEM-004: Estimate size before materializing (Issue #49)
+        if max_memory_mb is not None:
+            total_bytes = sum(f.stat().st_size for f in parquet_files)
+            estimated_mb = int(
+                total_bytes * self._COMPRESSION_RATIO / (1024 * 1024)
+            )
+            if estimated_mb > max_memory_mb:
+                msg = (
+                    f"Estimated {estimated_mb} MB for {symbol} "
+                    f"({len(parquet_files)} files), exceeds budget "
+                    f"{max_memory_mb} MB. Use read_ticks_streaming() "
+                    f"for chunked loading."
+                )
+                raise MemoryError(msg)
 
         # LAZY LOADING with predicate pushdown
         # Uses pl.scan_parquet() instead of pl.read_parquet() to enable:
