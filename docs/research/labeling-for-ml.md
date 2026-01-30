@@ -408,20 +408,60 @@ price _path_ between bars i and i+h.
 Three simultaneous barriers:
 
 ```
-Price
-  │
-  │  ───────────────────\────────────  Upper barrier (+pt × σ)
-  │              \     / \
-  │         \   / \   /   \
-  │  ──────/─\─/───\─/───────────────  Entry price
-  │       /   /     /
-  │      /
-  │  ────────────────────────────────  Lower barrier (-sl × σ)
-  │
-  │      │                 │
-  │      Entry             │  Vertical barrier (h bars)
-  └──────┴─────────────────┴──── Time/Bars
+                  Triple Barrier Method (de Prado)
+   ┌────────────────────────────────────────────────────────────┐
+103├ •• Price path ─────────────────────────•───────────────────┤
+   │                                       • •                  │
+   │                                      •   •                 │
+102┤      •                              •     •                │
+   │     • •                            •       ••              │
+101┤   ••   ••                        ••          ••            │
+   │  •       •                      •              •           │
+   │ •         •                    •                •          │
+100├•───────────•──────────────────•──────────────────•─────••••┤
+   │             •                •                    •   •    │
+   │              •              •                      • •     │
+ 99┤               ••           •                        •      │
+   │                 •         •                                │
+ 98┤                  ••     ••                                 │
+   │                    •   •                                   │
+   │                     • •                                    │
+ 97├──────────────────────•─────────────────────────────────────┤
+   └┬──────────────┬──────────────┬─────────────┬──────────────┬┘
+   0.0            4.8            9.5          14.2          19.0
+Price                        Time (bars)
 ```
+
+- **Upper barrier (103)**: Profit target (+pt × σ)
+- **Lower barrier (97)**: Stop-loss (-sl × σ)
+- **Entry price (100)**: Position opened
+- **Vertical barrier**: Time limit at bar 19
+
+<details>
+<summary>plotext source</summary>
+
+```python
+import re
+import plotext as plt
+
+x = list(range(20))
+y = [100, 101, 102, 101, 100, 99, 98, 97, 98, 99,
+     100, 101, 102, 103, 102, 101, 100, 99, 100, 100]
+
+plt.clear_figure()
+plt.plot(x, y, marker="dot", label="Price path")
+plt.hline(103)    # Upper barrier (+pt × σ)
+plt.hline(97)     # Lower barrier (-sl × σ)
+plt.hline(100)    # Entry price
+plt.title("Triple Barrier Method (de Prado)")
+plt.xlabel("Time (bars)")
+plt.ylabel("Price")
+plt.plotsize(65, 22)
+plt.theme("clear")
+print(re.sub(r'\x1b\[[0-9;]*m', '', plt.build()))
+```
+
+</details>
 
 | Barrier  | Hit First → Label | Meaning               |
 | -------- | ----------------- | --------------------- |
