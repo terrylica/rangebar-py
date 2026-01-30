@@ -137,8 +137,10 @@ class BulkStoreMixin:
                 columns.append(col)
 
         # Add optional exchange session columns if present (Issue #8)
+        # Cast numpy.bool_ to int for ClickHouse Nullable(UInt8) (Issue #50)
         for col in EXCHANGE_SESSION_COLUMNS:
             if col in df.columns:
+                df[col] = df[col].astype(int)
                 columns.append(col)
 
         # Filter to existing columns
@@ -288,8 +290,10 @@ class BulkStoreMixin:
                 columns.append(col)
 
         # Add optional exchange session columns if present (Issue #8)
+        # Cast bool to UInt8 for ClickHouse Nullable(UInt8) (Issue #50)
         for col in EXCHANGE_SESSION_COLUMNS:
             if col in df.columns:
+                df = df.with_columns(pl.col(col).cast(pl.UInt8))
                 columns.append(col)
 
         # Filter to existing columns
