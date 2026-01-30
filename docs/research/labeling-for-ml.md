@@ -433,24 +433,6 @@ Price                         Time (bars)                      ↑
                                                     Vertical barrier (h bars)
 ```
 
-**The Three Barriers:**
-
-| Barrier  | Level  | Description             | This Trade             |
-| -------- | ------ | ----------------------- | ---------------------- |
-| Upper    | 103    | Profit target (+pt × σ) | Hit at bar 12 → **+1** |
-| Lower    | 97     | Stop-loss (-sl × σ)     | Not touched            |
-| Vertical | bar 19 | Time limit (h bars)     | Not reached            |
-
-**Excursion metrics** (computed after trade closes):
-
-| Metric | Value | Description                                       |
-| ------ | ----- | ------------------------------------------------- |
-| MAE    | 98    | Maximum Adverse Excursion (worst drawdown)        |
-| MFE    | 104   | Maximum Favorable Excursion (best unrealized P&L) |
-
-Note: The label is determined by the **first barrier touched**, not the final price.
-MAE/MFE are useful for stop-loss and profit-target optimization.
-
 <details>
 <summary>plotext source</summary>
 
@@ -480,6 +462,24 @@ print(re.sub(r'\x1b\[[0-9;]*m', '', plt.build()))
 ```
 
 </details>
+
+**The Three Barriers:**
+
+| Barrier  | Level  | Description             | This Trade             |
+| -------- | ------ | ----------------------- | ---------------------- |
+| Upper    | 103    | Profit target (+pt × σ) | Hit at bar 12 → **+1** |
+| Lower    | 97     | Stop-loss (-sl × σ)     | Not touched            |
+| Vertical | bar 19 | Time limit (h bars)     | Not reached            |
+
+**Excursion metrics** (computed after trade closes):
+
+| Metric | Value | Description                                       |
+| ------ | ----- | ------------------------------------------------- |
+| MAE    | 98    | Maximum Adverse Excursion (worst drawdown)        |
+| MFE    | 104   | Maximum Favorable Excursion (best unrealized P&L) |
+
+Note: The label is determined by the **first barrier touched**, not the final price.
+MAE/MFE are useful for stop-loss and profit-target optimization.
 
 | Barrier  | Hit First → Label | Meaning               |
 | -------- | ----------------- | --------------------- |
