@@ -114,7 +114,155 @@ We store all 4 for readability and direct lookup, but only 2 are independent.
 
 ---
 
-## 3. Why Both Return Types Matter
+## 3. Intentional Lookahead: How Labels Work in the DataFrame
+
+This is the single most important nuance in labeling. A label on row `i`
+**intentionally contains future information** — information that was unknowable
+at the time you would have made a prediction. This is not a bug. This is by
+design. But you must understand the mechanics precisely to avoid lookahead bias
+during training.
+
+### 3.1 The Same-Row Paradox
+
+When you call `add_labels(df)`, the output looks like this:
+
+```
+         Features (known)              Labels (future)
+         ──────────────────            ──────────────────
+Row i:   ofi, vwap_dev, ...    │     c2c_return, o2c_return
+                               │
+                               │
+    The features describe      │     The labels describe
+    what happened DURING       │     what happened AFTER
+    bar i (or before it)       │     the prediction point
+```
+
+Both sit on the **same row** of the DataFrame. This is standard in supervised
+learning — the training pair `(X_i, y_i)` is always stored together. But you
+must understand what each column's **temporal reference point** is:
+
+```
+Timeline for row i:
+
+    ──────────────────────────────────────────────────────►  time
+         │                │                    │
+    close[i-1]        open[i]             close[i]
+         │                │                    │
+         │   ◄── gap ──►  │  ◄── bar i ────►  │
+         │                │                    │
+    ─────┼────────────────┼────────────────────┼──────────
+         │                │                    │
+    Features use     Features may        Labels use
+    close[i-1]       use open[i]         close[i]
+    and earlier      (known at open)     (UNKNOWN at
+                                         prediction time)
+```
+
+### 3.2 Why This Is Intentional (Not Lookahead Bias)
+
+In supervised learning, you always need ground truth to train against. The label
+is the **answer key** — what actually happened. The entire point of a predictive
+model is to learn patterns in features (`X`) that correlate with future outcomes
+(`y`).
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│                   Intentional vs Accidental Lookahead             │
+├────────────────────────────────┬──────────────────────────────────┤
+│ INTENTIONAL (correct)          │ ACCIDENTAL (bias — a bug)        │
+├────────────────────────────────┼──────────────────────────────────┤
+│ Label y_i uses close[i]       │ Feature X_i uses close[i+1]     │
+│ (future outcome as target)    │ (future data as input)           │
+├────────────────────────────────┼──────────────────────────────────┤
+│ Model never sees y during     │ Model sees future data during    │
+│ inference — only during       │ inference — produces unrealistic │
+│ training as ground truth      │ accuracy that vanishes in live   │
+├────────────────────────────────┼──────────────────────────────────┤
+│ Example: c2c_return on row i  │ Example: using c2c_return as a   │
+│ as target variable            │ feature for same-row prediction  │
+└────────────────────────────────┴──────────────────────────────────┘
+```
+
+The label is **always** lookahead by definition. The danger is when **features**
+contain lookahead — when the model's inputs include information from the future.
+
+### 3.3 Feature-Label Time Boundaries
+
+For each return type, the prediction point is different, and the features
+available at that prediction point are different:
+
+```
+c2c prediction (at bar i-1's close):
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│  ◄──── Features: bars [0..i-1] ────►│◄── Label: c2c on row i ─►│
+│                                     │                           │
+│  Everything up to and including     │  close[i] - close[i-1]   │
+│  bar i-1 is known                   │  UNKNOWN at prediction   │
+│                                     │  time                     │
+│  Prediction point: close[i-1]       │                           │
+└─────────────────────────────────────┴───────────────────────────┘
+
+o2c prediction (at bar i's open):
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│  ◄── Features: bars [0..i-1] + open[i] ──►│◄─ Label: o2c ────►│
+│                                            │                    │
+│  Everything up to and including bar i's    │  close[i] - open[i]│
+│  open price is known                       │  UNKNOWN at        │
+│                                            │  prediction time   │
+│  Prediction point: open[i]                 │                    │
+└────────────────────────────────────────────┴────────────────────┘
+```
+
+**Critical rule**: During training, the model receives `(X_i, y_i)` pairs.
+During inference (live trading), the model receives only `X_i` and must
+produce a prediction **without** seeing `y_i`. The label column exists in
+the training data but is absent in production.
+
+### 3.4 Practical Safeguards Against Accidental Lookahead
+
+| Safeguard                                       | What It Prevents                                    |
+| ----------------------------------------------- | --------------------------------------------------- |
+| Never use `c2c_return` as a feature             | The label itself leaking into inputs                |
+| Never use `close[i]` in features for c2c models | Future close leaking into same-row features         |
+| Never use `close[i]` in features for o2c models | Same — close is unknowable at bar open              |
+| Use `open[i]` in features only for o2c models   | Open is known at o2c prediction time                |
+| Use `shift(1)` for all cross-bar features       | Ensures features come from completed bars           |
+| Walk-forward validation, never random split     | Prevents future bars from appearing in training set |
+
+**Example of correct feature construction**:
+
+```python
+# CORRECT: features from bar i-1, label from bar i
+df["feature_prev_ofi"]  = df["ofi"].shift(1)          # bar i-1's OFI
+df["feature_prev_vwap"] = df["vwap_close_deviation"].shift(1)
+df["label_c2c"]         = df["c2c_return"]             # bar i's return
+
+# WRONG: feature from bar i, label from bar i (lookahead!)
+df["feature_ofi"]       = df["ofi"]                    # bar i's OFI
+df["label_c2c"]         = df["c2c_return"]             # bar i's return
+# BUG: ofi is computed at bar i's CLOSE, same time as the label
+```
+
+### 3.5 The o2c Subtlety
+
+`o2c_return` uses both `open[i]` and `close[i]`. At bar open time, only
+`open[i]` is known — `close[i]` is unknowable. So o2c is also a lookahead
+label. The difference from c2c is only **how far ahead** it looks:
+
+```
+c2c looks ahead: from close[i-1] to close[i]  (full inter-bar span)
+o2c looks ahead: from open[i]   to close[i]   (intra-bar span only)
+```
+
+Both are labels. Both contain future information. Both are intentional.
+The model's job is to predict them from features that do NOT contain
+future information.
+
+---
+
+## 4. Why Both Return Types Matter
 
 ### 3.1 Close-to-Close: The Prediction Benchmark
 
