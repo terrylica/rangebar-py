@@ -148,7 +148,7 @@ Timeline for row i:
          │                │                    │
     close[i-1]        open[i]             close[i]
          │                │                    │
-         │   ◄── gap ──►  │  ◄── bar i ────►  │
+         │   ◄── gap ──►  │   ◄── bar i ────►  │
          │                │                    │
     ─────┼────────────────┼────────────────────┼──────────
          │                │                    │
@@ -171,15 +171,15 @@ model is to learn patterns in features (`X`) that correlate with future outcomes
 ├────────────────────────────────┬──────────────────────────────────┤
 │ INTENTIONAL (correct)          │ ACCIDENTAL (bias — a bug)        │
 ├────────────────────────────────┼──────────────────────────────────┤
-│ Label y_i uses close[i]       │ Feature X_i uses close[i+1]     │
-│ (future outcome as target)    │ (future data as input)           │
+│ Label y_i uses close[i]        │ Feature X_i uses close[i+1]      │
+│ (future outcome as target)     │ (future data as input)           │
 ├────────────────────────────────┼──────────────────────────────────┤
-│ Model never sees y during     │ Model sees future data during    │
-│ inference — only during       │ inference — produces unrealistic │
-│ training as ground truth      │ accuracy that vanishes in live   │
+│ Model never sees y during      │ Model sees future data during    │
+│ inference — only during        │ inference — produces unrealistic │
+│ training as ground truth       │ accuracy that vanishes in live   │
 ├────────────────────────────────┼──────────────────────────────────┤
-│ Example: c2c_return on row i  │ Example: using c2c_return as a   │
-│ as target variable            │ feature for same-row prediction  │
+│ Example: c2c_return on row i   │ Example: using c2c_return as a   │
+│ as target variable             │ feature for same-row prediction  │
 └────────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -195,10 +195,10 @@ available at that prediction point are different:
 c2c prediction (at bar i-1's close):
 ┌─────────────────────────────────────────────────────────────────┐
 │                                                                 │
-│  ◄──── Features: bars [0..i-1] ────►│◄── Label: c2c on row i ─►│
+│  ◄──── Features: bars [0..i-1] ────►│◄── Label: c2c on row i ─► │
 │                                     │                           │
-│  Everything up to and including     │  close[i] - close[i-1]   │
-│  bar i-1 is known                   │  UNKNOWN at prediction   │
+│  Everything up to and including     │  close[i] - close[i-1]    │
+│  bar i-1 is known                   │  UNKNOWN at prediction    │
 │                                     │  time                     │
 │  Prediction point: close[i-1]       │                           │
 └─────────────────────────────────────┴───────────────────────────┘
@@ -206,7 +206,7 @@ c2c prediction (at bar i-1's close):
 o2c prediction (at bar i's open):
 ┌─────────────────────────────────────────────────────────────────┐
 │                                                                 │
-│  ◄── Features: bars [0..i-1] + open[i] ──►│◄─ Label: o2c ────►│
+│  ◄── Features: bars [0..i-1] + open[i] ──► │◄─ Label: o2c ────► │
 │                                            │                    │
 │  Everything up to and including bar i's    │  close[i] - open[i]│
 │  open price is known                       │  UNKNOWN at        │
