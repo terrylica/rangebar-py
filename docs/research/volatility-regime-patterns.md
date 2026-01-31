@@ -160,6 +160,7 @@ bear_neut│ signal7 │ signal8│ signal9  │
 | `scripts/volatility_regime_analysis_polars.py` | Volatility regime pattern analysis |
 | `scripts/combined_regime_analysis_polars.py`   | Combined SMA/RSI x RV analysis     |
 | `scripts/volatility_regime_audit_polars.py`    | Adversarial audit (param/OOS/CI)   |
+| `scripts/cross_regime_correlation_polars.py`   | Cross-regime correlation analysis  |
 
 ---
 
@@ -284,9 +285,65 @@ Tested 5 parameter variations:
 
 ---
 
+## Cross-Regime Correlation Analysis (2026-01-31)
+
+**Combining SMA/RSI and RV patterns provides MODERATE diversification benefit.**
+
+### Portfolio Metrics
+
+| Metric                | SMA/RSI Alone | RV Alone | Combined |
+| --------------------- | ------------- | -------- | -------- |
+| Total Patterns        | 11            | 12       | 23       |
+| Effective DoF         | 4.5           | 4.5      | **4.93** |
+| Diversification Ratio | 0.41          | 0.38     | **0.21** |
+| Diversification Gain  | -             | -        | +0.43    |
+
+### Cross-Correlation Analysis
+
+| Metric                | Value |
+| --------------------- | ----- |
+| Average Cross-Corr    | 0.335 |
+| Max Cross-Corr        | 0.925 |
+| Min Cross-Corr        | 0.0   |
+| Pairs with corr > 0.7 | 8     |
+| Pairs with corr < 0.3 | 45    |
+
+### High Correlation Pairs (AVOID combining)
+
+| SMA/RSI Pattern  | RV Pattern   | Correlation |
+| ---------------- | ------------ | ----------- |
+| chop\|UU         | active\|DD   | 0.925       |
+| chop\|DD         | active\|UU   | 0.918       |
+| bear_neutral\|UU | volatile\|DD | 0.892       |
+
+### Low Correlation Pairs (GOOD for diversification)
+
+| SMA/RSI Pattern  | RV Pattern | Correlation |
+| ---------------- | ---------- | ----------- |
+| chop\|UD         | active\|DU | 0.0         |
+| chop\|DU         | active\|UD | 0.0         |
+| bull_neutral\|UD | quiet\|DU  | 0.05        |
+
+### Interpretation
+
+1. **Moderate diversification**: Combined DoF of 4.93 vs 4.5 for either alone (+0.43 gain)
+2. **Not fully orthogonal**: Average cross-correlation of 0.335 indicates partial overlap
+3. **Selective combination**: 45 low-correlation pairs available for portfolio construction
+4. **Avoid redundancy**: 8 highly correlated pairs (>0.7) should not be combined
+
+### Recommendation
+
+**SELECTIVE COMBINATION** - Use both SMA/RSI and RV patterns but:
+
+- Avoid pairing continuation patterns (UU/DD) across regimes (highly correlated)
+- Prioritize pairing reversal patterns (DU/UD) across regimes (low correlation)
+- Focus on chop x active and bull/bear x quiet combinations
+
+---
+
 ## Next Steps
 
-- [ ] Compute correlation between RV patterns and SMA/RSI patterns
+- [x] Compute correlation between RV patterns and SMA/RSI patterns - DONE (moderate benefit)
 - [x] Test combined SMA/RSI x RV regime filters - DONE (16 universal patterns)
 - [x] Adversarial audit - DONE (ALL PASS)
 - [ ] Analyze return profiles for RV regime patterns
