@@ -73,8 +73,9 @@ if TYPE_CHECKING:
 
 def log_json(level: str, message: str, **kwargs: object) -> None:
     """Log a message in NDJSON format."""
+    from datetime import timezone
     entry = {
-        "timestamp": datetime.now(tz=datetime.UTC).isoformat(),
+        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
         "level": level,
         "message": message,
         **kwargs,
