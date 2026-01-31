@@ -216,22 +216,75 @@ A pattern-regime combination is considered **ODD robust** if:
 
 - [x] Validate on all symbols (BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT) - DONE
 - [x] Check for cross-symbol pattern consistency - DONE (75% universal)
-- [ ] Add 200 dbps trend filter confirmation
-- [ ] Compute actual return statistics per pattern/regime
+- [ ] Add 200 dbps trend filter confirmation (awaiting fill completion)
+- [x] Compute actual return statistics per pattern/regime - DONE
 - [ ] Test statistical significance of regime transitions
+
+---
+
+## Pattern Return Statistics (2026-01-31)
+
+### 2-Bar Pattern Returns (All Symbols, 100 dbps)
+
+| Pattern | Mean Return (bps) | Win Rate | Interpretation              |
+| ------- | ----------------- | -------- | --------------------------- |
+| DD      | -9.20             | 2.0%     | Strong bearish continuation |
+| DU      | +11.93            | 99.8%    | Reversal to bullish         |
+| UD      | -11.91            | 0.1%     | Reversal to bearish         |
+| UU      | +9.17             | 94.8%    | Strong bullish continuation |
+
+### Critical Insight: Mechanical Returns
+
+**The pattern returns are largely MECHANICAL**, not predictive alpha:
+
+1. **Range bar close mechanism**: A bar closes when price moves ±threshold from open
+2. **DU pattern**: Down bar followed by Up bar means price reversed at threshold
+3. **The reversal bar (U after D) will almost always be positive** because the bar
+   literally closed on an UP move to reach threshold
+4. **Win rates near 100% or 0%** indicate this is price construction, not prediction
+
+### What This Means for Trading
+
+| Pattern Type | Win Rate | Implication                           |
+| ------------ | -------- | ------------------------------------- |
+| DU, UU       | >94%     | Bar direction IS the return direction |
+| DD, UD       | <3%      | Bar direction IS the return direction |
+
+**Conclusion**: The "ODD robust patterns" are NOT alpha signals - they are mathematical properties of range bar construction. The 1-bar forward return is almost entirely determined by the current bar's direction.
+
+### True Alpha Signals to Investigate
+
+For genuine predictive power, investigate:
+
+1. **Multi-bar continuation probability** - Does DD predict DDD?
+2. **Regime transition timing** - When do regimes flip?
+3. **Duration-conditioned patterns** - Long-duration bars vs short
+4. **Volume-conditioned patterns** (Task #72)
+5. **Higher-timeframe (200 dbps) confirmation**
+
+### Top Patterns by Profit Factor
+
+| Regime    | Pattern | Symbol  | Win Rate | Profit Factor |
+| --------- | ------- | ------- | -------- | ------------- |
+| bear_cold | DU      | BTCUSDT | 100.0%   | 999.0         |
+| bear_cold | DUD     | BTCUSDT | 100.0%   | 999.0         |
+| bear_cold | DUU     | BTCUSDT | 100.0%   | 999.0         |
+| bear_cold | DUD     | ETHUSDT | 99.98%   | 999.0         |
+| bear_cold | DU      | ETHUSDT | 99.97%   | 58762         |
 
 ### Patterns That Failed ODD Criteria
 
-_Analysis pending - need to examine patterns with |t-stat| < 5 or inconsistent signs_
+_Not applicable - all patterns passed ODD criteria due to mechanical nature_
 
 ---
 
 ## Scripts
 
-| Script                        | Purpose              |
-| ----------------------------- | -------------------- |
-| `scripts/regime_analysis.py`  | Main analysis script |
-| `scripts/fill_all_symbols.py` | Data population      |
+| Script                            | Purpose              |
+| --------------------------------- | -------------------- |
+| `scripts/regime_analysis.py`      | Main analysis script |
+| `scripts/fill_all_symbols.py`     | Data population      |
+| `scripts/pattern_return_stats.py` | Return statistics    |
 
 ---
 
