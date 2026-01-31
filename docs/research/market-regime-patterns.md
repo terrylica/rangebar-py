@@ -769,6 +769,7 @@ The 11 universal ODD robust patterns are **VALID** for multi-bar trading:
 | `scripts/parameter_sensitivity_polars.py`              | Parameter sensitivity analysis    |
 | `scripts/transaction_cost_analysis_polars.py`          | Transaction cost profitability    |
 | `scripts/regime_analysis_50dbps_polars.py`             | 50 dbps granularity analysis      |
+| `scripts/position_sizing_analysis_polars.py`           | Kelly criterion position sizing   |
 
 ---
 
@@ -983,6 +984,58 @@ This validates the research - the patterns represent genuine alpha when trading 
 - Multi-threshold confirmation (as in earlier research)
 - Entry timing refinement (when 100 dbps signal triggers)
 - But NOT as standalone signal source
+
+---
+
+## Position Sizing Analysis (Kelly Criterion) (2026-01-31)
+
+**All 11 patterns have positive Kelly fractions - all are tradeable with proper sizing.**
+
+### Kelly Fractions by Pattern (10-bar horizon, 15 dbps cost)
+
+| Rank | Pattern          | Direction | Kelly  | Half-Kelly | Win Rate | Return/Risk | Trades  |
+| ---- | ---------------- | --------- | ------ | ---------- | -------- | ----------- | ------- |
+| 1    | chop\|UD         | SHORT     | 0.3301 | 0.1651     | 59.1%    | 0.319       | 799,058 |
+| 2    | chop\|DU         | LONG      | 0.3268 | 0.1634     | 58.8%    | 0.315       | 796,774 |
+| 3    | bull_neutral\|UD | SHORT     | 0.3266 | 0.1633     | 59.0%    | 0.313       | 727,482 |
+| 4    | bear_neutral\|DU | LONG      | 0.3241 | 0.1620     | 58.6%    | 0.312       | 742,482 |
+| 5    | bull_neutral\|DU | LONG      | 0.3160 | 0.1580     | 58.2%    | 0.307       | 414,703 |
+| 6    | bear_neutral\|UD | SHORT     | 0.3124 | 0.1562     | 58.4%    | 0.301       | 424,744 |
+| 7    | bear_neutral\|UU | LONG      | 0.2313 | 0.1157     | 53.9%    | 0.221       | 465,138 |
+| 8    | bull_neutral\|DD | SHORT     | 0.2311 | 0.1155     | 54.1%    | 0.221       | 453,607 |
+| 9    | chop\|UU         | LONG      | 0.2256 | 0.1128     | 53.8%    | 0.214       | 895,096 |
+| 10   | chop\|DD         | SHORT     | 0.2243 | 0.1121     | 54.0%    | 0.212       | 893,454 |
+| 11   | bear_neutral\|DD | SHORT     | 0.2215 | 0.1107     | 54.1%    | 0.208       | 815,072 |
+
+### Key Findings
+
+1. **All 11 patterns have positive Kelly** (range: 0.22-0.33)
+2. **Reversal patterns (DU, UD) have higher Kelly** (~0.31-0.33) than continuation (DD, UU) (~0.22-0.23)
+3. **Win rates cluster around 54-59%** - moderate edge, not extreme
+4. **Half-Kelly recommended** for practical trading (0.11-0.17 position size)
+
+### Pattern Tiers
+
+| Tier       | Patterns                                                                 | Kelly Range | Recommended Size |
+| ---------- | ------------------------------------------------------------------------ | ----------- | ---------------- |
+| **Tier 1** | chop\|UD, chop\|DU, bull_neutral\|UD, bear_neutral\|DU                   | 0.31-0.33   | 15-17% (half-K)  |
+| **Tier 2** | bull_neutral\|DU, bear_neutral\|UD                                       | 0.31-0.32   | 15-16% (half-K)  |
+| **Tier 3** | bear_neutral\|UU, bull_neutral\|DD, chop\|UU, chop\|DD, bear_neutral\|DD | 0.22-0.23   | 11-12% (half-K)  |
+
+### Position Sizing Recommendations
+
+1. **Use half-Kelly** (50% of theoretical optimal) to reduce variance
+2. **Prioritize Tier 1 patterns** (reversal signals in chop and bull_neutral|UD)
+3. **All patterns are tradeable** - no patterns need to be avoided
+4. **Diversify across patterns** to reduce correlation risk
+
+### Risk Management
+
+| Metric                   | Value                            |
+| ------------------------ | -------------------------------- |
+| Max recommended position | 17% (half-Kelly of best pattern) |
+| Total portfolio at risk  | Sum of pattern allocations       |
+| Suggested max total      | ~50% deployed at any time        |
 
 ---
 
