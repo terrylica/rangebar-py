@@ -767,6 +767,7 @@ The 11 universal ODD robust patterns are **VALID** for multi-bar trading:
 | `scripts/multithreshold_regime_combinations_polars.py` | Regime + multi-threshold          |
 | `scripts/historical_formation_regime_polars.py`        | Historical formation + regime     |
 | `scripts/parameter_sensitivity_polars.py`              | Parameter sensitivity analysis    |
+| `scripts/transaction_cost_analysis_polars.py`          | Transaction cost profitability    |
 
 ---
 
@@ -866,6 +867,67 @@ This confirms the ODD robustness findings are genuine, not artifacts of paramete
 **Interpretation**: What happened 3 bars ago at a different granularity does NOT predict what will happen next. Only the CURRENT pattern (the 2-bar formation at the current bar) has predictive power.
 
 This confirms that the robust patterns are about **current state alignment**, not **historical momentum**.
+
+---
+
+## Transaction Cost Analysis (2026-01-31)
+
+**Critical finding: NO patterns are profitable after realistic transaction costs.**
+
+### Cost Assumptions
+
+| Component       | Cost (bps) | Notes                 |
+| --------------- | ---------- | --------------------- |
+| Maker fee       | 10         | Binance VIP0 (0.10%)  |
+| Taker fee       | 10         | Binance VIP0 (0.10%)  |
+| Slippage (each) | 5          | Conservative estimate |
+| **Round-trip**  | **30**     | Entry + exit total    |
+
+### Pattern Returns vs Costs
+
+| Pattern          | Direction | Gross (bps) | Net (bps) | Profitable? |
+| ---------------- | --------- | ----------- | --------- | ----------- |
+| chop\|UD         | SHORT     | -11.16      | -18.84    | NO          |
+| chop\|DU         | LONG      | +11.06      | -18.94    | NO          |
+| bull_neutral\|DU | LONG      | +10.85      | -19.15    | NO          |
+| bear_neutral\|DU | LONG      | +10.85      | -19.16    | NO          |
+| bull_neutral\|UD | SHORT     | -10.84      | -19.16    | NO          |
+| bear_neutral\|UD | SHORT     | -10.60      | -19.40    | NO          |
+| bear_neutral\|UU | LONG      | +8.35       | -21.66    | NO          |
+| bull_neutral\|DD | SHORT     | -8.25       | -21.75    | NO          |
+| chop\|UU         | LONG      | +8.13       | -21.87    | NO          |
+| chop\|DD         | SHORT     | -8.03       | -21.97    | NO          |
+| bear_neutral\|DD | SHORT     | -7.79       | -22.21    | NO          |
+
+### Break-Even Analysis
+
+- **Best pattern gross return**: ~11 bps (chop|UD, chop|DU)
+- **Required for profitability**: >30 bps gross return
+- **Gap**: Patterns produce ~8-11 bps, need 30+ bps (3x improvement)
+
+### Implications
+
+1. **Statistical robustness ≠ Tradeable alpha**: Patterns are statistically significant but not economically significant
+2. **For standard retail trading**: These patterns should NOT be traded directly
+3. **Potential use cases**:
+   - Market making (capture spread instead of paying it)
+   - High-volume VIP tiers (reduced fees to ~5-10 bps round-trip)
+   - Signal filtering (combine with other alpha sources)
+   - Academic research (understanding market microstructure)
+
+### What Would Make Patterns Profitable?
+
+| Scenario             | Required Fee (bps) | Achievable?         |
+| -------------------- | ------------------ | ------------------- |
+| Break-even (best)    | <11                | VIP tier or rebates |
+| Break-even (average) | <8                 | Market maker only   |
+| 2:1 reward/risk      | <4                 | Institutional only  |
+
+### Conclusion
+
+**The OOD robust patterns are academically interesting but NOT directly tradeable with standard exchange fees.** The ~11 bps edge is overwhelmed by ~30 bps round-trip costs.
+
+This is a common finding in microstructure research - many statistically significant patterns fail practical implementation due to transaction costs.
 
 ---
 
