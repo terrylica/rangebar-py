@@ -29,16 +29,17 @@ from rangebar.validation.continuity import (
 )
 
 from .helpers import (
-    _fetch_binance,
     _fetch_exness,
     _process_binance_trades,
     _process_exness_ticks,
 )
+from .tick_fetcher import estimate_ticks_per_bar, fetch_ticks_with_backoff
 
 if TYPE_CHECKING:
-    import polars as pl
+    from datetime import datetime
 
     from rangebar.clickhouse import RangeBarCache
+    from rangebar.storage.parquet import TickStorage
 
 # Module-level logger (matches __init__.py pattern)
 import logging
@@ -462,9 +463,7 @@ def _fill_gap_and_cache(
         Number of ticks per processing chunk for memory efficiency when using
         chunked processing with checkpoint continuation.
     """
-    from datetime import datetime, timedelta
-
-    import polars as pl
+    from datetime import datetime
 
     from rangebar.storage.parquet import TickStorage
 
@@ -483,103 +482,34 @@ def _fill_gap_and_cache(
     # Get oldest bar timestamp to know where to start fetching
     oldest_ts = cache.get_oldest_bar_timestamp(symbol, threshold)
 
-    # Estimate ticks needed using adaptive heuristic
-    # Default: ~2500 ticks per bar for medium threshold (250)
-    # Adjusted by threshold ratio
-    base_ticks_per_bar = 2500
-    threshold_ratio = 250 / max(threshold, 1)
-    estimated_ticks_per_bar = int(base_ticks_per_bar * threshold_ratio)
-
-    # Adaptive exponential backoff
-    multiplier = 2.0  # Start with 2x buffer
-    max_attempts = 5
+    # Estimate ticks needed using extracted helper
+    estimated_ticks_per_bar = estimate_ticks_per_bar(threshold)
+    target_ticks = bars_needed * estimated_ticks_per_bar * 2  # 2x buffer
 
     storage = TickStorage(cache_dir=cache_dir)
-    cache_symbol = f"{source}_{market}_{symbol}".upper()
 
     # =========================================================================
     # BINANCE (24/7 CRYPTO): Single-pass processing with checkpoint continuity
     # =========================================================================
     if source == "binance":
-        # Phase 1: Collect ALL tick data first
-        all_tick_data: list[pl.DataFrame] = []
-        total_ticks = 0
-        target_ticks = bars_needed * estimated_ticks_per_bar * 2  # 2x buffer
+        # Phase 1: Fetch ALL tick data using extracted tick fetcher
+        fetch_result = fetch_ticks_with_backoff(
+            symbol=symbol,
+            source=source,
+            market=market,
+            target_ticks=target_ticks,
+            end_dt=end_dt,
+            oldest_ts=oldest_ts,
+            max_lookback_days=max_lookback_days,
+            storage=storage,
+        )
 
-        for _attempt in range(max_attempts):
-            # Calculate fetch range
-            if oldest_ts is not None:
-                fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=UTC)
-            else:
-                fetch_end_dt = end_dt
-
-            # Estimate days to fetch
-            remaining_ticks = target_ticks - total_ticks
-            days_to_fetch = max(1, remaining_ticks // 1_000_000)
-            days_to_fetch = min(days_to_fetch, max_lookback_days)
-
-            fetch_start_dt = fetch_end_dt - timedelta(days=days_to_fetch)
-
-            # Check lookback limit
-            if (end_dt - fetch_start_dt).days > max_lookback_days:
-                break
-
-            start_date = fetch_start_dt.strftime("%Y-%m-%d")
-            end_date_str = fetch_end_dt.strftime("%Y-%m-%d")
-            start_ts_fetch = int(fetch_start_dt.timestamp() * 1000)
-            end_ts_fetch = int(fetch_end_dt.timestamp() * 1000)
-
-            # Fetch tick data
-            tick_data: pl.DataFrame
-            if storage.has_ticks(cache_symbol, start_ts_fetch, end_ts_fetch):
-                tick_data = storage.read_ticks(
-                    cache_symbol, start_ts_fetch, end_ts_fetch
-                )
-            else:
-                tick_data = _fetch_binance(symbol, start_date, end_date_str, market)
-                if not tick_data.is_empty():
-                    storage.write_ticks(cache_symbol, tick_data)
-
-            if tick_data.is_empty():
-                break
-
-            all_tick_data.insert(0, tick_data)  # Prepend (older data first)
-            total_ticks += len(tick_data)
-
-            # Update oldest_ts for next iteration
-            if "timestamp" in tick_data.columns:
-                oldest_ts = int(tick_data["timestamp"].min())
-
-            # Check if we have enough estimated ticks
-            if total_ticks >= target_ticks:
-                break
-
-            multiplier *= 2
-
-        if not all_tick_data:
+        if fetch_result.ticks is None:
             return current_bars
 
-        # Phase 2: Merge ALL ticks chronologically and deduplicate
-        # Sort by (timestamp, trade_id) - Rust crate requires this order
-        merged_ticks = pl.concat(all_tick_data)
-        if "agg_trade_id" in merged_ticks.columns:
-            merged_ticks = merged_ticks.sort(["timestamp", "agg_trade_id"])
-        elif "trade_id" in merged_ticks.columns:
-            merged_ticks = merged_ticks.sort(["timestamp", "trade_id"])
-        else:
-            merged_ticks = merged_ticks.sort("timestamp")
-
-        # Deduplicate by trade_id (Binance data may have duplicates at boundaries)
-        if "agg_trade_id" in merged_ticks.columns:
-            merged_ticks = merged_ticks.unique(
-                subset=["agg_trade_id"], maintain_order=True
-            )
-        elif "trade_id" in merged_ticks.columns:
-            merged_ticks = merged_ticks.unique(subset=["trade_id"], maintain_order=True)
-
-        # Phase 3: Process with SINGLE processor (guarantees continuity)
+        # Phase 2: Process with SINGLE processor (guarantees continuity)
         new_bars, _ = _process_binance_trades(
-            merged_ticks,
+            fetch_result.ticks,
             threshold,
             False,
             include_microstructure,
@@ -587,7 +517,7 @@ def _fill_gap_and_cache(
             prevent_same_timestamp_close=prevent_same_timestamp_close,
         )
 
-        # Phase 4: Store with unified cache key
+        # Phase 3: Store with unified cache key
         if not new_bars.empty:
             cache.store_bars_bulk(symbol, threshold, new_bars)
 
@@ -618,9 +548,50 @@ def _fill_gap_and_cache(
     # =========================================================================
     # EXNESS (FOREX): Session-bounded processing (weekend gaps are natural)
     # =========================================================================
+    return _fill_gap_exness(
+        symbol=symbol,
+        threshold=threshold,
+        n_bars=n_bars,
+        end_dt=end_dt,
+        oldest_ts=oldest_ts,
+        include_microstructure=include_microstructure,
+        max_lookback_days=max_lookback_days,
+        cache=cache,
+        storage=storage,
+        current_bars=current_bars,
+        estimated_ticks_per_bar=estimated_ticks_per_bar,
+    )
+
+
+def _fill_gap_exness(
+    symbol: str,
+    threshold: int,
+    n_bars: int,
+    end_dt: datetime,
+    oldest_ts: int | None,
+    include_microstructure: bool,
+    max_lookback_days: int,
+    cache: RangeBarCache,
+    storage: TickStorage,
+    current_bars: pd.DataFrame | None,
+    estimated_ticks_per_bar: int,
+) -> pd.DataFrame | None:
+    """Fill gap for Exness forex data with session-bounded processing.
+
+    Forex markets have natural weekend gaps, so session-bounded processing
+    is acceptable (unlike 24/7 crypto markets).
+    """
+    from datetime import datetime, timedelta
+
+    multiplier = 2.0
+    max_attempts = 5
+    bars_needed = n_bars - (len(current_bars) if current_bars is not None else 0)
+
     all_bars: list[pd.DataFrame] = []
     if current_bars is not None and len(current_bars) > 0:
         all_bars.append(current_bars)
+
+    cache_symbol = f"exness_spot_{symbol}".upper()
 
     for _attempt in range(max_attempts):
         # Estimate days to fetch
@@ -644,7 +615,6 @@ def _fill_gap_and_cache(
         start_ts_fetch = int(fetch_start_dt.timestamp() * 1000)
         end_ts_fetch = int(fetch_end_dt.timestamp() * 1000)
 
-        tick_data: pl.DataFrame
         if storage.has_ticks(cache_symbol, start_ts_fetch, end_ts_fetch):
             tick_data = storage.read_ticks(cache_symbol, start_ts_fetch, end_ts_fetch)
         else:
@@ -694,9 +664,7 @@ def _fetch_and_compute_bars(
 
     Uses single-pass processing for Binance (24/7 crypto) to guarantee continuity.
     """
-    from datetime import datetime, timedelta
-
-    import polars as pl
+    from datetime import datetime
 
     from rangebar.storage.parquet import TickStorage
 
@@ -706,99 +674,73 @@ def _fetch_and_compute_bars(
     else:
         end_dt = datetime.now(tz=UTC)
 
-    # Estimate ticks needed using heuristic
-    base_ticks_per_bar = 2500
-    threshold_ratio = 250 / max(threshold, 1)
-    estimated_ticks_per_bar = int(base_ticks_per_bar * threshold_ratio)
-
-    # Adaptive exponential backoff
-    multiplier = 2.0
-    max_attempts = 5
+    # Estimate ticks needed using extracted helper
+    estimated_ticks_per_bar = estimate_ticks_per_bar(threshold)
+    target_ticks = n_bars * estimated_ticks_per_bar * 2
 
     storage = TickStorage(cache_dir=cache_dir)
-    cache_symbol = f"{source}_{market}_{symbol}".upper()
-    oldest_ts: int | None = None
 
     # =========================================================================
     # BINANCE (24/7 CRYPTO): Single-pass processing for continuity
     # =========================================================================
     if source == "binance":
-        all_tick_data: list[pl.DataFrame] = []
-        total_ticks = 0
-        target_ticks = n_bars * estimated_ticks_per_bar * 2
+        # Use extracted tick fetcher
+        fetch_result = fetch_ticks_with_backoff(
+            symbol=symbol,
+            source=source,
+            market=market,
+            target_ticks=target_ticks,
+            end_dt=end_dt,
+            oldest_ts=None,
+            max_lookback_days=max_lookback_days,
+            storage=storage,
+        )
 
-        for _attempt in range(max_attempts):
-            if oldest_ts is not None:
-                fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=UTC)
-            else:
-                fetch_end_dt = end_dt
-
-            remaining_ticks = target_ticks - total_ticks
-            days_to_fetch = max(1, remaining_ticks // 1_000_000)
-            days_to_fetch = min(days_to_fetch, max_lookback_days)
-
-            fetch_start_dt = fetch_end_dt - timedelta(days=days_to_fetch)
-
-            if (end_dt - fetch_start_dt).days > max_lookback_days:
-                break
-
-            start_date = fetch_start_dt.strftime("%Y-%m-%d")
-            end_date_str = fetch_end_dt.strftime("%Y-%m-%d")
-            start_ts_fetch = int(fetch_start_dt.timestamp() * 1000)
-            end_ts_fetch = int(fetch_end_dt.timestamp() * 1000)
-
-            tick_data: pl.DataFrame
-            if storage.has_ticks(cache_symbol, start_ts_fetch, end_ts_fetch):
-                tick_data = storage.read_ticks(
-                    cache_symbol, start_ts_fetch, end_ts_fetch
-                )
-            else:
-                tick_data = _fetch_binance(symbol, start_date, end_date_str, market)
-                if not tick_data.is_empty():
-                    storage.write_ticks(cache_symbol, tick_data)
-
-            if tick_data.is_empty():
-                break
-
-            all_tick_data.insert(0, tick_data)
-            total_ticks += len(tick_data)
-
-            if "timestamp" in tick_data.columns:
-                oldest_ts = int(tick_data["timestamp"].min())
-
-            if total_ticks >= target_ticks:
-                break
-
-            multiplier *= 2
-
-        if not all_tick_data:
+        if fetch_result.ticks is None:
             return None
 
-        # Sort by (timestamp, trade_id) - Rust crate requires this order
-        merged_ticks = pl.concat(all_tick_data)
-        if "agg_trade_id" in merged_ticks.columns:
-            merged_ticks = merged_ticks.sort(["timestamp", "agg_trade_id"])
-        elif "trade_id" in merged_ticks.columns:
-            merged_ticks = merged_ticks.sort(["timestamp", "trade_id"])
-        else:
-            merged_ticks = merged_ticks.sort("timestamp")
-
-        # Deduplicate by trade_id (Binance data may have duplicates at boundaries)
-        if "agg_trade_id" in merged_ticks.columns:
-            merged_ticks = merged_ticks.unique(
-                subset=["agg_trade_id"], maintain_order=True
-            )
-        elif "trade_id" in merged_ticks.columns:
-            merged_ticks = merged_ticks.unique(subset=["trade_id"], maintain_order=True)
-
         bars_df, _ = _process_binance_trades(
-            merged_ticks, threshold, False, include_microstructure, symbol=symbol
+            fetch_result.ticks, threshold, False, include_microstructure, symbol=symbol
         )
         return bars_df if not bars_df.empty else None
 
     # =========================================================================
     # EXNESS (FOREX): Session-bounded processing
     # =========================================================================
+    return _compute_exness_bars(
+        symbol=symbol,
+        threshold=threshold,
+        n_bars=n_bars,
+        end_dt=end_dt,
+        include_microstructure=include_microstructure,
+        max_lookback_days=max_lookback_days,
+        storage=storage,
+        estimated_ticks_per_bar=estimated_ticks_per_bar,
+    )
+
+
+def _compute_exness_bars(
+    symbol: str,
+    threshold: int,
+    n_bars: int,
+    end_dt: datetime,
+    include_microstructure: bool,
+    max_lookback_days: int,
+    storage: TickStorage,
+    estimated_ticks_per_bar: int,
+) -> pd.DataFrame | None:
+    """Compute Exness forex bars without caching (compute-only mode).
+
+    Forex markets have natural weekend gaps, so session-bounded processing
+    is acceptable.
+    """
+    from datetime import datetime, timedelta
+
+    multiplier = 2.0
+    max_attempts = 5
+    oldest_ts: int | None = None
+    cache_symbol = f"exness_spot_{symbol}".upper()
+
     all_bars: list[pd.DataFrame] = []
 
     for _attempt in range(max_attempts):
@@ -822,7 +764,6 @@ def _fetch_and_compute_bars(
         start_ts_fetch = int(fetch_start_dt.timestamp() * 1000)
         end_ts_fetch = int(fetch_end_dt.timestamp() * 1000)
 
-        tick_data: pl.DataFrame
         if storage.has_ticks(cache_symbol, start_ts_fetch, end_ts_fetch):
             tick_data = storage.read_ticks(cache_symbol, start_ts_fetch, end_ts_fetch)
         else:
