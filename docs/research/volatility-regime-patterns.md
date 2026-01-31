@@ -158,13 +158,72 @@ bear_neut│ signal7 │ signal8│ signal9  │
 | Script                                         | Purpose                            |
 | ---------------------------------------------- | ---------------------------------- |
 | `scripts/volatility_regime_analysis_polars.py` | Volatility regime pattern analysis |
+| `scripts/combined_regime_analysis_polars.py`   | Combined SMA/RSI x RV analysis     |
+
+---
+
+## Combined SMA/RSI x RV Regime Analysis (2026-01-31)
+
+**Combining trend and volatility regimes reveals 16 universal patterns.**
+
+### Universal Combined Patterns (All 4 Symbols)
+
+| Combined Regime     | Patterns        |
+| ------------------- | --------------- |
+| bear_neutral_active | DU, UD, UU      |
+| bear_neutral_quiet  | DD, DU          |
+| bull_neutral_active | DU, UD          |
+| bull_neutral_quiet  | DU, UD          |
+| chop_active         | DU, UD, UU      |
+| chop_quiet          | DU              |
+| chop_volatile       | DU, UD, UU      |
+| **TOTAL**           | **16 patterns** |
+
+### Breakdown by Trend Regime
+
+| Trend Regime | Combined Patterns | Vol Regimes Covered     |
+| ------------ | ----------------- | ----------------------- |
+| chop         | 7                 | active, quiet, volatile |
+| bear_neutral | 5                 | active, quiet           |
+| bull_neutral | 4                 | active, quiet           |
+
+### Breakdown by Vol Regime
+
+| Vol Regime | Combined Patterns | Trend Regimes Covered |
+| ---------- | ----------------- | --------------------- |
+| active     | 8                 | all 3 trends          |
+| quiet      | 5                 | all 3 trends          |
+| volatile   | 3                 | chop only             |
+
+### Pattern Count Comparison
+
+| Filter Type     | Universal Patterns |
+| --------------- | ------------------ |
+| SMA/RSI only    | 11                 |
+| RV only         | 12                 |
+| **Combined**    | **16**             |
+| Theoretical max | 33 (11 x 3)        |
+
+### Key Insights
+
+1. **Chop + volatile** is a unique combination - only works in consolidation with high vol
+2. **Active vol regime** is the most fertile - works across all trend regimes
+3. **Bull/bear + volatile** has no universal patterns - too unstable
+4. **DU pattern (reversal)** is universal across MOST combinations - strongest signal
+
+### Trading Implications
+
+1. **Primary signals**: Chop regime patterns work across all vol conditions
+2. **Best vol regime**: Active (normal vol) - most consistent signals
+3. **Avoid**: Trend + volatile combinations (no universal patterns)
+4. **Signal refinement**: Use vol regime to filter trend signals
 
 ---
 
 ## Next Steps
 
 - [ ] Compute correlation between RV patterns and SMA/RSI patterns
-- [ ] Test combined SMA/RSI × RV regime filters
+- [x] Test combined SMA/RSI x RV regime filters - DONE (16 universal patterns)
 - [ ] Analyze return profiles for RV regime patterns
 - [ ] Transaction cost analysis for RV patterns
 
