@@ -765,6 +765,8 @@ The 11 universal ODD robust patterns are **VALID** for multi-bar trading:
 | `scripts/bootstrap_permutation_validation_polars.py`   | Bootstrap/permutation tests       |
 | `scripts/multithreshold_combinations_polars.py`        | Multi-threshold (50\|100\|200)    |
 | `scripts/multithreshold_regime_combinations_polars.py` | Regime + multi-threshold          |
+| `scripts/historical_formation_regime_polars.py`        | Historical formation + regime     |
+| `scripts/parameter_sensitivity_polars.py`              | Parameter sensitivity analysis    |
 
 ---
 
@@ -789,6 +791,65 @@ The 11 universal ODD robust patterns are **VALID** for multi-bar trading:
 | bull_neutral | 5               | 50:DD\|100:DD\|200:up, etc.    |
 
 **Key Insight**: Combining both approaches (regime + multi-threshold) yields more universal patterns (20) than either approach alone (11 for regime, 15 for multi-threshold).
+
+---
+
+## Parameter Sensitivity Analysis (2026-01-31)
+
+**Testing if patterns are robust across different SMA/RSI parameter choices.**
+
+This addresses the adversarial audit concern about "local bias" and parameter snooping.
+
+### Parameter Sets Tested
+
+| Name        | SMA Fast | SMA Slow | RSI Period | Purpose                |
+| ----------- | -------- | -------- | ---------- | ---------------------- |
+| baseline    | 20       | 50       | 14         | Original parameters    |
+| shorter_sma | 15       | 40       | 14         | Faster trend detection |
+| longer_sma  | 25       | 60       | 14         | Slower trend detection |
+| fast_sma    | 10       | 30       | 14         | Very fast trend        |
+| shorter_rsi | 20       | 50       | 10         | More responsive RSI    |
+| longer_rsi  | 20       | 50       | 20         | Smoother RSI           |
+
+### Results: Patterns Robust Across ALL Parameter Sets
+
+**10 patterns remain ODD robust regardless of parameter choice:**
+
+| Regime       | Pattern | Interpretation        |
+| ------------ | ------- | --------------------- |
+| chop         | UD      | Reversal in range     |
+| chop         | DD      | Range continuation    |
+| chop         | UU      | Range continuation    |
+| chop         | DU      | Reversal in range     |
+| bear_neutral | UU      | Counter-trend bounce  |
+| bear_neutral | DD      | Continuation down     |
+| bear_neutral | DU      | Reversal in downtrend |
+| bear_neutral | UD      | Failed bounce         |
+| bull_neutral | UD      | Failed continuation   |
+| bull_neutral | DU      | Dip buying            |
+
+### By Parameter Set
+
+| Parameter Set | Total Robust | Universal (all symbols) |
+| ------------- | ------------ | ----------------------- |
+| baseline      | 11           | 11                      |
+| shorter_sma   | 10           | 10                      |
+| longer_sma    | 10           | 10                      |
+| fast_sma      | 10           | 10                      |
+| shorter_rsi   | 12           | 12                      |
+| longer_rsi    | 11           | 11                      |
+
+### Conclusion
+
+**Patterns are NOT overfit to specific parameter choices.**
+
+The 10 core patterns (chop: all 4, bear_neutral: all 4, bull_neutral: 2) are robust across:
+
+- All 6 SMA/RSI parameter variations
+- All 4 cryptocurrency symbols
+- All quarterly time periods
+
+This confirms the ODD robustness findings are genuine, not artifacts of parameter snooping.
 
 ---
 
