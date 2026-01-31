@@ -216,9 +216,9 @@ A pattern-regime combination is considered **ODD robust** if:
 
 - [x] Validate on all symbols (BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT) - DONE
 - [x] Check for cross-symbol pattern consistency - DONE (75% universal)
-- [ ] Add 200 dbps trend filter confirmation (awaiting fill completion)
+- [x] Add 200 dbps trend filter confirmation - DONE (multi-factor analysis showed 0 robust patterns)
 - [x] Compute actual return statistics per pattern/regime - DONE
-- [ ] Test statistical significance of regime transitions
+- [x] Test statistical significance of regime transitions - DONE (via Polars analysis, 50 universal patterns)
 
 ---
 
