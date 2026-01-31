@@ -747,22 +747,48 @@ The 11 universal ODD robust patterns are **VALID** for multi-bar trading:
 
 ## Scripts
 
-| Script                                               | Purpose                           |
-| ---------------------------------------------------- | --------------------------------- |
-| `scripts/regime_analysis.py`                         | Main analysis script              |
-| `scripts/regime_analysis_polars.py`                  | Regime analysis (Polars)          |
-| `scripts/fill_all_symbols.py`                        | Data population                   |
-| `scripts/pattern_return_stats.py`                    | Return statistics                 |
-| `scripts/multibar_continuation.py`                   | Multi-bar momentum                |
-| `scripts/trend_filter_analysis.py`                   | 200 dbps HTF trend filter         |
-| `scripts/multifactor_patterns_polars.py`             | Multi-factor analysis (Polars)    |
-| `scripts/volume_conditioned_patterns_polars.py`      | Volume/OFI conditioning (Polars)  |
-| `scripts/multibar_forward_returns_polars.py`         | Multi-bar horizon analysis        |
-| `scripts/pattern_return_profiles_polars.py`          | Return profiles for 11 universals |
-| `scripts/regime_transition_analysis_polars.py`       | Regime transition timing          |
-| `scripts/oos_validation_polars.py`                   | Out-of-sample adversarial audit   |
-| `scripts/historical_formation_patterns_polars.py`    | Historical formation analysis     |
-| `scripts/bootstrap_permutation_validation_polars.py` | Bootstrap/permutation tests       |
+| Script                                                 | Purpose                           |
+| ------------------------------------------------------ | --------------------------------- |
+| `scripts/regime_analysis.py`                           | Main analysis script              |
+| `scripts/regime_analysis_polars.py`                    | Regime analysis (Polars)          |
+| `scripts/fill_all_symbols.py`                          | Data population                   |
+| `scripts/pattern_return_stats.py`                      | Return statistics                 |
+| `scripts/multibar_continuation.py`                     | Multi-bar momentum                |
+| `scripts/trend_filter_analysis.py`                     | 200 dbps HTF trend filter         |
+| `scripts/multifactor_patterns_polars.py`               | Multi-factor analysis (Polars)    |
+| `scripts/volume_conditioned_patterns_polars.py`        | Volume/OFI conditioning (Polars)  |
+| `scripts/multibar_forward_returns_polars.py`           | Multi-bar horizon analysis        |
+| `scripts/pattern_return_profiles_polars.py`            | Return profiles for 11 universals |
+| `scripts/regime_transition_analysis_polars.py`         | Regime transition timing          |
+| `scripts/oos_validation_polars.py`                     | Out-of-sample adversarial audit   |
+| `scripts/historical_formation_patterns_polars.py`      | Historical formation analysis     |
+| `scripts/bootstrap_permutation_validation_polars.py`   | Bootstrap/permutation tests       |
+| `scripts/multithreshold_combinations_polars.py`        | Multi-threshold (50\|100\|200)    |
+| `scripts/multithreshold_regime_combinations_polars.py` | Regime + multi-threshold          |
+
+---
+
+## Multi-Threshold Combination Findings (2026-01-31)
+
+### Pure Multi-Threshold Combinations (50|100|200 dbps)
+
+| Type        | Universal Count | Description                        |
+| ----------- | --------------- | ---------------------------------- |
+| Full combos | 15              | 50:pattern\|100:pattern\|200:trend |
+| Alignments  | 3               | aligned_up, aligned_down, mixed    |
+| 50+200      | 4               | 50:pattern\|200:trend              |
+
+### Regime + Multi-Threshold Combinations
+
+**Combining regime filtering with multi-threshold patterns yields 20 universal patterns.**
+
+| Regime       | Universal Count | Top Patterns                   |
+| ------------ | --------------- | ------------------------------ |
+| chop         | 10              | 50:UD\|100:UD\|200:up, etc.    |
+| bear_neutral | 5               | 50:DD\|100:DU\|200:mixed, etc. |
+| bull_neutral | 5               | 50:DD\|100:DD\|200:up, etc.    |
+
+**Key Insight**: Combining both approaches (regime + multi-threshold) yields more universal patterns (20) than either approach alone (11 for regime, 15 for multi-threshold).
 
 ---
 
