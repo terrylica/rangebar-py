@@ -139,6 +139,80 @@ The strongest 3-bar patterns (zigzag) show consistent direction within 2022 but 
 
 ---
 
+## Data Limitation Alert
+
+**CRITICAL**: The ClickHouse cache lacks continuous multi-year data span required for proper ODD robustness testing.
+
+### Current Data Coverage (BTCUSDT @ 100 dbps)
+
+| Period             | Bar Count | Notes            |
+| ------------------ | --------- | ---------------- |
+| 2021-12            | 185       | Minimal          |
+| 2022-01 to 2022-06 | 274,079   | **Main dataset** |
+| 2022-07 to 2024-10 | **0**     | **DATA GAP**     |
+| 2024-11            | 514       | Minimal          |
+
+### Impact on Research
+
+- ODD robustness testing requires **continuous data across multiple years**
+- Current gap (28 months) makes it impossible to validate temporal stability
+- The 2024 Q4 sample (514 bars) is too small for reliable statistics
+
+### Prerequisite for Future Research
+
+Before continuing ODD robustness analysis, the ClickHouse cache must be regenerated with continuous data spanning at least 2022-2024. Refer to the plan at `.claude/plans/sparkling-coalescing-dijkstra.md` for cache regeneration steps.
+
+---
+
+## Accessing littleblack ClickHouse (Configuration Reference)
+
+**CRITICAL**: The local machine's mise config has `RANGEBAR_CH_HOSTS=bigblack` which overrides any attempt to connect to littleblack. To access littleblack's ClickHouse without contamination from bigblack:
+
+### Method 1: Direct SSH + HTTP (Recommended for queries)
+
+```bash
+# Query littleblack ClickHouse directly
+ssh littleblack "curl -s 'http://localhost:8123/' --data-binary 'SELECT count() FROM rangebar_cache.range_bars'"
+```
+
+### Method 2: Environment Override (For Python scripts)
+
+```bash
+# Override RANGEBAR_CH_HOSTS to littleblack only
+RANGEBAR_CH_HOSTS=littleblack RANGEBAR_CH_PRIMARY=littleblack uv run python script.py
+```
+
+### Method 3: Run on littleblack (For cache population)
+
+```bash
+# Install rangebar in a venv on littleblack
+ssh littleblack "python3 -m venv ~/rangebar-venv && ~/rangebar-venv/bin/pip install rangebar"
+
+# Run regeneration script
+ssh littleblack "~/rangebar-venv/bin/python regenerate_cache.py"
+```
+
+### Host Connection Details
+
+| Host        | SSH Alias     | IP             | ClickHouse Port |
+| ----------- | ------------- | -------------- | --------------- |
+| littleblack | `littleblack` | 172.25.236.1   | 8123 (HTTP)     |
+| bigblack    | `bigblack`    | 172.25.253.142 | 8123 (HTTP)     |
+
+### Current Data on littleblack (BTCUSDT @ 100 dbps)
+
+```
+2022-01 to 2022-06: 274,079 bars (continuous)
+2022-07 to 2023-04: MISSING (10 months gap)
+2023-05 to 2024-02: 89,386 bars (continuous)
+2024-03 to 2024-10: MISSING (8 months gap)
+2024-11: 514 bars
+```
+
+**Total**: 417,504 bars with significant gaps - NOT suitable for ODD robustness testing.
+
+---
+
 ## Historical Analysis (Aggregate - For Reference Only)
 
 > **WARNING**: The following aggregate statistics are dominated by 2022 data and do NOT represent persistent edges. They are retained for historical reference only.
