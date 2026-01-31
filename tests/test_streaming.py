@@ -477,3 +477,52 @@ class TestReconnectionConfig:
         assert config.initial_delay_s == 0.5
         assert config.max_delay_s == 30.0
         assert config.backoff_factor == 1.5
+
+    def test_jitter_factor_default(self) -> None:
+        """Test default jitter factor for thundering herd prevention."""
+        config = ReconnectionConfig()
+        assert config.jitter_factor == 0.5  # ±50% jitter
+
+    def test_jitter_factor_custom(self) -> None:
+        """Test custom jitter factor."""
+        config = ReconnectionConfig(jitter_factor=0.25)
+        assert config.jitter_factor == 0.25
+
+    def test_max_total_duration_default(self) -> None:
+        """Test default max total duration is infinite (0)."""
+        config = ReconnectionConfig()
+        assert config.max_total_duration_s == 0.0
+
+    def test_max_total_duration_custom(self) -> None:
+        """Test custom max total duration."""
+        config = ReconnectionConfig(max_total_duration_s=3600.0)
+        assert config.max_total_duration_s == 3600.0
+
+    def test_jitter_range_calculation(self) -> None:
+        """Test jitter multiplier stays within expected range.
+
+        For jitter_factor=0.5, delay should vary from 50% to 150% of base.
+        """
+        import random
+
+        config = ReconnectionConfig(jitter_factor=0.5)
+        base_delay = 10.0
+
+        # Simulate multiple jitter calculations
+        random.seed(42)  # Reproducible
+        jittered_delays = []
+        for _ in range(1000):
+            jitter_multiplier = 1.0 - config.jitter_factor + (
+                random.random() * 2 * config.jitter_factor
+            )
+            jittered_delays.append(base_delay * jitter_multiplier)
+
+        # All delays should be within [50%, 150%] of base
+        min_expected = base_delay * (1 - config.jitter_factor)
+        max_expected = base_delay * (1 + config.jitter_factor)
+
+        assert min(jittered_delays) >= min_expected
+        assert max(jittered_delays) <= max_expected
+
+        # Distribution should be roughly uniform (check spread)
+        assert max(jittered_delays) - min(jittered_delays) > base_delay * 0.8

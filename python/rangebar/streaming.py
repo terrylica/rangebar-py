@@ -46,6 +46,8 @@ Custom data source with StreamingRangeBarProcessor:
 from __future__ import annotations
 
 import asyncio
+import random
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -77,19 +79,30 @@ class StreamingError(Exception):
 
 @dataclass
 class ReconnectionConfig:
-    """Configuration for automatic reconnection.
+    """Configuration for automatic reconnection with jitter.
 
     Attributes:
         max_retries: Maximum reconnection attempts (0 = infinite)
         initial_delay_s: Initial delay before first retry
         max_delay_s: Maximum delay between retries
         backoff_factor: Multiplier for exponential backoff
+        jitter_factor: Random jitter range (0.5 = ±50% of delay)
+        max_total_duration_s: Maximum total time spent reconnecting (0 = infinite)
+
+    Notes:
+        Jitter is applied to prevent thundering herd when multiple clients
+        reconnect simultaneously. The actual delay is:
+        `delay * (1 - jitter_factor + random() * 2 * jitter_factor)`
+
+        For jitter_factor=0.5, delay varies from 50% to 150% of base delay.
     """
 
     max_retries: int = 0  # 0 = infinite
     initial_delay_s: float = 1.0
     max_delay_s: float = 60.0
     backoff_factor: float = 2.0
+    jitter_factor: float = 0.5  # ±50% jitter to prevent thundering herd
+    max_total_duration_s: float = 0.0  # 0 = infinite
 
 
 async def stream_binance_live(
@@ -125,6 +138,7 @@ async def stream_binance_live(
 
     retry_count = 0
     current_delay = reconnect_config.initial_delay_s
+    reconnect_start_time: float | None = None
 
     while True:
         try:
@@ -138,6 +152,7 @@ async def stream_binance_live(
             # Reset retry state on successful connection
             retry_count = 0
             current_delay = reconnect_config.initial_delay_s
+            reconnect_start_time = None
 
             # Yield bars as they arrive
             while stream.is_connected:
@@ -162,6 +177,10 @@ async def stream_binance_live(
                 msg = f"Stream connection failed: {e}"
                 raise StreamingError(msg) from e
 
+            # Track reconnection start time
+            if reconnect_start_time is None:
+                reconnect_start_time = time.monotonic()
+
             retry_count += 1
 
             # Check max retries
@@ -172,14 +191,31 @@ async def stream_binance_live(
                 msg = f"Max retries ({reconnect_config.max_retries}) exceeded"
                 raise StreamingError(msg) from e
 
+            # Check max total duration
+            if reconnect_config.max_total_duration_s > 0:
+                elapsed = time.monotonic() - reconnect_start_time
+                if elapsed > reconnect_config.max_total_duration_s:
+                    msg = (
+                        f"Max reconnection duration "
+                        f"({reconnect_config.max_total_duration_s:.0f}s) exceeded"
+                    )
+                    raise StreamingError(msg) from e
+
+            # Apply jitter to prevent thundering herd
+            # Jitter range: [1 - jitter_factor, 1 + jitter_factor]
+            jitter_multiplier = 1.0 - reconnect_config.jitter_factor + (
+                random.random() * 2 * reconnect_config.jitter_factor
+            )
+            jittered_delay = current_delay * jitter_multiplier
+
             # Log and wait before retry
             print(
-                f"Stream disconnected, retrying in {current_delay:.1f}s "
+                f"Stream disconnected, retrying in {jittered_delay:.1f}s "
                 f"(attempt {retry_count})"
             )
-            await asyncio.sleep(current_delay)
+            await asyncio.sleep(jittered_delay)
 
-            # Exponential backoff
+            # Exponential backoff (applied to base delay, not jittered)
             current_delay = min(
                 current_delay * reconnect_config.backoff_factor,
                 reconnect_config.max_delay_s,
