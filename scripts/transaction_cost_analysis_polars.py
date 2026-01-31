@@ -33,11 +33,12 @@ UNIVERSAL_PATTERNS = [
     ("bull_neutral", "UD"),
 ]
 
-# Transaction cost assumptions (crypto exchange typical)
-MAKER_FEE_PCT = 0.10  # 0.10% = 10 bps (Binance VIP0)
-TAKER_FEE_PCT = 0.10  # 0.10% = 10 bps (Binance VIP0)
-SLIPPAGE_ESTIMATE_PCT = 0.05  # 0.05% = 5 bps conservative estimate
-ROUND_TRIP_COST_PCT = (MAKER_FEE_PCT + TAKER_FEE_PCT + SLIPPAGE_ESTIMATE_PCT * 2)  # Entry + exit
+# Transaction cost assumptions
+# User specified: 15 dbps (decimal basis points) round-trip
+# 1 dbps = 0.001% = 0.00001
+# 15 dbps = 0.015% = 0.00015
+ROUND_TRIP_COST_DBPS = 15  # Round-trip cost in decimal basis points
+ROUND_TRIP_COST_PCT = ROUND_TRIP_COST_DBPS * 0.001  # Convert to percentage (0.015%)
 
 
 # =============================================================================
@@ -361,12 +362,9 @@ def main() -> int:
 
     log_info("=== TRANSACTION COST ANALYSIS ===")
     log_info(
-        "Cost assumptions",
-        maker_fee_pct=MAKER_FEE_PCT,
-        taker_fee_pct=TAKER_FEE_PCT,
-        slippage_pct=SLIPPAGE_ESTIMATE_PCT,
+        "Cost assumptions (high VIP tier)",
+        round_trip_dbps=ROUND_TRIP_COST_DBPS,
         round_trip_pct=ROUND_TRIP_COST_PCT,
-        round_trip_bps=ROUND_TRIP_COST_PCT * 100,
     )
 
     all_results = []
