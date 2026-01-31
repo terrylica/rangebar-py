@@ -224,6 +224,7 @@ ignore = [
     "E501",    # Line too long (scripts can be verbose)
     "PLR2004", # Magic values (common in scripts)
     "PLR0911", # Too many return statements (complex control flow in analysis)
+    "PLR0912", # Too many branches (analysis scripts have complex control flow)
     "PLR0913", # Too many arguments (analysis scripts need full APIs)
     "PLR0915", # Too many statements (analysis scripts are comprehensive)
     "PD901",   # Generic variable name 'df' (common in data processing scripts)

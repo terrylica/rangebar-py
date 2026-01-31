@@ -257,10 +257,10 @@ A pattern-regime combination is considered **ODD robust** if:
 For genuine predictive power, investigate:
 
 1. **Multi-bar continuation probability** - Does DD predict DDD? **DONE - YES**
-2. **Regime transition timing** - When do regimes flip?
-3. **Duration-conditioned patterns** - Long-duration bars vs short
-4. **Volume-conditioned patterns** (Task #72)
-5. **Higher-timeframe (200 dbps) confirmation**
+2. **Regime transition timing** - When do regimes flip? **DONE - 4 universal pre-transition patterns found**
+3. **Duration-conditioned patterns** - Long-duration bars vs short **DONE - No ODD robust patterns**
+4. **Volume-conditioned patterns** (Task #72) **DONE - No ODD robust patterns**
+5. **Higher-timeframe (200 dbps) confirmation** **DONE - No ODD robust patterns**
 
 ---
 
@@ -517,19 +517,152 @@ These patterns are ODD robust at 1, 3, 5, AND 10-bar horizons across ALL 4 symbo
 
 ---
 
+## Pattern Return Profiles (2026-01-31)
+
+**Expected return profiles for the 11 universal patterns at multiple horizons.**
+
+### Return Profiles (Cross-Symbol Averages)
+
+| Pattern          | 1-bar bps | 3-bar bps | 5-bar bps | 10-bar bps | 10-bar Ratio |
+| ---------------- | --------- | --------- | --------- | ---------- | ------------ |
+| chop\|DU         | +12.35    | +11.12    | +11.04    | +11.06     | 3.65         |
+| bear_neutral\|DU | +12.54    | +11.11    | +10.97    | +10.85     | 3.62         |
+| bull_neutral\|DU | +11.58    | +10.69    | +10.68    | +10.85     | 3.56         |
+| bear_neutral\|UU | +8.90     | +8.53     | +8.39     | +8.34      | 2.70         |
+| chop\|UU         | +8.59     | +8.12     | +8.10     | +8.13      | 2.63         |
+| bear_neutral\|DD | -8.39     | -7.83     | -7.81     | -7.79      | -2.57        |
+| chop\|DD         | -8.55     | -7.96     | -7.95     | -8.03      | -2.61        |
+| bull_neutral\|DD | -8.88     | -8.42     | -8.37     | -8.26      | -2.70        |
+| bear_neutral\|UD | -11.53    | -10.79    | -10.71    | -10.60     | -3.50        |
+| bull_neutral\|UD | -12.61    | -11.16    | -11.01    | -10.84     | -3.63        |
+| chop\|UD         | -12.26    | -11.19    | -11.09    | -11.16     | -3.69        |
+
+### Ranking by 10-Bar Return/Risk Ratio
+
+| Rank | Pattern          | Avg Ratio | Avg Return (bps) | Direction |
+| ---- | ---------------- | --------- | ---------------- | --------- |
+| 1    | chop\|UD         | -3.69     | -11.16           | Short     |
+| 2    | chop\|DU         | +3.65     | +11.06           | Long      |
+| 3    | bull_neutral\|UD | -3.63     | -10.84           | Short     |
+| 4    | bear_neutral\|DU | +3.62     | +10.85           | Long      |
+| 5    | bull_neutral\|DU | +3.56     | +10.85           | Long      |
+| 6    | bear_neutral\|UD | -3.50     | -10.60           | Short     |
+| 7    | bull_neutral\|DD | -2.70     | -8.26            | Short     |
+| 8    | bear_neutral\|UU | +2.70     | +8.34            | Long      |
+| 9    | chop\|UU         | +2.63     | +8.13            | Long      |
+| 10   | chop\|DD         | -2.61     | -8.03            | Short     |
+| 11   | bear_neutral\|DD | -2.57     | -7.79            | Short     |
+
+### Key Observations
+
+1. **Reversal patterns (DU, UD) have higher return/risk ratios** (~3.5-3.7) than continuation patterns (UU, DD) (~2.6-2.7)
+2. **Returns decay slowly across horizons** - 10-bar returns are 85-90% of 1-bar returns
+3. **Chop regime shows strongest signals** - both chop|DU (+3.65) and chop|UD (-3.69) rank in top 3
+4. **Symmetric long/short opportunities** - 5 long patterns, 6 short patterns
+
+### Trading Implications
+
+| Signal Type | Best Patterns                                | Avg 10-bar Return |
+| ----------- | -------------------------------------------- | ----------------- |
+| **Long**    | chop\|DU, bear_neutral\|DU, bull_neutral\|DU | +10.92 bps        |
+| **Short**   | chop\|UD, bull_neutral\|UD, bear_neutral\|UD | -10.87 bps        |
+
+---
+
+## Regime Transition Analysis (2026-01-31)
+
+**Research question**: Can we predict when market regimes will flip?
+
+### Regime Duration (Cross-Symbol Average)
+
+| Regime       | Avg Duration (bars) | Interpretation        |
+| ------------ | ------------------- | --------------------- |
+| chop         | 4.1                 | Short, unstable       |
+| bull_neutral | 5.0                 | Moderate duration     |
+| bear_neutral | 5.1                 | Moderate duration     |
+| bull_hot     | 2.9                 | Very short, explosive |
+| bear_cold    | 2.7                 | Very short, explosive |
+
+**Key insight**: Extreme regimes (bull_hot, bear_cold) last only ~3 bars on average - they're transient spikes, not sustained states.
+
+### Regime Transition Probabilities (Universal)
+
+| From         | To           | Probability | Interpretation            |
+| ------------ | ------------ | ----------- | ------------------------- |
+| bear_cold    | bear_neutral | 99.95%      | Almost certain cooling    |
+| bull_hot     | bull_neutral | 99.91%      | Almost certain cooling    |
+| bear_neutral | chop         | 85.92%      | Trend exhaustion likely   |
+| bull_neutral | chop         | 85.55%      | Trend exhaustion likely   |
+| chop         | bull_neutral | 49.56%      | ~50/50 breakout direction |
+| chop         | bear_neutral | 49.54%      | ~50/50 breakout direction |
+| bull_neutral | bull_hot     | 12.72%      | Rare momentum spike       |
+| bear_neutral | bear_cold    | 12.36%      | Rare momentum spike       |
+| bull_neutral | bear_neutral | 1.73%       | Rare direct reversal      |
+| bear_neutral | bull_neutral | 1.73%       | Rare direct reversal      |
+
+### Transition Flow Diagram
+
+```text
+              +------------+
+              |    CHOP    |
+              | (4.1 bars) |
+              +-----+------+
+                   /|\
+          49.5%  /  |  \ 49.5%
+                /   |   \
+               v    |    v
+    +------------+  |  +------------+
+    |bull_neutral|  |  |bear_neutral|
+    | (5.0 bars) |  |  | (5.1 bars) |
+    +-----+------+  |  +------+-----+
+          |  85.6%  |   85.9%  |
+          +-------->|<---------+
+                    |
+         12.7%      |       12.4%
+          v         |         v
+    +------------+  |  +------------+
+    | bull_hot   |  |  | bear_cold  |
+    | (2.9 bars) |  |  | (2.7 bars) |
+    +-----+------+  |  +------+-----+
+          | 99.9%   |   99.9% |
+          +---------+---------+
+```
+
+### Universal Pre-Transition Patterns (4 patterns)
+
+Stable patterns that precede regime transitions across ALL 4 symbols:
+
+| Transition               | Pattern | Interpretation               |
+| ------------------------ | ------- | ---------------------------- |
+| chop → bear_cold         | DD      | Down momentum before selloff |
+| chop → bull_hot          | UU      | Up momentum before rally     |
+| bull_neutral → chop      | DD      | Counter-trend dip = reversal |
+| bear_neutral → bear_cold | UD      | Failed bounce = capitulation |
+
+### Trading Implications
+
+1. **Extreme regimes are unsustainable**: bull_hot and bear_cold last ~3 bars then revert 99.9% of the time
+2. **Trend→Chop is dominant**: 85%+ of trend exits go to consolidation, not direct reversal
+3. **Chop breakouts are 50/50**: Cannot predict direction from chop
+4. **Pre-transition signals exist**: DD before bear_cold, UU before bull_hot
+
+---
+
 ## Scripts
 
-| Script                                          | Purpose                          |
-| ----------------------------------------------- | -------------------------------- |
-| `scripts/regime_analysis.py`                    | Main analysis script             |
-| `scripts/regime_analysis_polars.py`             | Regime analysis (Polars)         |
-| `scripts/fill_all_symbols.py`                   | Data population                  |
-| `scripts/pattern_return_stats.py`               | Return statistics                |
-| `scripts/multibar_continuation.py`              | Multi-bar momentum               |
-| `scripts/trend_filter_analysis.py`              | 200 dbps HTF trend filter        |
-| `scripts/multifactor_patterns_polars.py`        | Multi-factor analysis (Polars)   |
-| `scripts/volume_conditioned_patterns_polars.py` | Volume/OFI conditioning (Polars) |
-| `scripts/multibar_forward_returns_polars.py`    | Multi-bar horizon analysis       |
+| Script                                          | Purpose                           |
+| ----------------------------------------------- | --------------------------------- |
+| `scripts/regime_analysis.py`                    | Main analysis script              |
+| `scripts/regime_analysis_polars.py`             | Regime analysis (Polars)          |
+| `scripts/fill_all_symbols.py`                   | Data population                   |
+| `scripts/pattern_return_stats.py`               | Return statistics                 |
+| `scripts/multibar_continuation.py`              | Multi-bar momentum                |
+| `scripts/trend_filter_analysis.py`              | 200 dbps HTF trend filter         |
+| `scripts/multifactor_patterns_polars.py`        | Multi-factor analysis (Polars)    |
+| `scripts/volume_conditioned_patterns_polars.py` | Volume/OFI conditioning (Polars)  |
+| `scripts/multibar_forward_returns_polars.py`    | Multi-bar horizon analysis        |
+| `scripts/pattern_return_profiles_polars.py`     | Return profiles for 11 universals |
+| `scripts/regime_transition_analysis_polars.py`  | Regime transition timing          |
 
 ---
 
