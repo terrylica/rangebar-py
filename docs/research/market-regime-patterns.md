@@ -107,17 +107,58 @@ A pattern-regime combination is considered **ODD robust** if:
 
 ## Results
 
-### Findings Summary
+### Preliminary Findings (BTCUSDT @ 100 dbps)
 
-_To be populated after analysis completes_
+**Date**: 2026-01-31
+**Data**: 1,252,498 bars (2022-01-01 to 2026-01-31)
 
-### ODD Robust Patterns Found
+#### Regime Distribution
 
-_To be populated after analysis completes_
+| Regime       | Bars    | Percentage |
+| ------------ | ------- | ---------- |
+| Chop         | 501,219 | 40.0%      |
+| Bear Neutral | 346,544 | 27.7%      |
+| Bull Neutral | 340,681 | 27.2%      |
+| Bull Hot     | 33,713  | 2.7%       |
+| Bear Cold    | 30,341  | 2.4%       |
+
+#### ODD Robust 2-Bar Patterns (16 found)
+
+| Regime       | Patterns       |
+| ------------ | -------------- |
+| Chop         | DD, DU, UU, UD |
+| Bear Neutral | DD, UD, DU, UU |
+| Bear Cold    | DU, DD         |
+| Bull Neutral | UU, UD, DD, DU |
+| Bull Hot     | UD, UU         |
+
+#### ODD Robust 3-Bar Patterns (32 found)
+
+| Regime       | Patterns                               |
+| ------------ | -------------------------------------- |
+| Chop         | DDU, DUU, UUU, UUD, UDU, UDD, DDD, DUD |
+| Bear Neutral | DDU, UDU, DUU, UUU, UUD, DUD, DDD, UDD |
+| Bear Cold    | DUD, DDD, DDU, DUU                     |
+| Bull Neutral | UUD, UDD, DDU, DUU, UDU, DUD, DDD, UUU |
+| Bull Hot     | UDD, UUD, UDU, UUU                     |
+
+### Key Observations
+
+1. **Chop regime dominates** (40% of bars) - market spends most time in consolidation
+2. **Extreme regimes are rare** - Bull Hot + Bear Cold < 5% combined
+3. **All regimes have ODD robust patterns** - suggests regime filtering reveals predictability
+4. **Patterns vary by regime** - different directional biases in different regimes
+
+### Next Steps
+
+- [ ] Validate on other symbols (ETHUSDT, SOLUSDT, BNBUSDT)
+- [ ] Check for cross-symbol pattern consistency
+- [ ] Add 200 dbps trend filter confirmation
+- [ ] Compute actual return statistics per pattern/regime
 
 ### Patterns That Failed ODD Criteria
 
-_To be populated after analysis completes_
+_Analysis pending - need to examine patterns with |t-stat| < 5 or inconsistent signs_
 
 ---
 
