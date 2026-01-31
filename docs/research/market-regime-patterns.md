@@ -1,12 +1,68 @@
 # Market Regime Patterns Research
 
 **Issue**: #52 - Market Regime Filter for ODD Robust Multi-Factor Range Bar Patterns
-**Status**: In Progress (data fill running)
+**Status**: COMPLETE - Validated Trading System
 **Last Updated**: 2026-01-31
 
 ---
 
-## Hypothesis
+## Executive Summary
+
+### Key Finding
+
+**Deterministic market regime filters (SMA 20/50 + RSI 14) reveal 11 OOD robust trading patterns that are profitable after transaction costs with VIP tier fees.**
+
+### Validated Trading Patterns (Tier 1 - Best Performance)
+
+| Pattern          | Direction | Net Return | Kelly  | Win Rate | Signal                         |
+| ---------------- | --------- | ---------- | ------ | -------- | ------------------------------ |
+| chop\|UD         | SHORT     | +9.66 bps  | 0.3301 | 59.1%    | Sell reversal in consolidation |
+| chop\|DU         | LONG      | +9.56 bps  | 0.3268 | 58.8%    | Buy reversal in consolidation  |
+| bull_neutral\|UD | SHORT     | +9.34 bps  | 0.3266 | 59.0%    | Sell failed continuation       |
+| bear_neutral\|DU | LONG      | +9.35 bps  | 0.3241 | 58.6%    | Buy reversal in downtrend      |
+
+### What Works
+
+1. ✅ **100 dbps range bars** - Optimal granularity for signal quality
+2. ✅ **Reversal patterns (DU, UD)** - Higher returns (~9.5 bps) and Kelly (~0.33)
+3. ✅ **Neutral regimes (chop, bull_neutral, bear_neutral)** - All 4 patterns robust
+4. ✅ **Multi-bar horizons (3-10 bars)** - Genuine alpha, not mechanical
+5. ✅ **Cross-symbol universality** - Same patterns work on BTC, ETH, SOL, BNB
+
+### What Doesn't Work
+
+1. ❌ **50 dbps range bars** - More noise, fewer robust patterns (7 vs 11)
+2. ❌ **1-bar returns** - Mechanical effect of bar direction
+3. ❌ **Historical formation lookback** - No predictive power
+4. ❌ **Extreme regimes (bull_hot, bear_cold)** - Too transient (~3 bars)
+5. ❌ **Retail fees (30 bps)** - No patterns profitable
+
+### Implementation Requirements
+
+| Requirement         | Specification                   |
+| ------------------- | ------------------------------- |
+| Transaction costs   | ≤15 dbps round-trip (VIP tier)  |
+| Range bar threshold | 100 dbps (not 50)               |
+| Holding period      | 10 bars recommended             |
+| Position size       | Half-Kelly (11-17% per pattern) |
+| Total deployment    | Max ~50% across all patterns    |
+
+### Validation Summary
+
+| Test                     | Result | Confidence                       |
+| ------------------------ | ------ | -------------------------------- |
+| Cross-symbol validation  | PASS   | 4/4 symbols                      |
+| OOS validation (2025-26) | PASS   | t-stats 45-78                    |
+| Bootstrap CI             | PASS   | Excludes zero                    |
+| Permutation test         | PASS   | p < 0.001                        |
+| Parameter sensitivity    | PASS   | 10/11 patterns robust across all |
+| Transaction costs        | PASS   | All profitable at 15 dbps        |
+
+---
+
+## Research Details
+
+### Hypothesis
 
 Deterministic market regime filters (SMA crossovers, RSI levels) may reveal ODD robust subsets of multi-factor range bar patterns. Patterns that show no ODD robustness across all market conditions may exhibit strong robustness WITHIN specific regimes.
 
