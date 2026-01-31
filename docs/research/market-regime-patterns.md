@@ -256,11 +256,56 @@ A pattern-regime combination is considered **ODD robust** if:
 
 For genuine predictive power, investigate:
 
-1. **Multi-bar continuation probability** - Does DD predict DDD?
+1. **Multi-bar continuation probability** - Does DD predict DDD? **DONE - YES**
 2. **Regime transition timing** - When do regimes flip?
 3. **Duration-conditioned patterns** - Long-duration bars vs short
 4. **Volume-conditioned patterns** (Task #72)
 5. **Higher-timeframe (200 dbps) confirmation**
+
+---
+
+## Multi-Bar Continuation Analysis (2026-01-31)
+
+**Key Question**: Does direction momentum persist beyond the mechanical 1-bar effect?
+
+### Overall Continuation Probabilities (BTCUSDT @ 100 dbps)
+
+| Pattern | Continuation Prob | z-score | Count   | Interpretation       |
+| ------- | ----------------- | ------- | ------- | -------------------- |
+| DD      | 58.5%             | 107     | 389,453 | Genuine momentum     |
+| UU      | 59.0%             | 113     | 391,336 | Genuine momentum     |
+| DDD     | 61.1%             | 106     | 227,964 | Stronger momentum    |
+| UUU     | 62.0%             | 115     | 231,000 | Stronger momentum    |
+| DDDD    | 61.9%             | 89      | 139,267 | Momentum persists    |
+| UUUU    | 62.9%             | 97      | 143,144 | Momentum persists    |
+| DDDDD   | 64.2%             | 83      | 86,158  | Maximum continuation |
+| UUUUU   | 65.2%             | 91      | 89,998  | Maximum continuation |
+
+**Finding**: All continuation probabilities significantly exceed 50% (z > 3). The longer the streak, the higher the continuation probability - classic momentum.
+
+### Regime-Conditioned Continuation (CRITICAL ALPHA)
+
+| Regime        | Pattern | Continuation | z-score | Implication              |
+| ------------- | ------- | ------------ | ------- | ------------------------ |
+| **Bull Hot**  | UU      | 91.4%        | 116     | Extreme bullish momentum |
+| **Bear Cold** | DD      | 91.3%        | 111     | Extreme bearish momentum |
+| Chop          | DD      | 61.0%        | 89      | Moderate momentum        |
+| Chop          | UU      | 61.4%        | 91      | Moderate momentum        |
+| Bull Neutral  | UU      | 61.3%        | 92      | Trend-aligned momentum   |
+| Bear Neutral  | DD      | 61.5%        | 94      | Trend-aligned momentum   |
+| Bull Neutral  | DD      | 27.8%        | -97     | Counter-trend reversal!  |
+| Bear Neutral  | UU      | 28.7%        | -94     | Counter-trend reversal!  |
+
+### Trading Implications
+
+**Regime-Aware Momentum Strategy**:
+
+1. **Bull Hot + UU pattern**: 91% continuation - strong long signal
+2. **Bear Cold + DD pattern**: 91% continuation - strong short signal
+3. **Bull Neutral + DD**: Only 28% continuation - expect reversal UP
+4. **Bear Neutral + UU**: Only 29% continuation - expect reversal DOWN
+
+**This is genuine alpha**: The regime filter transforms random patterns into highly predictive signals.
 
 ### Top Patterns by Profit Factor
 
@@ -280,11 +325,13 @@ _Not applicable - all patterns passed ODD criteria due to mechanical nature_
 
 ## Scripts
 
-| Script                            | Purpose              |
-| --------------------------------- | -------------------- |
-| `scripts/regime_analysis.py`      | Main analysis script |
-| `scripts/fill_all_symbols.py`     | Data population      |
-| `scripts/pattern_return_stats.py` | Return statistics    |
+| Script                             | Purpose                   |
+| ---------------------------------- | ------------------------- |
+| `scripts/regime_analysis.py`       | Main analysis script      |
+| `scripts/fill_all_symbols.py`      | Data population           |
+| `scripts/pattern_return_stats.py`  | Return statistics         |
+| `scripts/multibar_continuation.py` | Multi-bar momentum        |
+| `scripts/trend_filter_analysis.py` | 200 dbps HTF trend filter |
 
 ---
 
