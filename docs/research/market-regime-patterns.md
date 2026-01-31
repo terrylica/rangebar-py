@@ -323,15 +323,171 @@ _Not applicable - all patterns passed ODD criteria due to mechanical nature_
 
 ---
 
+## Multi-Factor Pattern Analysis (2026-01-31)
+
+**Hypothesis**: Combining range bars at multiple thresholds (50, 100, 200 dbps) as multi-factor signals may reveal stronger ODD robust patterns than single-threshold analysis.
+
+### Approach
+
+- **100 dbps**: Primary signal (2-bar patterns: UU, UD, DU, DD)
+- **50 dbps**: Fine granularity confirmation (rolling 10-bar up/down ratio → up/down/neutral)
+- **200 dbps**: Higher-timeframe trend filter (3-bar majority → up/down/neutral)
+
+### Results
+
+| Symbol  | 100 dbps Bars | 50 dbps Bars | 200 dbps Bars | Patterns Tested | ODD Robust |
+| ------- | ------------- | ------------ | ------------- | --------------- | ---------- |
+| BTCUSDT | 1,382,518     | 4,179,709    | 303,440       | 34              | 0          |
+| ETHUSDT | 1,996,522     | 5,967,593    | 498,640       | 34              | 0          |
+| SOLUSDT | 3,760,227     | 12,143,369   | 540,109       | 36              | 0          |
+| BNBUSDT | 1,431,409     | 4,534,471    | 388,670       | 34              | 0          |
+
+**Finding: ZERO ODD robust multi-factor patterns across all 4 symbols**
+
+### Distribution Analysis
+
+HTF trend alignment (200 dbps → 100 dbps):
+
+| Symbol  | neutral | up  | down |
+| ------- | ------- | --- | ---- |
+| BTCUSDT | 75%     | 13% | 12%  |
+| ETHUSDT | 73%     | 14% | 13%  |
+| SOLUSDT | 85%     | 8%  | 7%   |
+| BNBUSDT | 75%     | 13% | 12%  |
+
+Fine direction alignment (50 dbps → 100 dbps):
+
+| Symbol  | neutral | up  | down |
+| ------- | ------- | --- | ---- |
+| BTCUSDT | 59%     | 21% | 21%  |
+| ETHUSDT | 59%     | 21% | 21%  |
+| SOLUSDT | 61%     | 20% | 20%  |
+| BNBUSDT | 60%     | 19% | 21%  |
+
+### Top Patterns by Min T-Stat (BTCUSDT)
+
+| Pattern              | n_periods | min_t | max_t | same_sign | avg_return_bps |
+| -------------------- | --------- | ----- | ----- | --------- | -------------- |
+| UU\|neutral\|neutral | 17        | 1.78  | 43.18 | No        | -1.05          |
+| DU\|up\|down         | 8         | 1.14  | 3.34  | Yes       | -3.00          |
+| DD\|neutral\|down    | 17        | 1.12  | 19.96 | No        | 0.07           |
+| UU\|up\|up           | 17        | 1.03  | 7.17  | No        | 0.15           |
+| UD\|neutral\|neutral | 17        | 0.98  | 67.01 | No        | 2.14           |
+
+### Why Multi-Factor Fails
+
+1. **High variance across periods**: max_t is often 10-40x higher than min_t
+2. **Sign inconsistency**: Most patterns flip between positive and negative returns
+3. **Neutral dominance**: 59-85% of signals fall into "neutral" categories
+4. **Lookback sensitivity**: The 3-bar HTF and 10-bar fine lookbacks may not capture meaningful trends
+
+### Conclusion
+
+**Multi-factor combination does NOT improve ODD robustness over single-factor patterns.**
+
+The original market regime analysis (SMA crossovers + RSI levels) remains the only approach that produced ODD robust patterns. The difference is:
+
+- **Regime filters**: Use longer-term indicators (SMA 20/50, RSI 14) that capture actual market structure
+- **Multi-factor**: Uses short-term bar direction alignment that's too noisy
+
+### Recommendation
+
+Focus on regime-filtered patterns rather than multi-timeframe bar alignment.
+
+---
+
+## Volume-Conditioned Pattern Analysis (2026-01-31)
+
+**Hypothesis**: Conditioning directional patterns on volume metrics may reveal ODD robust signals.
+
+### Conditioning Types
+
+1. **Volume regime**: High (>1.5x MA20), Low (<0.5x MA20), Normal
+2. **OFI (Order Flow Imbalance)**: Buy (up bar), Sell (down bar), Neutral
+3. **Duration**: Fast (<0.5x median), Slow (>2x median), Normal
+
+### Results
+
+| Symbol  | Bars      | Volume Robust | OFI Robust | Duration Robust |
+| ------- | --------- | ------------- | ---------- | --------------- |
+| BTCUSDT | 1,382,518 | 0             | 0          | 0               |
+| ETHUSDT | 1,996,522 | 0             | 0          | 0               |
+| SOLUSDT | 3,760,227 | 0             | 0          | 0               |
+| BNBUSDT | 1,431,409 | 0             | 0          | 0               |
+
+**Finding: ZERO ODD robust volume-conditioned patterns across all 4 symbols**
+
+### Volume Distribution
+
+| Symbol  | Low | Normal | High |
+| ------- | --- | ------ | ---- |
+| BTCUSDT | 36% | 43%    | 21%  |
+| ETHUSDT | 37% | 43%    | 21%  |
+| SOLUSDT | 38% | 42%    | 21%  |
+| BNBUSDT | 36% | 43%    | 21%  |
+
+### Conclusion
+
+Volume conditioning does NOT improve ODD robustness of directional patterns. The OFI regime is essentially redundant with bar direction (buy = up bar, sell = down bar).
+
+---
+
+## Universal ODD Robust Patterns (2026-01-31)
+
+**Final cross-symbol validation using Polars regime analysis.**
+
+### Summary
+
+| Metric                               | Count |
+| ------------------------------------ | ----- |
+| Total robust patterns                | 458   |
+| Universal (all symbols + thresholds) | 50    |
+| Universal at 50 dbps                 | 59    |
+| Universal at 100 dbps                | 50    |
+
+### Universal 2-Bar Patterns (18 patterns)
+
+These patterns are ODD robust across ALL 4 symbols at ALL thresholds:
+
+| Regime       | Patterns       | Count |
+| ------------ | -------------- | ----- |
+| chop         | UU, DD, DU, UD | 4     |
+| bull_neutral | UU, DD, DU, UD | 4     |
+| bear_neutral | UU, DD, DU, UD | 4     |
+| bear_cold    | UU, DD, DU     | 3     |
+| bull_hot     | UU, DD, UD     | 3     |
+
+### Universal 3-Bar Patterns (32 patterns)
+
+| Regime       | Patterns                               | Count |
+| ------------ | -------------------------------------- | ----- |
+| chop         | UUU, DDD, UUD, DDU, UDD, DUU, UDU, DUD | 8     |
+| bull_neutral | UUU, DDD, UUD, DDU, UDD, DUU, UDU, DUD | 8     |
+| bear_neutral | UUU, DDD, UUD, DDU, UDD, DUU, UDU, DUD | 8     |
+| bear_cold    | DDD, DDU, DUD, DUU                     | 4     |
+| bull_hot     | UUU, UUD, UDD, UDU                     | 4     |
+
+### Key Observations
+
+1. **Full pattern coverage in neutral regimes**: ALL 4x2-bar and ALL 8x3-bar patterns universal
+2. **Extreme regimes have fewer patterns**: bull_hot and bear_cold have 3-4 patterns each
+3. **Consistent with previous findings**: SMA/RSI regime filters produce ODD robust patterns
+4. **Polars performance**: ~2 minutes for full 8-combination analysis (vs ~10+ min pandas)
+
+---
+
 ## Scripts
 
-| Script                             | Purpose                   |
-| ---------------------------------- | ------------------------- |
-| `scripts/regime_analysis.py`       | Main analysis script      |
-| `scripts/fill_all_symbols.py`      | Data population           |
-| `scripts/pattern_return_stats.py`  | Return statistics         |
-| `scripts/multibar_continuation.py` | Multi-bar momentum        |
-| `scripts/trend_filter_analysis.py` | 200 dbps HTF trend filter |
+| Script                                          | Purpose                          |
+| ----------------------------------------------- | -------------------------------- |
+| `scripts/regime_analysis.py`                    | Main analysis script             |
+| `scripts/regime_analysis_polars.py`             | Regime analysis (Polars)         |
+| `scripts/fill_all_symbols.py`                   | Data population                  |
+| `scripts/pattern_return_stats.py`               | Return statistics                |
+| `scripts/multibar_continuation.py`              | Multi-bar momentum               |
+| `scripts/trend_filter_analysis.py`              | 200 dbps HTF trend filter        |
+| `scripts/multifactor_patterns_polars.py`        | Multi-factor analysis (Polars)   |
+| `scripts/volume_conditioned_patterns_polars.py` | Volume/OFI conditioning (Polars) |
 
 ---
 
