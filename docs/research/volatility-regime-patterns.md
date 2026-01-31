@@ -161,6 +161,7 @@ bear_neut│ signal7 │ signal8│ signal9  │
 | `scripts/combined_regime_analysis_polars.py`   | Combined SMA/RSI x RV analysis     |
 | `scripts/volatility_regime_audit_polars.py`    | Adversarial audit (param/OOS/CI)   |
 | `scripts/cross_regime_correlation_polars.py`   | Cross-regime correlation analysis  |
+| `scripts/rv_return_profile_analysis_polars.py` | Return profile and Kelly analysis  |
 
 ---
 
@@ -341,13 +342,76 @@ Tested 5 parameter variations:
 
 ---
 
+## Return Profile Analysis (2026-01-31)
+
+**6 of 12 RV patterns are profitable after 15 dbps transaction costs.**
+
+### Return Distribution by Pattern
+
+| Pattern      | N       | Gross (bps) | Net (bps)  | Win Rate | Kelly  | Skew    |
+| ------------ | ------- | ----------- | ---------- | -------- | ------ | ------- |
+| active\|DD   | 848,362 | -8.75       | -10.25     | 1.1%     | 0.0000 | -4.309  |
+| active\|DU   | 724,598 | +11.78      | **+10.28** | 99.8%    | 0.9973 | +8.441  |
+| active\|UD   | 721,880 | -11.76      | -13.26     | 0.1%     | 0.0000 | -8.382  |
+| active\|UU   | 842,674 | +8.74       | **+7.24**  | 93.7%    | 0.9141 | +20.944 |
+| quiet\|DD    | 497,309 | -8.49       | -9.99      | 1.0%     | 0.0000 | -4.270  |
+| quiet\|DU    | 425,054 | +11.56      | **+10.06** | 99.8%    | 0.9978 | +8.644  |
+| quiet\|UD    | 425,036 | -11.56      | -13.06     | 0.0%     | 0.0000 | -6.922  |
+| quiet\|UU    | 505,951 | +8.44       | **+6.94**  | 93.5%    | 0.9153 | +9.120  |
+| volatile\|DD | 471,081 | -8.60       | -10.10     | 2.0%     | 0.0000 | -2.990  |
+| volatile\|DU | 424,149 | +12.62      | **+11.12** | 99.7%    | 0.9948 | +8.039  |
+| volatile\|UD | 426,883 | -12.58      | -14.08     | 0.1%     | 0.0000 | -11.499 |
+| volatile\|UU | 475,481 | +8.63       | **+7.13**  | 91.3%    | 0.8726 | -2.013  |
+
+### Profitability Summary
+
+| Category       | Patterns                           | Count |
+| -------------- | ---------------------------------- | ----- |
+| **Profitable** | DU (all regimes), UU (all regimes) | 6     |
+| Unprofitable   | DD (all regimes), UD (all regimes) | 6     |
+
+### Key Insights
+
+1. **Reversal patterns (DU) are most profitable**: ~10-11 bps net across all regimes
+2. **Continuation patterns (UU) are second best**: ~7 bps net across all regimes
+3. **Down patterns (DD, UD) are consistently unprofitable**: Negative expectancy
+4. **Volatile regime has strongest reversal signal**: DU +11.12 bps net (highest)
+5. **Win rates are extreme**: DU >99%, DD/UD <2% - patterns are highly predictive
+
+### Kelly Fractions
+
+Best patterns for position sizing (highest Kelly fractions):
+
+| Pattern      | Kelly Fraction | Interpretation        |
+| ------------ | -------------- | --------------------- |
+| quiet\|DU    | 0.9978         | Full Kelly allocation |
+| active\|DU   | 0.9973         | Full Kelly allocation |
+| volatile\|DU | 0.9948         | Full Kelly allocation |
+| quiet\|UU    | 0.9153         | ~90% Kelly allocation |
+| active\|UU   | 0.9141         | ~90% Kelly allocation |
+
+### Skew Analysis
+
+| Category      | Patterns | Interpretation                            |
+| ------------- | -------- | ----------------------------------------- |
+| Positive skew | 5        | DU (all), UU (quiet, active) - right tail |
+| Negative skew | 7        | DD, UD (all), UU (volatile) - left tail   |
+
+**Trading implication**: DU patterns have favorable skew (unlimited upside, limited downside).
+
+### Script
+
+`scripts/rv_return_profile_analysis_polars.py`
+
+---
+
 ## Next Steps
 
 - [x] Compute correlation between RV patterns and SMA/RSI patterns - DONE (moderate benefit)
 - [x] Test combined SMA/RSI x RV regime filters - DONE (16 universal patterns)
 - [x] Adversarial audit - DONE (ALL PASS)
-- [ ] Analyze return profiles for RV regime patterns
-- [ ] Transaction cost analysis for RV patterns
+- [x] Analyze return profiles for RV regime patterns - DONE (6 profitable)
+- [ ] Transaction cost sensitivity analysis for RV patterns
 
 ---
 
