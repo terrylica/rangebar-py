@@ -142,17 +142,45 @@ A pattern-regime combination is considered **ODD robust** if:
 | Bull Neutral | UUD, UDD, DDU, DUU, UDU, DUD, DDD, UUU |
 | Bull Hot     | UDD, UUD, UDU, UUU                     |
 
+### Cross-Symbol Validation (ETHUSDT @ 100 dbps)
+
+**Date**: 2026-01-31
+**Data**: 1,582,770 bars (2022-01-01 to 2026-01-31)
+
+#### Cross-Symbol Pattern Consistency
+
+| Pattern Type | BTC Patterns | ETH Patterns | Common | Consistency |
+| ------------ | ------------ | ------------ | ------ | ----------- |
+| 2-bar        | 16           | 15           | 15     | 93.8%       |
+| 3-bar        | 32           | 30           | 30     | 93.8%       |
+
+#### Universal Cross-Symbol ODD Robust Patterns (2-bar)
+
+| Regime       | Patterns       | Note                       |
+| ------------ | -------------- | -------------------------- |
+| Chop         | DD, DU, UD, UU | ALL 4 patterns robust      |
+| Bull Neutral | DD, DU, UD, UU | ALL 4 patterns robust      |
+| Bear Neutral | DD, DU, UD, UU | ALL 4 patterns robust      |
+| Bull Hot     | UD             | Only 1 pattern (reversal?) |
+| Bear Cold    | DD, DU         | 2 patterns (continuation?) |
+
+#### Symbol-Specific Patterns
+
+- **BTCUSDT only**: `bull_hot|UU` (not robust on ETH)
+- **ETHUSDT only**: None
+
 ### Key Observations
 
 1. **Chop regime dominates** (40% of bars) - market spends most time in consolidation
 2. **Extreme regimes are rare** - Bull Hot + Bear Cold < 5% combined
 3. **All regimes have ODD robust patterns** - suggests regime filtering reveals predictability
-4. **Patterns vary by regime** - different directional biases in different regimes
+4. **Strong cross-symbol consistency** - 93.8% of patterns are ODD robust on BOTH symbols
+5. **Full pattern coverage in neutral regimes** - All 4 possible 2-bar patterns are robust
 
 ### Next Steps
 
-- [ ] Validate on other symbols (ETHUSDT, SOLUSDT, BNBUSDT)
-- [ ] Check for cross-symbol pattern consistency
+- [ ] Validate on other symbols (SOLUSDT, BNBUSDT) - waiting for data fill
+- [x] Check for cross-symbol pattern consistency - DONE (93.8% consistency)
 - [ ] Add 200 dbps trend filter confirmation
 - [ ] Compute actual return statistics per pattern/regime
 
