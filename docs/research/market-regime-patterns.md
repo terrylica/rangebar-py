@@ -803,29 +803,30 @@ The 11 universal ODD robust patterns are **VALID** for multi-bar trading:
 
 ## Scripts
 
-| Script                                                 | Purpose                           |
-| ------------------------------------------------------ | --------------------------------- |
-| `scripts/regime_analysis.py`                           | Main analysis script              |
-| `scripts/regime_analysis_polars.py`                    | Regime analysis (Polars)          |
-| `scripts/fill_all_symbols.py`                          | Data population                   |
-| `scripts/pattern_return_stats.py`                      | Return statistics                 |
-| `scripts/multibar_continuation.py`                     | Multi-bar momentum                |
-| `scripts/trend_filter_analysis.py`                     | 200 dbps HTF trend filter         |
-| `scripts/multifactor_patterns_polars.py`               | Multi-factor analysis (Polars)    |
-| `scripts/volume_conditioned_patterns_polars.py`        | Volume/OFI conditioning (Polars)  |
-| `scripts/multibar_forward_returns_polars.py`           | Multi-bar horizon analysis        |
-| `scripts/pattern_return_profiles_polars.py`            | Return profiles for 11 universals |
-| `scripts/regime_transition_analysis_polars.py`         | Regime transition timing          |
-| `scripts/oos_validation_polars.py`                     | Out-of-sample adversarial audit   |
-| `scripts/historical_formation_patterns_polars.py`      | Historical formation analysis     |
-| `scripts/bootstrap_permutation_validation_polars.py`   | Bootstrap/permutation tests       |
-| `scripts/multithreshold_combinations_polars.py`        | Multi-threshold (50\|100\|200)    |
-| `scripts/multithreshold_regime_combinations_polars.py` | Regime + multi-threshold          |
-| `scripts/historical_formation_regime_polars.py`        | Historical formation + regime     |
-| `scripts/parameter_sensitivity_polars.py`              | Parameter sensitivity analysis    |
-| `scripts/transaction_cost_analysis_polars.py`          | Transaction cost profitability    |
-| `scripts/regime_analysis_50dbps_polars.py`             | 50 dbps granularity analysis      |
-| `scripts/position_sizing_analysis_polars.py`           | Kelly criterion position sizing   |
+| Script                                                 | Purpose                               |
+| ------------------------------------------------------ | ------------------------------------- |
+| `scripts/regime_analysis.py`                           | Main analysis script                  |
+| `scripts/regime_analysis_polars.py`                    | Regime analysis (Polars)              |
+| `scripts/fill_all_symbols.py`                          | Data population                       |
+| `scripts/pattern_return_stats.py`                      | Return statistics                     |
+| `scripts/multibar_continuation.py`                     | Multi-bar momentum                    |
+| `scripts/trend_filter_analysis.py`                     | 200 dbps HTF trend filter             |
+| `scripts/multifactor_patterns_polars.py`               | Multi-factor analysis (Polars)        |
+| `scripts/volume_conditioned_patterns_polars.py`        | Volume/OFI conditioning (Polars)      |
+| `scripts/multibar_forward_returns_polars.py`           | Multi-bar horizon analysis            |
+| `scripts/pattern_return_profiles_polars.py`            | Return profiles for 11 universals     |
+| `scripts/regime_transition_analysis_polars.py`         | Regime transition timing              |
+| `scripts/oos_validation_polars.py`                     | Out-of-sample adversarial audit       |
+| `scripts/historical_formation_patterns_polars.py`      | Historical formation analysis         |
+| `scripts/bootstrap_permutation_validation_polars.py`   | Bootstrap/permutation tests           |
+| `scripts/multithreshold_combinations_polars.py`        | Multi-threshold (50\|100\|200)        |
+| `scripts/multithreshold_regime_combinations_polars.py` | Regime + multi-threshold              |
+| `scripts/historical_formation_regime_polars.py`        | Historical formation + regime         |
+| `scripts/parameter_sensitivity_polars.py`              | Parameter sensitivity analysis        |
+| `scripts/transaction_cost_analysis_polars.py`          | Transaction cost profitability        |
+| `scripts/regime_analysis_50dbps_polars.py`             | 50 dbps granularity analysis          |
+| `scripts/position_sizing_analysis_polars.py`           | Kelly criterion position sizing       |
+| `scripts/pattern_correlation_analysis_polars.py`       | Pattern correlation & diversification |
 
 ---
 
@@ -1040,6 +1041,75 @@ This validates the research - the patterns represent genuine alpha when trading 
 - Multi-threshold confirmation (as in earlier research)
 - Entry timing refinement (when 100 dbps signal triggers)
 - But NOT as standalone signal source
+
+---
+
+## Pattern Correlation Analysis (2026-01-31)
+
+**Effective diversification: 4.5 independent bets from 11 patterns (41% diversification ratio).**
+
+### Methodology
+
+Computed monthly return correlations between all 11 universal patterns across 4 symbols.
+
+Effective DoF formula: `N_eff = N² / Σ(corr²)`
+
+### Results (Cross-Symbol Average)
+
+| Metric                | Value |
+| --------------------- | ----- |
+| Number of patterns    | 11    |
+| Effective DoF         | 4.5   |
+| Diversification ratio | 0.41  |
+
+### Highly Correlated Pairs (|r| > 0.5)
+
+| Pattern 1        | Pattern 2        | Correlation |
+| ---------------- | ---------------- | ----------- |
+| chop\|UU         | bear_neutral\|DD | +0.776      |
+| chop\|DD         | bear_neutral\|UU | +0.758      |
+| chop\|UU         | bull_neutral\|DD | +0.684      |
+| bear_neutral\|UU | bull_neutral\|DD | +0.673      |
+| bear_neutral\|DD | bull_neutral\|DD | +0.654      |
+| chop\|DD         | bull_neutral\|DD | +0.649      |
+
+**Interpretation**: Continuation patterns (UU, DD) across different regimes are highly correlated. A rising market lifts all "bullish continuation" signals simultaneously.
+
+### Low Correlation Pairs (|r| < 0.2)
+
+| Pattern 1 | Pattern 2        | Correlation |
+| --------- | ---------------- | ----------- |
+| chop\|DU  | bear_neutral\|DD | -0.054      |
+| chop\|DU  | bull_neutral\|DD | -0.008      |
+| chop\|UD  | bear_neutral\|UU | +0.023      |
+| chop\|UD  | bull_neutral\|DD | +0.085      |
+
+**Interpretation**: Reversal patterns (DU, UD) show low correlation with continuation patterns - good for diversification.
+
+### Within-Regime Correlations
+
+| Regime       | Avg Within-Cluster Corr | Interpretation              |
+| ------------ | ----------------------- | --------------------------- |
+| chop         | 0.136                   | Low - patterns diversify    |
+| bear_neutral | 0.073                   | Very low - good diversity   |
+| bull_neutral | -0.147                  | Negative! - hedge potential |
+
+**Key Finding**: Bull_neutral patterns show negative average correlation - patterns within this regime can hedge each other.
+
+### Portfolio Construction Implications
+
+1. **Don't over-allocate to continuation patterns** (DD, UU) - they move together
+2. **Reversal patterns (DU, UD) provide best diversification** - low correlation with others
+3. **Bull_neutral regime offers hedging** - negative internal correlation
+4. **Effective portfolio size is ~4.5 independent bets**, not 11
+
+### Recommended Pattern Groups (for diversification)
+
+| Group              | Patterns                           | Purpose           |
+| ------------------ | ---------------------------------- | ----------------- |
+| **Reversal Core**  | chop\|DU, chop\|UD                 | Primary signals   |
+| **Trend Reversal** | bear_neutral\|DU, bull_neutral\|UD | Trend inflection  |
+| **Continuation**   | Pick 1-2 from DD/UU set            | Avoid correlation |
 
 ---
 
