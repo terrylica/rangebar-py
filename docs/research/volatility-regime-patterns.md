@@ -159,6 +159,7 @@ bear_neut│ signal7 │ signal8│ signal9  │
 | ---------------------------------------------- | ---------------------------------- |
 | `scripts/volatility_regime_analysis_polars.py` | Volatility regime pattern analysis |
 | `scripts/combined_regime_analysis_polars.py`   | Combined SMA/RSI x RV analysis     |
+| `scripts/volatility_regime_audit_polars.py`    | Adversarial audit (param/OOS/CI)   |
 
 ---
 
@@ -220,10 +221,74 @@ bear_neut│ signal7 │ signal8│ signal9  │
 
 ---
 
+## Adversarial Audit (2026-01-31)
+
+**ALL 12 RV patterns PASS all three audit perspectives.**
+
+### Audit 1: Parameter Sensitivity
+
+Tested 5 parameter variations:
+
+| Parameter Set | RV Window | Percentiles | Universal Patterns |
+| ------------- | --------- | ----------- | ------------------ |
+| baseline      | 20        | 25-75       | 12                 |
+| shorter_rv    | 10        | 25-75       | 12                 |
+| longer_rv     | 30        | 25-75       | 12                 |
+| tighter_pct   | 20        | 33-67       | 12                 |
+| wider_pct     | 20        | 20-80       | 12                 |
+
+**Result**: ALL 12 patterns robust across ALL 5 parameter sets. **PASS**
+
+### Audit 2: Out-of-Sample Validation
+
+| Period  | Dates                    | Universal Patterns |
+| ------- | ------------------------ | ------------------ |
+| Train   | 2022-01-01 to 2024-12-31 | 12                 |
+| Test    | 2025-01-01 to 2026-01-31 | 12                 |
+| Overlap | -                        | **12 (100%)**      |
+
+**Result**: 100% OOS retention rate. **PASS**
+
+### Audit 3: Bootstrap Confidence Intervals
+
+| Pattern      | n    | Mean (bps) | 95% CI           | Excludes Zero |
+| ------------ | ---- | ---------- | ---------------- | ------------- |
+| quiet\|DD    | 111K | -6.42      | [-6.55, -6.27]   | YES           |
+| quiet\|DU    | 81K  | +10.02     | [+9.83, +10.19]  | YES           |
+| quiet\|UD    | 81K  | -10.11     | [-10.27, -9.93]  | YES           |
+| quiet\|UU    | 113K | +6.82      | [+6.67, +6.98]   | YES           |
+| active\|DD   | 177K | -6.98      | [-7.12, -6.86]   | YES           |
+| active\|DU   | 135K | +10.46     | [+10.30, +10.60] | YES           |
+| active\|UD   | 135K | -10.34     | [-10.47, -10.19] | YES           |
+| active\|UU   | 176K | +7.25      | [+7.12, +7.38]   | YES           |
+| volatile\|DD | 102K | -6.95      | [-7.12, -6.79]   | YES           |
+| volatile\|DU | 85K  | +10.61     | [+10.43, +10.80] | YES           |
+| volatile\|UD | 85K  | -10.69     | [-10.86, -10.49] | YES           |
+| volatile\|UU | 102K | +7.03      | [+6.86, +7.22]   | YES           |
+
+**Result**: 100% of patterns have CI excluding zero (500 bootstrap iterations). **PASS**
+
+### Audit Conclusion
+
+| Audit                 | Status        | Detail                             |
+| --------------------- | ------------- | ---------------------------------- |
+| Parameter Sensitivity | **PASS**      | 12/12 patterns across 5 param sets |
+| OOS Validation        | **PASS**      | 100% retention rate                |
+| Bootstrap CI          | **PASS**      | 100% CI excludes zero              |
+| **OVERALL**           | **VALIDATED** | RV regime patterns are genuine     |
+
+**The RV regime patterns are MORE robust than SMA/RSI patterns:**
+
+- RV: 12/12 patterns PASS all audits
+- SMA/RSI (Issue #52): 10/11 patterns PASS parameter sensitivity
+
+---
+
 ## Next Steps
 
 - [ ] Compute correlation between RV patterns and SMA/RSI patterns
 - [x] Test combined SMA/RSI x RV regime filters - DONE (16 universal patterns)
+- [x] Adversarial audit - DONE (ALL PASS)
 - [ ] Analyze return profiles for RV regime patterns
 - [ ] Transaction cost analysis for RV patterns
 
