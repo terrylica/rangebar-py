@@ -768,6 +768,7 @@ The 11 universal ODD robust patterns are **VALID** for multi-bar trading:
 | `scripts/historical_formation_regime_polars.py`        | Historical formation + regime     |
 | `scripts/parameter_sensitivity_polars.py`              | Parameter sensitivity analysis    |
 | `scripts/transaction_cost_analysis_polars.py`          | Transaction cost profitability    |
+| `scripts/regime_analysis_50dbps_polars.py`             | 50 dbps granularity analysis      |
 
 ---
 
@@ -930,6 +931,58 @@ The critical factor is transaction costs:
 - At 30 bps: No patterns profitable
 
 This validates the research - the patterns represent genuine alpha when trading costs are sufficiently low.
+
+---
+
+## 50 dbps Granularity Analysis (2026-01-31)
+
+**Finer granularity (50 dbps) has FEWER universal patterns than 100 dbps.**
+
+### Data Volume Comparison
+
+| Symbol  | 50 dbps Bars | 100 dbps Bars | Ratio |
+| ------- | ------------ | ------------- | ----- |
+| BTCUSDT | 4,179,709    | 1,252,498     | 3.3x  |
+| ETHUSDT | 5,967,593    | 1,582,770     | 3.8x  |
+| SOLUSDT | 12,143,369   | 3,712,525     | 3.3x  |
+| BNBUSDT | 4,553,434    | 1,372,614     | 3.3x  |
+
+### Universal Pattern Comparison
+
+| Pattern Type | 50 dbps | 100 dbps | Delta |
+| ------------ | ------- | -------- | ----- |
+| 2-bar        | 7       | 11       | -4    |
+| 3-bar        | 16      | ~30      | -14   |
+
+### Pattern Overlap Analysis
+
+**7 patterns common to both granularities:**
+
+- chop|DU, chop|UD, chop|DD
+- bear_neutral|DU, bear_neutral|UD
+- bull_neutral|DU, bull_neutral|UD
+
+**4 patterns MISSING at 50 dbps (robust at 100 dbps only):**
+
+- bear_neutral|DD, bear_neutral|UU
+- bull_neutral|DD, chop|UU
+
+**0 new patterns** found at 50 dbps that weren't at 100 dbps.
+
+### Interpretation
+
+1. **100 dbps is the optimal granularity** for regime-based pattern trading
+2. Finer granularity (50 dbps) introduces more noise, reducing robustness
+3. The 7 common patterns are the "core" signals that work across granularities
+4. Continuation patterns (DD, UU) are less robust at 50 dbps - likely due to more mean reversion at fine scales
+
+### Recommendation
+
+**Use 100 dbps as the primary trading granularity.** The 50 dbps data can be used for:
+
+- Multi-threshold confirmation (as in earlier research)
+- Entry timing refinement (when 100 dbps signal triggers)
+- But NOT as standalone signal source
 
 ---
 
