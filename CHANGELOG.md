@@ -1,3 +1,17 @@
+# [11.4.0](https://github.com/terrylica/rangebar-py/compare/v11.3.0...v11.4.0) (2026-01-31)
+
+
+### Bug Fixes
+
+* **release:** enforce wheel build dependency before PyPI publish ([39e8fe4](https://github.com/terrylica/rangebar-py/commit/39e8fe40581156c7dc131920cd819281078039da))
+* **research:** correct triple barrier chart to show profit target hit first ([4ca393e](https://github.com/terrylica/rangebar-py/commit/4ca393eef4a7b2fbe1aa4a304c5b0582bd11cd2d))
+
+
+### Features
+
+* **streaming:** add real-time streaming API for Binance WebSocket ([1b2dbd3](https://github.com/terrylica/rangebar-py/commit/1b2dbd31e80ee31ad05b70d12a81911d6bde6134))
+* **streaming:** add reconnection jitter and max duration to prevent thundering herd ([5acc4ba](https://github.com/terrylica/rangebar-py/commit/5acc4ba3373d9ba8c5ea894349f1bfe396758f64))
+
 # [11.3.0](https://github.com/terrylica/rangebar-py/compare/v11.2.2...v11.3.0) (2026-01-30)
 
 
