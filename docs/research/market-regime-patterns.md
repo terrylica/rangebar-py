@@ -164,25 +164,61 @@ A pattern-regime combination is considered **ODD robust** if:
 | Bull Hot     | UD             | Only 1 pattern (reversal?) |
 | Bear Cold    | DD, DU         | 2 patterns (continuation?) |
 
-#### Symbol-Specific Patterns
+### Complete Cross-Symbol Validation (All 4 Symbols)
 
-- **BTCUSDT only**: `bull_hot|UU` (not robust on ETH)
-- **ETHUSDT only**: None
+**Date**: 2026-01-31
+
+| Symbol  | Bars      | 2-bar Robust | 3-bar Robust |
+| ------- | --------- | ------------ | ------------ |
+| BTCUSDT | 1,252,498 | 16           | 32           |
+| ETHUSDT | 1,582,770 | 15           | 30           |
+| SOLUSDT | 3,712,525 | 19           | 31           |
+| BNBUSDT | 1,372,614 | 16           | 32           |
+
+#### Universal ODD Robust Patterns (ALL 4 Symbols)
+
+**2-bar patterns**: 15 universal (75% of theoretical max)
+
+| Regime       | Patterns       | Count |
+| ------------ | -------------- | ----- |
+| Chop         | DD, DU, UD, UU | 4     |
+| Bull Neutral | DD, DU, UD, UU | 4     |
+| Bear Neutral | DD, DU, UD, UU | 4     |
+| Bull Hot     | UD             | 1     |
+| Bear Cold    | DD, DU         | 2     |
+
+**3-bar patterns**: 30 universal (75% of theoretical max)
+
+| Regime       | Patterns                               | Count |
+| ------------ | -------------------------------------- | ----- |
+| Chop         | DDD, DDU, DUD, DUU, UDD, UDU, UUD, UUU | 8     |
+| Bull Neutral | DDD, DDU, DUD, DUU, UDD, UDU, UUD, UUU | 8     |
+| Bear Neutral | DDD, DDU, DUD, DUU, UDD, UDU, UUD, UUU | 8     |
+| Bull Hot     | UDD, UUU                               | 2     |
+| Bear Cold    | DDD, DDU, DUD, DUU                     | 4     |
 
 ### Key Observations
 
 1. **Chop regime dominates** (40% of bars) - market spends most time in consolidation
 2. **Extreme regimes are rare** - Bull Hot + Bear Cold < 5% combined
 3. **All regimes have ODD robust patterns** - suggests regime filtering reveals predictability
-4. **Strong cross-symbol consistency** - 93.8% of patterns are ODD robust on BOTH symbols
-5. **Full pattern coverage in neutral regimes** - All 4 possible 2-bar patterns are robust
+4. **75% universal cross-symbol consistency** - 15/20 2-bar and 30/40 3-bar patterns are universal
+5. **Full pattern coverage in neutral regimes** - ALL 8 possible patterns (4x 2-bar + 8x 3-bar) are universal
+6. **Extreme regimes have fewer universal patterns** - Bull Hot (1-2) and Bear Cold (2-4)
+
+### Research Conclusion
+
+**The hypothesis is CONFIRMED**: Deterministic market regime filters (SMA crossovers + RSI levels) reveal ODD robust pattern subsets that were not found in unfiltered analysis.
+
+**Key finding**: In neutral regimes (Chop, Bull Neutral, Bear Neutral), ALL possible 2-bar and 3-bar directional patterns are ODD robust across all 4 tested symbols. This suggests the regime filter itself is the primary source of predictability, not the specific pattern.
 
 ### Next Steps
 
-- [ ] Validate on other symbols (SOLUSDT, BNBUSDT) - waiting for data fill
-- [x] Check for cross-symbol pattern consistency - DONE (93.8% consistency)
+- [x] Validate on all symbols (BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT) - DONE
+- [x] Check for cross-symbol pattern consistency - DONE (75% universal)
 - [ ] Add 200 dbps trend filter confirmation
 - [ ] Compute actual return statistics per pattern/regime
+- [ ] Test statistical significance of regime transitions
 
 ### Patterns That Failed ODD Criteria
 
