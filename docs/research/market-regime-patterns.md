@@ -792,6 +792,22 @@ The 11 universal ODD robust patterns are **VALID** for multi-bar trading:
 
 ---
 
+## Null Result: Historical Formation Patterns (2026-01-31)
+
+**Historical lookback patterns do NOT predict forward returns, even with regime filtering.**
+
+| Formation Type    | Global Robust | With Regime | Conclusion |
+| ----------------- | ------------- | ----------- | ---------- |
+| 50 dbps (3-bar)   | 0             | 0           | No signal  |
+| 200 dbps (3-bar)  | 0             | 0           | No signal  |
+| Combined (50+200) | 0             | 0           | No signal  |
+
+**Interpretation**: What happened 3 bars ago at a different granularity does NOT predict what will happen next. Only the CURRENT pattern (the 2-bar formation at the current bar) has predictive power.
+
+This confirms that the robust patterns are about **current state alignment**, not **historical momentum**.
+
+---
+
 ## References
 
 - [Price Action Patterns](./price-action-patterns.md) - Prior research (no ODD robust patterns found unfiltered)
