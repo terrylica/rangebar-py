@@ -1313,6 +1313,16 @@ fn _core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
         )?)?;
     }
 
+    // Add streaming classes if feature enabled
+    // ADR: docs/adr/2026-01-31-realtime-streaming-api.md
+    #[cfg(feature = "streaming")]
+    {
+        m.add_class::<streaming_bindings::PyBinanceLiveStream>()?;
+        m.add_class::<streaming_bindings::PyStreamingConfig>()?;
+        m.add_class::<streaming_bindings::PyStreamingMetrics>()?;
+        m.add_class::<streaming_bindings::PyStreamingRangeBarProcessor>()?;
+    }
+
     Ok(())
 }
 
@@ -1647,6 +1657,562 @@ mod binance_bindings {
             market_type,
             verify_checksum,
         )
+    }
+}
+
+// ============================================================================
+// Streaming Bindings (feature-gated)
+// ADR: docs/adr/2026-01-31-realtime-streaming-api.md
+// ============================================================================
+
+#[cfg(feature = "streaming")]
+mod streaming_bindings {
+    use super::*;
+    use pyo3::types::PyList;
+    use rangebar_providers::binance::websocket::{BinanceWebSocketStream, WebSocketError};
+    use rangebar_streaming::processor::{MetricsSummary, StreamingProcessorConfig};
+    use std::sync::atomic::Ordering;
+    use std::sync::{Arc, Mutex};
+
+    /// Streaming metrics snapshot for Python
+    #[pyclass(name = "StreamingMetrics")]
+    #[derive(Clone)]
+    pub struct PyStreamingMetrics {
+        summary: MetricsSummary,
+    }
+
+    #[pymethods]
+    impl PyStreamingMetrics {
+        /// Number of trades processed
+        #[getter]
+        fn trades_processed(&self) -> u64 {
+            self.summary.trades_processed
+        }
+
+        /// Number of bars generated
+        #[getter]
+        fn bars_generated(&self) -> u64 {
+            self.summary.bars_generated
+        }
+
+        /// Total errors encountered
+        #[getter]
+        fn errors_total(&self) -> u64 {
+            self.summary.errors_total
+        }
+
+        /// Number of backpressure events
+        #[getter]
+        fn backpressure_events(&self) -> u64 {
+            self.summary.backpressure_events
+        }
+
+        /// Memory usage in bytes
+        #[getter]
+        fn memory_usage_bytes(&self) -> u64 {
+            self.summary.memory_usage_bytes
+        }
+
+        /// Bars per aggTrade ratio
+        fn bars_per_aggtrade(&self) -> f64 {
+            self.summary.bars_per_aggtrade()
+        }
+
+        /// Error rate (errors / trades)
+        fn error_rate(&self) -> f64 {
+            self.summary.error_rate()
+        }
+
+        /// Memory usage in MB
+        fn memory_usage_mb(&self) -> f64 {
+            self.summary.memory_usage_mb()
+        }
+
+        fn __repr__(&self) -> String {
+            format!(
+                "StreamingMetrics(trades={}, bars={}, errors={}, backpressure={})",
+                self.summary.trades_processed,
+                self.summary.bars_generated,
+                self.summary.errors_total,
+                self.summary.backpressure_events
+            )
+        }
+    }
+
+    /// Python wrapper for Binance WebSocket live stream
+    ///
+    /// Connects to Binance WebSocket and processes trades into range bars in real-time.
+    ///
+    /// Example:
+    ///     >>> stream = PyBinanceLiveStream("BTCUSDT", 250)
+    ///     >>> stream.connect()
+    ///     >>> while stream.is_connected():
+    ///     ...     bar = stream.next_bar(timeout_ms=5000)
+    ///     ...     if bar:
+    ///     ...         print(f"New bar: {bar['close']}")
+    #[pyclass(name = "BinanceLiveStream")]
+    pub struct PyBinanceLiveStream {
+        symbol: String,
+        threshold_decimal_bps: u32,
+        /// Bars received from streaming processor
+        bars: Arc<Mutex<Vec<rangebar_core::RangeBar>>>,
+        /// Flag to track connection state
+        connected: Arc<std::sync::atomic::AtomicBool>,
+        /// Tokio runtime handle for async operations
+        runtime: Option<tokio::runtime::Runtime>,
+    }
+
+    #[pymethods]
+    impl PyBinanceLiveStream {
+        /// Create a new Binance live stream
+        ///
+        /// Args:
+        ///     symbol: Trading pair (e.g., "BTCUSDT")
+        ///     threshold_decimal_bps: Range bar threshold in decimal basis points (250 = 0.25%)
+        #[new]
+        #[pyo3(signature = (symbol, threshold_decimal_bps))]
+        pub fn new(symbol: &str, threshold_decimal_bps: u32) -> PyResult<Self> {
+            // Validate threshold
+            if threshold_decimal_bps == 0 || threshold_decimal_bps > 100_000 {
+                return Err(PyValueError::new_err(format!(
+                    "threshold_decimal_bps must be between 1 and 100000, got {}",
+                    threshold_decimal_bps
+                )));
+            }
+
+            Ok(Self {
+                symbol: symbol.to_uppercase(),
+                threshold_decimal_bps,
+                bars: Arc::new(Mutex::new(Vec::new())),
+                connected: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                runtime: None,
+            })
+        }
+
+        /// Connect to Binance WebSocket and start processing
+        ///
+        /// This is a blocking call that runs the WebSocket connection in a background thread.
+        /// Use `next_bar()` to retrieve completed bars.
+        pub fn connect(&mut self, py: Python) -> PyResult<()> {
+            if self.connected.load(Ordering::Relaxed) {
+                return Err(PyRuntimeError::new_err("Already connected"));
+            }
+
+            let symbol = self.symbol.clone();
+            let threshold = self.threshold_decimal_bps;
+            let bars = Arc::clone(&self.bars);
+            let connected = Arc::clone(&self.connected);
+
+            // Create tokio runtime for async operations
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
+
+            let handle = runtime.handle().clone();
+
+            // Spawn the WebSocket connection in the runtime
+            handle.spawn(async move {
+                match Self::run_stream(symbol, threshold, bars, connected).await {
+                    Ok(()) => println!("Stream ended normally"),
+                    Err(e) => println!("Stream error: {:?}", e),
+                }
+            });
+
+            self.runtime = Some(runtime);
+            self.connected.store(true, Ordering::Relaxed);
+
+            // Allow threads to release the GIL during long operations
+            py.allow_threads(|| {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            });
+
+            Ok(())
+        }
+
+        /// Get the next completed bar (blocking with timeout)
+        ///
+        /// Args:
+        ///     timeout_ms: Maximum time to wait in milliseconds
+        ///
+        /// Returns:
+        ///     Bar dict or None if timeout
+        #[pyo3(signature = (timeout_ms = 5000))]
+        pub fn next_bar(&self, py: Python, timeout_ms: u64) -> PyResult<Option<PyObject>> {
+            let start = std::time::Instant::now();
+            let timeout = std::time::Duration::from_millis(timeout_ms);
+
+            // Poll for bars with GIL release
+            loop {
+                // Check for available bars
+                {
+                    let mut bars = self.bars.lock().map_err(|_| {
+                        PyRuntimeError::new_err("Failed to acquire lock on bars buffer")
+                    })?;
+
+                    if !bars.is_empty() {
+                        let bar = bars.remove(0);
+                        return Ok(Some(rangebar_to_dict(py, &bar)?));
+                    }
+                }
+
+                // Check timeout
+                if start.elapsed() >= timeout {
+                    return Ok(None);
+                }
+
+                // Release GIL while sleeping
+                py.allow_threads(|| {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                });
+
+                // Check if still connected
+                if !self.connected.load(Ordering::Relaxed) {
+                    return Ok(None);
+                }
+            }
+        }
+
+        /// Get all pending bars (non-blocking)
+        ///
+        /// Returns:
+        ///     List of bar dicts
+        pub fn get_pending_bars(&self, py: Python) -> PyResult<PyObject> {
+            let mut bars = self
+                .bars
+                .lock()
+                .map_err(|_| PyRuntimeError::new_err("Failed to acquire lock on bars buffer"))?;
+
+            let result = PyList::empty_bound(py);
+            for bar in bars.drain(..) {
+                result.append(rangebar_to_dict(py, &bar)?)?;
+            }
+
+            Ok(result.into())
+        }
+
+        /// Check if the stream is connected
+        #[getter]
+        pub fn is_connected(&self) -> bool {
+            self.connected.load(Ordering::Relaxed)
+        }
+
+        /// Get the symbol this stream is connected to
+        #[getter]
+        pub fn symbol(&self) -> &str {
+            &self.symbol
+        }
+
+        /// Get the threshold in decimal basis points
+        #[getter]
+        pub fn threshold_decimal_bps(&self) -> u32 {
+            self.threshold_decimal_bps
+        }
+
+        /// Disconnect from the WebSocket
+        pub fn disconnect(&mut self) -> PyResult<()> {
+            self.connected.store(false, Ordering::Relaxed);
+
+            // Drop the runtime to stop all tasks
+            if let Some(runtime) = self.runtime.take() {
+                runtime.shutdown_background();
+            }
+
+            Ok(())
+        }
+
+        fn __repr__(&self) -> String {
+            format!(
+                "BinanceLiveStream(symbol={}, threshold_bps={}, connected={})",
+                self.symbol,
+                self.threshold_decimal_bps,
+                self.is_connected()
+            )
+        }
+    }
+
+    impl PyBinanceLiveStream {
+        async fn run_stream(
+            symbol: String,
+            threshold_decimal_bps: u32,
+            bars: Arc<Mutex<Vec<rangebar_core::RangeBar>>>,
+            connected: Arc<std::sync::atomic::AtomicBool>,
+        ) -> Result<(), WebSocketError> {
+            // Create WebSocket stream
+            let mut ws_stream = BinanceWebSocketStream::new(&symbol).await?;
+            ws_stream.connect().await?;
+            ws_stream.start_processing().await?;
+
+            // Create processor using ExportRangeBarProcessor for streaming
+            let mut processor =
+                rangebar_core::processor::ExportRangeBarProcessor::new(threshold_decimal_bps)
+                    .map_err(|e| {
+                        WebSocketError::InvalidSymbol(format!("Processor creation failed: {}", e))
+                    })?;
+
+            println!(
+                "🚀 Started live stream for {} at {} bps",
+                symbol, threshold_decimal_bps
+            );
+
+            // Process trades
+            while connected.load(Ordering::Relaxed) {
+                if let Some(trade) = ws_stream.next_trade().await {
+                    // Process single trade using the streaming-friendly method
+                    processor.process_trades_continuously(&[trade]);
+
+                    // Extract completed bars (drains buffer to avoid memory leaks)
+                    let completed = processor.get_all_completed_bars();
+                    if !completed.is_empty() {
+                        if let Ok(mut bar_buffer) = bars.lock() {
+                            bar_buffer.extend(completed);
+                        }
+                    }
+                } else {
+                    // WebSocket disconnected
+                    break;
+                }
+            }
+
+            connected.store(false, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    impl Drop for PyBinanceLiveStream {
+        fn drop(&mut self) {
+            self.connected.store(false, Ordering::Relaxed);
+            if let Some(runtime) = self.runtime.take() {
+                runtime.shutdown_background();
+            }
+        }
+    }
+
+    /// Configuration for streaming processor
+    #[pyclass(name = "StreamingConfig")]
+    #[derive(Clone)]
+    pub struct PyStreamingConfig {
+        /// Channel capacity for trade input (default: 5000)
+        #[pyo3(get, set)]
+        pub trade_channel_capacity: usize,
+        /// Channel capacity for completed bars (default: 100)
+        #[pyo3(get, set)]
+        pub bar_channel_capacity: usize,
+        /// Memory usage threshold in bytes (default: 100MB)
+        #[pyo3(get, set)]
+        pub memory_threshold_bytes: usize,
+        /// Backpressure timeout in milliseconds (default: 100)
+        #[pyo3(get, set)]
+        pub backpressure_timeout_ms: u64,
+        /// Circuit breaker error rate threshold 0.0-1.0 (default: 0.5)
+        #[pyo3(get, set)]
+        pub circuit_breaker_threshold: f64,
+        /// Circuit breaker timeout in seconds (default: 30)
+        #[pyo3(get, set)]
+        pub circuit_breaker_timeout_secs: u64,
+    }
+
+    #[pymethods]
+    impl PyStreamingConfig {
+        #[new]
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        fn __repr__(&self) -> String {
+            format!(
+                "StreamingConfig(trade_cap={}, bar_cap={}, mem_threshold={}MB)",
+                self.trade_channel_capacity,
+                self.bar_channel_capacity,
+                self.memory_threshold_bytes / 1_000_000
+            )
+        }
+    }
+
+    impl Default for PyStreamingConfig {
+        fn default() -> Self {
+            let rust_config = StreamingProcessorConfig::default();
+            Self {
+                trade_channel_capacity: rust_config.trade_channel_capacity,
+                bar_channel_capacity: rust_config.bar_channel_capacity,
+                memory_threshold_bytes: rust_config.memory_threshold_bytes,
+                backpressure_timeout_ms: rust_config.backpressure_timeout.as_millis() as u64,
+                circuit_breaker_threshold: rust_config.circuit_breaker_threshold,
+                circuit_breaker_timeout_secs: rust_config.circuit_breaker_timeout.as_secs(),
+            }
+        }
+    }
+
+    impl From<PyStreamingConfig> for StreamingProcessorConfig {
+        fn from(config: PyStreamingConfig) -> Self {
+            Self {
+                trade_channel_capacity: config.trade_channel_capacity,
+                bar_channel_capacity: config.bar_channel_capacity,
+                memory_threshold_bytes: config.memory_threshold_bytes,
+                backpressure_timeout: std::time::Duration::from_millis(
+                    config.backpressure_timeout_ms,
+                ),
+                circuit_breaker_threshold: config.circuit_breaker_threshold,
+                circuit_breaker_timeout: std::time::Duration::from_secs(
+                    config.circuit_breaker_timeout_secs,
+                ),
+            }
+        }
+    }
+
+    /// Streaming-oriented range bar processor for custom data sources
+    ///
+    /// Unlike `PyRangeBarProcessor` which is optimized for batch processing,
+    /// this processor is designed for real-time streaming where trades arrive
+    /// one at a time from any data source (WebSocket, message queue, etc.).
+    ///
+    /// Key features:
+    /// - Immediate bar extraction (no accumulation)
+    /// - Memory-bounded operation
+    /// - State preservation across calls
+    ///
+    /// Example:
+    ///     >>> processor = StreamingRangeBarProcessor(250)  # 0.25% threshold
+    ///     >>> for trade in live_trade_stream():
+    ///     ...     bars = processor.process_trade(trade)
+    ///     ...     for bar in bars:
+    ///     ...         print(f"Completed bar: {bar['close']}")
+    #[pyclass(name = "StreamingRangeBarProcessor")]
+    pub struct PyStreamingRangeBarProcessor {
+        processor: rangebar_core::processor::ExportRangeBarProcessor,
+        threshold_decimal_bps: u32,
+        trades_processed: u64,
+        bars_generated: u64,
+    }
+
+    #[pymethods]
+    impl PyStreamingRangeBarProcessor {
+        /// Create a new streaming processor
+        ///
+        /// Args:
+        ///     threshold_decimal_bps: Threshold in decimal basis points (250 = 0.25%)
+        #[new]
+        #[pyo3(signature = (threshold_decimal_bps))]
+        pub fn new(threshold_decimal_bps: u32) -> PyResult<Self> {
+            let processor =
+                rangebar_core::processor::ExportRangeBarProcessor::new(threshold_decimal_bps)
+                    .map_err(|e| PyValueError::new_err(format!("Failed to create processor: {e}")))?;
+
+            Ok(Self {
+                processor,
+                threshold_decimal_bps,
+                trades_processed: 0,
+                bars_generated: 0,
+            })
+        }
+
+        /// Process a single trade and return any completed bars
+        ///
+        /// Args:
+        ///     trade: Trade dict with timestamp, price, quantity/volume, is_buyer_maker
+        ///
+        /// Returns:
+        ///     List of completed bar dicts (usually 0 or 1, rarely more)
+        pub fn process_trade(&mut self, py: Python, trade: &Bound<PyDict>) -> PyResult<PyObject> {
+            let agg_trade = dict_to_agg_trade(py, trade, 0)?;
+
+            self.processor.process_trades_continuously(&[agg_trade]);
+            self.trades_processed += 1;
+
+            // Extract completed bars immediately
+            let completed = self.processor.get_all_completed_bars();
+            self.bars_generated += completed.len() as u64;
+
+            let result = PyList::empty_bound(py);
+            for bar in completed {
+                result.append(rangebar_to_dict(py, &bar)?)?;
+            }
+
+            Ok(result.into())
+        }
+
+        /// Process multiple trades and return any completed bars
+        ///
+        /// Args:
+        ///     trades: List of trade dicts
+        ///
+        /// Returns:
+        ///     List of completed bar dicts
+        pub fn process_trades(&mut self, py: Python, trades: &Bound<PyList>) -> PyResult<PyObject> {
+            let mut agg_trades = Vec::with_capacity(trades.len());
+            for (i, trade) in trades.iter().enumerate() {
+                let trade_dict: &Bound<PyDict> = trade.downcast()?;
+                agg_trades.push(dict_to_agg_trade(py, trade_dict, i)?);
+            }
+
+            self.processor.process_trades_continuously(&agg_trades);
+            self.trades_processed += agg_trades.len() as u64;
+
+            // Extract completed bars immediately
+            let completed = self.processor.get_all_completed_bars();
+            self.bars_generated += completed.len() as u64;
+
+            let result = PyList::empty_bound(py);
+            for bar in completed {
+                result.append(rangebar_to_dict(py, &bar)?)?;
+            }
+
+            Ok(result.into())
+        }
+
+        /// Get the current incomplete bar (if any)
+        ///
+        /// Returns:
+        ///     Bar dict or None
+        pub fn get_incomplete_bar(&mut self, py: Python) -> PyResult<Option<PyObject>> {
+            match self.processor.get_incomplete_bar() {
+                Some(bar) => Ok(Some(rangebar_to_dict(py, &bar)?)),
+                None => Ok(None),
+            }
+        }
+
+        /// Get streaming metrics
+        ///
+        /// Returns:
+        ///     StreamingMetrics object
+        pub fn get_metrics(&self) -> PyStreamingMetrics {
+            PyStreamingMetrics {
+                summary: MetricsSummary {
+                    trades_processed: self.trades_processed,
+                    bars_generated: self.bars_generated,
+                    errors_total: 0,
+                    backpressure_events: 0,
+                    circuit_breaker_trips: 0,
+                    memory_usage_bytes: 0,
+                },
+            }
+        }
+
+        /// Get the threshold in decimal basis points
+        #[getter]
+        pub fn threshold_decimal_bps(&self) -> u32 {
+            self.threshold_decimal_bps
+        }
+
+        /// Get number of trades processed
+        #[getter]
+        pub fn trades_processed(&self) -> u64 {
+            self.trades_processed
+        }
+
+        /// Get number of bars generated
+        #[getter]
+        pub fn bars_generated(&self) -> u64 {
+            self.bars_generated
+        }
+
+        fn __repr__(&self) -> String {
+            format!(
+                "StreamingRangeBarProcessor(threshold_bps={}, trades={}, bars={})",
+                self.threshold_decimal_bps, self.trades_processed, self.bars_generated
+            )
+        }
     }
 }
 

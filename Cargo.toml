@@ -124,8 +124,9 @@ crate-type = ["cdylib"]
 # Use PATH dependencies to internal crates (not crates.io)
 rangebar-core = { path = "crates/rangebar-core" }
 rangebar-providers = { path = "crates/rangebar-providers", optional = true, features = ["all-providers"] }
+rangebar-streaming = { path = "crates/rangebar-streaming", optional = true }
 
-# Async runtime for data fetching
+# Async runtime for data fetching and streaming
 tokio = { version = "1.0", features = ["rt-multi-thread"], optional = true }
 
 # PyO3 for Python bindings
@@ -146,11 +147,13 @@ pyo3-arrow = { workspace = true, optional = true }
 
 [features]
 # Default features: Include data-providers and arrow-export so PyPI users get the full API
-default = ["data-providers", "arrow-export"]
+default = ["data-providers", "arrow-export", "streaming"]
 # Enable data fetching from all providers (Binance + Exness)
 data-providers = ["rangebar-providers", "tokio"]
 # Arrow export for streaming architecture (memory-efficient)
 arrow-export = ["arrow", "arrow-array", "arrow-schema", "pyo3-arrow", "rangebar-core/arrow"]
+# Real-time streaming support
+streaming = ["rangebar-streaming", "rangebar-providers", "tokio"]
 # Legacy feature aliases
 exness = ["data-providers"]
 binance = ["data-providers"]

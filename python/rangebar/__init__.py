@@ -28,7 +28,7 @@ from __future__ import annotations
 from ._core import PositionVerification, __version__
 
 __all__ = [
-    # Constants (from rangebar.constants - SSoT)
+    # Sorted alphabetically for RUF022 compliance
     "ALL_OPTIONAL_COLUMNS",
     "ASSET_CLASS_MULTIPLIERS",
     "EXCHANGE_SESSION_COLUMNS",
@@ -43,8 +43,9 @@ __all__ = [
     "THRESHOLD_PRESETS",
     "TIER1_SYMBOLS",
     "VALIDATION_PRESETS",
-    # Core classes
     "AssetClass",
+    "AsyncStreamingProcessor",
+    "BinanceLiveStream",
     "ContinuityError",
     "ContinuityWarning",
     "GapInfo",
@@ -56,26 +57,30 @@ __all__ = [
     "PrecomputeProgress",
     "PrecomputeResult",
     "RangeBarProcessor",
+    "ReconnectionConfig",
     "StalenessResult",
+    "StreamingConfig",
+    "StreamingError",
+    "StreamingMetrics",
+    "StreamingRangeBarProcessor",
     "TierSummary",
     "TierThresholds",
     "TieredValidationResult",
     "ValidationPreset",
     "__version__",
-    # Functions
     "detect_asset_class",
     "detect_staleness",
     "get_n_range_bars",
     "get_ouroboros_boundaries",
     "get_range_bars",
     "get_range_bars_pandas",
-    # Conversion utilities (from rangebar.conversion - SSoT)
     "normalize_arrow_dtypes",
     "normalize_temporal_precision",
     "populate_cache_resumable",
     "precompute_range_bars",
     "process_trades_polars",
     "process_trades_to_dataframe",
+    "stream_binance_live",
     "validate_continuity",
     "validate_continuity_tiered",
 ]
@@ -125,6 +130,18 @@ from .processors.api import (
     process_trades_to_dataframe_cached,
 )
 from .processors.core import RangeBarProcessor
+
+# Streaming API (ADR: docs/adr/2026-01-31-realtime-streaming-api.md)
+from .streaming import (
+    AsyncStreamingProcessor,
+    BinanceLiveStream,
+    ReconnectionConfig,
+    StreamingConfig,
+    StreamingError,
+    StreamingMetrics,
+    StreamingRangeBarProcessor,
+    stream_binance_live,
+)
 
 # Import staleness detection for cache validation (Issue #39: Schema Evolution)
 from .validation.cache_staleness import StalenessResult, detect_staleness
