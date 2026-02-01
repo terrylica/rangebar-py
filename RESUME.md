@@ -11,7 +11,7 @@
 
 **Finding**: ZERO ODD robust predictive patterns exist in range bar data.
 
-After exhaustive testing across **9 research approaches**, all were invalidated:
+After exhaustive testing across **10 research approaches**, all were invalidated:
 
 | Approach                  | Status      | Root Cause                            |
 | ------------------------- | ----------- | ------------------------------------- |
