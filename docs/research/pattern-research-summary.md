@@ -313,8 +313,8 @@ Level 4: Extended Patterns (3-bar)
 | #52   | Market Regime Filter for ODD Robust Patterns     | CLOSED |
 | #54   | Volatility Regime Filter for ODD Robust Patterns | CLOSED |
 | #55   | Multi-Threshold Pattern Confirmation Signals     | CLOSED |
-| #56   | TDA Structural Break Detection for Range Bars    | OPEN   |
-| #57   | Research Complete: ZERO ODD Robust Patterns      | OPEN   |
+| #56   | TDA Structural Break Detection for Range Bars    | CLOSED |
+| #57   | Research Complete: ZERO ODD Robust Patterns      | CLOSED |
 
 ---
 
