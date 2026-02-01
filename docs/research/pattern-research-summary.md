@@ -341,6 +341,31 @@ This reclassifies patterns from CONVERGED to **BLIND SPOT** per MRH Framework.
 - `scripts/hurst_exponent_analysis_polars.py` - Commit cc66023
 - `scripts/hurst_adjusted_psr_analysis_polars.py` - Commit c2709da
 
+### TDA Structural Break Detection
+
+**Status**: COMPLETE (2026-01-31)
+
+Applied Topological Data Analysis (Persistent Homology) for geometric structural break detection:
+
+| Symbol  | N Bars  | Avg L2(H1) | TDA Breaks | ADWIN Breaks |
+| ------- | ------- | ---------- | ---------- | ------------ |
+| BTCUSDT | 323,112 | 3.38       | 2          | 0            |
+| ETHUSDT | 646,417 | 3.50       | 2          | 0            |
+| SOLUSDT | 675,738 | 4.43       | 2          | 0            |
+| BNBUSDT | 313,184 | 3.81       | 2          | 0            |
+
+**Key Finding**: TDA detects 8 structural breaks that ADWIN completely missed.
+
+This suggests:
+
+- H1 (loop) features capture cyclic market structure
+- Topological features precede statistical moment shifts
+- Geometric instabilities exist despite stable moments
+
+**Script**: `scripts/tda_structural_break_analysis_polars.py` - Commit 32b20a1
+
+**Note**: TDA is O(n^2) complexity. For pattern-specific analysis, use GPU with giotto-tda CUDA backend.
+
 ---
 
 ## Future Research Directions
@@ -352,7 +377,7 @@ This reclassifies patterns from CONVERGED to **BLIND SPOT** per MRH Framework.
 - [x] Hurst exponent analysis (COMPLETE - H ~ 0.79 for pattern returns)
 - [x] Hurst-adjusted validation (COMPLETE - zero patterns survive)
 - [x] Three-factor Hurst analysis (COMPLETE - H ~ 0.71, still insufficient)
-- [ ] TDA structural break detection
+- [x] TDA structural break detection (COMPLETE - 8 breaks vs 0 ADWIN)
 - [ ] Forex symbol validation when data available
 
 ---
