@@ -453,13 +453,14 @@ def main() -> None:
 
         # Sample at most 20K returns for tractable CPU computation
         # TDA is O(n^2) to O(n^3) so we must limit sample size
-        sample_returns = log_returns[:20000] if len(log_returns) > 20000 else log_returns
+        # Use 5K samples with small windows for tractable computation
+        sample_returns = log_returns[:5000] if len(log_returns) > 5000 else log_returns
 
-        # Overall TDA analysis with larger step for speed
+        # Overall TDA analysis with small windows for speed
         tda_df = analyze_tda_over_time(
             sample_returns,
-            window_size=500,
-            step_size=500,  # Non-overlapping windows for speed
+            window_size=100,  # Small window = 100 points in phase space
+            step_size=100,  # Non-overlapping windows for speed
         )
 
         if len(tda_df) > 0:
