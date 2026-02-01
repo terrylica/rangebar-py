@@ -1,8 +1,8 @@
 # Multi-Threshold Pattern Research
 
 **Issue**: #55 - Multi-Threshold Pattern Confirmation Signals
-**Status**: In Progress
-**Last Updated**: 2026-01-31
+**Status**: INVALIDATED (see pattern-research-summary.md)
+**Last Updated**: 2026-02-01
 
 ---
 
@@ -136,12 +136,17 @@ Same as Issue #52:
 
 ---
 
-## Next Steps
+## Status: INVALIDATED
 
-- [ ] Test alignment + RV regime combination
-- [ ] Analyze counter-trend alignment signals (rare but strong)
-- [ ] Transaction cost sensitivity at different alignment levels
-- [ ] Adversarial audit of alignment patterns
+This document reflects initial findings BEFORE adversarial forensic audit.
+
+**Invalidation Cause**: Cross-threshold alignment was invalidated by forensic audit that revealed:
+
+1. argMax bug in ClickHouse queries selecting arbitrary bar closes instead of actual last bar
+2. With correct close price selection, alignment provides ZERO predictive power
+3. All returns within noise (< 2 bps mean, ~60 bps std)
+
+See `docs/research/pattern-research-summary.md` for full invalidation details.
 
 ---
 

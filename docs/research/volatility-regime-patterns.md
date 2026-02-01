@@ -1,8 +1,8 @@
 # Volatility Regime Patterns Research
 
 **Issue**: #54 - Volatility Regime Filter for ODD Robust Patterns
-**Status**: In Progress
-**Last Updated**: 2026-01-31
+**Status**: INVALIDATED (see pattern-research-summary.md)
+**Last Updated**: 2026-02-01
 
 ---
 
