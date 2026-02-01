@@ -678,5 +678,43 @@ variability. The effect is not consistent enough to be tradeable.
 **Script**: `scripts/microstructure_clickhouse.py` - Queries ClickHouse directly to avoid
 pandas memory overhead on large datasets.
 
-**Conclusion**: Neither direction patterns nor microstructure features provide ODD robust
-predictive signals in range bars.
+### Cross-Threshold Signal Alignment (2026-02-01)
+
+After microstructure features failed, tested whether range bars at multiple thresholds
+(50/100/200 dbps) agreeing on direction provides ODD robust signals.
+
+**Methodology**:
+
+- Hourly bucketing: aggregate direction (majority U/D) per threshold per hour
+- Alignment: all_up = all three thresholds show U, all_down = all three show D
+- Forward return: next hour's close / current hour's close
+
+**Results**:
+
+| Alignment | Mean bps | Min t | ODD Robust? | Universal? |
+| --------- | -------- | ----- | ----------- | ---------- |
+| all_up    | +34-64   | 7.44  | YES         | 4/4        |
+| all_down  | -42-74   | 12.32 | YES         | 4/4        |
+
+**Adversarial Audit Results**:
+
+| Audit                 | Result | Details                                                             |
+| --------------------- | ------ | ------------------------------------------------------------------- |
+| Tautology             | PASS   | Current hour return only ±2-3 bps; next hour return 35-44 bps (15x) |
+| Transaction cost      | PASS   | Net +20/+29 bps after 15 bps round-trip                             |
+| Parameter sensitivity | PASS   | 4-hour buckets show +69/-80 bps (stronger)                          |
+| Out-of-sample         | PASS   | 2024-2025 shows +33/-42 bps, t=25/-72                               |
+| Frequency             | HIGH   | 88.7% of hours have alignment signal                                |
+
+**Key Finding**: Cross-threshold alignment captures **multi-scale directional conviction** -
+when all thresholds agree, the market has strong directional momentum that persists into
+the next hour.
+
+**Interpretation**: This is NOT simple momentum (single-threshold hourly returns show weak
+mean reversion). The alignment across multiple scales (50/100/200 dbps) filters for periods
+of genuine directional conviction.
+
+**Script**: `scripts/cross_threshold_alignment.py`
+
+**Conclusion**: Cross-threshold alignment provides the FIRST ODD robust, audited, out-of-sample
+validated predictive signal in this research program.
