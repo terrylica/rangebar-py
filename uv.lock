@@ -966,7 +966,9 @@ dev = [
 dev = [
     { name = "psutil" },
     { name = "pytest-cov" },
+    { name = "river" },
     { name = "scipy" },
+    { name = "typing-extensions" },
 ]
 
 [package.metadata]
@@ -994,7 +996,9 @@ provides-extras = ["backtesting", "dev", "exness"]
 dev = [
     { name = "psutil", specifier = ">=7.2.1" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
+    { name = "river", specifier = ">=0.23.0" },
     { name = "scipy", specifier = ">=1.17.0" },
+    { name = "typing-extensions", specifier = ">=4.15.0" },
 ]
 
 [[package]]
@@ -1010,6 +1014,27 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c9/74/b3ff8e6c8446842c3f5c837e9c3dfcfe2018ea6ecef224c710c85ef728f4/requests-2.32.5.tar.gz", hash = "sha256:dbba0bac56e100853db0ea71b82b4dfd5fe2bf6d3754a8893c3af500cec7d7cf", size = 134517, upload-time = "2025-08-18T20:46:02.573Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl", hash = "sha256:2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6", size = 64738, upload-time = "2025-08-18T20:46:00.542Z" },
+]
+
+[[package]]
+name = "river"
+version = "0.23.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/40/38/9063e6410a14c3ad37b943018d1de202a0e4e288a04cf7fb8fff392c6e4b/river-0.23.0.tar.gz", hash = "sha256:f174cb8e5984be1a193827faf8e09a03ceb110a055290628accc72ec987390f1", size = 1406568, upload-time = "2025-11-13T19:25:11.396Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4d/43/99183a1718c14a4876de8aa944f8435c169339b2cae01712a13049254e19/river-0.23.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:672281a91f872d9fe4ecbe9d85e738160c81e5b049404befeada050e5a51269e", size = 2455255, upload-time = "2025-11-13T19:24:56.142Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/93/0600ee91be2e55a806369a08bc1cf25fb52b185ffc5c5f099960f995ba65/river-0.23.0-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:a690a546257dae7a7884a6471502e935b5b492c6884eab97e1aaadf8905ba462", size = 3175421, upload-time = "2025-11-13T19:24:58.105Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/f0/7a41649b5799dc6bf32e925a4f2348929020acb1f7effb74a3b4042825d1/river-0.23.0-cp313-cp313-manylinux_2_28_i686.whl", hash = "sha256:1374c7b6c989b2409f96158f99af4d1c97ff5e84828ebf2223baed51284a0b9c", size = 3148855, upload-time = "2025-11-13T19:25:00.077Z" },
+    { url = "https://files.pythonhosted.org/packages/29/05/42e02b34e8890e5e5b557ae6c0ff92fd11bea4a9b56da146dc17214174c2/river-0.23.0-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:d525d20bfa20b21ca1eafb81d64f12eb716618267cf1a741c747aa44ac271fe5", size = 3202437, upload-time = "2025-11-13T19:25:01.605Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/8c/60c1de1520823432badb33063b19ba59ed46c877d44518fe78f945f51c14/river-0.23.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:040cfbc8a166b913c5d31224f5871ae2483c72b2b786e869ba90909496b72e1a", size = 4100515, upload-time = "2025-11-13T19:25:03.348Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/79/5229ddc2a0df221c4e5646b8f1fbece8b66f0184c06c2fb101bab5525609/river-0.23.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:7d3ea141087232b75440ced85cd278eb8c2effe7ea69a0d269d5f95110945b92", size = 4193101, upload-time = "2025-11-13T19:25:05.629Z" },
+    { url = "https://files.pythonhosted.org/packages/13/92/5cb1fcaea30e74610f8b1f3f93ee68bd2b2127a8c37e5222ec57d76425d3/river-0.23.0-cp313-cp313-win32.whl", hash = "sha256:e33f54124b5738d2211d712c902fb99d87b4b3219d19374954b911a3980276ee", size = 1794333, upload-time = "2025-11-13T19:25:07.751Z" },
+    { url = "https://files.pythonhosted.org/packages/93/a8/2a0791379ddd6bfa596219ff0e8647f8df50018951ec1f297863129a52bc/river-0.23.0-cp313-cp313-win_amd64.whl", hash = "sha256:62df6da5bc11a6b88ec2c7be9836661e64475ba920695547e436d0fb0b3b7d4d", size = 1832780, upload-time = "2025-11-13T19:25:09.469Z" },
 ]
 
 [[package]]
