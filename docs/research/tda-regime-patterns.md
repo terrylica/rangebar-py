@@ -309,7 +309,7 @@ Tested whether patterns achieve ODD robustness WITHIN TDA-defined stable regimes
 ## Future Research
 
 - [x] Align TDA breaks with calendar events (COMPLETE - 27.5% correlation)
-- [x] Compute Hurst exponent per TDA regime (COMPLETE - H stable, non-memory changes)
+- [x] Compute Hurst exponent per TDA regime (COMPLETE - H ~ 0.51 stable across regimes)
 - [x] Test TDA regime-conditioned patterns (COMPLETE - 23 patterns ODD robust)
 - [ ] Test real-time TDA monitoring as trade filter
 - [ ] Compare TDA + pattern filter vs pattern-only strategy
@@ -342,12 +342,12 @@ Does the Hurst exponent (H ~ 0.79 for pattern-conditioned returns) remain stable
 
 ### Results
 
-| Metric              | Value   |
-| ------------------- | ------- |
-| Mean Hurst (R/S)    | 0.5145  |
-| Std Dev             | 0.0185  |
-| Range               | [0.48, 0.57] |
-| N regimes analyzed  | 44      |
+| Metric             | Value        |
+| ------------------ | ------------ |
+| Mean Hurst (R/S)   | 0.5145       |
+| Std Dev            | 0.0185       |
+| Range              | [0.48, 0.57] |
+| N regimes analyzed | 44           |
 
 ### Key Finding: H ~ 0.51, Not 0.79
 
@@ -358,10 +358,10 @@ Does the Hurst exponent (H ~ 0.79 for pattern-conditioned returns) remain stable
 
 This is **not a contradiction** - they measure different things:
 
-| Metric                     | Hurst | Interpretation                         |
-| -------------------------- | ----- | -------------------------------------- |
-| Pattern-conditioned returns | 0.79  | Patterns have predictive persistence   |
-| Raw regime returns          | 0.51  | Underlying returns are random walk     |
+| Metric                      | Hurst | Interpretation                       |
+| --------------------------- | ----- | ------------------------------------ |
+| Pattern-conditioned returns | 0.79  | Patterns have predictive persistence |
+| Raw regime returns          | 0.51  | Underlying returns are random walk   |
 
 ### Implications
 
