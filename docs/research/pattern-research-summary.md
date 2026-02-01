@@ -376,6 +376,31 @@ This suggests:
 
 **Note**: TDA is O(n^2) complexity. For pattern-specific analysis, use GPU with giotto-tda CUDA backend.
 
+### TDA Regime Pattern Analysis
+
+**Status**: COMPLETE (2026-02-01)
+
+Analyzed pattern performance across TDA-defined regimes (full multi-year data):
+
+| Symbol    | N Bars    | TDA Breaks | Significant Pattern Differences |
+| --------- | --------- | ---------- | ------------------------------- |
+| BTCUSDT   | 1,382,518 | 10         | 1/4 (25%)                       |
+| ETHUSDT   | 1,996,522 | 10         | 3/4 (75%)                       |
+| SOLUSDT   | 1,977,403 | 10         | 4/4 (100%)                      |
+| BNBUSDT   | 1,432,019 | 10         | 4/4 (100%)                      |
+| **Total** | **6.8M**  | **40**     | **12/16 (75%)**                 |
+
+**Key Findings**:
+
+- 75% of pattern-regime comparisons show statistically significant differences (p < 0.05)
+- Pattern returns can flip sign between TDA regimes (e.g., DU: -1.27 bps → +0.89 bps)
+- Extreme regimes (likely major market events) show 10x higher pattern returns
+- Validates TDA as early warning for pattern degradation
+
+**Script**: `scripts/tda_regime_pattern_analysis_polars.py` - Commit 7055673
+
+**Full details**: [docs/research/tda-regime-patterns.md](/docs/research/tda-regime-patterns.md)
+
 ---
 
 ## Future Research Directions
@@ -388,6 +413,7 @@ This suggests:
 - [x] Hurst-adjusted validation (COMPLETE - zero patterns survive)
 - [x] Three-factor Hurst analysis (COMPLETE - H ~ 0.71, still insufficient)
 - [x] TDA structural break detection (COMPLETE - 12 breaks vs 0 ADWIN)
+- [x] TDA regime pattern analysis (COMPLETE - 40 breaks, 75% patterns regime-dependent)
 - [ ] Forex symbol validation when data available
 
 ---
