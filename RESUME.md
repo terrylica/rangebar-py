@@ -14,13 +14,13 @@
 After exhaustive testing across **9 research approaches**, all were invalidated:
 
 | Approach                  | Status      | Root Cause                            |
-| ------------------------- | ----------- | ------------------------------------- | --- | ----- |
+| ------------------------- | ----------- | ------------------------------------- |
 | Direction patterns (U/D)  | INVALIDATED | Boundary-locked returns (H~0.79)      |
 | 2-bar/3-bar patterns      | INVALIDATED | Forward returns show mean reversion   |
 | TDA regime conditioning   | INVALIDATED | Lookback leakage in regime labels     |
 | Microstructure features   | 0 ODD       | Feature noise exceeds signal          |
 | Cross-threshold alignment | INVALIDATED | Temporal overlap contaminates signals |
-| Return persistence        | INVALIDATED | Same sign but                         | t   | < 3.0 |
+| Return persistence        | INVALIDATED | Same sign but t < 3.0                 |
 | Coarse-to-fine cascade    | BLOCKED     | Combinatorial explosion               |
 | Duration autocorrelation  | INVALIDATED | 100% mechanical (deferred-open)       |
 | TDA velocity forecast     | INVALIDATED | t-stats -1.67 to +1.01                |
@@ -69,8 +69,8 @@ After exhaustive testing across **9 research approaches**, all were invalidated:
 
 | Issue | Title                                       | Status |
 | ----- | ------------------------------------------- | ------ |
-| #57   | Research Complete: ZERO ODD Robust Patterns | OPEN   |
-| #56   | TDA Structural Break Detection              | OPEN   |
+| #57   | Research Complete: ZERO ODD Robust Patterns | CLOSED |
+| #56   | TDA Structural Break Detection              | CLOSED |
 | #52   | Market Regime Filter                        | CLOSED |
 | #54   | Volatility Regime Filter                    | CLOSED |
 | #55   | Multi-Threshold Pattern Confirmation        | CLOSED |

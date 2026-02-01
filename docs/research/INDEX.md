@@ -94,8 +94,8 @@ After exhaustive testing across **9 research approaches**, we found **ZERO ODD r
 | #52   | Market Regime Filter for ODD Robust Patterns    | CLOSED |
 | #54   | Volatility Regime Filter                        | CLOSED |
 | #55   | Multi-Threshold Pattern Confirmation            | CLOSED |
-| #56   | TDA Structural Break Detection                  | OPEN   |
-| #57   | **Research Complete: ZERO ODD Robust Patterns** | OPEN   |
+| #56   | TDA Structural Break Detection                  | CLOSED |
+| #57   | **Research Complete: ZERO ODD Robust Patterns** | CLOSED |
 
 ---
 
