@@ -530,6 +530,22 @@ Note: Rolling threshold finds MORE ODD robust patterns because it creates more g
 regimes (more breaks detected with lower early thresholds). However, both scripts use
 temporal-safe pattern calculation (shift(1) not shift(-1)).
 
+**FDR Correction Validation (2026-02-01)**:
+
+Script `scripts/fdr_corrected_patterns.py` implements Benjamini-Hochberg FDR control:
+
+| Metric                        | Value |
+| ----------------------------- | ----- |
+| Total patterns tested         | 16    |
+| Total period tests            | 252   |
+| Bonferroni t-threshold        | 3.72  |
+| Patterns with same sign       | 0     |
+| Raw ODD robust (\|t\| >= 5)   | 0     |
+| FDR ODD robust (BH corrected) | 0     |
+
+**Conclusion**: With temporal-safe pattern calculation, ZERO patterns achieve ODD
+robustness, regardless of statistical correction method.
+
 ---
 
 ## Future Research Directions
