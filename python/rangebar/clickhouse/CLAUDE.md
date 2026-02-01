@@ -105,11 +105,14 @@ for row in result.result_rows:
 
 ## Host-Specific Cache Status
 
-| Host        | Thresholds Cached | Notes            |
-| ----------- | ----------------- | ---------------- |
-| bigblack    | 100, 700          | Primary GPU host |
-| littleblack | 700               | Secondary host   |
-| local       | varies            | Development      |
+| Host        | Symbols                                     | Thresholds Cached     | Notes             |
+| ----------- | ------------------------------------------- | --------------------- | ----------------- |
+| bigblack    | BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT (crypto) | 25, 50, 100, 200 dbps | Primary GPU host  |
+| bigblack    | EURUSD (forex)                              | 50, 100, 200 dbps     | Exness Raw_Spread |
+| littleblack | 700                                         | 700 dbps              | Secondary host    |
+| local       | varies                                      | varies                | Development       |
+
+**Total cached**: 260M+ bars (crypto) + 130K bars (forex)
 
 To add a threshold to a host, run the population script above on that host.
 
