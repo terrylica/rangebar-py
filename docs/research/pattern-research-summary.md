@@ -15,8 +15,8 @@
 | RV Volatility Regime          | #54      | 12                 | VALIDATED     |
 | Multi-Threshold Alignment     | #55      | 11                 | VALIDATED     |
 | **Combined (RV + Alignment)** | #54, #55 | **26-29**          | **VALIDATED** |
-| 3-Bar Patterns                | #54, #55 | 8                  | PENDING       |
-| **RV + 3-Bar Patterns**       | #54, #55 | **24**             | **PENDING**   |
+| 3-Bar Patterns                | #54, #55 | 8                  | VALIDATED     |
+| **RV + 3-Bar Patterns**       | #54, #55 | **24**             | **VALIDATED** |
 
 ### Key Finding
 
@@ -37,6 +37,7 @@ Two-factor combination outperforms single-factor by 2.4x:
 | 2026-01-31 | Multi-threshold alignment        | b4fc08a          |
 | 2026-01-31 | Combined analysis + audit        | c5178b6          |
 | 2026-01-31 | 3-bar pattern analysis           | 4f984ad          |
+| 2026-01-31 | 3-bar pattern audit              | f2c8ba9          |
 
 ---
 
@@ -182,7 +183,13 @@ All patterns must satisfy:
 
 **RV + 3-Bar Combination**: 24 universal patterns (3x improvement over 3-bar alone)
 
-**Status**: COMPLETE, PENDING AUDIT
+**Audit Results**:
+
+- Parameter sensitivity: 8/8 3-bar, 24/24 RV+3-bar across 5 param sets
+- OOS validation: 100% retention for both pattern types
+- Bootstrap CI: All patterns exclude zero
+
+**Status**: COMPLETE, VALIDATED
 
 ---
 
@@ -255,6 +262,7 @@ Level 4: Extended Patterns (3-bar)
 | `scripts/rv_return_profile_analysis_polars.py`       | Return profiles           |
 | `scripts/pattern_correlation_analysis_polars.py`     | Pattern correlation       |
 | `scripts/three_bar_pattern_analysis_polars.py`       | 3-bar pattern analysis    |
+| `scripts/three_bar_pattern_audit_polars.py`          | 3-bar pattern audit       |
 
 ---
 
@@ -271,7 +279,7 @@ Level 4: Extended Patterns (3-bar)
 ## Future Research Directions
 
 - [x] 3-bar pattern analysis (COMPLETE - 8 universal, 24 with RV)
-- [ ] Adversarial audit of 3-bar patterns
+- [x] Adversarial audit of 3-bar patterns (VALIDATED - 100% retention)
 - [ ] 4-bar pattern analysis (diminishing returns expected)
 - [ ] SMA/RSI + RV + Alignment (three-factor combination)
 - [ ] Forex symbol validation when data available
