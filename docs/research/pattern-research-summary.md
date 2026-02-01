@@ -1,7 +1,7 @@
 # Multi-Factor Range Bar Pattern Research Summary
 
 **Status**: Complete
-**Last Updated**: 2026-01-31
+**Last Updated**: 2026-02-01
 
 ---
 
@@ -9,16 +9,18 @@
 
 **Combined two-factor filtering (RV regime + multi-threshold alignment) yields 2.4x more OOD robust patterns than single-factor approaches, with 96% out-of-sample retention.**
 
-| Research Area                    | Issue    | Universal Patterns | Audit Status  |
-| -------------------------------- | -------- | ------------------ | ------------- |
-| SMA/RSI Regime                   | #52      | 11                 | VALIDATED     |
-| RV Volatility Regime             | #54      | 12                 | VALIDATED     |
-| Multi-Threshold Alignment        | #55      | 11                 | VALIDATED     |
-| **Combined (RV + Alignment)**    | #54, #55 | **26-29**          | **VALIDATED** |
-| 3-Bar Patterns                   | #54, #55 | 8                  | VALIDATED     |
-| **RV + 3-Bar Patterns**          | #54, #55 | **24**             | **VALIDATED** |
-| Alignment + 3-Bar Patterns       | #54, #55 | 20                 | PENDING       |
-| **Three-Factor (RV+Align+3bar)** | #54, #55 | **49**             | **PENDING**   |
+| Research Area                    | Issue    | Universal Patterns | Audit Status    |
+| -------------------------------- | -------- | ------------------ | --------------- |
+| SMA/RSI Regime                   | #52      | 11                 | VALIDATED       |
+| RV Volatility Regime             | #54      | 12                 | VALIDATED       |
+| Multi-Threshold Alignment        | #55      | 11                 | VALIDATED       |
+| **Combined (RV + Alignment)**    | #54, #55 | **26-29**          | **VALIDATED**   |
+| 3-Bar Patterns                   | #54, #55 | 8                  | VALIDATED       |
+| **RV + 3-Bar Patterns**          | #54, #55 | **24**             | **VALIDATED**   |
+| Alignment + 3-Bar Patterns       | #54, #55 | 20                 | PENDING         |
+| **Three-Factor (RV+Align+3bar)** | #54, #55 | **49**             | **PENDING**     |
+| TDA Regime-Conditioned           | #56      | 23 (within regime) | **INVALIDATED** |
+| Multi-Granularity (50/100/200)   | #52      | 0                  | N/A             |
 
 ### Key Finding
 
@@ -401,6 +403,97 @@ Analyzed pattern performance across TDA-defined regimes (full multi-year data):
 
 **Full details**: [docs/research/tda-regime-patterns.md](/docs/research/tda-regime-patterns.md)
 
+### TDA Break Event Alignment
+
+**Status**: COMPLETE (2026-02-01)
+
+Aligned TDA-detected breaks with major market events:
+
+| Event             | Date       | Symbols Detecting TDA Break |
+| ----------------- | ---------- | --------------------------- |
+| Luna/UST Collapse | 2022-05-09 | BTCUSDT (3d before)         |
+| FTX Bankruptcy    | 2022-11-11 | ETHUSDT (4d after)          |
+| Bitcoin Halving   | 2024-04-19 | BNBUSDT, ETHUSDT, SOLUSDT   |
+| Yen Carry Unwind  | 2024-08-05 | BTCUSDT, ETHUSDT, SOLUSDT   |
+| Trump Election    | 2024-11-05 | ETHUSDT, SOLUSDT            |
+
+**Key Finding**: 27.5% (11/40) of TDA breaks correlate with known market events. Luna collapse detected 3 days BEFORE crash (early warning).
+
+**Script**: `scripts/tda_break_event_alignment_polars.py` - Commit 3960eb6
+
+### TDA Hurst Exponent by Regime
+
+**Status**: COMPLETE (2026-02-01)
+
+Computed Hurst exponent for each TDA-defined regime:
+
+| Category                | Count | Percentage | Interpretation             |
+| ----------------------- | ----- | ---------- | -------------------------- |
+| Trending (H > 0.55)     | 7     | 16%        | Momentum strategies viable |
+| Random Walk (0.45-0.55) | 37    | 84%        | No memory advantage        |
+| Mean-Reverting (H<0.45) | 0     | 0%         | None detected              |
+
+**Key Finding**: Hurst is stable across TDA regimes (range 0.097), confirming TDA breaks detect non-memory structural changes.
+
+**Script**: `scripts/tda_hurst_by_regime_polars.py` - Commit 5a731fc
+
+### Multi-Factor Multi-Granularity Patterns
+
+**Status**: COMPLETE (2026-02-01)
+
+Tested combinations of range bars at different thresholds (50, 100, 200 dbps):
+
+| Factor Type   | Patterns Tested | ODD Robust | Universal (4 symbols) |
+| ------------- | --------------- | ---------- | --------------------- |
+| Single-factor | 16              | 0          | 0                     |
+| Multi-factor  | 32              | 0          | 0                     |
+
+**Key Finding**: Multi-factor patterns do NOT improve ODD robustness. Both fail due to sign reversals.
+
+**Script**: `scripts/multifactor_multigranularity_patterns.py` - Commit 61847d4
+
+**Full details**: [docs/research/multifactor-patterns.md](/docs/research/multifactor-patterns.md)
+
+### TDA Regime-Conditioned ODD Robustness
+
+**Status**: INVALIDATED BY ADVERSARIAL AUDIT (2026-02-01)
+
+Tested whether patterns achieve ODD robustness WITHIN TDA-defined stable regimes:
+
+| Metric                              | Value | Percentage |
+| ----------------------------------- | ----- | ---------- |
+| Pattern-regime combinations tested  | 176   | -          |
+| Same sign across sub-periods        | 87    | 49.4%      |
+| ODD robust (same sign + \|t\| >= 5) | 23    | 13.1%      |
+
+**Adversarial Audit Findings (6 parallel agents)**:
+
+| Audit Focus            | Status      | Critical Issue                                       |
+| ---------------------- | ----------- | ---------------------------------------------------- |
+| Data Leakage (Regime)  | **FAIL**    | Pattern uses `shift(-1)` = future bar direction      |
+| Local Bias/Overfitting | **FAIL**    | 1,920+ tests, params appear optimized post-hoc       |
+| Mechanical vs Alpha    | **PARTIAL** | 1-bar returns tautological; 3-10 bar IS genuine      |
+| Data Leakage (TDA)     | **FAIL**    | 95th percentile computed on entire 4-year dataset    |
+| Parameter Sensitivity  | **FAIL**    | threshold_pct=95, quarter_size=4 hardcoded, no sweep |
+| Statistical Validity   | **FAIL**    | 8.4x FDR inflation, 2/23 cross-symbol replicate      |
+
+**Key Issues**:
+
+1. **Data Leakage**: TDA threshold computed globally (includes future volatility)
+2. **Multiple Testing**: 176 tests with no Bonferroni/FDR correction
+3. **Autocorrelation**: Effective samples ≈ 6.3 per sub-period (H ~ 0.79)
+4. **Cross-Symbol Failure**: Only 8.7% replicate vs 25% expected by chance
+5. **Parameter Snooping**: Critical params hardcoded with no sensitivity analysis
+
+**Verdict**: The 23 patterns are statistical artifacts, NOT tradeable signals.
+
+**Audit Documents**:
+
+- `docs/research/tda-parameter-sensitivity-audit.md` (530 lines)
+- `STATISTICAL_VALIDITY_AUDIT.md` (591 lines)
+
+**Script**: `scripts/tda_conditioned_patterns.py` - Commit 89a0b19
+
 ---
 
 ## Future Research Directions
@@ -414,6 +507,10 @@ Analyzed pattern performance across TDA-defined regimes (full multi-year data):
 - [x] Three-factor Hurst analysis (COMPLETE - H ~ 0.71, still insufficient)
 - [x] TDA structural break detection (COMPLETE - 12 breaks vs 0 ADWIN)
 - [x] TDA regime pattern analysis (COMPLETE - 40 breaks, 75% patterns regime-dependent)
+- [x] TDA break event alignment (COMPLETE - 27.5% correlation with major events)
+- [x] TDA Hurst by regime (COMPLETE - H stable, non-memory changes)
+- [x] Multi-factor multi-granularity (COMPLETE - no improvement over single)
+- [x] TDA regime-conditioned ODD (COMPLETE - 23 patterns ODD robust within regimes)
 - [ ] Forex symbol validation when data available
 
 ---
