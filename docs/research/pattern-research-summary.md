@@ -347,22 +347,32 @@ This reclassifies patterns from CONVERGED to **BLIND SPOT** per MRH Framework.
 
 Applied Topological Data Analysis (Persistent Homology) for geometric structural break detection:
 
-| Symbol  | N Bars  | Avg L2(H1) | TDA Breaks | ADWIN Breaks |
-| ------- | ------- | ---------- | ---------- | ------------ |
-| BTCUSDT | 323,112 | 3.38       | 2          | 0            |
-| ETHUSDT | 646,417 | 3.50       | 2          | 0            |
-| SOLUSDT | 675,738 | 4.43       | 2          | 0            |
-| BNBUSDT | 313,184 | 3.81       | 2          | 0            |
+| Symbol  | N Bars  | Avg L2(H1) | Max L2(H1) | TDA Breaks | ADWIN Breaks |
+| ------- | ------- | ---------- | ---------- | ---------- | ------------ |
+| BTCUSDT | 323,112 | 3.54       | 8.78       | 3          | 0            |
+| ETHUSDT | 646,417 | 4.33       | 11.91      | 3          | 0            |
+| SOLUSDT | 675,738 | 5.35       | 6.44       | 3          | 0            |
+| BNBUSDT | 313,184 | 5.13       | 6.44       | 3          | 0            |
 
-**Key Finding**: TDA detects 8 structural breaks that ADWIN completely missed.
+**Key Finding**: TDA detects 12 structural breaks that ADWIN completely missed.
 
 This suggests:
 
 - H1 (loop) features capture cyclic market structure
 - Topological features precede statistical moment shifts
 - Geometric instabilities exist despite stable moments
+- Patterns may be less reliable than ADWIN-only analysis suggests
 
-**Script**: `scripts/tda_structural_break_analysis_polars.py` - Commit 32b20a1
+**Methodology**:
+
+- Takens delay embedding (dim=3) of log returns
+- Vietoris-Rips filtration via ripser
+- L2 norm of H1 persistence landscape
+- Velocity threshold (95th percentile) for break detection
+
+**Reference**: Gidea & Katz (2018) - Lp-norm of H1 features predicts crashes 250 trading days before statistical volatility models.
+
+**Script**: `scripts/tda_structural_break_analysis_polars.py` - Commit 1480ee9
 
 **Note**: TDA is O(n^2) complexity. For pattern-specific analysis, use GPU with giotto-tda CUDA backend.
 
@@ -377,7 +387,7 @@ This suggests:
 - [x] Hurst exponent analysis (COMPLETE - H ~ 0.79 for pattern returns)
 - [x] Hurst-adjusted validation (COMPLETE - zero patterns survive)
 - [x] Three-factor Hurst analysis (COMPLETE - H ~ 0.71, still insufficient)
-- [x] TDA structural break detection (COMPLETE - 8 breaks vs 0 ADWIN)
+- [x] TDA structural break detection (COMPLETE - 12 breaks vs 0 ADWIN)
 - [ ] Forex symbol validation when data available
 
 ---
