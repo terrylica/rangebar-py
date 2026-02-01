@@ -631,3 +631,52 @@ artifacts caused by data leakage. With proper temporal-safe methodology:
 | Same sign across periods | ~50%             | **0%**        |
 
 **No tradeable patterns exist in range bar direction sequences.**
+
+### Microstructure Feature Analysis (2026-02-01)
+
+After direction patterns (U/D) were invalidated, analysis pivoted to microstructure features
+computed during bar construction. These features capture genuine market dynamics without
+lookahead bias:
+
+| Feature              | Description                     | Range     |
+| -------------------- | ------------------------------- | --------- |
+| ofi                  | Order Flow Imbalance (buy-sell) | [-1, 1]   |
+| vwap_close_deviation | Close vs VWAP deviation         | ~[-1, 1]  |
+| trade_intensity      | Trades per second               | [0, +inf) |
+| aggression_ratio     | Buy count vs sell count         | [0, 100]  |
+| turnover_imbalance   | Buy vs sell turnover            | [-1, 1]   |
+
+**Methodology**:
+
+- Tercile discretization (LOW/MID/HIGH) based on feature quantiles
+- Forward returns computed correctly via `shift(-1)` on close prices
+- t-statistics computed per quarterly period
+- ODD robust = same sign + |t| >= 3.0 across ALL periods
+
+**Results** (via ClickHouse direct query):
+
+| Metric                       | Value |
+| ---------------------------- | ----- |
+| Total feature-tercile combos | 60    |
+| Same sign across periods     | 3     |
+| ODD robust (t >= 3.0)        | 0     |
+| ODD robust (t >= 2.0)        | 0     |
+
+**Key Finding**: Even lowering threshold to |t| >= 2.0, ZERO microstructure features achieve
+ODD robustness. The Min |t| column shows every feature-tercile has at least one period with
+near-zero t-stat, meaning the predictive effect disappears or reverses in some quarters.
+
+**Notable Non-Robust Patterns**:
+
+- `vwap_close_deviation HIGH` for SOLUSDT: Mean t = -20.81, but varies across periods
+- `aggression_ratio HIGH` for ETHUSDT: Mean t = +9.49, but Min |t| = 0.21
+- `ofi HIGH` for ETHUSDT: Mean t = +6.23, but Min |t| = 0.43
+
+These features show strong average predictive power but FAIL the ODD test due to period
+variability. The effect is not consistent enough to be tradeable.
+
+**Script**: `scripts/microstructure_clickhouse.py` - Queries ClickHouse directly to avoid
+pandas memory overhead on large datasets.
+
+**Conclusion**: Neither direction patterns nor microstructure features provide ODD robust
+predictive signals in range bars.
