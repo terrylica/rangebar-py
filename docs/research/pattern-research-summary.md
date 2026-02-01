@@ -736,3 +736,69 @@ correlate with alignment direction.
 **Script**: `scripts/cross_threshold_alignment.py` (contains bug, kept for reference)
 
 **Forensic Audit Script**: Direct ClickHouse queries documented in conversation transcript.
+
+### Return Persistence Analysis (2026-02-01)
+
+**STATUS: INVALIDATED - Equivalent to Direction Pattern**
+
+Tested if bar N's return tercile (LOW/MID/HIGH) predicts bar N+1's return.
+
+**Initial Results**:
+
+| Tercile | Periods | Same Sign | Min t | Avg t | Mean bps |
+| ------- | ------- | --------- | ----- | ----- | -------- |
+| HIGH    | 17      | 17/17 (+) | +40   | +132  | +6.25    |
+| LOW     | 17      | 17/17 (-) | -39   | -132  | -6.28    |
+| MID     | 17      | 10+/7-    | -3.5  | +0.3  | ~0       |
+
+**Forensic Audit Findings**:
+
+1. **Tercile = Direction**: HIGH tercile is 100% up bars, LOW is 100% down bars
+2. **Return distribution**: 80%+ of bars have returns at exactly ±threshold (±10 bps)
+3. **Equivalent to direction pattern**: Already invalidated by temporal-safe analysis
+4. **Temporal overlap**: 38% of consecutive bars overlap, introducing mechanical correlation
+
+**Conclusion**: Return persistence is just the direction pattern in disguise.
+
+### Coarse-to-Fine Cascade Analysis (2026-02-01)
+
+**STATUS: BLOCKED - ClickHouse Limitations**
+
+Attempted to test if 200 dbps bar direction predicts 100 dbps bar returns.
+
+**Approaches Tried**:
+
+1. **Correlated subquery**: NOT_IMPLEMENTED in ClickHouse
+2. **ASOF JOIN**: Requires equi-join column, only matches within same hour bucket
+3. **Hourly aggregation**: NaN results due to hour boundary mismatches
+
+**Hourly Cascade Results** (simplified approach):
+
+| Direction | Mean bps | Min t | Max t | Same Sign |
+| --------- | -------- | ----- | ----- | --------- |
+| D         | +0.5     | -2.3  | +2.4  | Mixed     |
+| U         | +0.6     | -1.5  | +2.1  | Mixed     |
+
+**Conclusion**: No predictive power in coarse-to-fine cascade at hourly granularity.
+ClickHouse limitations prevent bar-level cascade analysis.
+
+### Research Status Summary (2026-02-01)
+
+**All pattern research directions have been exhausted with ZERO ODD robust patterns found:**
+
+| Approach                     | Status      | Issue                          |
+| ---------------------------- | ----------- | ------------------------------ |
+| Direction patterns (U/D)     | INVALIDATED | Data leakage (shift(-1))       |
+| 2-bar/3-bar patterns         | INVALIDATED | Same leakage issue             |
+| TDA regime conditioning      | INVALIDATED | Global threshold leakage       |
+| Microstructure features      | 0 ODD       | No consistent quarterly signal |
+| Cross-threshold alignment    | INVALIDATED | argMax bug in ClickHouse       |
+| Return persistence (tercile) | INVALIDATED | Equivalent to direction        |
+| Coarse-to-fine cascade       | BLOCKED     | ClickHouse query limitations   |
+
+**Key Learnings**:
+
+1. Range bar returns are concentrated at ±threshold (80%+ at boundary)
+2. 38% of consecutive bars overlap temporally (mechanical correlation)
+3. ClickHouse does not support correlated subqueries needed for cascade analysis
+4. Pattern-conditioned returns show H ~ 0.79 (long memory), reducing effective samples
