@@ -16,6 +16,7 @@
 | Performance monitoring  | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics           |
 | Project context         | [docs/CONTEXT.md](/docs/CONTEXT.md)                                 | Why this project exists       |
 | API reference           | [docs/api.md](/docs/api.md)                                         | Full Python API docs          |
+| Pattern research        | [docs/research/INDEX.md](/docs/research/INDEX.md)                   | Research findings (complete)  |
 
 ---
 
