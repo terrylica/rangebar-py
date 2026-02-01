@@ -118,7 +118,7 @@ Full listing in [pattern-research-summary.md](pattern-research-summary.md#script
 | ------- | --------- | ------- | -------- | -------- |
 | BTCUSDT | 2022-2026 | 6.9M    | 2.8M     | 303K     |
 | ETHUSDT | 2022-2026 | 10.1M   | 5.0M     | 499K     |
-| SOLUSDT | 2023-2026 | 40.8M   | 12.5M    | 540K     |
+| SOLUSDT | 2022-2026 | 40.8M   | 12.5M    | 1.07M    |
 | BNBUSDT | 2022-2026 | 13.2M   | 4.8M     | 389K     |
 
-**Total**: 260M bars in ClickHouse cache (bigblack)
+**Total**: 260M+ bars in ClickHouse cache (bigblack)
