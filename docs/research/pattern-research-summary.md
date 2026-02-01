@@ -258,21 +258,51 @@ Level 4: Extended Patterns (3-bar)
 
 ## Scripts Reference
 
-| Script                                               | Purpose                   |
-| ---------------------------------------------------- | ------------------------- |
-| `scripts/market_regime_patterns_polars.py`           | SMA/RSI regime analysis   |
-| `scripts/volatility_regime_analysis_polars.py`       | RV regime analysis        |
-| `scripts/volatility_regime_audit_polars.py`          | RV regime audit           |
-| `scripts/multi_threshold_pattern_analysis_polars.py` | Multi-threshold alignment |
-| `scripts/combined_rv_alignment_analysis_polars.py`   | Combined analysis         |
-| `scripts/combined_pattern_audit_polars.py`           | Combined audit            |
-| `scripts/cross_regime_correlation_polars.py`         | Regime correlation        |
-| `scripts/rv_return_profile_analysis_polars.py`       | Return profiles           |
-| `scripts/pattern_correlation_analysis_polars.py`     | Pattern correlation       |
-| `scripts/three_bar_pattern_analysis_polars.py`       | 3-bar pattern analysis    |
-| `scripts/three_bar_pattern_audit_polars.py`          | 3-bar pattern audit       |
-| `scripts/three_bar_alignment_analysis_polars.py`     | 3-bar + alignment         |
-| `scripts/three_factor_pattern_analysis_polars.py`    | Three-factor analysis     |
+### Pattern Analysis Scripts
+
+| Script                                               | Purpose                   | Status      |
+| ---------------------------------------------------- | ------------------------- | ----------- |
+| `scripts/market_regime_patterns_polars.py`           | SMA/RSI regime analysis   | INVALIDATED |
+| `scripts/volatility_regime_analysis_polars.py`       | RV regime analysis        | INVALIDATED |
+| `scripts/volatility_regime_audit_polars.py`          | RV regime audit           | INVALIDATED |
+| `scripts/multi_threshold_pattern_analysis_polars.py` | Multi-threshold alignment | INVALIDATED |
+| `scripts/combined_regime_analysis_polars.py`         | Combined analysis         | INVALIDATED |
+| `scripts/combined_pattern_audit_polars.py`           | Combined audit            | INVALIDATED |
+| `scripts/cross_regime_correlation_polars.py`         | Regime correlation        | INVALIDATED |
+| `scripts/three_bar_pattern_analysis_polars.py`       | 3-bar pattern analysis    | INVALIDATED |
+| `scripts/three_bar_pattern_audit_polars.py`          | 3-bar pattern audit       | INVALIDATED |
+| `scripts/three_factor_pattern_analysis_polars.py`    | Three-factor analysis     | INVALIDATED |
+| `scripts/multifactor_patterns.py`                    | Multi-factor patterns     | INVALIDATED |
+| `scripts/volume_conditioned_patterns.py`             | Volume conditioning       | INVALIDATED |
+
+### TDA Research Scripts
+
+| Script                                            | Purpose                    | Status      |
+| ------------------------------------------------- | -------------------------- | ----------- |
+| `scripts/tda_structural_break_analysis_polars.py` | TDA structural breaks      | DESCRIPTIVE |
+| `scripts/tda_regime_pattern_analysis_polars.py`   | TDA regime patterns        | INVALIDATED |
+| `scripts/tda_hurst_by_regime_polars.py`           | TDA Hurst analysis         | DIAGNOSTIC  |
+| `scripts/tda_conditioned_patterns.py`             | TDA-conditioned patterns   | INVALIDATED |
+| `scripts/tda_volatility_forecast.py`              | TDA velocity → RV forecast | INVALIDATED |
+
+### Audit Scripts (Adversarial Validation)
+
+| Script                                      | Purpose                    | Finding     |
+| ------------------------------------------- | -------------------------- | ----------- |
+| `scripts/duration_autocorrelation_audit.py` | Duration persistence audit | MECHANICAL  |
+| `scripts/duration_autocorrelation.py`       | Duration autocorrelation   | INVALIDATED |
+| `scripts/duration_volatility_prediction.py` | Duration → RV prediction   | 0 ODD       |
+| `scripts/fdr_corrected_patterns.py`         | FDR correction analysis    | 0 PASS      |
+| `scripts/microstructure_patterns.py`        | Microstructure features    | 0 ODD       |
+| `scripts/temporal_safe_patterns_polars.py`  | Temporal safety check      | INVALIDATED |
+
+### Cache Population Scripts
+
+| Script                             | Purpose                       |
+| ---------------------------------- | ----------------------------- |
+| `scripts/fill_gaps_littleblack.py` | Fill cache gaps (littleblack) |
+| `scripts/fill_gaps_2025_2026.py`   | Fill 2025-2026 data gaps      |
+| `scripts/fill_gaps_retry.py`       | Retry failed segments         |
 
 ---
 
@@ -283,6 +313,8 @@ Level 4: Extended Patterns (3-bar)
 | #52   | Market Regime Filter for ODD Robust Patterns     | CLOSED |
 | #54   | Volatility Regime Filter for ODD Robust Patterns | OPEN   |
 | #55   | Multi-Threshold Pattern Confirmation Signals     | OPEN   |
+| #56   | TDA Structural Break Detection for Range Bars    | OPEN   |
+| #57   | Research Complete: ZERO ODD Robust Patterns      | OPEN   |
 
 ---
 
