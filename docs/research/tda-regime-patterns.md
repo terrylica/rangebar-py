@@ -214,10 +214,52 @@ TDA successfully detected structural changes around major market events:
 
 ---
 
+## Hurst Exponent by TDA Regime
+
+**Status**: COMPLETE (2026-02-01)
+
+Computed Rescaled Range (R/S) Hurst exponent for each TDA-defined regime to test whether long memory characteristics differ across structural breaks.
+
+### Results Summary
+
+| Symbol  | N Regimes | Min H  | Max H  | Range  | Interpretation                 |
+| ------- | --------- | ------ | ------ | ------ | ------------------------------ |
+| BTCUSDT | 11        | 0.5149 | 0.5872 | 0.0723 | Mostly random walk, some trend |
+| ETHUSDT | 11        | 0.4998 | 0.5665 | 0.0667 | Mostly random walk, some trend |
+| SOLUSDT | 11        | 0.4902 | 0.5629 | 0.0727 | Mostly random walk, some trend |
+| BNBUSDT | 11        | 0.5129 | 0.5572 | 0.0443 | Random walk throughout         |
+
+### Regime Classification by Hurst
+
+| Category                | Count | Percentage | Interpretation             |
+| ----------------------- | ----- | ---------- | -------------------------- |
+| Trending (H > 0.55)     | 7     | 16%        | Momentum strategies viable |
+| Random Walk (0.45-0.55) | 37    | 84%        | No memory advantage        |
+| Mean-Reverting (H<0.45) | 0     | 0%         | None detected              |
+
+### Key Findings
+
+1. **Hurst is stable across TDA regimes** - Overall range only 0.097, suggesting TDA breaks detect structural changes other than memory structure
+2. **No mean-reverting regimes detected** - All 44 regimes show H ≥ 0.49, indicating range bars don't exhibit anti-persistent behavior
+3. **Mild trending in specific regimes** - 7/44 regimes show H > 0.55, suggesting occasional momentum opportunities
+4. **TDA detects non-memory changes** - TDA breaks correspond to distributional/geometric changes rather than memory structure shifts
+
+### Implication for Trading
+
+Since Hurst is relatively stable across TDA regimes (~0.53 average), pattern behavior differences are NOT driven by changes in long memory. This suggests:
+
+- Pattern degradation around TDA breaks comes from distributional changes (moments, shape)
+- Momentum/mean-reversion strategy selection should NOT be TDA-regime dependent
+- TDA remains valuable for detecting structural breaks, but not for memory-based strategy switching
+
+**Script**: `scripts/tda_hurst_by_regime_polars.py`
+
+---
+
 ## Future Research
 
 - [x] Align TDA breaks with calendar events (COMPLETE - 27.5% correlation)
-- [ ] Compute Hurst exponent per TDA regime
+- [x] Compute Hurst exponent per TDA regime (COMPLETE - H stable, non-memory changes)
 - [ ] Test real-time TDA monitoring as trade filter
 - [ ] Compare TDA + pattern filter vs pattern-only strategy
 
