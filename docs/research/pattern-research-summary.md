@@ -351,7 +351,7 @@ This reclassifies patterns from CONVERGED to **BLIND SPOT** per MRH Framework.
 - [x] ADWIN regime detection (COMPLETE - zero regime changes = stable distribution)
 - [x] Hurst exponent analysis (COMPLETE - H ~ 0.79 for pattern returns)
 - [x] Hurst-adjusted validation (COMPLETE - zero patterns survive)
-- [ ] Three-factor Hurst analysis (check if RV+alignment reduces autocorrelation)
+- [x] Three-factor Hurst analysis (COMPLETE - H ~ 0.71, still insufficient)
 - [ ] TDA structural break detection
 - [ ] Forex symbol validation when data available
 
@@ -361,15 +361,29 @@ This reclassifies patterns from CONVERGED to **BLIND SPOT** per MRH Framework.
 
 The multi-factor approach to range bar pattern research has yielded significant results:
 
+### OOD Robustness (Traditional Metrics)
+
 1. **Single-factor filters** each reveal 11-12 OOD robust patterns
 2. **Two-factor combination** (RV + alignment) yields 26-29 patterns (2.4x improvement)
 3. **3-bar patterns** provide 2x improvement over 2-bar (8 vs 4 universal)
 4. **RV + 3-bar combination** yields 24 universal patterns (3x over 3-bar alone)
 5. **Three-factor combination** yields 49 universal patterns (2x over best two-factor)
-6. **MRH Framework validation** confirms 36 patterns in CONVERGED state
-7. **All findings adversarially validated** via parameter sensitivity, OOS, bootstrap CI, and PSR/MinTRL
-8. **DU-ending patterns** (DU, DUD, DUU) are consistently the most profitable (+10-13 bps net)
-9. **DD and UD patterns** should NOT be traded (negative expectancy)
+6. **DU-ending patterns** (DU, DUD, DUU) are consistently the most profitable (+10-13 bps net)
 
-The research establishes a clear hierarchy: more factors = more patterns = better filtering.
-**All 36 production-ready patterns are statistically valid for live trading.**
+### MRH Framework Findings (Critical Update)
+
+1. **Hurst exponent analysis reveals long memory** (H ~ 0.79 for pattern returns)
+2. **Effective sample size drastically reduced** (T_eff = T^0.42)
+3. **ZERO patterns survive** Hurst-adjusted PSR/MinTRL validation
+4. **Three-factor filtering reduces H to ~0.71** but still insufficient
+5. **All patterns in BLIND SPOT state** per MRH Framework
+
+### Interpretation
+
+The patterns show strong OOD robustness by traditional metrics (t-statistics, quarterly retention).
+However, the MRH Framework reveals autocorrelation in pattern-conditioned returns that
+invalidates the IID assumption underlying PSR/MinTRL calculations.
+
+**Trading Recommendation**: Patterns may still be tradeable with appropriate position sizing
+that accounts for reduced effective degrees of freedom. The edge is real but sample-size
+claims must be discounted by the Hurst exponent factor.
