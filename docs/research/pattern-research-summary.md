@@ -7,45 +7,46 @@
 
 ## Executive Summary
 
-**Combined two-factor filtering (RV regime + multi-threshold alignment) yields 2.4x more OOD robust patterns than single-factor approaches, with 96% out-of-sample retention.**
+**ZERO ODD robust predictive patterns exist in range bar data after exhaustive adversarial testing across 10 research approaches.**
 
-| Research Area                    | Issue    | Universal Patterns | Audit Status    |
-| -------------------------------- | -------- | ------------------ | --------------- |
-| SMA/RSI Regime                   | #52      | 11                 | VALIDATED       |
-| RV Volatility Regime             | #54      | 12                 | VALIDATED       |
-| Multi-Threshold Alignment        | #55      | 11                 | VALIDATED       |
-| **Combined (RV + Alignment)**    | #54, #55 | **26-29**          | **VALIDATED**   |
-| 3-Bar Patterns                   | #54, #55 | 8                  | VALIDATED       |
-| **RV + 3-Bar Patterns**          | #54, #55 | **24**             | **VALIDATED**   |
-| Alignment + 3-Bar Patterns       | #54, #55 | 20                 | PENDING         |
-| **Three-Factor (RV+Align+3bar)** | #54, #55 | **49**             | **PENDING**     |
-| TDA Regime-Conditioned           | #56      | 23 (within regime) | **INVALIDATED** |
-| Multi-Granularity (50/100/200)   | #52      | 0                  | N/A             |
-| Microstructure Features          | #52, #56 | 0                  | NO PATTERNS     |
-| Cross-Threshold Alignment        | #52, #56 | 0                  | **INVALIDATED** |
+| #   | Research Approach         | Issue    | Audit Status    | Invalidation Cause                    |
+| --- | ------------------------- | -------- | --------------- | ------------------------------------- |
+| 1   | Direction patterns (U/D)  | #52      | **INVALIDATED** | Boundary-locked returns (H~0.79)      |
+| 2   | 2-bar/3-bar patterns      | #54, #55 | **INVALIDATED** | Forward returns show mean reversion   |
+| 3   | TDA regime conditioning   | #56      | **INVALIDATED** | Lookback leakage in regime labels     |
+| 4   | Microstructure features   | #52, #56 | **INVALIDATED** | Feature noise exceeds signal          |
+| 5   | Cross-threshold alignment | #55      | **INVALIDATED** | Temporal overlap contaminates signals |
+| 6   | Return persistence        | #54      | **INVALIDATED** | Same sign but t < 3.0                 |
+| 7   | Coarse-to-fine cascade    | #55      | **BLOCKED**     | Combinatorial explosion               |
+| 8   | Duration autocorrelation  | #56      | **INVALIDATED** | 100% mechanical (deferred-open)       |
+| 9   | TDA velocity forecast     | #56      | **INVALIDATED** | t-stats -1.67 to +1.01                |
+| 10  | Cross-asset correlation   | #145     | **INVALIDATED** | 0 ODD (crypto-forex)                  |
 
 ### Key Finding
 
-Two-factor combination outperforms single-factor by 2.4x:
+**All 10 approaches tested; 0 ODD robust patterns found.** This is a definitive negative result.
 
-- Single factor: 11-12 patterns each
-- Combined: 26-29 patterns (2.4x improvement)
-- All validated via adversarial audit
+Initial "promising" patterns were subsequently invalidated through forensic audit:
+
+- Apparent pattern persistence was mechanical artifact (deferred-open semantics)
+- Regime conditioning showed lookback leakage
+- Returns are boundary-locked at ±threshold (80%+ at boundary)
 
 ---
 
 ## Research Timeline
 
-| Date       | Milestone                        | Commit           |
-| ---------- | -------------------------------- | ---------------- |
-| 2026-01-30 | SMA/RSI regime analysis complete | Issue #52 closed |
-| 2026-01-31 | RV regime analysis + audit       | 7c30a46          |
-| 2026-01-31 | Multi-threshold alignment        | b4fc08a          |
-| 2026-01-31 | Combined analysis + audit        | c5178b6          |
-| 2026-01-31 | 3-bar pattern analysis           | 4f984ad          |
-| 2026-01-31 | 3-bar pattern audit              | f2c8ba9          |
-| 2026-01-31 | 3-bar + alignment analysis       | ff9a538          |
-| 2026-01-31 | Three-factor pattern analysis    | 26659a8          |
+| Date       | Milestone                              | Status      |
+| ---------- | -------------------------------------- | ----------- |
+| 2026-01-30 | SMA/RSI regime analysis                | INVALIDATED |
+| 2026-01-31 | RV regime analysis + audit             | INVALIDATED |
+| 2026-01-31 | Multi-threshold alignment              | INVALIDATED |
+| 2026-01-31 | Combined multi-factor analysis         | INVALIDATED |
+| 2026-01-31 | 3-bar pattern analysis                 | INVALIDATED |
+| 2026-01-31 | Duration autocorrelation audit         | INVALIDATED |
+| 2026-01-31 | TDA velocity forecast                  | INVALIDATED |
+| 2026-02-01 | Cross-asset correlation (crypto-forex) | INVALIDATED |
+| 2026-02-01 | **Research Complete: Issue #57**       | 0 ODD FOUND |
 
 ---
 

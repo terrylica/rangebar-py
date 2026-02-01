@@ -41,7 +41,8 @@ After exhaustive testing across **10 research approaches**, all were invalidated
 | Location            | Content                       | Size       |
 | ------------------- | ----------------------------- | ---------- |
 | bigblack ClickHouse | Range bars (ouroboros='year') | 260M+ bars |
-| Local tick cache    | Binance crypto ticks          | Multi-year |
+
+**Data Storage Policy**: All data must be stored on remote ClickHouse (bigblack primary, littleblack secondary). Local storage is FORBIDDEN.
 
 **Crypto**: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT
 **Forex**: EURUSD (Exness Raw_Spread, Issue #143-#145)
