@@ -17,6 +17,7 @@
 | **Combined (RV + Alignment)** | #54, #55 | **26-29**          | **VALIDATED** |
 | 3-Bar Patterns                | #54, #55 | 8                  | VALIDATED     |
 | **RV + 3-Bar Patterns**       | #54, #55 | **24**             | **VALIDATED** |
+| Alignment + 3-Bar Patterns    | #54, #55 | 20                 | PENDING       |
 
 ### Key Finding
 
@@ -38,6 +39,7 @@ Two-factor combination outperforms single-factor by 2.4x:
 | 2026-01-31 | Combined analysis + audit        | c5178b6          |
 | 2026-01-31 | 3-bar pattern analysis           | 4f984ad          |
 | 2026-01-31 | 3-bar pattern audit              | f2c8ba9          |
+| 2026-01-31 | 3-bar + alignment analysis       | ff9a538          |
 
 ---
 
@@ -263,6 +265,7 @@ Level 4: Extended Patterns (3-bar)
 | `scripts/pattern_correlation_analysis_polars.py`     | Pattern correlation       |
 | `scripts/three_bar_pattern_analysis_polars.py`       | 3-bar pattern analysis    |
 | `scripts/three_bar_pattern_audit_polars.py`          | 3-bar pattern audit       |
+| `scripts/three_bar_alignment_analysis_polars.py`     | 3-bar + alignment         |
 
 ---
 
