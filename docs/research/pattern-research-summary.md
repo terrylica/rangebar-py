@@ -514,7 +514,21 @@ This confirms the original patterns were artifacts of data leakage.
 **Scripts**:
 
 - `scripts/tda_conditioned_patterns.py` (leaky) - Commit 89a0b19
-- `scripts/temporal_safe_patterns_polars.py` (fixed) - Commit pending
+- `scripts/temporal_safe_patterns_polars.py` (fixed pattern) - Commit bcf1c0d
+- `scripts/tda_rolling_threshold.py` (fixed TDA threshold) - Commit pending
+
+**Rolling TDA Threshold Validation (2026-02-01)**:
+
+Script `scripts/tda_rolling_threshold.py` compares global vs rolling threshold for TDA break detection:
+
+| Metric                      | Global (leaky) | Rolling (temporal-safe) |
+| --------------------------- | -------------- | ----------------------- |
+| Pattern-regime combinations | 176            | 200                     |
+| ODD robust                  | 23 (13.1%)     | 35 (17.5%)              |
+
+Note: Rolling threshold finds MORE ODD robust patterns because it creates more granular
+regimes (more breaks detected with lower early thresholds). However, both scripts use
+temporal-safe pattern calculation (shift(1) not shift(-1)).
 
 ---
 
