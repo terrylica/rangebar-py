@@ -39,12 +39,12 @@ After exhaustive testing across **9 research approaches**, all were invalidated:
 
 | Location            | Content                       | Size       |
 | ------------------- | ----------------------------- | ---------- |
-| bigblack ClickHouse | Range bars (ouroboros='year') | 260M bars  |
+| bigblack ClickHouse | Range bars (ouroboros='year') | 260M+ bars |
 | Local tick cache    | Binance crypto ticks          | Multi-year |
 
 **Symbols**: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT
 **Thresholds**: 25, 50, 100, 200, 250 dbps
-**Period**: 2022-2026 (continuous)
+**Period**: 2022-2026 (continuous, all gaps filled)
 
 ### Documentation
 
