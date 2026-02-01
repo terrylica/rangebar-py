@@ -563,6 +563,8 @@ robustness, regardless of statistical correction method.
 - [x] TDA Hurst by regime (COMPLETE - H stable, non-memory changes)
 - [x] Multi-factor multi-granularity (COMPLETE - no improvement over single)
 - [x] TDA regime-conditioned ODD (COMPLETE - 23 patterns ODD robust within regimes)
+- [x] Temporal-safe pattern validation (COMPLETE - 0 patterns survive after fixing leakage)
+- [x] FDR correction validation (COMPLETE - confirms 0 ODD robust patterns)
 - [ ] Forex symbol validation when data available
 
 ---
@@ -597,3 +599,35 @@ invalidates the IID assumption underlying PSR/MinTRL calculations.
 **Trading Recommendation**: Patterns may still be tradeable with appropriate position sizing
 that accounts for reduced effective degrees of freedom. The edge is real but sample-size
 claims must be discounted by the Hurst exponent factor.
+
+### Adversarial Audit Findings (Critical Update - 2026-02-01)
+
+**The pattern research was INVALIDATED by adversarial audit.** Six parallel audit agents
+identified critical methodological flaws:
+
+1. **Data Leakage in Pattern Calculation**: Patterns used `shift(-1)` (future bar direction)
+   instead of `shift(1)` (past bar direction). With temporal-safe calculation, ZERO
+   patterns achieve ODD robustness.
+
+2. **Data Leakage in TDA Threshold**: Global 95th percentile computed on entire 4-year
+   dataset leaks future volatility into regime assignments.
+
+3. **Multiple Testing Inflation**: 176+ tests without Bonferroni/FDR correction.
+
+4. **Parameter Snooping**: threshold_pct=95, quarter_size=4 hardcoded without sensitivity
+   analysis.
+
+5. **Autocorrelation Ignored**: Hurst H~0.79 reduces effective samples to ~6.3 per sub-period.
+
+6. **Cross-Symbol Failure**: Only 8.7% of patterns replicate vs 25% expected by chance.
+
+**Conclusion**: The 23-49 "ODD robust" patterns reported in earlier sections are statistical
+artifacts caused by data leakage. With proper temporal-safe methodology:
+
+| Metric                   | Original (leaky) | Temporal-safe |
+| ------------------------ | ---------------- | ------------- |
+| 2-bar ODD robust         | 4                | **0**         |
+| 3-bar ODD robust         | 8                | **0**         |
+| Same sign across periods | ~50%             | **0%**        |
+
+**No tradeable patterns exist in range bar direction sequences.**
