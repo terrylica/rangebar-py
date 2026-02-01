@@ -487,12 +487,34 @@ Tested whether patterns achieve ODD robustness WITHIN TDA-defined stable regimes
 
 **Verdict**: The 23 patterns are statistical artifacts, NOT tradeable signals.
 
+**Temporal-Safe Validation (2026-02-01)**:
+
+Script `scripts/temporal_safe_patterns_polars.py` re-ran pattern analysis using ONLY past data:
+
+- Pattern calculation: `direction[i-1] + direction[i]` (NOT `direction[i] + direction[i+1]`)
+- Forward return: still `shift(-1)` (predicting bar i+1)
+
+| Metric                | Leaky (original) | Temporal-Safe |
+| --------------------- | ---------------- | ------------- |
+| 2-bar patterns tested | 16               | 16            |
+| 2-bar ODD robust      | 4                | **0**         |
+| 3-bar patterns tested | 32               | 32            |
+| 3-bar ODD robust      | 8                | **0**         |
+| Universal 2-bar       | 4                | **0**         |
+| Universal 3-bar       | 8                | **0**         |
+
+**Conclusion**: When patterns use only past data, ZERO patterns achieve ODD robustness.
+This confirms the original patterns were artifacts of data leakage.
+
 **Audit Documents**:
 
 - `docs/research/tda-parameter-sensitivity-audit.md` (530 lines)
 - `STATISTICAL_VALIDITY_AUDIT.md` (591 lines)
 
-**Script**: `scripts/tda_conditioned_patterns.py` - Commit 89a0b19
+**Scripts**:
+
+- `scripts/tda_conditioned_patterns.py` (leaky) - Commit 89a0b19
+- `scripts/temporal_safe_patterns_polars.py` (fixed) - Commit pending
 
 ---
 
