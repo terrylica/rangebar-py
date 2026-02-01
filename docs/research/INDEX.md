@@ -58,16 +58,32 @@
 
 ### Definitive Negative Result
 
-After exhaustive testing across **9 research approaches**, we found **ZERO ODD robust predictive patterns** in range bar data.
+After exhaustive testing across **10 research approaches**, we found **ZERO ODD robust predictive patterns** in range bar data.
+
+### Invalidated Approaches (10 total)
+
+| #   | Approach                  | Root Cause                            |
+| --- | ------------------------- | ------------------------------------- |
+| 1   | Direction patterns (U/D)  | Boundary-locked returns (H~0.79)      |
+| 2   | 2-bar/3-bar patterns      | Forward returns show mean reversion   |
+| 3   | TDA regime conditioning   | Lookback leakage in regime labels     |
+| 4   | Microstructure features   | Feature noise exceeds signal          |
+| 5   | Cross-threshold alignment | Temporal overlap contaminates signals |
+| 6   | Return persistence        | Same sign but t < 3.0                 |
+| 7   | Coarse-to-fine cascade    | Combinatorial explosion               |
+| 8   | Duration autocorrelation  | 100% mechanical (deferred-open)       |
+| 9   | TDA velocity forecast     | t-stats -1.67 to +1.01                |
+| 10  | Cross-asset correlation   | 0 ODD (crypto-forex, Issue #145)      |
 
 ### Why Patterns Fail
 
-| Cause                       | Impact                                                    |
-| --------------------------- | --------------------------------------------------------- |
-| **Boundary-locked returns** | Returns mechanically bounded by threshold                 |
-| **Temporal overlap**        | 75-100% consecutive bar overlap (deferred-open)           |
-| **Long memory**             | Hurst H ~ 0.79 reduces effective sample to ~30 from 10000 |
-| **Lookback leakage**        | Regime indicators reflect past, not future                |
+| Cause                        | Impact                                                    |
+| ---------------------------- | --------------------------------------------------------- |
+| **Boundary-locked returns**  | Returns mechanically bounded by threshold                 |
+| **Temporal overlap**         | 75-100% consecutive bar overlap (deferred-open)           |
+| **Long memory**              | Hurst H ~ 0.79 reduces effective sample to ~30 from 10000 |
+| **Lookback leakage**         | Regime indicators reflect past, not future                |
+| **Cross-asset independence** | Crypto-forex uncorrelated, no cross-validation benefit    |
 
 ### What Range Bars ARE Good For
 
@@ -114,6 +130,8 @@ Full listing in [pattern-research-summary.md](pattern-research-summary.md#script
 
 ## Data Coverage
 
+### Crypto (Binance)
+
 | Symbol  | Period    | 50 dbps | 100 dbps | 200 dbps |
 | ------- | --------- | ------- | -------- | -------- |
 | BTCUSDT | 2022-2026 | 6.9M    | 2.8M     | 303K     |
@@ -121,4 +139,10 @@ Full listing in [pattern-research-summary.md](pattern-research-summary.md#script
 | SOLUSDT | 2022-2026 | 40.8M   | 12.5M    | 1.07M    |
 | BNBUSDT | 2022-2026 | 13.2M   | 4.8M     | 389K     |
 
-**Total**: 260M+ bars in ClickHouse cache (bigblack)
+### Forex (Exness Raw_Spread)
+
+| Symbol | Period    | 50 dbps | 100 dbps | 200 dbps |
+| ------ | --------- | ------- | -------- | -------- |
+| EURUSD | 2022-2026 | 98K     | 25.5K    | 6.5K     |
+
+**Total**: 260M+ bars (crypto) + 130K bars (forex) in ClickHouse cache (bigblack)
