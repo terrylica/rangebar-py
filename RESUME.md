@@ -24,6 +24,7 @@ After exhaustive testing across **9 research approaches**, all were invalidated:
 | Coarse-to-fine cascade    | BLOCKED     | Combinatorial explosion               |
 | Duration autocorrelation  | INVALIDATED | 100% mechanical (deferred-open)       |
 | TDA velocity forecast     | INVALIDATED | t-stats -1.67 to +1.01                |
+| Cross-asset correlation   | INVALIDATED | 0 ODD (Issue #145, crypto-forex)      |
 
 **Key Insight**: Range bars are unsuitable for directional prediction due to:
 
@@ -42,8 +43,9 @@ After exhaustive testing across **9 research approaches**, all were invalidated:
 | bigblack ClickHouse | Range bars (ouroboros='year') | 260M+ bars |
 | Local tick cache    | Binance crypto ticks          | Multi-year |
 
-**Symbols**: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT
-**Thresholds**: 25, 50, 100, 200, 250 dbps
+**Crypto**: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT
+**Forex**: EURUSD (Exness Raw_Spread, Issue #143-#145)
+**Thresholds**: 25, 50, 100, 200, 250 dbps (crypto); 50, 100, 200 dbps (forex)
 **Period**: 2022-2026 (continuous, all gaps filled)
 
 ### Documentation

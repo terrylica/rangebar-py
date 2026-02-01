@@ -274,6 +274,15 @@ Level 4: Extended Patterns (3-bar)
 | `scripts/three_factor_pattern_analysis_polars.py`    | Three-factor analysis     | INVALIDATED |
 | `scripts/multifactor_patterns.py`                    | Multi-factor patterns     | INVALIDATED |
 | `scripts/volume_conditioned_patterns.py`             | Volume conditioning       | INVALIDATED |
+| `scripts/cross_asset_correlation_polars.py`          | Crypto-Forex correlation  | INVALIDATED |
+
+### Forex Data Pipeline Scripts
+
+| Script                                      | Purpose                    | Status    |
+| ------------------------------------------- | -------------------------- | --------- |
+| `scripts/download_exness_eurusd.py`         | Download Exness tick data  | COMPLETED |
+| `scripts/process_exness_eurusd_to_cache.py` | Generate EURUSD range bars | COMPLETED |
+| `scripts/upload_eurusd_to_clickhouse.py`    | Upload to ClickHouse       | COMPLETED |
 
 ### TDA Research Scripts
 
@@ -580,6 +589,54 @@ Script `scripts/fdr_corrected_patterns.py` implements Benjamini-Hochberg FDR con
 **Conclusion**: With temporal-safe pattern calculation, ZERO patterns achieve ODD
 robustness, regardless of statistical correction method.
 
+### Cross-Asset Correlation Analysis (Issue #145)
+
+**Status**: INVALIDATED (2026-02-01)
+
+Tested whether crypto-forex correlation regimes reveal OOD robust patterns.
+
+**Methodology**:
+
+1. Aligned crypto (BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT) with forex (EURUSD) by hourly buckets
+2. Computed rolling 24-hour correlation between crypto and forex returns
+3. Classified correlation regimes: positive (>0.3), negative (<-0.3), neutral
+4. Tested if correlation regime + direction patterns predict forward returns
+5. Validated OOD robustness via quarterly cross-validation
+
+**Data Coverage**:
+
+- EURUSD: 25,508 bars (100 dbps, 2022-01-03 to 2026-01-30)
+- Crypto: 1.4M-4M bars each (100 dbps, 2022-01-01 to 2026-01-30)
+- Aligned samples: ~11,800 hourly observations per pair
+
+**Correlation Regime Distribution**:
+
+| Regime        | BTCUSDT | ETHUSDT | SOLUSDT | BNBUSDT |
+| ------------- | ------- | ------- | ------- | ------- |
+| neutral_corr  | 66%     | 64%     | 67%     | 70%     |
+| positive_corr | 32%     | 33%     | 30%     | 27%     |
+| negative_corr | 2%      | 2%      | 3%      | 3%      |
+
+**Results**:
+
+| Symbol  | Patterns Tested | OOD Robust |
+| ------- | --------------- | ---------- |
+| BTCUSDT | 4               | 0          |
+| ETHUSDT | 4               | 0          |
+| SOLUSDT | 4               | 0          |
+| BNBUSDT | 4               | 0          |
+
+**Key Finding**: ZERO OOD robust patterns found across any crypto-forex correlation regime.
+
+**Interpretation**:
+
+1. Crypto and forex are largely uncorrelated (66-70% neutral correlation regime)
+2. Even when correlation regimes are identified, they don't predict forward returns
+3. Cross-asset validation confirms that range bar patterns lack predictive power
+4. Adding a fifth asset class (forex) doesn't overcome the structural limitations
+
+**Script**: `scripts/cross_asset_correlation_polars.py`
+
 ---
 
 ## Future Research Directions
@@ -599,7 +656,7 @@ robustness, regardless of statistical correction method.
 - [x] TDA regime-conditioned ODD (COMPLETE - 23 patterns ODD robust within regimes)
 - [x] Temporal-safe pattern validation (COMPLETE - 0 patterns survive after fixing leakage)
 - [x] FDR correction validation (COMPLETE - confirms 0 ODD robust patterns)
-- [ ] Forex symbol validation when data available
+- [x] Forex symbol validation (COMPLETE - 0 ODD robust patterns, Issue #145)
 
 ---
 
