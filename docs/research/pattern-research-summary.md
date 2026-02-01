@@ -299,6 +299,24 @@ Applied Minimum Reliable Horizon framework from Gemini research:
 
 **Script**: `scripts/psr_mintrl_analysis_polars.py` - Commit 0557b27
 
+### ADWIN Regime Detection
+
+**Status**: COMPLETE (2026-01-31)
+
+Applied parameter-free ADWIN (Adaptive Windowing with Hoeffding bounds):
+
+| Symbol  | Bars  | ADWIN Regime Changes | Fixed-Window Changes |
+| ------- | ----- | -------------------- | -------------------- |
+| BTCUSDT | 1.38M | 0                    | 10,795               |
+| ETHUSDT | 2.00M | 0                    | 56,541               |
+| SOLUSDT | 1.98M | 0                    | 58,256               |
+| BNBUSDT | 1.43M | 0                    | 42,424               |
+
+**Key Finding**: ADWIN detects ZERO distributional shifts across 4 years of data.
+This confirms T_available (supply) is the full dataset, explaining massive negative gaps.
+
+**Script**: `scripts/adwin_regime_detection_polars.py` - Commit de1f721
+
 ---
 
 ## Future Research Directions
@@ -306,10 +324,10 @@ Applied Minimum Reliable Horizon framework from Gemini research:
 - [x] 3-bar pattern analysis (COMPLETE - 8 universal, 24 with RV)
 - [x] Adversarial audit of 3-bar patterns (VALIDATED - 100% retention)
 - [x] MRH Framework validation (COMPLETE - 36 production-ready)
+- [x] ADWIN regime detection (COMPLETE - zero regime changes = stable distribution)
 - [ ] 4-bar pattern analysis (diminishing returns expected)
 - [ ] Forex symbol validation when data available
 - [ ] Ensemble strategies using multiple filter combinations
-- [ ] ADWIN regime detection (parameter-free)
 - [ ] TDA structural break detection
 
 ---
