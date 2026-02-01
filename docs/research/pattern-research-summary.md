@@ -15,6 +15,8 @@
 | RV Volatility Regime          | #54      | 12                 | VALIDATED     |
 | Multi-Threshold Alignment     | #55      | 11                 | VALIDATED     |
 | **Combined (RV + Alignment)** | #54, #55 | **26-29**          | **VALIDATED** |
+| 3-Bar Patterns                | #54, #55 | 8                  | PENDING       |
+| **RV + 3-Bar Patterns**       | #54, #55 | **24**             | **PENDING**   |
 
 ### Key Finding
 
@@ -34,6 +36,7 @@ Two-factor combination outperforms single-factor by 2.4x:
 | 2026-01-31 | RV regime analysis + audit       | 7c30a46          |
 | 2026-01-31 | Multi-threshold alignment        | b4fc08a          |
 | 2026-01-31 | Combined analysis + audit        | c5178b6          |
+| 2026-01-31 | 3-bar pattern analysis           | 4f984ad          |
 
 ---
 
@@ -153,6 +156,34 @@ All patterns must satisfy:
 
 **Status**: COMPLETE, VALIDATED
 
+### 5. 3-Bar Pattern Analysis (Issue #54, #55)
+
+**Hypothesis**: Longer patterns (3-bar) may provide better predictive power than 2-bar.
+
+**Pattern Definition**:
+
+- 8 possible patterns: DDD, DDU, DUD, DUU, UDD, UDU, UUD, UUU
+- Direction sequence over 3 consecutive bars
+
+**Results**: 8 universal 3-bar patterns (2x improvement over 2-bar)
+
+| Pattern | N    | Net (bps) |
+| ------- | ---- | --------- |
+| DUD     | 761K | +10.93    |
+| DUU     | 812K | +9.99     |
+| UUD     | 812K | +7.29     |
+| UUU     | 1.0M | +7.00     |
+| DDU     | 755K | +4.60     |
+| UDU     | 769K | +4.51     |
+| UDD     | 802K | +4.10     |
+| DDD     | 783K | +3.34     |
+
+**Key Finding**: DU-ending patterns (DUD, DUU) dominate with +10-11 bps net returns.
+
+**RV + 3-Bar Combination**: 24 universal patterns (3x improvement over 3-bar alone)
+
+**Status**: COMPLETE, PENDING AUDIT
+
 ---
 
 ## Pattern Hierarchy
@@ -170,7 +201,14 @@ Level 2: Single-Factor Filters
 └── Multi-Threshold Alignment: 11 universal patterns
 
 Level 3: Two-Factor Combination
-└── RV Regime + Alignment: 26-29 universal patterns (2.4x)
+├── RV Regime + Alignment: 26-29 universal patterns (2.4x)
+└── RV Regime + 3-Bar: 24 universal patterns (3x over 3-bar)
+
+Level 4: Extended Patterns (3-bar)
+├── DUD (reversal-continuation) ← MOST PROFITABLE (+10.93 bps)
+├── DUU (reversal-continuation) ← SECOND MOST (+9.99 bps)
+├── UUD, UUU (continuation patterns) ← +7 bps
+└── DDU, UDU, UDD, DDD ← +3-5 bps
 ```
 
 ---
@@ -216,6 +254,7 @@ Level 3: Two-Factor Combination
 | `scripts/cross_regime_correlation_polars.py`         | Regime correlation        |
 | `scripts/rv_return_profile_analysis_polars.py`       | Return profiles           |
 | `scripts/pattern_correlation_analysis_polars.py`     | Pattern correlation       |
+| `scripts/three_bar_pattern_analysis_polars.py`       | 3-bar pattern analysis    |
 
 ---
 
@@ -231,8 +270,9 @@ Level 3: Two-Factor Combination
 
 ## Future Research Directions
 
-- [ ] Historical lookback patterns (n-bar formations)
-- [ ] 3-bar pattern analysis
+- [x] 3-bar pattern analysis (COMPLETE - 8 universal, 24 with RV)
+- [ ] Adversarial audit of 3-bar patterns
+- [ ] 4-bar pattern analysis (diminishing returns expected)
 - [ ] SMA/RSI + RV + Alignment (three-factor combination)
 - [ ] Forex symbol validation when data available
 - [ ] Ensemble strategies using multiple filter combinations
@@ -245,8 +285,10 @@ The multi-factor approach to range bar pattern research has yielded significant 
 
 1. **Single-factor filters** each reveal 11-12 OOD robust patterns
 2. **Two-factor combination** (RV + alignment) yields 26-29 patterns (2.4x improvement)
-3. **All findings adversarially validated** via parameter sensitivity, OOS, and bootstrap CI
-4. **DU (reversal) patterns** are consistently the most profitable (+10-13 bps net)
-5. **DD and UD patterns** should NOT be traded (negative expectancy)
+3. **3-bar patterns** provide 2x improvement over 2-bar (8 vs 4 universal)
+4. **RV + 3-bar combination** yields 24 universal patterns (3x over 3-bar alone)
+5. **All two-factor findings adversarially validated** via parameter sensitivity, OOS, and bootstrap CI
+6. **DU-ending patterns** (DU, DUD, DUU) are consistently the most profitable (+10-13 bps net)
+7. **DD and UD patterns** should NOT be traded (negative expectancy)
 
 The research establishes a clear hierarchy: more factors = more patterns = better filtering.
