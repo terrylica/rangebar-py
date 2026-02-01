@@ -21,6 +21,8 @@
 | **Three-Factor (RV+Align+3bar)** | #54, #55 | **49**             | **PENDING**     |
 | TDA Regime-Conditioned           | #56      | 23 (within regime) | **INVALIDATED** |
 | Multi-Granularity (50/100/200)   | #52      | 0                  | N/A             |
+| Microstructure Features          | #52, #56 | 0                  | NO PATTERNS     |
+| Cross-Threshold Alignment        | #52, #56 | 0                  | **INVALIDATED** |
 
 ### Key Finding
 
@@ -680,6 +682,8 @@ pandas memory overhead on large datasets.
 
 ### Cross-Threshold Signal Alignment (2026-02-01)
 
+**STATUS: INVALIDATED BY FORENSIC AUDIT**
+
 After microstructure features failed, tested whether range bars at multiple thresholds
 (50/100/200 dbps) agreeing on direction provides ODD robust signals.
 
@@ -689,32 +693,46 @@ After microstructure features failed, tested whether range bars at multiple thre
 - Alignment: all_up = all three thresholds show U, all_down = all three show D
 - Forward return: next hour's close / current hour's close
 
-**Results**:
+**Initial Results (BUGGY)**:
 
 | Alignment | Mean bps | Min t | ODD Robust? | Universal? |
 | --------- | -------- | ----- | ----------- | ---------- |
 | all_up    | +34-64   | 7.44  | YES         | 4/4        |
 | all_down  | -42-74   | 12.32 | YES         | 4/4        |
 
-**Adversarial Audit Results**:
+**Forensic Audit Findings (CRITICAL BUG)**:
 
-| Audit                 | Result | Details                                                             |
-| --------------------- | ------ | ------------------------------------------------------------------- |
-| Tautology             | PASS   | Current hour return only ±2-3 bps; next hour return 35-44 bps (15x) |
-| Transaction cost      | PASS   | Net +20/+29 bps after 15 bps round-trip                             |
-| Parameter sensitivity | PASS   | 4-hour buckets show +69/-80 bps (stronger)                          |
-| Out-of-sample         | PASS   | 2024-2025 shows +33/-42 bps, t=25/-72                               |
-| Frequency             | HIGH   | 88.7% of hours have alignment signal                                |
+The original analysis used `argMax(close, hour_ts)` to select the "last" close price in each
+hour bucket. However, since `hour_ts` is the SAME value for all bars in that hour (e.g.,
+`2024-01-01 15:00:00`), ClickHouse's `argMax` selects an **arbitrary** row, not the last one.
 
-**Key Finding**: Cross-threshold alignment captures **multi-scale directional conviction** -
-when all thresholds agree, the market has strong directional momentum that persists into
-the next hour.
+| Audit Step            | Finding                                                              |
+| --------------------- | -------------------------------------------------------------------- |
+| Bar timing leakage    | PASS - all bars close within their hour bucket                       |
+| Cross-hour bar span   | PASS - bars open and close in same hour                              |
+| Momentum continuation | PASS - current hour return ~0, next hour is 35-44 bps (not momentum) |
+| **argMax bug**        | **FAIL** - `argMax(close, hour_ts)` selects FIRST bar, not last bar  |
+| **Values match**      | **FAIL** - 0% of hours have correct close price selection            |
 
-**Interpretation**: This is NOT simple momentum (single-threshold hourly returns show weak
-mean reversion). The alignment across multiple scales (50/100/200 dbps) filters for periods
-of genuine directional conviction.
+**Corrected Results**:
 
-**Script**: `scripts/cross_threshold_alignment.py`
+When using `argMax(close, bar_ts_ms)` (the actual bar timestamp):
 
-**Conclusion**: Cross-threshold alignment provides the FIRST ODD robust, audited, out-of-sample
-validated predictive signal in this research program.
+| Alignment | Mean bps | Std bps | ODD Robust? |
+| --------- | -------- | ------- | ----------- |
+| all_up    | +0.2     | 57.9    | NO          |
+| all_down  | +1.1     | 61.3    | NO          |
+| mixed     | -1.5     | 55.5    | NO          |
+
+**Conclusion**: The original +35/-44 bps signal was an **artifact of the argMax bug**.
+With correct close price selection, cross-threshold alignment provides ZERO predictive
+power. All returns are within noise (< 2 bps mean, ~60 bps std).
+
+**Root Cause**: The bug selected an arbitrary bar's close (often the first bar) rather
+than the actual last bar in the hour. The difference between buggy and correct close
+prices ranged from -210 to +169, introducing massive artificial noise that happened to
+correlate with alignment direction.
+
+**Script**: `scripts/cross_threshold_alignment.py` (contains bug, kept for reference)
+
+**Forensic Audit Script**: Direct ClickHouse queries documented in conversation transcript.
