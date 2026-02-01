@@ -318,4 +318,5 @@ prerelease = false
 dev = [
     "psutil>=7.2.1",
     "pytest-cov>=7.0.0",
+    "scipy>=1.17.0",
 ]
