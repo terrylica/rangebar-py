@@ -317,18 +317,43 @@ This confirms T_available (supply) is the full dataset, explaining massive negat
 
 **Script**: `scripts/adwin_regime_detection_polars.py` - Commit de1f721
 
+### Hurst Exponent Analysis (Critical)
+
+**Status**: COMPLETE (2026-01-31)
+
+Applied R/S and DFA methods to compute Hurst exponent:
+
+| Context             | Hurst (H) | Interpretation  |
+| ------------------- | --------- | --------------- |
+| Raw returns         | 0.50-0.51 | Random walk     |
+| Pattern-conditioned | 0.79      | Strong trending |
+
+**Critical Finding**: Pattern-conditioned returns show H ~ 0.79 (long memory)
+
+- T_eff = T^(2(1-H)) = T^0.42
+- 761K samples → ~268 effective samples
+- **ZERO raw 3-bar patterns survive Hurst adjustment**
+
+This reclassifies patterns from CONVERGED to **BLIND SPOT** per MRH Framework.
+
+**Scripts**:
+
+- `scripts/hurst_exponent_analysis_polars.py` - Commit cc66023
+- `scripts/hurst_adjusted_psr_analysis_polars.py` - Commit c2709da
+
 ---
 
 ## Future Research Directions
 
 - [x] 3-bar pattern analysis (COMPLETE - 8 universal, 24 with RV)
 - [x] Adversarial audit of 3-bar patterns (VALIDATED - 100% retention)
-- [x] MRH Framework validation (COMPLETE - 36 production-ready)
+- [x] MRH Framework validation (COMPLETE - 36 production-ready pre-Hurst)
 - [x] ADWIN regime detection (COMPLETE - zero regime changes = stable distribution)
-- [ ] 4-bar pattern analysis (diminishing returns expected)
-- [ ] Forex symbol validation when data available
-- [ ] Ensemble strategies using multiple filter combinations
+- [x] Hurst exponent analysis (COMPLETE - H ~ 0.79 for pattern returns)
+- [x] Hurst-adjusted validation (COMPLETE - zero patterns survive)
+- [ ] Three-factor Hurst analysis (check if RV+alignment reduces autocorrelation)
 - [ ] TDA structural break detection
+- [ ] Forex symbol validation when data available
 
 ---
 
