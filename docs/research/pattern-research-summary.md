@@ -860,21 +860,42 @@ overlap) mean that:
 
 Range bars may still be valuable for **non-directional** applications:
 
-| Direction             | Rationale                                       | Status     |
-| --------------------- | ----------------------------------------------- | ---------- |
-| **Volatility Regime** | Bar duration predicts future volatility (known) | VALIDATED  |
-| **Risk Management**   | TDA breaks as early warning for regime change   | PROMISING  |
-| **Execution Quality** | Bar timing for optimal order placement          | UNEXPLORED |
-| **Market Making**     | Microstructure for spread/inventory management  | UNEXPLORED |
+| Direction             | Rationale                                       | Status      |
+| --------------------- | ----------------------------------------------- | ----------- |
+| **Volatility Regime** | Bar duration predicts future volatility (known) | INVALIDATED |
+| **Risk Management**   | TDA breaks as early warning for regime change   | INVALIDATED |
+| **Execution Quality** | Bar timing for optimal order placement          | UNEXPLORED  |
+| **Market Making**     | Microstructure for spread/inventory management  | UNEXPLORED  |
 
-**Volatility prediction** is the most promising pivot:
+**Volatility prediction (Duration Autocorrelation)** - INVALIDATED (2026-02-01):
 
-- Bar duration (µs) has mechanical relationship to realized volatility
-- This is not directional prediction—it's volatility forecasting
-- Use case: position sizing, stop placement, hedging decisions
+Duration autocorrelation appeared promising with 90%+ ODD robust patterns (P(persist) = 0.82-0.91
+vs null 0.33). However, forensic audit revealed mechanical artifacts:
 
-**TDA early warning** showed value in detecting structural breaks 3 days before Luna collapse.
-Use case: risk management, exposure reduction before major events.
+- 75-100% temporal overlap between consecutive bars
+- 100% negative gaps (bar N+1 opens before bar N closes)
+- SHORT tercile shows 100% persistence regardless of quantile boundary
+- Lag decay erratic, not smooth (measuring construction, not volatility)
+
+The apparent "volatility clustering" is due to range bar deferred-open semantics where the
+same tick serves as both close of bar N and open of bar N+1.
+
+Scripts: `duration_volatility_prediction.py`, `duration_autocorrelation.py`,
+`duration_autocorrelation_audit.py`
+
+**TDA early warning (Velocity → Forward RV)** - INVALIDATED (2026-02-01):
+
+TDA H1 L2 velocity tercile does NOT predict forward realized volatility:
+
+- All t-stats between -1.67 and +1.01 (threshold: ±3.0)
+- Same sign across periods: 0%
+- Min P(HIGH_RV) often 0.0, Max P up to 0.857
+
+While TDA structural breaks correlate with market events (27.5% within 7 days of Luna collapse,
+FTX bankruptcy, Bitcoin halving, etc.), TDA velocity does NOT provide actionable volatility
+forecast signal.
+
+Script: `tda_volatility_forecast.py`
 
 ### Research Integrity Note
 
