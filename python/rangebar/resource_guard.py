@@ -5,12 +5,27 @@ using only stdlib modules (no psutil dependency).
 
 MEM-009: Process-level RLIMIT_AS cap (MemoryError instead of OOM kill)
 MEM-010: Pre-flight memory estimation before tick loading
+MEM-011: Environment variable default (RANGEBAR_MAX_MEMORY_GB)
+
+Environment Variables
+---------------------
+RANGEBAR_MAX_MEMORY_GB : float
+    Default memory limit in GB. When set, all calls to
+    ensure_memory_limit() will use this as the default cap.
+    Example: RANGEBAR_MAX_MEMORY_GB=45 (for 45 GB limit)
+
+RANGEBAR_MAX_MEMORY_PCT : float
+    Default memory limit as fraction of total RAM (0.0-1.0).
+    Example: RANGEBAR_MAX_MEMORY_PCT=0.7 (for 70% of RAM)
+
+If both are set, the smaller limit is used.
 """
 
 from __future__ import annotations
 
 import os
 import resource
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -105,15 +120,155 @@ def set_memory_limit(
     limit_bytes = min(limits)
 
     # MEM-009: Set process-level cap
-    if sys.platform == "darwin":
-        # macOS: RLIMIT_RSS is advisory (kernel doesn't enforce)
-        # but Python's allocator may still raise MemoryError
-        resource.setrlimit(resource.RLIMIT_RSS, (limit_bytes, limit_bytes))
-    else:
-        # Linux: RLIMIT_AS is enforced by kernel
-        resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))
+    try:
+        if sys.platform == "darwin":
+            # macOS: RLIMIT_RSS is advisory (kernel doesn't enforce)
+            # but Python's allocator may still raise MemoryError
+            # Query current hard limit and cap to that if needed
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_RSS)
+            if hard_limit != resource.RLIM_INFINITY and limit_bytes > hard_limit:
+                limit_bytes = hard_limit
+            resource.setrlimit(resource.RLIMIT_RSS, (limit_bytes, limit_bytes))
+        else:
+            # Linux: RLIMIT_AS is enforced by kernel
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit_bytes > hard_limit:
+                limit_bytes = hard_limit
+            resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))
+    except (ValueError, OSError):
+        # Can't set limit (e.g., unprivileged user, macOS restrictions)
+        return -1
 
     return limit_bytes
+
+
+# ---------------------------------------------------------------------------
+# MEM-011: Default memory limit from environment
+# ---------------------------------------------------------------------------
+
+# Mutable container to track if memory limit was applied (avoids global stmt)
+_memory_limit_state: dict[str, bool] = {"applied": False}
+
+
+def _parse_env_float(name: str) -> float | None:
+    """Parse environment variable as float, returning None on failure."""
+    value = os.environ.get(name)
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def get_default_memory_limit() -> tuple[float | None, float | None]:
+    """Get default memory limit from environment variables.
+
+    Returns
+    -------
+    tuple[float | None, float | None]
+        (max_gb, max_pct) from RANGEBAR_MAX_MEMORY_GB and
+        RANGEBAR_MAX_MEMORY_PCT environment variables.
+    """
+    max_gb = _parse_env_float("RANGEBAR_MAX_MEMORY_GB")
+
+    max_pct = _parse_env_float("RANGEBAR_MAX_MEMORY_PCT")
+    if max_pct is not None and not 0.0 < max_pct <= 1.0:
+        max_pct = None
+
+    return max_gb, max_pct
+
+
+def ensure_memory_limit(
+    *,
+    max_gb: float | None = None,
+    max_pct: float | None = None,
+    fallback_pct: float = 0.7,
+) -> int:
+    """Ensure a process memory limit is set (MEM-011).
+
+    Idempotent: only sets limit on first call per process.
+    Uses environment variables if no explicit limit provided.
+
+    Priority order:
+    1. Explicit max_gb/max_pct parameters
+    2. RANGEBAR_MAX_MEMORY_GB / RANGEBAR_MAX_MEMORY_PCT environment vars
+    3. fallback_pct of total system RAM (default 70%)
+
+    Parameters
+    ----------
+    max_gb : float | None
+        Explicit limit in GB (overrides environment).
+    max_pct : float | None
+        Explicit limit as fraction of RAM (overrides environment).
+    fallback_pct : float
+        Fallback percentage of RAM if no explicit limit or env var.
+        Default 0.7 (70% of system RAM).
+
+    Returns
+    -------
+    int
+        The limit set in bytes, or -1 if limit was already applied.
+
+    Examples
+    --------
+    >>> # Set default 70% limit
+    >>> ensure_memory_limit()
+
+    >>> # Override with explicit limit
+    >>> ensure_memory_limit(max_gb=45)
+
+    >>> # Respect environment variable
+    >>> import os
+    >>> os.environ["RANGEBAR_MAX_MEMORY_GB"] = "50"
+    >>> ensure_memory_limit()  # Uses 50 GB from env
+    """
+    if _memory_limit_state["applied"]:
+        return -1
+
+    # Priority 1: Explicit parameters
+    if max_gb is not None or max_pct is not None:
+        limit = set_memory_limit(max_gb=max_gb, max_pct=max_pct)
+        _memory_limit_state["applied"] = True
+        return limit
+
+    # Priority 2: Environment variables
+    env_gb, env_pct = get_default_memory_limit()
+    if env_gb is not None or env_pct is not None:
+        limit = set_memory_limit(max_gb=env_gb, max_pct=env_pct)
+        _memory_limit_state["applied"] = True
+        return limit
+
+    # Priority 3: Fallback percentage
+    limit = set_memory_limit(max_pct=fallback_pct)
+    _memory_limit_state["applied"] = True
+    return limit
+
+
+def auto_memory_guard() -> int:
+    """Automatically enable memory guard at module import (MEM-011).
+
+    This function is called when `import rangebar` is executed.
+    It ensures a memory limit is always set unless explicitly disabled
+    via RANGEBAR_NO_MEMORY_GUARD=1.
+
+    Returns
+    -------
+    int
+        The limit set in bytes, or -1 if disabled or already applied.
+
+    Environment Variables
+    ---------------------
+    RANGEBAR_NO_MEMORY_GUARD : str
+        Set to "1" to disable automatic memory guard.
+    RANGEBAR_MAX_MEMORY_GB : float
+        Override default limit (see ensure_memory_limit).
+    RANGEBAR_MAX_MEMORY_PCT : float
+        Override default limit as fraction of RAM.
+    """
+    if os.environ.get("RANGEBAR_NO_MEMORY_GUARD") == "1":
+        return -1
+    return ensure_memory_limit()
 
 
 @dataclass(frozen=True)
@@ -276,8 +431,6 @@ def _get_system_total_mb() -> int:
     try:
         if sys.platform == "darwin":
             # macOS: sysctl hw.memsize
-            import subprocess
-
             result = subprocess.run(
                 ["sysctl", "-n", "hw.memsize"],
                 capture_output=True,
@@ -307,8 +460,6 @@ def _get_system_available_mb() -> int:
     try:
         if sys.platform == "darwin":
             # macOS: vm_stat gives free + inactive pages
-            import subprocess
-
             result = subprocess.run(
                 ["vm_stat"],
                 capture_output=True,

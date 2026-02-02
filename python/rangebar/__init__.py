@@ -68,8 +68,10 @@ __all__ = [
     "TieredValidationResult",
     "ValidationPreset",
     "__version__",
+    "auto_memory_guard",
     "detect_asset_class",
     "detect_staleness",
+    "ensure_memory_limit",
     "get_n_range_bars",
     "get_ouroboros_boundaries",
     "get_range_bars",
@@ -130,6 +132,14 @@ from .processors.api import (
     process_trades_to_dataframe_cached,
 )
 from .processors.core import RangeBarProcessor
+
+# Memory safety guards (Issue #49, MEM-011)
+# ensure_memory_limit() provides idempotent memory cap with env var support
+# auto_memory_guard() is called at import to enable default 70% RAM limit
+from .resource_guard import auto_memory_guard, ensure_memory_limit
+
+# Enable memory guard by default on import (can be disabled with RANGEBAR_NO_MEMORY_GUARD=1)
+auto_memory_guard()
 
 # Streaming API (ADR: docs/adr/2026-01-31-realtime-streaming-api.md)
 from .streaming import (
