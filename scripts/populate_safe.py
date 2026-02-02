@@ -15,17 +15,17 @@ SRED-Claim: PATTERN-RESEARCH
 """
 
 import argparse
-import sys
+import os
 import time
 from datetime import UTC, datetime, timedelta
 from gc import collect as gc_collect
 
+# Disable auto memory guard - we manage memory explicitly in this script
+# RLIMIT_AS on Linux is too aggressive for virtual address space
+os.environ["RANGEBAR_NO_MEMORY_GUARD"] = "1"
+
 import clickhouse_connect
 from clickhouse_connect.driver.exceptions import DatabaseError, OperationalError
-
-# Add project to path for development
-sys.path.insert(0, "/home/kab/eon/rangebar-py")
-
 from rangebar import get_range_bars
 from rangebar.resource_guard import get_memory_info, set_memory_limit
 
@@ -67,15 +67,22 @@ def populate_symbol(
     threshold: int,
     start: str,
     end: str,
-    memory_limit_gb: float = 45.0,
+    memory_limit_gb: float | None = None,
 ) -> int:
     """Populate cache for a single symbol with memory safety.
 
     Returns total bars processed.
     """
-    # Set memory limit - will raise MemoryError instead of OOM kill
-    limit = set_memory_limit(max_gb=memory_limit_gb)
-    print(f"Memory limit set to {limit / 1024**3:.1f} GB", flush=True)
+    # Memory limit via RLIMIT_AS is problematic on Linux (limits virtual address space,
+    # not RSS). Skip it - weekly chunks + resume capability provide safety instead.
+    if memory_limit_gb is not None:
+        limit = set_memory_limit(max_gb=memory_limit_gb)
+        if limit > 0:
+            print(f"Memory limit set to {limit / 1024**3:.1f} GB", flush=True)
+        else:
+            print("Memory limit not set (RLIMIT unavailable)", flush=True)
+    else:
+        print("Memory limit disabled (using chunking for safety)", flush=True)
 
     # Check cache for resume point
     resume_date = get_last_cached_date(symbol, threshold)
@@ -135,7 +142,7 @@ def main():
     parser.add_argument("--threshold", type=int, required=True, help="Threshold in dbps")
     parser.add_argument("--start", default="2022-01-01", help="Start date")
     parser.add_argument("--end", default="2025-12-31", help="End date")
-    parser.add_argument("--memory-limit", type=float, default=45.0, help="Memory limit in GB")
+    parser.add_argument("--memory-limit", type=float, default=None, help="Memory limit in GB (disabled by default on Linux)")
     args = parser.parse_args()
 
     print("=" * 70, flush=True)
