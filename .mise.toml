@@ -523,3 +523,83 @@ result = send_critical_alert(
 print(f"Pushover alert sent: {result}")
 '
 """
+
+# =============================================================================
+# Research Cache Population Tasks (Issue #58)
+# =============================================================================
+# Sequential execution to avoid OOM on limited-memory hosts
+# Run on littleblack: ssh littleblack "cd /home/kab/eon/rangebar-py && mise run research:populate-250"
+
+[tasks."research:populate-symbol"]
+description = "Populate 250 dbps cache for a single symbol (requires SYMBOL env var)"
+run = """
+python -c '
+import os
+import sys
+import time
+from datetime import UTC, datetime, timedelta
+
+sys.path.insert(0, os.getcwd())
+from rangebar import get_range_bars
+
+SYMBOL = os.environ.get("SYMBOL")
+if not SYMBOL:
+    print("ERROR: SYMBOL env var required", flush=True)
+    sys.exit(1)
+
+START = os.environ.get("START", "2022-01-01")
+END = os.environ.get("END", "2025-12-31")
+THRESHOLD = int(os.environ.get("THRESHOLD", "250"))
+
+def date_range_months(start_str, end_str):
+    start = datetime.strptime(start_str, "%Y-%m-%d").replace(tzinfo=UTC)
+    end = datetime.strptime(end_str, "%Y-%m-%d").replace(tzinfo=UTC)
+    current = start
+    while current < end:
+        month_end = (current.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+        month_end = min(month_end, end)
+        yield current.strftime("%Y-%m-%d"), month_end.strftime("%Y-%m-%d")
+        current = month_end + timedelta(days=1)
+
+print(f"Populating {SYMBOL} @ {THRESHOLD} dbps ({START} to {END})", flush=True)
+total_bars = 0
+for chunk_start, chunk_end in date_range_months(START, END):
+    t0 = time.time()
+    try:
+        df = get_range_bars(SYMBOL, chunk_start, chunk_end, threshold_decimal_bps=THRESHOLD, use_cache=True, fetch_if_missing=True)
+        elapsed = time.time() - t0
+        total_bars += len(df)
+        print(f"  {chunk_start}: {len(df):>6,} bars ({elapsed:>5.1f}s)", flush=True)
+    except Exception as e:
+        print(f"  {chunk_start}: ERROR - {e}", flush=True)
+print(f"DONE: {total_bars:,} total bars", flush=True)
+'
+"""
+
+[tasks."research:populate-250"]
+description = "Populate 250 dbps cache for extended symbol set (sequential)"
+run = """
+echo "=== SEQUENTIAL CACHE POPULATION (250 dbps) ==="
+echo "Running symbols one at a time to avoid OOM..."
+
+# Symbols already populated: BTCUSDT, SOLUSDT, ETHUSDT, BNBUSDT
+# Extended set for cross-board examination:
+for SYMBOL in ADAUSDT AVAXUSDT DOTUSDT MATICUSDT NEARUSDT ATOMUSDT APTUSDT SUIUSDT LINKUSDT UNIUSDT AAVEUSDT DOGEUSDT SHIBUSDT PEPEUSDT FTMUSDT; do
+    echo ""
+    echo "=== $SYMBOL ==="
+    SYMBOL=$SYMBOL mise run research:populate-symbol
+    echo "Sleeping 10s before next symbol..."
+    sleep 10
+done
+
+echo ""
+echo "=== ALL SYMBOLS COMPLETE ==="
+"""
+
+[tasks."research:momentum-analysis"]
+description = "Run momentum analysis on all populated symbols"
+run = "python scripts/run_length_momentum_multi_symbol.py"
+
+[tasks."research:wfo-analysis"]
+description = "Run Walk-Forward regime detection"
+run = "python scripts/run_length_momentum_wfo.py"
