@@ -6,6 +6,7 @@ using only stdlib modules (no psutil dependency).
 MEM-009: Process-level RLIMIT_AS cap (MemoryError instead of OOM kill)
 MEM-010: Pre-flight memory estimation before tick loading
 MEM-011: Environment variable default (RANGEBAR_MAX_MEMORY_GB)
+MEM-012: Multiprocessing-safe memory guard (Issue #61)
 
 Environment Variables
 ---------------------
@@ -18,7 +19,23 @@ RANGEBAR_MAX_MEMORY_PCT : float
     Default memory limit as fraction of total RAM (0.0-1.0).
     Example: RANGEBAR_MAX_MEMORY_PCT=0.7 (for 70% of RAM)
 
-If both are set, the smaller limit is used.
+RANGEBAR_NO_MEMORY_GUARD : str
+    Set to "1" to disable automatic memory guard entirely.
+    Useful for multiprocessing workers or when RLIMIT_AS conflicts
+    with Polars/Rust memory allocators.
+
+If both GB and PCT are set, the smaller limit is used.
+
+Multiprocessing Safety (Issue #61)
+----------------------------------
+On Linux, RLIMIT_AS (virtual address space) conflicts with mmap-based
+allocators used by Polars and Rust. This can cause "Cannot allocate memory"
+errors even when physical RAM is available.
+
+The auto_memory_guard() function:
+1. Skips if RANGEBAR_NO_MEMORY_GUARD=1
+2. Skips if running in a multiprocessing child (detected via _RANGEBAR_GUARD_PID)
+3. On Linux, uses RLIMIT_DATA instead of RLIMIT_AS to avoid mmap conflicts
 """
 
 from __future__ import annotations
@@ -120,6 +137,7 @@ def set_memory_limit(
     limit_bytes = min(limits)
 
     # MEM-009: Set process-level cap
+    # MEM-012: Use RLIMIT_DATA on Linux to avoid mmap conflicts (Issue #61)
     try:
         if sys.platform == "darwin":
             # macOS: RLIMIT_RSS is advisory (kernel doesn't enforce)
@@ -130,11 +148,19 @@ def set_memory_limit(
                 limit_bytes = hard_limit
             resource.setrlimit(resource.RLIMIT_RSS, (limit_bytes, limit_bytes))
         else:
-            # Linux: RLIMIT_AS is enforced by kernel
-            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            # Linux: Use RLIMIT_DATA instead of RLIMIT_AS (Issue #61)
+            # RLIMIT_AS limits virtual address space including mmap regions,
+            # which conflicts with Polars/Rust allocators that use mmap().
+            # RLIMIT_DATA limits the data segment (heap) which is more
+            # appropriate for controlling actual memory allocation.
+            #
+            # Note: RLIMIT_DATA is less strict than RLIMIT_AS - it won't
+            # prevent mmap allocations, but it will limit malloc/brk usage.
+            # For full protection, users should rely on cgroups or systemd.
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_DATA)
             if hard_limit != resource.RLIM_INFINITY and limit_bytes > hard_limit:
                 limit_bytes = hard_limit
-            resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))
+            resource.setrlimit(resource.RLIMIT_DATA, (limit_bytes, limit_bytes))
     except (ValueError, OSError):
         # Can't set limit (e.g., unprivileged user, macOS restrictions)
         return -1
@@ -148,6 +174,10 @@ def set_memory_limit(
 
 # Mutable container to track if memory limit was applied (avoids global stmt)
 _memory_limit_state: dict[str, bool] = {"applied": False}
+
+# MEM-012: Environment variable key for multiprocessing-safe state tracking
+# This survives fork() and allows child processes to detect parent's limit
+_GUARD_PID_KEY = "_RANGEBAR_GUARD_PID"
 
 
 def _parse_env_float(name: str) -> float | None:
@@ -245,12 +275,41 @@ def ensure_memory_limit(
     return limit
 
 
+def _is_multiprocessing_child() -> bool:
+    """Check if we're in a multiprocessing child process (MEM-012).
+
+    Detects if memory guard was already applied by a parent process
+    by checking the _RANGEBAR_GUARD_PID environment variable.
+
+    Returns True if:
+    1. _RANGEBAR_GUARD_PID is set (parent applied the guard)
+    2. Current PID differs from stored PID (we're a child)
+    """
+    guard_pid = os.environ.get(_GUARD_PID_KEY)
+    if not guard_pid:
+        return False
+
+    try:
+        parent_pid = int(guard_pid)
+        # If our PID differs from the stored PID, we're a child
+        # The child inherits the RLIMIT from parent, no need to re-apply
+        return os.getpid() != parent_pid
+    except ValueError:
+        return False
+
+
 def auto_memory_guard() -> int:
-    """Automatically enable memory guard at module import (MEM-011).
+    """Automatically enable memory guard at module import (MEM-011, MEM-012).
 
     This function is called when `import rangebar` is executed.
     It ensures a memory limit is always set unless explicitly disabled
     via RANGEBAR_NO_MEMORY_GUARD=1.
+
+    Multiprocessing Safety (Issue #61)
+    ----------------------------------
+    - Skips if RANGEBAR_NO_MEMORY_GUARD=1
+    - Skips if running in a multiprocessing child (limit inherited from parent)
+    - On Linux, uses RLIMIT_DATA instead of RLIMIT_AS to avoid mmap conflicts
 
     Returns
     -------
@@ -266,9 +325,24 @@ def auto_memory_guard() -> int:
     RANGEBAR_MAX_MEMORY_PCT : float
         Override default limit as fraction of RAM.
     """
+    # Check explicit disable first
     if os.environ.get("RANGEBAR_NO_MEMORY_GUARD") == "1":
         return -1
-    return ensure_memory_limit()
+
+    # MEM-012: Skip in multiprocessing children (Issue #61)
+    # Child processes inherit RLIMIT from parent via fork()
+    if _is_multiprocessing_child():
+        _memory_limit_state["applied"] = True  # Mark as handled
+        return -1
+
+    # Apply the limit
+    limit = ensure_memory_limit()
+
+    # MEM-012: Store our PID so child processes can detect inheritance
+    if limit > 0:
+        os.environ[_GUARD_PID_KEY] = str(os.getpid())
+
+    return limit
 
 
 @dataclass(frozen=True)
