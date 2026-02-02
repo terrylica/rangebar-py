@@ -17,12 +17,11 @@ GH_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/gh-token-terrylica')
 GITHUB_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/gh-token-terrylica') | trim }}"
 
 # =============================================================================
-# Doppler Configuration (SSoT for secrets)
+# 1Password Configuration (SSoT for secrets)
 # =============================================================================
-# PyPI: doppler secrets get PYPI_TOKEN --project claude-config --config prd
-# GitHub PAT: doppler secrets get GH_TOKEN_TERRYLICA --project main --config dev
-DOPPLER_PYPI_PROJECT = "claude-config"
-DOPPLER_PYPI_CONFIG = "prd"
+# PyPI: op item get djevteztvbcqgcm3yl4njkawjq --fields credential --reveal
+# GitHub PAT: stored in gh-token-terrylica file
+OP_PYPI_ITEM = "djevteztvbcqgcm3yl4njkawjq"
 
 # =============================================================================
 # ClickHouse Cache Configuration (SSoT for cache hosts)
@@ -435,7 +434,7 @@ description = "Preview what semantic-release would do (no changes)"
 run = "bun install --silent 2>/dev/null && GH_CONFIG_DIR=$HOME/.config/gh/profiles/terrylica GITHUB_TOKEN=$(gh auth token) bun run semantic-release --dry-run --no-ci"
 
 [tasks."release:pypi"]
-description = "Publish to PyPI using Doppler credentials (local-only, ADR-0027)"
+description = "Publish to PyPI using 1Password credentials (local-only, ADR-0027)"
 depends = ["release:build-all"]
 run = "./scripts/publish-to-pypi.sh"
 

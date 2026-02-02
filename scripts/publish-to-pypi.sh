@@ -1,13 +1,13 @@
 #!/bin/bash
-# PyPI Publishing with Doppler Secret Management (Local-Only)
+# PyPI Publishing with 1Password Secret Management (Local-Only)
 #
 # WORKSPACE-WIDE POLICY: This script must ONLY run on local machines.
 # CI/CD publishing is forbidden - see ADR-0027 for rationale.
 #
 # Prerequisites:
-#   - Doppler CLI installed (brew install dopplerhq/cli/doppler)
+#   - 1Password CLI installed (brew install 1password-cli)
 #   - uv package manager installed (curl -LsSf https://astral.sh/uv/install.sh | sh)
-#   - PYPI_TOKEN stored in Doppler (project: claude-config, config: prd)
+#   - PyPI token stored in 1Password (item: djevteztvbcqgcm3yl4njkawjq)
 #   - pyproject.toml with name and version fields
 #
 # Usage:
@@ -20,13 +20,10 @@
 set -euo pipefail
 
 # ============================================================================
-# CONFIGURATION (ADR: 2025-12-08-mise-env-centralized-config)
+# CONFIGURATION
 # ============================================================================
-# Environment variables with defaults for backward compatibility.
-# These can be pre-set via mise [env] or exported manually.
-DOPPLER_PROJECT="${DOPPLER_PROJECT:-claude-config}"
-DOPPLER_CONFIG="${DOPPLER_CONFIG:-prd}"
-DOPPLER_PYPI_SECRET="${DOPPLER_PYPI_SECRET:-PYPI_TOKEN}"
+# 1Password item ID for PyPI token (project-scoped for rangebar)
+OP_PYPI_ITEM="${OP_PYPI_ITEM:-djevteztvbcqgcm3yl4njkawjq}"
 PYPI_VERIFY_DELAY="${PYPI_VERIFY_DELAY:-3}"
 
 # ============================================================================
@@ -217,26 +214,26 @@ echo ""
 echo "Publishing to PyPI (Local Workflow)"
 echo "======================================================"
 
-# Step 0: Verify Doppler token is available
-echo -e "\n Step 0: Verifying Doppler credentials..."
+# Step 0: Verify 1Password token is available
+echo -e "\n Step 0: Verifying 1Password credentials..."
 
-if ! command -v doppler &> /dev/null; then
-    echo "   ERROR: Doppler CLI not installed"
-    echo "   Install: brew install dopplerhq/cli/doppler"
+if ! command -v op &> /dev/null; then
+    echo "   ERROR: 1Password CLI not installed"
+    echo "   Install: brew install 1password-cli"
     exit 1
 fi
 
-# Try to get PYPI_TOKEN from Doppler (configurable via env vars)
-if ! PYPI_TOKEN=$(doppler secrets get "$DOPPLER_PYPI_SECRET" --project "$DOPPLER_PROJECT" --config "$DOPPLER_CONFIG" --plain 2>/dev/null); then
-    echo "   ERROR: $DOPPLER_PYPI_SECRET not found in Doppler"
+# Try to get PyPI token from 1Password
+if ! PYPI_TOKEN=$(op item get "$OP_PYPI_ITEM" --fields credential --reveal 2>/dev/null); then
+    echo "   ERROR: PyPI token not found in 1Password (item: $OP_PYPI_ITEM)"
     echo ""
-    echo "   To fix, run:"
-    echo "     doppler secrets set $DOPPLER_PYPI_SECRET='your-token' --project $DOPPLER_PROJECT --config $DOPPLER_CONFIG"
+    echo "   To fix, create a PyPI token and save to 1Password:"
+    echo "     1. Get token from: https://pypi.org/manage/account/token/"
+    echo "     2. Save to 1Password with: op item create --category='API Credential' --title='PyPI Token' 'credential=pypi-xxx'"
     echo ""
-    echo "   Get token from: https://pypi.org/manage/account/token/"
     exit 1
 fi
-echo "   Doppler token verified"
+echo "   1Password token verified"
 
 # Step 1: Verify pyproject.toml exists
 echo -e "\n Step 1: Reading package info from pyproject.toml..."
@@ -309,18 +306,28 @@ else
     echo "   Built: dist/${PACKAGE_NAME}-${CURRENT_VERSION}*"
 fi
 
-# Step 4: Publish to PyPI using Doppler token
-echo -e "\n Step 4: Publishing to PyPI..."
-echo "   Using $DOPPLER_PYPI_SECRET from Doppler ($DOPPLER_PROJECT/$DOPPLER_CONFIG)"
+# Step 3: Publish to PyPI using twine (more reliable for maturin projects)
+echo -e "\n Step 3: Publishing to PyPI..."
+echo "   Using PyPI token from 1Password"
 
-# Use UV_PUBLISH_TOKEN environment variable for security (no token in process list)
-UV_PUBLISH_TOKEN="${PYPI_TOKEN}" $UV_CMD publish 2>&1 | grep -E "(Uploading|succeeded|Failed)" || \
-    UV_PUBLISH_TOKEN="${PYPI_TOKEN}" $UV_CMD publish
+# Use twine for maturin projects (uv publish has issues with pre-built wheels)
+if grep -q '\[tool.maturin\]' pyproject.toml; then
+    # Publish all wheels and sdist for current version
+    TWINE_USERNAME=__token__ TWINE_PASSWORD="${PYPI_TOKEN}" twine upload \
+        "dist/${PACKAGE_NAME}-${CURRENT_VERSION}"-*.whl \
+        "target/wheels/${PACKAGE_NAME}-${CURRENT_VERSION}.tar.gz" 2>&1 || \
+    TWINE_USERNAME=__token__ TWINE_PASSWORD="${PYPI_TOKEN}" twine upload \
+        "dist/${PACKAGE_NAME}-${CURRENT_VERSION}"-*.whl
+else
+    # Use UV_PUBLISH_TOKEN environment variable for security (no token in process list)
+    UV_PUBLISH_TOKEN="${PYPI_TOKEN}" $UV_CMD publish 2>&1 | grep -E "(Uploading|succeeded|Failed)" || \
+        UV_PUBLISH_TOKEN="${PYPI_TOKEN}" $UV_CMD publish
+fi
 
 echo "   Published to PyPI"
 
-# Step 5: Verify publication on PyPI
-echo -e "\n Step 5: Verifying on PyPI..."
+# Step 4: Verify publication on PyPI
+echo -e "\n Step 4: Verifying on PyPI..."
 sleep "$PYPI_VERIFY_DELAY"
 
 # Check if package version is live on PyPI
