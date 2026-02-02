@@ -533,13 +533,16 @@ print(f"Pushover alert sent: {result}")
 [tasks."research:populate-symbol"]
 description = "Populate cache for a single symbol (requires SYMBOL and THRESHOLD env vars)"
 run = """
-python -c '
+#!/usr/bin/env bash
+set -e
+
+# Use uv to run in the project venv
+uv run --python 3.13 python -c '
 import os
 import sys
 import time
 from datetime import UTC, datetime, timedelta
 
-sys.path.insert(0, os.getcwd())
 from rangebar import get_range_bars
 
 SYMBOL = os.environ.get("SYMBOL")
@@ -577,8 +580,28 @@ print(f"DONE: {total_bars:,} total bars", flush=True)
 """
 
 [tasks."research:populate-all"]
-description = "Populate cache for all symbols at both 250 and 1000 dbps (sequential, OOM-safe)"
-depends = ["research:populate-250", "research:populate-1000"]
+description = "Populate cache for all symbols at 250 then 1000 dbps (fully sequential)"
+run = """
+#!/usr/bin/env bash
+set -e
+
+echo "=========================================="
+echo "FULL CACHE POPULATION - 250 dbps then 1000 dbps"
+echo "=========================================="
+echo "Started: $(date)"
+
+# Run 250 dbps first (all symbols)
+mise run research:populate-250
+
+# Then run 1000 dbps (all symbols)
+mise run research:populate-1000
+
+echo ""
+echo "=========================================="
+echo "ALL POPULATION COMPLETE (250 + 1000 dbps)"
+echo "Finished: $(date)"
+echo "=========================================="
+"""
 
 [tasks."research:populate-250"]
 description = "Populate 250 dbps cache for all symbols (sequential, OOM-safe)"
