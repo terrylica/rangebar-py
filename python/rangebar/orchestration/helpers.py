@@ -30,6 +30,7 @@ def _stream_range_bars_binance(
     include_incomplete: bool = False,
     prevent_same_timestamp_close: bool = True,
     verify_checksum: bool = True,
+    inter_bar_lookback_count: int | None = None,
 ) -> Iterator[pl.DataFrame]:
     """Stream range bars in batches using memory-efficient chunked processing.
 
@@ -60,6 +61,8 @@ def _stream_range_bars_binance(
         Timestamp gating for flash crash prevention
     verify_checksum : bool, default=True
         Verify SHA-256 checksum of downloaded data
+    inter_bar_lookback_count : int, optional
+        Lookback trade count for inter-bar features (Issue #59)
 
     Yields
     ------
@@ -96,6 +99,7 @@ def _stream_range_bars_binance(
         threshold_decimal_bps,
         symbol=symbol,
         prevent_same_timestamp_close=prevent_same_timestamp_close,
+        inter_bar_lookback_count=inter_bar_lookback_count,
     )
     bar_buffer: list[dict] = []
 
@@ -222,6 +226,7 @@ def _process_binance_trades(
     processor: RangeBarProcessor | None = None,
     symbol: str | None = None,
     prevent_same_timestamp_close: bool = True,
+    inter_bar_lookback_count: int | None = None,
 ) -> tuple[pd.DataFrame, RangeBarProcessor]:
     """Process Binance trades to range bars (internal).
 
@@ -242,6 +247,8 @@ def _process_binance_trades(
         Symbol for checkpoint creation
     prevent_same_timestamp_close : bool, default=True
         Timestamp gating for flash crash prevention
+    inter_bar_lookback_count : int, optional
+        Lookback trade count for inter-bar features (Issue #59)
 
     Returns
     -------
@@ -287,6 +294,7 @@ def _process_binance_trades(
             threshold_decimal_bps,
             symbol=symbol,
             prevent_same_timestamp_close=prevent_same_timestamp_close,
+            inter_bar_lookback_count=inter_bar_lookback_count,
         )
 
     # MEM-002: Process in chunks to bound memory (2.5 GB → ~50 MB per chunk)
@@ -339,8 +347,15 @@ def _process_exness_ticks(
     validation: str,
     include_incomplete: bool,
     include_microstructure: bool,
+    *,
+    inter_bar_lookback_count: int | None = None,
 ) -> pd.DataFrame:
-    """Process Exness ticks to range bars (internal)."""
+    """Process Exness ticks to range bars (internal).
+
+    Note: inter_bar_lookback_count is accepted but not yet implemented for Exness.
+    TODO(Issue #59): Add inter-bar feature support for Exness source.
+    """
+    _ = inter_bar_lookback_count  # Unused for now, Exness uses separate processing path
     try:
         # Map validation string to enum
         from rangebar._core import ValidationStrictness

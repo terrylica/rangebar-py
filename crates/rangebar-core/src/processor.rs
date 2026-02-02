@@ -7,6 +7,7 @@ use crate::checkpoint::{
     AnomalySummary, Checkpoint, CheckpointError, PositionVerification, PriceWindow,
 };
 use crate::fixed_point::FixedPoint;
+use crate::interbar::{InterBarConfig, TradeHistory}; // Issue #59
 use crate::types::{AggTrade, RangeBar};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -57,6 +58,19 @@ pub struct RangeBarProcessor {
     /// `process_agg_trade_records()` where the breaching trade closes the current
     /// bar and the NEXT trade opens the new bar.
     defer_open: bool,
+
+    /// Trade history for inter-bar feature computation (Issue #59)
+    ///
+    /// Ring buffer of recent trades for computing lookback-based features.
+    /// When Some, features are computed from trades BEFORE each bar's open_time.
+    /// When None, inter-bar features are disabled (all lookback_* fields = None).
+    trade_history: Option<TradeHistory>,
+
+    /// Configuration for inter-bar features (Issue #59)
+    ///
+    /// Controls lookback mode (fixed count or time window) and which feature
+    /// tiers to compute. When None, inter-bar features are disabled.
+    inter_bar_config: Option<InterBarConfig>,
 }
 
 impl RangeBarProcessor {
@@ -125,12 +139,49 @@ impl RangeBarProcessor {
             resumed_from_checkpoint: false,
             prevent_same_timestamp_close,
             defer_open: false,
+            trade_history: None,      // Issue #59: disabled by default
+            inter_bar_config: None,   // Issue #59: disabled by default
         })
     }
 
     /// Get the prevent_same_timestamp_close setting
     pub fn prevent_same_timestamp_close(&self) -> bool {
         self.prevent_same_timestamp_close
+    }
+
+    /// Enable inter-bar feature computation with the given configuration (Issue #59)
+    ///
+    /// When enabled, the processor maintains a trade history buffer and computes
+    /// lookback-based microstructure features on each bar close. Features are
+    /// computed from trades that occurred BEFORE each bar's open_time, ensuring
+    /// no lookahead bias.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Configuration controlling lookback mode and feature tiers
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use rangebar_core::processor::RangeBarProcessor;
+    /// use rangebar_core::interbar::{InterBarConfig, LookbackMode};
+    ///
+    /// let processor = RangeBarProcessor::new(1000)?
+    ///     .with_inter_bar_config(InterBarConfig {
+    ///         lookback_mode: LookbackMode::FixedCount(500),
+    ///         compute_tier2: true,
+    ///         compute_tier3: true,
+    ///     });
+    /// ```
+    pub fn with_inter_bar_config(mut self, config: InterBarConfig) -> Self {
+        self.trade_history = Some(TradeHistory::new(config.clone()));
+        self.inter_bar_config = Some(config);
+        self
+    }
+
+    /// Check if inter-bar features are enabled
+    pub fn inter_bar_enabled(&self) -> bool {
+        self.inter_bar_config.is_some()
     }
 
     /// Process a single trade and return completed bar if any
@@ -159,6 +210,12 @@ impl RangeBarProcessor {
         self.price_window.push(trade.price);
         self.last_trade_id = Some(trade.agg_trade_id);
         self.last_timestamp_us = trade.timestamp;
+
+        // Issue #59: Push trade to history buffer for inter-bar feature computation
+        // This must happen BEFORE bar processing so lookback window includes recent trades
+        if let Some(ref mut history) = self.trade_history {
+            history.push(&trade);
+        }
 
         // Issue #46: If previous call triggered a breach, this trade opens the new bar.
         // This matches the batch path's defer_open semantics - the breaching trade
@@ -203,6 +260,14 @@ impl RangeBarProcessor {
 
                     // Compute microstructure features at bar finalization (Issue #25)
                     bar_state.bar.compute_microstructure_features();
+
+                    // Issue #59: Compute inter-bar features from lookback window
+                    // Features are computed from trades BEFORE bar.open_time (no lookahead)
+                    if let Some(ref history) = self.trade_history {
+                        let inter_bar_features = history.compute_features(bar_state.bar.open_time);
+                        bar_state.bar.set_inter_bar_features(&inter_bar_features);
+                    }
+
                     let completed_bar = bar_state.bar.clone();
 
                     // Issue #46: Don't start new bar with breaching trade.
@@ -322,6 +387,11 @@ impl RangeBarProcessor {
             self.last_trade_id = Some(agg_record.agg_trade_id);
             self.last_timestamp_us = agg_record.timestamp;
 
+            // Issue #59: Push trade to history buffer for inter-bar feature computation
+            if let Some(ref mut history) = self.trade_history {
+                history.push(agg_record);
+            }
+
             if defer_open {
                 // Previous bar closed, this agg_record opens new bar
                 current_bar = Some(RangeBarState::new(agg_record, self.threshold_decimal_bps));
@@ -363,6 +433,13 @@ impl RangeBarProcessor {
                         // Compute microstructure features at bar finalization (Issue #34)
                         bar_state.bar.compute_microstructure_features();
 
+                        // Issue #59: Compute inter-bar features from lookback window
+                        if let Some(ref history) = self.trade_history {
+                            let inter_bar_features =
+                                history.compute_features(bar_state.bar.open_time);
+                            bar_state.bar.set_inter_bar_features(&inter_bar_features);
+                        }
+
                         bars.push(bar_state.bar.clone());
                         current_bar = None;
                         defer_open = true; // Next record will open new bar
@@ -385,6 +462,13 @@ impl RangeBarProcessor {
             if let Some(mut bar_state) = current_bar {
                 // Compute microstructure features for incomplete bar (Issue #34)
                 bar_state.bar.compute_microstructure_features();
+
+                // Issue #59: Compute inter-bar features from lookback window
+                if let Some(ref history) = self.trade_history {
+                    let inter_bar_features = history.compute_features(bar_state.bar.open_time);
+                    bar_state.bar.set_inter_bar_features(&inter_bar_features);
+                }
+
                 bars.push(bar_state.bar);
             }
         }
@@ -480,6 +564,8 @@ impl RangeBarProcessor {
             resumed_from_checkpoint: true, // Signal to continue from existing bar state
             prevent_same_timestamp_close: checkpoint.prevent_same_timestamp_close,
             defer_open: checkpoint.defer_open, // Issue #46: Restore deferred open state
+            trade_history: None,      // Issue #59: Must be re-enabled after restore
+            inter_bar_config: None,   // Issue #59: Must be re-enabled after restore
         })
     }
 

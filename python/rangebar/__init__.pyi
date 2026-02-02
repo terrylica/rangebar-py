@@ -230,6 +230,35 @@ THRESHOLD_PRESETS: dict[str, int]
 - "macro": 1000 (100bps = 1%) - long-term
 """
 
+# Issue #59: Inter-bar microstructure features
+INTER_BAR_FEATURE_COLUMNS: tuple[str, ...]
+"""16 inter-bar microstructure feature column names (Issue #59).
+
+Tier 1 - Core (7 features):
+- lookback_trade_count: Trade count in lookback window
+- lookback_ofi: Order flow imbalance [-1, 1]
+- lookback_duration_us: Lookback window duration (microseconds)
+- lookback_intensity: Trade intensity (trades/second)
+- lookback_vwap_raw: Volume-weighted average price (raw i64)
+- lookback_vwap_position: VWAP position in price range [0, 1]
+- lookback_count_imbalance: Trade count imbalance [-1, 1]
+
+Tier 2 - Statistical (5 features):
+- lookback_kyle_lambda: Kyle's lambda (price impact)
+- lookback_burstiness: Goh-Barabási burstiness [-1, 1]
+- lookback_volume_skew: Volume distribution skewness
+- lookback_volume_kurt: Volume distribution kurtosis
+- lookback_price_range: Price range / first price [0, +inf)
+
+Tier 3 - Advanced (4 features):
+- lookback_kaufman_er: Kaufman efficiency ratio [0, 1]
+- lookback_garman_klass_vol: Garman-Klass volatility [0, 1)
+- lookback_hurst: Hurst exponent [0, 1]
+- lookback_permutation_entropy: Permutation entropy [0, 1]
+
+All inter-bar features are Optional - None when no lookback data available.
+"""
+
 # ============================================================================
 # Tiered Validation System (Issue #19 - v6.2.0+)
 # ============================================================================
@@ -495,6 +524,8 @@ def get_range_bars(
     use_cache: bool = ...,
     fetch_if_missing: bool = ...,
     cache_dir: str | None = ...,
+    max_memory_mb: int | None = ...,  # Issue #49
+    inter_bar_lookback_count: int | None = ...,  # Issue #59
 ) -> pd.DataFrame: ...
 @overload
 def get_range_bars(
@@ -520,6 +551,8 @@ def get_range_bars(
     use_cache: bool = ...,
     fetch_if_missing: bool = ...,
     cache_dir: str | None = ...,
+    max_memory_mb: int | None = ...,  # Issue #49
+    inter_bar_lookback_count: int | None = ...,  # Issue #59
 ) -> Iterator[pl.DataFrame]: ...
 def get_range_bars(
     symbol: str,
@@ -551,6 +584,10 @@ def get_range_bars(
     use_cache: bool = True,
     fetch_if_missing: bool = True,
     cache_dir: str | None = None,
+    # Memory guards (Issue #49)
+    max_memory_mb: int | None = None,
+    # Inter-bar features (Issue #59)
+    inter_bar_lookback_count: int | None = None,
 ) -> pd.DataFrame | Iterator[pl.DataFrame]:
     """Get range bars for a symbol with automatic data fetching and caching.
 
@@ -626,6 +663,16 @@ def get_range_bars(
         - macOS: ~/Library/Caches/rangebar/
         - Linux: ~/.cache/rangebar/
         - Windows: %LOCALAPPDATA%/terrylica/rangebar/Cache/
+    max_memory_mb : int or None, default=None
+        Memory budget in MB for tick data loading (Issue #49).
+        If estimated in-memory size exceeds this limit, raises MemoryError.
+        If None, uses automatic detection (80% of available RAM).
+        Set to 0 to disable all memory guards.
+    inter_bar_lookback_count : int or None, default=None
+        Number of trades to keep in lookback buffer for inter-bar feature
+        computation (Issue #59). If set, enables 16 inter-bar features
+        computed from trades BEFORE each bar opens. Recommended: 100-500.
+        If None (default), inter-bar features are disabled.
 
     Returns
     -------

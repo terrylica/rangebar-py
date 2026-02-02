@@ -40,6 +40,11 @@ class RangeBarProcessor:
         This prevents flash crash scenarios from creating thousands of bars
         at identical timestamps. If False: Legacy v8 behavior where bars can
         close immediately on breach regardless of timestamp.
+    inter_bar_lookback_count : int, optional
+        Number of trades to keep in lookback buffer for inter-bar feature
+        computation (Issue #59). If set, enables 16 inter-bar features
+        computed from trades BEFORE each bar opens. Recommended: 100-500.
+        If None (default), inter-bar features are disabled.
 
     Raises
     ------
@@ -94,6 +99,7 @@ class RangeBarProcessor:
         symbol: str | None = None,
         *,
         prevent_same_timestamp_close: bool = True,
+        inter_bar_lookback_count: int | None = None,
     ) -> None:
         """Initialize processor with given threshold.
 
@@ -105,14 +111,20 @@ class RangeBarProcessor:
             Trading symbol for checkpoint creation
         prevent_same_timestamp_close : bool, default=True
             Timestamp gating for flash crash prevention (Issue #36)
+        inter_bar_lookback_count : int, optional
+            Lookback trade count for inter-bar features (Issue #59)
         """
         # Validation happens in Rust layer, which raises PyValueError
         self._processor = _PyRangeBarProcessor(
-            threshold_decimal_bps, symbol, prevent_same_timestamp_close
+            threshold_decimal_bps,
+            symbol,
+            prevent_same_timestamp_close,
+            inter_bar_lookback_count,
         )
         self.threshold_decimal_bps = threshold_decimal_bps
         self.symbol = symbol
         self.prevent_same_timestamp_close = prevent_same_timestamp_close
+        self.inter_bar_lookback_count = inter_bar_lookback_count
 
     @classmethod
     def from_checkpoint(cls, checkpoint: dict) -> RangeBarProcessor:

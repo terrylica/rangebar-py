@@ -53,6 +53,34 @@
 -- Note: New installations do not need this migration.
 
 -- ============================================================================
+-- Migration for v13.x (Issue #59: Inter-bar features from lookback window)
+-- ============================================================================
+-- Run this ONCE if upgrading from rangebar-py v12.x with existing cache:
+--
+-- ALTER TABLE rangebar_cache.range_bars
+--     -- Tier 1: Core features (7 features)
+--     ADD COLUMN lookback_trade_count Nullable(UInt32) DEFAULT NULL,
+--     ADD COLUMN lookback_ofi Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN lookback_duration_us Nullable(Int64) DEFAULT NULL,
+--     ADD COLUMN lookback_intensity Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN lookback_vwap_raw Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN lookback_vwap_position Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN lookback_count_imbalance Nullable(Float64) DEFAULT NULL,
+--     -- Tier 2: Statistical features (5 features)
+--     ADD COLUMN lookback_kyle_lambda Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN lookback_burstiness Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN lookback_volume_skew Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN lookback_volume_kurt Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN lookback_price_range Nullable(Float64) DEFAULT NULL,
+--     -- Tier 3: Advanced features (4 features)
+--     ADD COLUMN lookback_kaufman_er Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN lookback_garman_klass_vol Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN lookback_hurst Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN lookback_permutation_entropy Nullable(Float64) DEFAULT NULL;
+--
+-- Note: New installations do not need this migration.
+
+-- ============================================================================
 -- Computed Range Bars Cache (Tier 2)
 -- ============================================================================
 -- Stores computed range bars with all parameters as cache key
@@ -98,6 +126,27 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
     exchange_session_tokyo UInt8 DEFAULT 0,
     exchange_session_london UInt8 DEFAULT 0,
     exchange_session_newyork UInt8 DEFAULT 0,
+
+    -- Inter-bar features (Issue #59: computed from lookback window BEFORE bar opens)
+    -- Tier 1: Core features (7 features)
+    lookback_trade_count Nullable(UInt32) DEFAULT NULL,
+    lookback_ofi Nullable(Float64) DEFAULT NULL,
+    lookback_duration_us Nullable(Int64) DEFAULT NULL,
+    lookback_intensity Nullable(Float64) DEFAULT NULL,
+    lookback_vwap_raw Nullable(Float64) DEFAULT NULL,
+    lookback_vwap_position Nullable(Float64) DEFAULT NULL,
+    lookback_count_imbalance Nullable(Float64) DEFAULT NULL,
+    -- Tier 2: Statistical features (5 features)
+    lookback_kyle_lambda Nullable(Float64) DEFAULT NULL,
+    lookback_burstiness Nullable(Float64) DEFAULT NULL,
+    lookback_volume_skew Nullable(Float64) DEFAULT NULL,
+    lookback_volume_kurt Nullable(Float64) DEFAULT NULL,
+    lookback_price_range Nullable(Float64) DEFAULT NULL,
+    -- Tier 3: Advanced features (4 features)
+    lookback_kaufman_er Nullable(Float64) DEFAULT NULL,
+    lookback_garman_klass_vol Nullable(Float64) DEFAULT NULL,
+    lookback_hurst Nullable(Float64) DEFAULT NULL,
+    lookback_permutation_entropy Nullable(Float64) DEFAULT NULL,
 
     -- Cache metadata
     cache_key String,                        -- Hash of full parameters

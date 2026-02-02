@@ -66,6 +66,39 @@ MICROSTRUCTURE_COLUMNS: tuple[str, ...] = (
 )
 
 # =============================================================================
+# Inter-Bar Feature Columns (Issue #59, v12.0+)
+# =============================================================================
+# Computed from a lookback window of trades BEFORE each bar opens.
+# All features are Optional - None when no lookback data available.
+#
+# IMPORTANT: Keep this list in sync with:
+# - crates/rangebar-core/src/interbar.rs (Rust feature computation)
+# - crates/rangebar-core/src/types.rs (RangeBar struct fields)
+# - python/rangebar/clickhouse/schema.sql (ClickHouse columns)
+
+INTER_BAR_FEATURE_COLUMNS: tuple[str, ...] = (
+    # Tier 1: Core features (7 features, min 1 trade)
+    "lookback_trade_count",
+    "lookback_ofi",
+    "lookback_duration_us",
+    "lookback_intensity",
+    "lookback_vwap_raw",
+    "lookback_vwap_position",
+    "lookback_count_imbalance",
+    # Tier 2: Statistical features (5 features)
+    "lookback_kyle_lambda",
+    "lookback_burstiness",
+    "lookback_volume_skew",
+    "lookback_volume_kurt",
+    "lookback_price_range",
+    # Tier 3: Advanced features (4 features, min 60+ trades)
+    "lookback_kaufman_er",
+    "lookback_garman_klass_vol",
+    "lookback_hurst",
+    "lookback_permutation_entropy",
+)
+
+# =============================================================================
 # Tier-1 Symbols (high-liquidity, available on all Binance markets)
 # =============================================================================
 

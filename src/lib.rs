@@ -2,8 +2,8 @@ use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use rangebar_core::{
-    AggTrade, AnomalySummary, Checkpoint, CheckpointError, FixedPoint, PositionVerification,
-    RangeBar, RangeBarProcessor,
+    AggTrade, AnomalySummary, Checkpoint, CheckpointError, FixedPoint, InterBarConfig, LookbackMode,
+    PositionVerification, RangeBar, RangeBarProcessor,
 };
 
 // Arrow export support (feature-gated)
@@ -131,6 +131,29 @@ fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject> {
     dict.set_item("aggression_ratio", bar.aggression_ratio)?;
     dict.set_item("aggregation_density", bar.aggregation_density_f64)?;
     dict.set_item("turnover_imbalance", bar.turnover_imbalance)?;
+
+    // Inter-bar features (Issue #59) - computed from lookback window BEFORE bar opens
+    // Tier 1: Core features
+    dict.set_item("lookback_trade_count", bar.lookback_trade_count)?;
+    dict.set_item("lookback_ofi", bar.lookback_ofi)?;
+    dict.set_item("lookback_duration_us", bar.lookback_duration_us)?;
+    dict.set_item("lookback_intensity", bar.lookback_intensity)?;
+    dict.set_item("lookback_vwap_raw", bar.lookback_vwap_raw)?;
+    dict.set_item("lookback_vwap_position", bar.lookback_vwap_position)?;
+    dict.set_item("lookback_count_imbalance", bar.lookback_count_imbalance)?;
+
+    // Tier 2: Statistical features
+    dict.set_item("lookback_kyle_lambda", bar.lookback_kyle_lambda)?;
+    dict.set_item("lookback_burstiness", bar.lookback_burstiness)?;
+    dict.set_item("lookback_volume_skew", bar.lookback_volume_skew)?;
+    dict.set_item("lookback_volume_kurt", bar.lookback_volume_kurt)?;
+    dict.set_item("lookback_price_range", bar.lookback_price_range)?;
+
+    // Tier 3: trading-fitness features
+    dict.set_item("lookback_kaufman_er", bar.lookback_kaufman_er)?;
+    dict.set_item("lookback_garman_klass_vol", bar.lookback_garman_klass_vol)?;
+    dict.set_item("lookback_hurst", bar.lookback_hurst)?;
+    dict.set_item("lookback_permutation_entropy", bar.lookback_permutation_entropy)?;
 
     Ok(dict.into())
 }
@@ -513,19 +536,34 @@ impl PyRangeBarProcessor {
     ///         same timestamp they opened. This prevents flash crash scenarios from
     ///         creating thousands of bars at identical timestamps. Set to False for
     ///         legacy v8 behavior for comparative analysis. (Issue #36)
+    ///     `inter_bar_lookback_count`: If set, enables inter-bar features computed from
+    ///         a lookback window of this many trades BEFORE each bar opens. Recommended
+    ///         values: 100-500. Set to None (default) to disable inter-bar features.
+    ///         (Issue #59)
     ///
     /// Raises:
     ///     `ValueError`: If threshold is out of range [1, `100_000`]
     #[new]
-    #[pyo3(signature = (threshold_decimal_bps, symbol = None, prevent_same_timestamp_close = true))]
+    #[pyo3(signature = (threshold_decimal_bps, symbol = None, prevent_same_timestamp_close = true, inter_bar_lookback_count = None))]
     fn new(
         threshold_decimal_bps: u32,
         symbol: Option<String>,
         prevent_same_timestamp_close: bool,
+        inter_bar_lookback_count: Option<usize>,
     ) -> PyResult<Self> {
-        let processor =
+        // Issue #59: Build processor with optional inter-bar feature config
+        let mut processor =
             RangeBarProcessor::with_options(threshold_decimal_bps, prevent_same_timestamp_close)
                 .map_err(|e| PyValueError::new_err(format!("Failed to create processor: {e}")))?;
+
+        // Issue #59: Enable inter-bar features if lookback count is specified
+        if let Some(count) = inter_bar_lookback_count {
+            let config = InterBarConfig {
+                lookback_mode: LookbackMode::FixedCount(count),
+                ..Default::default()
+            };
+            processor = processor.with_inter_bar_config(config);
+        }
 
         Ok(Self {
             processor,
@@ -2265,17 +2303,17 @@ mod tests {
 
     #[test]
     fn test_processor_creation() {
-        let processor = PyRangeBarProcessor::new(250, None, true);
+        let processor = PyRangeBarProcessor::new(250, None, true, None);
         assert!(processor.is_ok());
         assert_eq!(processor.unwrap().threshold_decimal_bps, 250);
     }
 
     #[test]
     fn test_invalid_threshold() {
-        let processor = PyRangeBarProcessor::new(0, None, true);
+        let processor = PyRangeBarProcessor::new(0, None, true, None);
         assert!(processor.is_err());
 
-        let processor = PyRangeBarProcessor::new(200_000, None, true);
+        let processor = PyRangeBarProcessor::new(200_000, None, true, None);
         assert!(processor.is_err());
     }
 
@@ -2307,18 +2345,18 @@ mod tests {
     #[test]
     fn test_processor_boundary_thresholds() {
         // Test minimum valid threshold (1 = 0.1 basis points)
-        let processor_min = PyRangeBarProcessor::new(1, None, true);
+        let processor_min = PyRangeBarProcessor::new(1, None, true, None);
         assert!(processor_min.is_ok());
         assert_eq!(processor_min.unwrap().threshold_decimal_bps, 1);
 
         // Test maximum valid threshold (100_000 = 10,000 basis points = 100%)
-        let processor_max = PyRangeBarProcessor::new(100_000, None, true);
+        let processor_max = PyRangeBarProcessor::new(100_000, None, true, None);
         assert!(processor_max.is_ok());
         assert_eq!(processor_max.unwrap().threshold_decimal_bps, 100_000);
 
         // Test common valid thresholds
         for threshold in [10, 100, 250, 500, 1000, 10_000] {
-            let processor = PyRangeBarProcessor::new(threshold, None, true);
+            let processor = PyRangeBarProcessor::new(threshold, None, true, None);
             assert!(processor.is_ok(), "Threshold {} should be valid", threshold);
         }
     }

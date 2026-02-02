@@ -64,6 +64,8 @@ def get_range_bars(
     cache_dir: str | None = None,
     # Memory guards (Issue #49)
     max_memory_mb: int | None = None,
+    # Inter-bar features (Issue #59)
+    inter_bar_lookback_count: int | None = None,
 ) -> pd.DataFrame | Iterator[pl.DataFrame]:
     """Get range bars for a symbol with automatic data fetching and caching.
 
@@ -164,6 +166,11 @@ def get_range_bars(
         in-memory size exceeds this limit, raises MemoryError. If None,
         uses automatic detection (80% of available RAM). Set to 0 to
         disable all memory guards.
+    inter_bar_lookback_count : int or None, default=None
+        Number of trades to keep in lookback buffer for inter-bar feature
+        computation (Issue #59). If set, enables 16 inter-bar features
+        computed from trades BEFORE each bar opens. Recommended: 100-500.
+        If None (default), inter-bar features are disabled.
 
     Returns
     -------
@@ -377,6 +384,7 @@ def get_range_bars(
             include_incomplete=include_incomplete,
             prevent_same_timestamp_close=prevent_same_timestamp_close,
             verify_checksum=verify_checksum,
+            inter_bar_lookback_count=inter_bar_lookback_count,
         )
 
     # -------------------------------------------------------------------------
@@ -461,6 +469,7 @@ def get_range_bars(
             validation,
             include_incomplete,
             include_microstructure,
+            inter_bar_lookback_count=inter_bar_lookback_count,
         )
 
     # -------------------------------------------------------------------------
@@ -560,6 +569,7 @@ def get_range_bars(
             processor=processor,
             symbol=symbol,
             prevent_same_timestamp_close=prevent_same_timestamp_close,
+            inter_bar_lookback_count=inter_bar_lookback_count,
         )
 
         if segment_bars is not None and not segment_bars.empty:
