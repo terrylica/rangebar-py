@@ -577,23 +577,59 @@ print(f"DONE: {total_bars:,} total bars", flush=True)
 """
 
 [tasks."research:populate-250"]
-description = "Populate 250 dbps cache for extended symbol set (sequential)"
+description = "Populate 250 dbps cache for all symbols (sequential, OOM-safe)"
 run = """
 echo "=== SEQUENTIAL CACHE POPULATION (250 dbps) ==="
 echo "Running symbols one at a time to avoid OOM..."
+echo "Started: $(date)"
 
-# Symbols already populated: BTCUSDT, SOLUSDT, ETHUSDT, BNBUSDT
-# Extended set for cross-board examination:
-for SYMBOL in ADAUSDT AVAXUSDT DOTUSDT MATICUSDT NEARUSDT ATOMUSDT APTUSDT SUIUSDT LINKUSDT UNIUSDT AAVEUSDT DOGEUSDT SHIBUSDT PEPEUSDT FTMUSDT; do
+# All symbols for cross-board examination (sequential to avoid OOM)
+# SOLUSDT already has good coverage (700K bars), skip it
+SYMBOLS=(
+    # Core pairs needing completion
+    BTCUSDT
+    ETHUSDT
+    BNBUSDT
+    # Major L1 chains
+    ADAUSDT
+    AVAXUSDT
+    DOTUSDT
+    MATICUSDT
+    NEARUSDT
+    ATOMUSDT
+    APTUSDT
+    SUIUSDT
+    # DeFi tokens
+    LINKUSDT
+    UNIUSDT
+    AAVEUSDT
+    # Memecoins (high volatility)
+    DOGEUSDT
+    SHIBUSDT
+    PEPEUSDT
+    # Exchange tokens
+    FTMUSDT
+)
+
+TOTAL=${#SYMBOLS[@]}
+CURRENT=0
+
+for SYMBOL in "${SYMBOLS[@]}"; do
+    CURRENT=$((CURRENT + 1))
     echo ""
-    echo "=== $SYMBOL ==="
+    echo "=========================================="
+    echo "[$CURRENT/$TOTAL] $SYMBOL"
+    echo "=========================================="
     SYMBOL=$SYMBOL mise run research:populate-symbol
-    echo "Sleeping 10s before next symbol..."
+    echo "Completed $SYMBOL. Sleeping 10s before next..."
     sleep 10
 done
 
 echo ""
-echo "=== ALL SYMBOLS COMPLETE ==="
+echo "=========================================="
+echo "ALL $TOTAL SYMBOLS COMPLETE"
+echo "Finished: $(date)"
+echo "=========================================="
 """
 
 [tasks."research:momentum-analysis"]
