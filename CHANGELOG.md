@@ -1,3 +1,10 @@
+# [11.7.0](https://github.com/terrylica/rangebar-py/compare/v11.6.1...v11.7.0) (2026-02-02)
+
+
+### Features
+
+* **intrabar:** add 22 intra-bar microstructure features (Issue [#59](https://github.com/terrylica/rangebar-py/issues/59)) ([4200631](https://github.com/terrylica/rangebar-py/commit/4200631576269ad90b957f6c250e07866d30c3e4))
+
 ## [11.6.1](https://github.com/terrylica/rangebar-py/compare/v11.6.0...v11.6.1) (2026-02-02)
 
 
