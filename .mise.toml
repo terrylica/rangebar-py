@@ -669,6 +669,14 @@ echo "Finished: $(date)"
 echo "=========================================="
 """
 
+[tasks."research:status"]
+description = "Check population status on littleblack (single check)"
+run = "python scripts/monitor_population.py --once --host littleblack"
+
+[tasks."research:monitor"]
+description = "Start continuous population monitoring (2 min interval)"
+run = "python scripts/monitor_population.py --interval 120 --host littleblack"
+
 [tasks."research:momentum-analysis"]
 description = "Run momentum analysis on all populated symbols"
 run = "python scripts/run_length_momentum_multi_symbol.py"
