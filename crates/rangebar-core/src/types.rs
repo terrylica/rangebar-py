@@ -188,6 +188,77 @@ pub struct RangeBar {
     /// Dollar-weighted OFI, Range: [-1.0, +1.0]
     #[serde(default)]
     pub turnover_imbalance: f64,
+
+    // === INTER-BAR FEATURES (Issue #59) ===
+    // Computed from lookback trade window BEFORE each bar opens.
+    // All fields are Option<T> to indicate when computation wasn't possible.
+
+    // --- Tier 1: Core Features ---
+    /// Number of trades in lookback window before bar opened
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_trade_count: Option<u32>,
+
+    /// Order Flow Imbalance from lookback window: [-1, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_ofi: Option<f64>,
+
+    /// Duration of lookback window in microseconds
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_duration_us: Option<i64>,
+
+    /// Trade intensity in lookback: trades per second
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_intensity: Option<f64>,
+
+    /// VWAP from lookback window (stored as FixedPoint raw value for serialization)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_vwap_raw: Option<i64>,
+
+    /// VWAP position within price range: [0, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_vwap_position: Option<f64>,
+
+    /// Count imbalance: (buy_count - sell_count) / total_count, [-1, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_count_imbalance: Option<f64>,
+
+    // --- Tier 2: Statistical Features ---
+    /// Kyle's Lambda proxy from lookback (normalized)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_kyle_lambda: Option<f64>,
+
+    /// Burstiness (Goh-Barabási): [-1, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_burstiness: Option<f64>,
+
+    /// Volume skewness (Fisher-Pearson coefficient)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_volume_skew: Option<f64>,
+
+    /// Excess kurtosis of volume distribution
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_volume_kurt: Option<f64>,
+
+    /// Price range normalized by first price
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_price_range: Option<f64>,
+
+    // --- Tier 3: Advanced Features ---
+    /// Kaufman Efficiency Ratio: [0, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_kaufman_er: Option<f64>,
+
+    /// Garman-Klass volatility estimator
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_garman_klass_vol: Option<f64>,
+
+    /// Hurst exponent via DFA, soft-clamped to [0, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_hurst: Option<f64>,
+
+    /// Permutation entropy (normalized): [0, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookback_permutation_entropy: Option<f64>,
 }
 
 impl RangeBar {
@@ -252,6 +323,25 @@ impl RangeBar {
             aggression_ratio: 0.0,
             aggregation_density_f64: 0.0,
             turnover_imbalance: 0.0,
+
+            // Inter-bar features (Issue #59) - computed from lookback window
+            // All None until explicitly set via set_inter_bar_features()
+            lookback_trade_count: None,
+            lookback_ofi: None,
+            lookback_duration_us: None,
+            lookback_intensity: None,
+            lookback_vwap_raw: None,
+            lookback_vwap_position: None,
+            lookback_count_imbalance: None,
+            lookback_kyle_lambda: None,
+            lookback_burstiness: None,
+            lookback_volume_skew: None,
+            lookback_volume_kurt: None,
+            lookback_price_range: None,
+            lookback_kaufman_er: None,
+            lookback_garman_klass_vol: None,
+            lookback_hurst: None,
+            lookback_permutation_entropy: None,
         }
     }
 
@@ -457,6 +547,35 @@ impl RangeBar {
         lower_threshold: FixedPoint,
     ) -> bool {
         price >= upper_threshold || price <= lower_threshold
+    }
+
+    /// Set inter-bar features from computed InterBarFeatures struct (Issue #59)
+    ///
+    /// This method is called when a bar is finalized with inter-bar feature
+    /// computation enabled. The features are computed from trades that occurred
+    /// BEFORE the bar opened, ensuring no lookahead bias.
+    pub fn set_inter_bar_features(&mut self, features: &crate::interbar::InterBarFeatures) {
+        // Tier 1: Core features
+        self.lookback_trade_count = features.lookback_trade_count;
+        self.lookback_ofi = features.lookback_ofi;
+        self.lookback_duration_us = features.lookback_duration_us;
+        self.lookback_intensity = features.lookback_intensity;
+        self.lookback_vwap_raw = features.lookback_vwap.map(|v| v.0);
+        self.lookback_vwap_position = features.lookback_vwap_position;
+        self.lookback_count_imbalance = features.lookback_count_imbalance;
+
+        // Tier 2: Statistical features
+        self.lookback_kyle_lambda = features.lookback_kyle_lambda;
+        self.lookback_burstiness = features.lookback_burstiness;
+        self.lookback_volume_skew = features.lookback_volume_skew;
+        self.lookback_volume_kurt = features.lookback_volume_kurt;
+        self.lookback_price_range = features.lookback_price_range;
+
+        // Tier 3: Advanced features
+        self.lookback_kaufman_er = features.lookback_kaufman_er;
+        self.lookback_garman_klass_vol = features.lookback_garman_klass_vol;
+        self.lookback_hurst = features.lookback_hurst;
+        self.lookback_permutation_entropy = features.lookback_permutation_entropy;
     }
 }
 

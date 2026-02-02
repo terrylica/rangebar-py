@@ -68,6 +68,49 @@ rangebar-cli         rangebar-batch      rangebar-streaming
 
 ---
 
+## Inter-Bar Features (Issue #59)
+
+**Location**: `rangebar-core/src/interbar.rs`
+
+16 features computed from a lookback window of trades BEFORE each bar opens. All fields are `Option<T>` (None when lookback disabled or insufficient data).
+
+### Tier 1: Core (7 features)
+
+| Feature                    | Formula                          | Range      |
+| -------------------------- | -------------------------------- | ---------- |
+| `lookback_trade_count`     | COUNT(trades)                    | [0, ∞)     |
+| `lookback_ofi`             | (buy_vol - sell_vol) / total     | [-1, 1]    |
+| `lookback_duration_us`     | last_ts - first_ts               | [0, ∞)     |
+| `lookback_intensity`       | trade_count / duration_sec       | [0, ∞)     |
+| `lookback_vwap_raw`        | Σ(price×vol) / Σ(vol)            | FixedPoint |
+| `lookback_vwap_position`   | (vwap - low) / (high - low)      | [0, 1]     |
+| `lookback_count_imbalance` | (buy_count - sell_count) / total | [-1, 1]    |
+
+### Tier 2: Statistical (5 features)
+
+| Feature                | Formula                    | Range   |
+| ---------------------- | -------------------------- | ------- |
+| `lookback_kyle_lambda` | (Δp/p) / (imbalance/vol)   | (-∞, ∞) |
+| `lookback_burstiness`  | (σ*τ - μ*τ) / (σ*τ + μ*τ)  | [-1, 1] |
+| `lookback_volume_skew` | E[(V-μ)³] / σ³             | (-∞, ∞) |
+| `lookback_volume_kurt` | E[(V-μ)⁴] / σ⁴ - 3         | [-2, ∞) |
+| `lookback_price_range` | (high - low) / first_price | [0, ∞)  |
+
+### Tier 3: Advanced (4 features)
+
+| Feature                        | Formula                      | Range  | Min Trades |
+| ------------------------------ | ---------------------------- | ------ | ---------- |
+| `lookback_kaufman_er`          | \|net\| / Σ\|changes\|       | [0, 1] | 2          |
+| `lookback_garman_klass_vol`    | OHLC volatility              | [0, ∞) | 1          |
+| `lookback_hurst`               | DFA estimator (soft-clamped) | [0, 1] | 64         |
+| `lookback_permutation_entropy` | Bandt-Pompe m=3              | [0, 1] | 60         |
+
+**Academic backing**: Kyle (1985), Goh-Barabási (2008), Garman-Klass (1980), Bandt-Pompe (2002), Peng (1994).
+
+**Plan**: [/docs/plans/issue-59-inter-bar-features.md](/docs/plans/issue-59-inter-bar-features.md)
+
+---
+
 ## Crate Details
 
 ### Layer 0: Foundation

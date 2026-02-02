@@ -13,6 +13,7 @@
 
 pub mod checkpoint;
 pub mod fixed_point;
+pub mod interbar; // Issue #59: Inter-bar microstructure features
 pub mod processor;
 pub mod timestamp;
 pub mod types;
@@ -31,6 +32,7 @@ pub mod test_data_loader;
 // Re-export commonly used types
 pub use checkpoint::{AnomalySummary, Checkpoint, CheckpointError, PositionVerification};
 pub use fixed_point::FixedPoint;
+pub use interbar::{InterBarConfig, InterBarFeatures, LookbackMode, TradeHistory, TradeSnapshot};
 pub use processor::{ExportRangeBarProcessor, ProcessingError, RangeBarProcessor};
 pub use timestamp::{
     create_aggtrade_with_normalized_timestamp, normalize_timestamp, validate_timestamp,

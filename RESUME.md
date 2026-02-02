@@ -1,13 +1,44 @@
 # RESUME.md - Session Context
 
-**Last Updated**: 2026-02-01
+**Last Updated**: 2026-02-02
 **Purpose**: Quick context for continuing work in future sessions
 
 ---
 
-## Current State Summary
+## Current Work: Issue #59 Inter-Bar Features
 
-### Pattern Research: COMPLETE
+### Status: Phase 1 COMPLETE (Rust Core)
+
+**Objective**: Enrich 1000 dbps bars with microstructure features computed from raw aggTrades in a lookback window BEFORE each bar opens.
+
+**Plan**: [docs/plans/issue-59-inter-bar-features.md](/docs/plans/issue-59-inter-bar-features.md)
+
+### Completed (Phase 1)
+
+- Created `crates/rangebar-core/src/interbar.rs` - 16 inter-bar features
+- Added 16 `Option<T>` fields to `RangeBar` struct
+- All 222 workspace tests pass
+- Academic validation: Kyle (1985), Goh-Barabási (2008), Garman-Klass (1980), Bandt-Pompe (2002)
+
+### Remaining Phases
+
+| Phase | Task                                                   | Status |
+| ----- | ------------------------------------------------------ | ------ |
+| 2     | Integrate `TradeHistory` into `RangeBarProcessor`      | TODO   |
+| 3     | Update PyO3 bindings to expose features to Python      | TODO   |
+| 4     | Update Python type hints, constants, ClickHouse schema | TODO   |
+
+### Key Files
+
+| File                                    | Purpose                            |
+| --------------------------------------- | ---------------------------------- |
+| `crates/rangebar-core/src/interbar.rs`  | Core feature computation (NEW)     |
+| `crates/rangebar-core/src/types.rs`     | RangeBar struct with 16 new fields |
+| `crates/rangebar-core/src/processor.rs` | Needs TradeHistory integration     |
+
+---
+
+## Pattern Research: COMPLETE
 
 **Finding**: ZERO ODD robust predictive patterns exist in range bar data.
 
@@ -51,32 +82,12 @@ After exhaustive testing across **10 research approaches**, all were invalidated
 
 ### Documentation
 
-| Document                                         | Lines | Purpose                  |
-| ------------------------------------------------ | ----- | ------------------------ |
-| `docs/research/INDEX.md`                         | 124   | Navigation index         |
-| `docs/research/pattern-research-summary.md`      | 944   | Master findings          |
-| `docs/research/adversarial-audit-methodology.md` | 303   | Reusable audit framework |
-
-### Scripts
-
-42+ research scripts in `scripts/`:
-
-- Pattern analysis: `*_patterns*.py` (INVALIDATED)
-- TDA research: `tda_*.py` (INVALIDATED)
-- Audit scripts: `*_audit*.py` (methodology reference)
-- Cache population: `fill_gaps_*.py`
-
----
-
-## GitHub Issues
-
-| Issue | Title                                       | Status |
-| ----- | ------------------------------------------- | ------ |
-| #57   | Research Complete: ZERO ODD Robust Patterns | CLOSED |
-| #56   | TDA Structural Break Detection              | CLOSED |
-| #52   | Market Regime Filter                        | CLOSED |
-| #54   | Volatility Regime Filter                    | CLOSED |
-| #55   | Multi-Threshold Pattern Confirmation        | CLOSED |
+| Document                                         | Purpose                  |
+| ------------------------------------------------ | ------------------------ |
+| `docs/research/INDEX.md`                         | Navigation index         |
+| `docs/research/pattern-research-summary.md`      | Master findings          |
+| `docs/research/adversarial-audit-methodology.md` | Reusable audit framework |
+| `docs/plans/issue-59-inter-bar-features.md`      | Inter-bar features plan  |
 
 ---
 
@@ -89,19 +100,6 @@ These approaches have been definitively invalidated:
 3. **TDA velocity for forward RV** - No predictive power
 4. **Microstructure features for alpha** - Noise exceeds signal
 5. **Cross-threshold alignment signals** - Temporal overlap contamination
-
----
-
-## Unexplored Directions
-
-These remain unexplored but are **operational** (not predictive):
-
-| Direction         | Rationale                                      | Status     |
-| ----------------- | ---------------------------------------------- | ---------- |
-| Execution quality | Bar timing for optimal order placement         | UNEXPLORED |
-| Market making     | Microstructure for spread/inventory management | UNEXPLORED |
-
-**Note**: These are not "ODD robust MULTI-FACTOR patterns" as per the encouraged guidance. They are operational use cases that don't require directional prediction.
 
 ---
 
@@ -118,23 +116,23 @@ These remain unexplored but are **operational** (not predictive):
 
 ## Session Handoff Notes
 
+If continuing Issue #59:
+
+1. Phase 1 (Rust core) is complete - 73 tests in interbar.rs pass
+2. Next: Integrate `TradeHistory` into `RangeBarProcessor::process_trade()`
+3. Plan file has detailed pseudocode for Phase 2-4
+
 If continuing pattern research:
 
 1. **DO NOT** retry invalidated approaches
 2. The methodology is sound - the finding is genuinely negative
 3. 10 approaches exhausted = research is complete
-4. Focus on operational use cases if any research continues
-
-If working on other features:
-
-1. Range bar generation is production-ready
-2. Microstructure features work correctly
-3. ClickHouse caching is fully operational
 
 ---
 
 ## References
 
 - Root hub: [CLAUDE.md](/CLAUDE.md)
+- Crates: [crates/CLAUDE.md](/crates/CLAUDE.md)
 - Research index: [docs/research/INDEX.md](/docs/research/INDEX.md)
-- Audit methodology: [docs/research/adversarial-audit-methodology.md](/docs/research/adversarial-audit-methodology.md)
+- Inter-bar plan: [docs/plans/issue-59-inter-bar-features.md](/docs/plans/issue-59-inter-bar-features.md)

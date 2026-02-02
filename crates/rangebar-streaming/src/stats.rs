@@ -555,6 +555,23 @@ mod tests {
             aggression_ratio: 0.0,
             aggregation_density_f64: 0.0,
             turnover_imbalance: 0.0,
+            // Inter-bar features (Issue #59)
+            lookback_trade_count: None,
+            lookback_ofi: None,
+            lookback_duration_us: None,
+            lookback_intensity: None,
+            lookback_vwap_raw: None,
+            lookback_vwap_position: None,
+            lookback_count_imbalance: None,
+            lookback_kyle_lambda: None,
+            lookback_burstiness: None,
+            lookback_volume_skew: None,
+            lookback_volume_kurt: None,
+            lookback_price_range: None,
+            lookback_kaufman_er: None,
+            lookback_garman_klass_vol: None,
+            lookback_hurst: None,
+            lookback_permutation_entropy: None,
         };
 
         engine.process_bar(&bar);

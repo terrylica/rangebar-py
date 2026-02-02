@@ -386,6 +386,23 @@ fn dict_to_rangebar(_py: Python, dict: &Bound<PyDict>) -> PyResult<RangeBar> {
         aggression_ratio: 0.0,
         aggregation_density_f64: 0.0,
         turnover_imbalance: 0.0,
+        // Inter-bar features (Issue #59) - initialized to None
+        lookback_trade_count: None,
+        lookback_ofi: None,
+        lookback_duration_us: None,
+        lookback_intensity: None,
+        lookback_vwap_raw: None,
+        lookback_vwap_position: None,
+        lookback_count_imbalance: None,
+        lookback_kyle_lambda: None,
+        lookback_burstiness: None,
+        lookback_volume_skew: None,
+        lookback_volume_kurt: None,
+        lookback_price_range: None,
+        lookback_kaufman_er: None,
+        lookback_garman_klass_vol: None,
+        lookback_hurst: None,
+        lookback_permutation_entropy: None,
     })
 }
 
@@ -1277,6 +1294,23 @@ mod arrow_bindings {
             aggression_ratio,
             aggregation_density_f64,
             turnover_imbalance,
+            // Inter-bar features (Issue #59) - initialized to None from dict parsing
+            lookback_trade_count: None,
+            lookback_ofi: None,
+            lookback_duration_us: None,
+            lookback_intensity: None,
+            lookback_vwap_raw: None,
+            lookback_vwap_position: None,
+            lookback_count_imbalance: None,
+            lookback_kyle_lambda: None,
+            lookback_burstiness: None,
+            lookback_volume_skew: None,
+            lookback_volume_kurt: None,
+            lookback_price_range: None,
+            lookback_kaufman_er: None,
+            lookback_garman_klass_vol: None,
+            lookback_hurst: None,
+            lookback_permutation_entropy: None,
         })
     }
 }
@@ -2231,17 +2265,17 @@ mod tests {
 
     #[test]
     fn test_processor_creation() {
-        let processor = PyRangeBarProcessor::new(250, None);
+        let processor = PyRangeBarProcessor::new(250, None, true);
         assert!(processor.is_ok());
         assert_eq!(processor.unwrap().threshold_decimal_bps, 250);
     }
 
     #[test]
     fn test_invalid_threshold() {
-        let processor = PyRangeBarProcessor::new(0, None);
+        let processor = PyRangeBarProcessor::new(0, None, true);
         assert!(processor.is_err());
 
-        let processor = PyRangeBarProcessor::new(200_000, None);
+        let processor = PyRangeBarProcessor::new(200_000, None, true);
         assert!(processor.is_err());
     }
 
@@ -2273,18 +2307,18 @@ mod tests {
     #[test]
     fn test_processor_boundary_thresholds() {
         // Test minimum valid threshold (1 = 0.1 basis points)
-        let processor_min = PyRangeBarProcessor::new(1, None);
+        let processor_min = PyRangeBarProcessor::new(1, None, true);
         assert!(processor_min.is_ok());
         assert_eq!(processor_min.unwrap().threshold_decimal_bps, 1);
 
         // Test maximum valid threshold (100_000 = 10,000 basis points = 100%)
-        let processor_max = PyRangeBarProcessor::new(100_000, None);
+        let processor_max = PyRangeBarProcessor::new(100_000, None, true);
         assert!(processor_max.is_ok());
         assert_eq!(processor_max.unwrap().threshold_decimal_bps, 100_000);
 
         // Test common valid thresholds
         for threshold in [10, 100, 250, 500, 1000, 10_000] {
-            let processor = PyRangeBarProcessor::new(threshold, None);
+            let processor = PyRangeBarProcessor::new(threshold, None, true);
             assert!(processor.is_ok(), "Threshold {} should be valid", threshold);
         }
     }
