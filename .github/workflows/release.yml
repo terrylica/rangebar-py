@@ -23,44 +23,33 @@ permissions:
   id-token: write  # Required for OIDC
 
 jobs:
-  build:
-    name: Build wheels
-    runs-on: ${{ matrix.os }}
+  build-wheels:
+    name: Build Wheels
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: macos-14
-            target: aarch64-apple-darwin
-
+          - runner: ubuntu-22.04
+            target: x86_64
+            platform: linux
+          - runner: macos-14
+            target: aarch64
+            platform: macos
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Build wheel
+      - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
-          manylinux: auto
 
-      - name: Upload wheel
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: wheel-${{ matrix.target }}
-          path: dist/*.whl
+          name: wheels-${{ matrix.platform }}
+          path: dist
 
   sdist:
     name: Build source distribution
@@ -84,9 +73,11 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    needs: [build, sdist]
+    needs: [build-wheels, sdist]
     runs-on: ubuntu-latest
     environment: pypi  # Must match PyPI trusted publisher config
+    permissions:
+      id-token: write
 
     steps:
       - name: Download all artifacts
