@@ -8,6 +8,7 @@ use crate::checkpoint::{
 };
 use crate::fixed_point::FixedPoint;
 use crate::interbar::{InterBarConfig, TradeHistory}; // Issue #59
+use crate::intrabar::compute_intra_bar_features; // Issue #59: Intra-bar features
 use crate::types::{AggTrade, RangeBar};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -71,6 +72,14 @@ pub struct RangeBarProcessor {
     /// Controls lookback mode (fixed count or time window) and which feature
     /// tiers to compute. When None, inter-bar features are disabled.
     inter_bar_config: Option<InterBarConfig>,
+
+    /// Enable intra-bar feature computation (Issue #59)
+    ///
+    /// When true, the processor accumulates trades during bar construction
+    /// and computes 22 features from trades WITHIN each bar at bar close.
+    /// Features include ITH (Investment Time Horizon), statistical, and
+    /// complexity metrics. When false, all intra_* fields are None.
+    include_intra_bar_features: bool,
 }
 
 impl RangeBarProcessor {
@@ -139,8 +148,9 @@ impl RangeBarProcessor {
             resumed_from_checkpoint: false,
             prevent_same_timestamp_close,
             defer_open: false,
-            trade_history: None,      // Issue #59: disabled by default
-            inter_bar_config: None,   // Issue #59: disabled by default
+            trade_history: None,              // Issue #59: disabled by default
+            inter_bar_config: None,           // Issue #59: disabled by default
+            include_intra_bar_features: false, // Issue #59: disabled by default
         })
     }
 
@@ -184,6 +194,35 @@ impl RangeBarProcessor {
         self.inter_bar_config.is_some()
     }
 
+    /// Enable intra-bar feature computation (Issue #59)
+    ///
+    /// When enabled, the processor accumulates trades during bar construction
+    /// and computes 22 features from trades WITHIN each bar at bar close:
+    /// - 8 ITH features (Investment Time Horizon)
+    /// - 12 statistical features (OFI, intensity, Kyle lambda, etc.)
+    /// - 2 complexity features (Hurst exponent, permutation entropy)
+    ///
+    /// # Memory Note
+    ///
+    /// Trades are accumulated per-bar and freed when the bar closes.
+    /// Typical 1000 dbps bar: ~50-500 trades, ~2-24 KB overhead.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let processor = RangeBarProcessor::new(1000)?
+    ///     .with_intra_bar_features();
+    /// ```
+    pub fn with_intra_bar_features(mut self) -> Self {
+        self.include_intra_bar_features = true;
+        self
+    }
+
+    /// Check if intra-bar features are enabled
+    pub fn intra_bar_enabled(&self) -> bool {
+        self.include_intra_bar_features
+    }
+
     /// Process a single trade and return completed bar if any
     ///
     /// Maintains internal state for streaming use case. State persists across calls
@@ -221,8 +260,11 @@ impl RangeBarProcessor {
         // This matches the batch path's defer_open semantics - the breaching trade
         // closes the current bar, and the NEXT trade opens the new bar.
         if self.defer_open {
-            self.current_bar_state =
-                Some(RangeBarState::new(&trade, self.threshold_decimal_bps));
+            self.current_bar_state = Some(if self.include_intra_bar_features {
+                RangeBarState::new_with_trade_accumulation(&trade, self.threshold_decimal_bps)
+            } else {
+                RangeBarState::new(&trade, self.threshold_decimal_bps)
+            });
             self.defer_open = false;
             return Ok(None);
         }
@@ -230,11 +272,19 @@ impl RangeBarProcessor {
         match &mut self.current_bar_state {
             None => {
                 // First trade - initialize new bar
-                self.current_bar_state =
-                    Some(RangeBarState::new(&trade, self.threshold_decimal_bps));
+                self.current_bar_state = Some(if self.include_intra_bar_features {
+                    RangeBarState::new_with_trade_accumulation(&trade, self.threshold_decimal_bps)
+                } else {
+                    RangeBarState::new(&trade, self.threshold_decimal_bps)
+                });
                 Ok(None)
             }
             Some(bar_state) => {
+                // Issue #59: Accumulate trade for intra-bar features (before breach check)
+                if self.include_intra_bar_features {
+                    bar_state.accumulate_trade(&trade);
+                }
+
                 // Check for threshold breach
                 let price_breaches = bar_state.bar.is_breach(
                     trade.price,
@@ -266,6 +316,13 @@ impl RangeBarProcessor {
                     if let Some(ref history) = self.trade_history {
                         let inter_bar_features = history.compute_features(bar_state.bar.open_time);
                         bar_state.bar.set_inter_bar_features(&inter_bar_features);
+                    }
+
+                    // Issue #59: Compute intra-bar features from accumulated trades
+                    if self.include_intra_bar_features {
+                        let intra_bar_features =
+                            compute_intra_bar_features(&bar_state.accumulated_trades);
+                        bar_state.bar.set_intra_bar_features(&intra_bar_features);
                     }
 
                     let completed_bar = bar_state.bar.clone();
@@ -394,7 +451,11 @@ impl RangeBarProcessor {
 
             if defer_open {
                 // Previous bar closed, this agg_record opens new bar
-                current_bar = Some(RangeBarState::new(agg_record, self.threshold_decimal_bps));
+                current_bar = Some(if self.include_intra_bar_features {
+                    RangeBarState::new_with_trade_accumulation(agg_record, self.threshold_decimal_bps)
+                } else {
+                    RangeBarState::new(agg_record, self.threshold_decimal_bps)
+                });
                 defer_open = false;
                 continue;
             }
@@ -402,9 +463,18 @@ impl RangeBarProcessor {
             match current_bar {
                 None => {
                     // First bar initialization
-                    current_bar = Some(RangeBarState::new(agg_record, self.threshold_decimal_bps));
+                    current_bar = Some(if self.include_intra_bar_features {
+                        RangeBarState::new_with_trade_accumulation(agg_record, self.threshold_decimal_bps)
+                    } else {
+                        RangeBarState::new(agg_record, self.threshold_decimal_bps)
+                    });
                 }
                 Some(ref mut bar_state) => {
+                    // Issue #59: Accumulate trade for intra-bar features (before breach check)
+                    if self.include_intra_bar_features {
+                        bar_state.accumulate_trade(agg_record);
+                    }
+
                     // Check if this AggTrade record breaches the threshold
                     let price_breaches = bar_state.bar.is_breach(
                         agg_record.price,
@@ -440,6 +510,13 @@ impl RangeBarProcessor {
                             bar_state.bar.set_inter_bar_features(&inter_bar_features);
                         }
 
+                        // Issue #59: Compute intra-bar features from accumulated trades
+                        if self.include_intra_bar_features {
+                            let intra_bar_features =
+                                compute_intra_bar_features(&bar_state.accumulated_trades);
+                            bar_state.bar.set_intra_bar_features(&intra_bar_features);
+                        }
+
                         bars.push(bar_state.bar.clone());
                         current_bar = None;
                         defer_open = true; // Next record will open new bar
@@ -467,6 +544,13 @@ impl RangeBarProcessor {
                 if let Some(ref history) = self.trade_history {
                     let inter_bar_features = history.compute_features(bar_state.bar.open_time);
                     bar_state.bar.set_inter_bar_features(&inter_bar_features);
+                }
+
+                // Issue #59: Compute intra-bar features from accumulated trades
+                if self.include_intra_bar_features {
+                    let intra_bar_features =
+                        compute_intra_bar_features(&bar_state.accumulated_trades);
+                    bar_state.bar.set_intra_bar_features(&intra_bar_features);
                 }
 
                 bars.push(bar_state.bar);
@@ -545,11 +629,14 @@ impl RangeBarProcessor {
         }
 
         // Restore bar state if there's an incomplete bar
+        // Note: accumulated_trades is reset to empty - intra-bar features won't be
+        // accurate for bars resumed from checkpoint (partial trade history lost)
         let current_bar_state = match (checkpoint.incomplete_bar, checkpoint.thresholds) {
             (Some(bar), Some((upper, lower))) => Some(RangeBarState {
                 bar,
                 upper_threshold: upper,
                 lower_threshold: lower,
+                accumulated_trades: Vec::new(), // Lost on checkpoint - features may be partial
             }),
             _ => None,
         };
@@ -564,8 +651,9 @@ impl RangeBarProcessor {
             resumed_from_checkpoint: true, // Signal to continue from existing bar state
             prevent_same_timestamp_close: checkpoint.prevent_same_timestamp_close,
             defer_open: checkpoint.defer_open, // Issue #46: Restore deferred open state
-            trade_history: None,      // Issue #59: Must be re-enabled after restore
-            inter_bar_config: None,   // Issue #59: Must be re-enabled after restore
+            trade_history: None,               // Issue #59: Must be re-enabled after restore
+            inter_bar_config: None,            // Issue #59: Must be re-enabled after restore
+            include_intra_bar_features: false, // Issue #59: Must be re-enabled after restore
         })
     }
 
@@ -694,6 +782,13 @@ struct RangeBarState {
 
     /// Lower breach threshold (FIXED from bar open)
     pub lower_threshold: FixedPoint,
+
+    /// Accumulated trades for intra-bar feature computation (Issue #59)
+    ///
+    /// When intra-bar features are enabled, trades are accumulated here
+    /// during bar construction and used to compute features at bar close.
+    /// Cleared when bar closes to free memory.
+    pub accumulated_trades: Vec<AggTrade>,
 }
 
 impl RangeBarState {
@@ -709,7 +804,29 @@ impl RangeBarState {
             bar,
             upper_threshold,
             lower_threshold,
+            accumulated_trades: Vec::new(),
         }
+    }
+
+    /// Create new range bar state with intra-bar feature accumulation
+    fn new_with_trade_accumulation(trade: &AggTrade, threshold_decimal_bps: u32) -> Self {
+        let bar = RangeBar::new(trade);
+
+        // Compute FIXED thresholds from opening price
+        let (upper_threshold, lower_threshold) =
+            bar.open.compute_range_thresholds(threshold_decimal_bps);
+
+        Self {
+            bar,
+            upper_threshold,
+            lower_threshold,
+            accumulated_trades: vec![trade.clone()],
+        }
+    }
+
+    /// Accumulate a trade for intra-bar feature computation
+    fn accumulate_trade(&mut self, trade: &AggTrade) {
+        self.accumulated_trades.push(trade.clone());
     }
 }
 
@@ -1645,6 +1762,30 @@ impl ExportRangeBarProcessor {
                 lookback_garman_klass_vol: None,
                 lookback_hurst: None,
                 lookback_permutation_entropy: None,
+
+                // Intra-bar features (Issue #59) - not computed in ExportRangeBarProcessor
+                intra_bull_epoch_density: None,
+                intra_bear_epoch_density: None,
+                intra_bull_excess_gain: None,
+                intra_bear_excess_gain: None,
+                intra_bull_cv: None,
+                intra_bear_cv: None,
+                intra_max_drawdown: None,
+                intra_max_runup: None,
+                intra_trade_count: None,
+                intra_ofi: None,
+                intra_duration_us: None,
+                intra_intensity: None,
+                intra_vwap_position: None,
+                intra_count_imbalance: None,
+                intra_kyle_lambda: None,
+                intra_burstiness: None,
+                intra_volume_skew: None,
+                intra_volume_kurt: None,
+                intra_kaufman_er: None,
+                intra_garman_klass_vol: None,
+                intra_hurst: None,
+                intra_permutation_entropy: None,
             };
 
             // Compute microstructure features at bar finalization (Issue #25)
@@ -1723,6 +1864,30 @@ impl ExportRangeBarProcessor {
                 lookback_garman_klass_vol: None,
                 lookback_hurst: None,
                 lookback_permutation_entropy: None,
+
+                // Intra-bar features (Issue #59) - not computed in ExportRangeBarProcessor
+                intra_bull_epoch_density: None,
+                intra_bear_epoch_density: None,
+                intra_bull_excess_gain: None,
+                intra_bear_excess_gain: None,
+                intra_bull_cv: None,
+                intra_bear_cv: None,
+                intra_max_drawdown: None,
+                intra_max_runup: None,
+                intra_trade_count: None,
+                intra_ofi: None,
+                intra_duration_us: None,
+                intra_intensity: None,
+                intra_vwap_position: None,
+                intra_count_imbalance: None,
+                intra_kyle_lambda: None,
+                intra_burstiness: None,
+                intra_volume_skew: None,
+                intra_volume_kurt: None,
+                intra_kaufman_er: None,
+                intra_garman_klass_vol: None,
+                intra_hurst: None,
+                intra_permutation_entropy: None,
             };
             // Compute microstructure features for incomplete bar (Issue #25)
             bar.compute_microstructure_features();

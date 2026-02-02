@@ -13,7 +13,8 @@
 
 pub mod checkpoint;
 pub mod fixed_point;
-pub mod interbar; // Issue #59: Inter-bar microstructure features
+pub mod interbar; // Issue #59: Inter-bar microstructure features (lookback window BEFORE bar)
+pub mod intrabar; // Issue #59: Intra-bar features (trades WITHIN bar)
 pub mod processor;
 pub mod timestamp;
 pub mod types;
@@ -33,6 +34,7 @@ pub mod test_data_loader;
 pub use checkpoint::{AnomalySummary, Checkpoint, CheckpointError, PositionVerification};
 pub use fixed_point::FixedPoint;
 pub use interbar::{InterBarConfig, InterBarFeatures, LookbackMode, TradeHistory, TradeSnapshot};
+pub use intrabar::{compute_intra_bar_features, IntraBarFeatures};
 pub use processor::{ExportRangeBarProcessor, ProcessingError, RangeBarProcessor};
 pub use timestamp::{
     create_aggtrade_with_normalized_timestamp, normalize_timestamp, validate_timestamp,

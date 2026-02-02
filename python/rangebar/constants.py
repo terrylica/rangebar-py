@@ -99,6 +99,49 @@ INTER_BAR_FEATURE_COLUMNS: tuple[str, ...] = (
 )
 
 # =============================================================================
+# Intra-Bar Feature Columns (Issue #59, v12.0+)
+# =============================================================================
+# Computed from trades WITHIN each bar (from open_time to close_time).
+# All features are Optional - None when intra-bar features disabled.
+#
+# Features include:
+# - 8 ITH (Investment Time Horizon) features
+# - 12 statistical features
+# - 2 complexity features (require 60+ trades)
+#
+# IMPORTANT: Keep this list in sync with:
+# - crates/rangebar-core/src/intrabar/features.rs (Rust feature computation)
+# - crates/rangebar-core/src/types.rs (RangeBar struct fields)
+
+INTRA_BAR_FEATURE_COLUMNS: tuple[str, ...] = (
+    # ITH features (8 features) - Investment Time Horizon from trading-fitness
+    "intra_bull_epoch_density",
+    "intra_bear_epoch_density",
+    "intra_bull_excess_gain",
+    "intra_bear_excess_gain",
+    "intra_bull_cv",
+    "intra_bear_cv",
+    "intra_max_drawdown",
+    "intra_max_runup",
+    # Statistical features (12 features)
+    "intra_trade_count",
+    "intra_ofi",
+    "intra_duration_us",
+    "intra_intensity",
+    "intra_vwap_position",
+    "intra_count_imbalance",
+    "intra_kyle_lambda",
+    "intra_burstiness",
+    "intra_volume_skew",
+    "intra_volume_kurt",
+    "intra_kaufman_er",
+    "intra_garman_klass_vol",
+    # Complexity features (2 features, require 60+ trades)
+    "intra_hurst",
+    "intra_permutation_entropy",
+)
+
+# =============================================================================
 # Tier-1 Symbols (high-liquidity, available on all Binance markets)
 # =============================================================================
 
@@ -212,11 +255,13 @@ EXCHANGE_SESSION_COLUMNS: tuple[str, ...] = (
 # =============================================================================
 # All Optional Columns (for cache operations)
 # =============================================================================
-# Union of microstructure + exchange session columns
+# Union of microstructure + exchange session + inter-bar + intra-bar columns
 
 ALL_OPTIONAL_COLUMNS: tuple[str, ...] = (
     *MICROSTRUCTURE_COLUMNS,
     *EXCHANGE_SESSION_COLUMNS,
+    *INTER_BAR_FEATURE_COLUMNS,
+    *INTRA_BAR_FEATURE_COLUMNS,
 )
 
 # =============================================================================

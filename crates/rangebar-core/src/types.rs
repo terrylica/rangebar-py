@@ -259,6 +259,101 @@ pub struct RangeBar {
     /// Permutation entropy (normalized): [0, 1]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lookback_permutation_entropy: Option<f64>,
+
+    // === INTRA-BAR FEATURES (Issue #59) ===
+    // Computed from trades WITHIN each bar (open_time to close_time).
+    // All fields are Option<T> to indicate when computation wasn't possible.
+
+    // --- ITH Features (8) - All bounded [0, 1] ---
+    /// Bull epoch density: sigmoid(epochs/trade_count, 0.5, 10)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_bull_epoch_density: Option<f64>,
+
+    /// Bear epoch density: sigmoid(epochs/trade_count, 0.5, 10)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_bear_epoch_density: Option<f64>,
+
+    /// Bull excess gain (sum): tanh-normalized to [0, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_bull_excess_gain: Option<f64>,
+
+    /// Bear excess gain (sum): tanh-normalized to [0, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_bear_excess_gain: Option<f64>,
+
+    /// Bull intervals CV: sigmoid-normalized to [0, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_bull_cv: Option<f64>,
+
+    /// Bear intervals CV: sigmoid-normalized to [0, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_bear_cv: Option<f64>,
+
+    /// Max drawdown within bar: [0, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_max_drawdown: Option<f64>,
+
+    /// Max runup within bar: [0, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_max_runup: Option<f64>,
+
+    // --- Statistical Features (12) ---
+    /// Number of trades within the bar
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_trade_count: Option<u32>,
+
+    /// Order Flow Imbalance within bar: [-1, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_ofi: Option<f64>,
+
+    /// Duration of bar in microseconds
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_duration_us: Option<i64>,
+
+    /// Trade intensity: trades per second
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_intensity: Option<f64>,
+
+    /// VWAP position within price range: [0, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_vwap_position: Option<f64>,
+
+    /// Count imbalance: (buy_count - sell_count) / total_count, [-1, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_count_imbalance: Option<f64>,
+
+    /// Kyle's Lambda proxy (normalized)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_kyle_lambda: Option<f64>,
+
+    /// Burstiness (Goh-Barabási): [-1, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_burstiness: Option<f64>,
+
+    /// Volume skewness
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_volume_skew: Option<f64>,
+
+    /// Volume excess kurtosis
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_volume_kurt: Option<f64>,
+
+    /// Kaufman Efficiency Ratio: [0, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_kaufman_er: Option<f64>,
+
+    /// Garman-Klass volatility estimator
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_garman_klass_vol: Option<f64>,
+
+    // --- Complexity Features (2) ---
+    /// Hurst exponent via DFA (requires >= 64 trades): [0, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_hurst: Option<f64>,
+
+    /// Permutation entropy (requires >= 60 trades): [0, 1]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intra_permutation_entropy: Option<f64>,
 }
 
 impl RangeBar {
@@ -342,6 +437,31 @@ impl RangeBar {
             lookback_garman_klass_vol: None,
             lookback_hurst: None,
             lookback_permutation_entropy: None,
+
+            // Intra-bar features (Issue #59) - computed from trades within bar
+            // All None until explicitly set via set_intra_bar_features()
+            intra_bull_epoch_density: None,
+            intra_bear_epoch_density: None,
+            intra_bull_excess_gain: None,
+            intra_bear_excess_gain: None,
+            intra_bull_cv: None,
+            intra_bear_cv: None,
+            intra_max_drawdown: None,
+            intra_max_runup: None,
+            intra_trade_count: None,
+            intra_ofi: None,
+            intra_duration_us: None,
+            intra_intensity: None,
+            intra_vwap_position: None,
+            intra_count_imbalance: None,
+            intra_kyle_lambda: None,
+            intra_burstiness: None,
+            intra_volume_skew: None,
+            intra_volume_kurt: None,
+            intra_kaufman_er: None,
+            intra_garman_klass_vol: None,
+            intra_hurst: None,
+            intra_permutation_entropy: None,
         }
     }
 
@@ -576,6 +696,41 @@ impl RangeBar {
         self.lookback_garman_klass_vol = features.lookback_garman_klass_vol;
         self.lookback_hurst = features.lookback_hurst;
         self.lookback_permutation_entropy = features.lookback_permutation_entropy;
+    }
+
+    /// Set intra-bar features from computed IntraBarFeatures struct (Issue #59)
+    ///
+    /// This method is called when a bar is finalized with intra-bar feature
+    /// computation enabled. The features are computed from trades WITHIN the bar,
+    /// from open_time to close_time.
+    pub fn set_intra_bar_features(&mut self, features: &crate::intrabar::IntraBarFeatures) {
+        // ITH features (8)
+        self.intra_bull_epoch_density = features.intra_bull_epoch_density;
+        self.intra_bear_epoch_density = features.intra_bear_epoch_density;
+        self.intra_bull_excess_gain = features.intra_bull_excess_gain;
+        self.intra_bear_excess_gain = features.intra_bear_excess_gain;
+        self.intra_bull_cv = features.intra_bull_cv;
+        self.intra_bear_cv = features.intra_bear_cv;
+        self.intra_max_drawdown = features.intra_max_drawdown;
+        self.intra_max_runup = features.intra_max_runup;
+
+        // Statistical features (12)
+        self.intra_trade_count = features.intra_trade_count;
+        self.intra_ofi = features.intra_ofi;
+        self.intra_duration_us = features.intra_duration_us;
+        self.intra_intensity = features.intra_intensity;
+        self.intra_vwap_position = features.intra_vwap_position;
+        self.intra_count_imbalance = features.intra_count_imbalance;
+        self.intra_kyle_lambda = features.intra_kyle_lambda;
+        self.intra_burstiness = features.intra_burstiness;
+        self.intra_volume_skew = features.intra_volume_skew;
+        self.intra_volume_kurt = features.intra_volume_kurt;
+        self.intra_kaufman_er = features.intra_kaufman_er;
+        self.intra_garman_klass_vol = features.intra_garman_klass_vol;
+
+        // Complexity features (2)
+        self.intra_hurst = features.intra_hurst;
+        self.intra_permutation_entropy = features.intra_permutation_entropy;
     }
 }
 

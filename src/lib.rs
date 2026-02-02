@@ -155,6 +155,35 @@ fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject> {
     dict.set_item("lookback_hurst", bar.lookback_hurst)?;
     dict.set_item("lookback_permutation_entropy", bar.lookback_permutation_entropy)?;
 
+    // Intra-bar features (Issue #59) - computed from trades WITHIN each bar
+    // ITH features (Investment Time Horizon)
+    dict.set_item("intra_bull_epoch_density", bar.intra_bull_epoch_density)?;
+    dict.set_item("intra_bear_epoch_density", bar.intra_bear_epoch_density)?;
+    dict.set_item("intra_bull_excess_gain", bar.intra_bull_excess_gain)?;
+    dict.set_item("intra_bear_excess_gain", bar.intra_bear_excess_gain)?;
+    dict.set_item("intra_bull_cv", bar.intra_bull_cv)?;
+    dict.set_item("intra_bear_cv", bar.intra_bear_cv)?;
+    dict.set_item("intra_max_drawdown", bar.intra_max_drawdown)?;
+    dict.set_item("intra_max_runup", bar.intra_max_runup)?;
+
+    // Statistical features
+    dict.set_item("intra_trade_count", bar.intra_trade_count)?;
+    dict.set_item("intra_ofi", bar.intra_ofi)?;
+    dict.set_item("intra_duration_us", bar.intra_duration_us)?;
+    dict.set_item("intra_intensity", bar.intra_intensity)?;
+    dict.set_item("intra_vwap_position", bar.intra_vwap_position)?;
+    dict.set_item("intra_count_imbalance", bar.intra_count_imbalance)?;
+    dict.set_item("intra_kyle_lambda", bar.intra_kyle_lambda)?;
+    dict.set_item("intra_burstiness", bar.intra_burstiness)?;
+    dict.set_item("intra_volume_skew", bar.intra_volume_skew)?;
+    dict.set_item("intra_volume_kurt", bar.intra_volume_kurt)?;
+    dict.set_item("intra_kaufman_er", bar.intra_kaufman_er)?;
+    dict.set_item("intra_garman_klass_vol", bar.intra_garman_klass_vol)?;
+
+    // Complexity features
+    dict.set_item("intra_hurst", bar.intra_hurst)?;
+    dict.set_item("intra_permutation_entropy", bar.intra_permutation_entropy)?;
+
     Ok(dict.into())
 }
 
@@ -426,6 +455,29 @@ fn dict_to_rangebar(_py: Python, dict: &Bound<PyDict>) -> PyResult<RangeBar> {
         lookback_garman_klass_vol: None,
         lookback_hurst: None,
         lookback_permutation_entropy: None,
+        // Intra-bar features (Issue #59) - initialized to None
+        intra_bull_epoch_density: None,
+        intra_bear_epoch_density: None,
+        intra_bull_excess_gain: None,
+        intra_bear_excess_gain: None,
+        intra_bull_cv: None,
+        intra_bear_cv: None,
+        intra_max_drawdown: None,
+        intra_max_runup: None,
+        intra_trade_count: None,
+        intra_ofi: None,
+        intra_duration_us: None,
+        intra_intensity: None,
+        intra_vwap_position: None,
+        intra_count_imbalance: None,
+        intra_kyle_lambda: None,
+        intra_burstiness: None,
+        intra_volume_skew: None,
+        intra_volume_kurt: None,
+        intra_kaufman_er: None,
+        intra_garman_klass_vol: None,
+        intra_hurst: None,
+        intra_permutation_entropy: None,
     })
 }
 
@@ -540,16 +592,20 @@ impl PyRangeBarProcessor {
     ///         a lookback window of this many trades BEFORE each bar opens. Recommended
     ///         values: 100-500. Set to None (default) to disable inter-bar features.
     ///         (Issue #59)
+    ///     `include_intra_bar_features`: If True, enables intra-bar features computed from
+    ///         trades WITHIN each bar. Adds 22 features including ITH (Investment Time
+    ///         Horizon), statistical, and complexity metrics. Default: False (Issue #59)
     ///
     /// Raises:
     ///     `ValueError`: If threshold is out of range [1, `100_000`]
     #[new]
-    #[pyo3(signature = (threshold_decimal_bps, symbol = None, prevent_same_timestamp_close = true, inter_bar_lookback_count = None))]
+    #[pyo3(signature = (threshold_decimal_bps, symbol = None, prevent_same_timestamp_close = true, inter_bar_lookback_count = None, include_intra_bar_features = false))]
     fn new(
         threshold_decimal_bps: u32,
         symbol: Option<String>,
         prevent_same_timestamp_close: bool,
         inter_bar_lookback_count: Option<usize>,
+        include_intra_bar_features: bool,
     ) -> PyResult<Self> {
         // Issue #59: Build processor with optional inter-bar feature config
         let mut processor =
@@ -563,6 +619,11 @@ impl PyRangeBarProcessor {
                 ..Default::default()
             };
             processor = processor.with_inter_bar_config(config);
+        }
+
+        // Issue #59: Enable intra-bar features if requested
+        if include_intra_bar_features {
+            processor = processor.with_intra_bar_features();
         }
 
         Ok(Self {
@@ -1349,6 +1410,29 @@ mod arrow_bindings {
             lookback_garman_klass_vol: None,
             lookback_hurst: None,
             lookback_permutation_entropy: None,
+            // Intra-bar features (Issue #59) - initialized to None from dict parsing
+            intra_bull_epoch_density: None,
+            intra_bear_epoch_density: None,
+            intra_bull_excess_gain: None,
+            intra_bear_excess_gain: None,
+            intra_bull_cv: None,
+            intra_bear_cv: None,
+            intra_max_drawdown: None,
+            intra_max_runup: None,
+            intra_trade_count: None,
+            intra_ofi: None,
+            intra_duration_us: None,
+            intra_intensity: None,
+            intra_vwap_position: None,
+            intra_count_imbalance: None,
+            intra_kyle_lambda: None,
+            intra_burstiness: None,
+            intra_volume_skew: None,
+            intra_volume_kurt: None,
+            intra_kaufman_er: None,
+            intra_garman_klass_vol: None,
+            intra_hurst: None,
+            intra_permutation_entropy: None,
         })
     }
 }
