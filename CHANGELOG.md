@@ -1,3 +1,12 @@
+## [11.6.1](https://github.com/terrylica/rangebar-py/compare/v11.6.0...v11.6.1) (2026-02-02)
+
+
+### Bug Fixes
+
+* **ci:** correct rust-toolchain action name ([fa252ce](https://github.com/terrylica/rangebar-py/commit/fa252ceeb1b2f3d4216fceb3e0eaf3fbdc4bed6a))
+* **ci:** simplify workflow to match working configuration ([5128fd6](https://github.com/terrylica/rangebar-py/commit/5128fd6a5ade367dbde371c186de0512095c0116))
+* **resource:** make auto_memory_guard() multiprocessing-safe (Issue [#61](https://github.com/terrylica/rangebar-py/issues/61)) ([b55057a](https://github.com/terrylica/rangebar-py/commit/b55057afb3a10f530ec8d1ac1520d81169ad5fcc))
+
 # [11.6.0](https://github.com/terrylica/rangebar-py/compare/v11.5.0...v11.6.0) (2026-02-02)
 
 
