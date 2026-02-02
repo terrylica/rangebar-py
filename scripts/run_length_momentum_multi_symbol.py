@@ -5,6 +5,7 @@ multiple symbols using existing cached 250 dbps data.
 
 Available Data on littleblack (as of 2026-02-01):
 - BTCUSDT @ 250 dbps: 25K bars (2024-01 to 2026-01)
+- ETHUSDT @ 250 dbps: 148K bars (2022-01 to 2024-12)
 - SOLUSDT @ 250 dbps: 700K bars (2021-12 to 2026-01)
 
 Usage:
@@ -154,12 +155,17 @@ def main() -> None:
     print("Test: Does this hold across different symbols?")
     print()
 
-    # Symbols with cached 250 dbps data on littleblack
+    # Symbols with cached 250 dbps data on littleblack (as of 2026-02-01)
     symbols = [
         ("BTCUSDT", 250, [
             ("2024-01-01", "2024-06-30", "2024-H1"),
             ("2024-07-01", "2024-12-31", "2024-H2"),
             ("2025-01-01", "2025-12-31", "2025"),
+        ]),
+        ("ETHUSDT", 250, [
+            ("2022-01-01", "2022-12-31", "2022"),
+            ("2023-01-01", "2023-12-31", "2023"),
+            ("2024-01-01", "2024-12-31", "2024"),
         ]),
         ("SOLUSDT", 250, [
             ("2022-01-01", "2022-12-31", "2022"),
