@@ -1,3 +1,11 @@
+# [11.6.0](https://github.com/terrylica/rangebar-py/compare/v11.5.0...v11.6.0) (2026-02-02)
+
+
+### Features
+
+* **core:** add inter-bar microstructure features (Issue [#59](https://github.com/terrylica/rangebar-py/issues/59) Phase 1) ([dd27556](https://github.com/terrylica/rangebar-py/commit/dd275565fbd093b6d5647e51c72548ef4be1e715))
+* **inter-bar:** add inter-bar feature computation (Issue [#59](https://github.com/terrylica/rangebar-py/issues/59)) ([94dbf64](https://github.com/terrylica/rangebar-py/commit/94dbf647f3ba524fb818b4927080afc2fc9b7ea5))
+
 # [11.5.0](https://github.com/terrylica/rangebar-py/compare/v11.4.0...v11.5.0) (2026-02-02)
 
 
