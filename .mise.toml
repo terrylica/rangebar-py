@@ -534,6 +534,9 @@ set -euo pipefail
 
 echo "=== SYNC ==="
 
+# Track which SSH method worked for consistent fetch at end
+SSH_FALLBACK_USED=false
+
 # Git SSH with automatic port fallback (443 → 22)
 # Port 443 is configured in ~/.ssh/config but can timeout on some networks
 git_ssh_with_fallback() {
@@ -545,6 +548,7 @@ git_ssh_with_fallback() {
     fi
 
     echo "WARN: Default SSH timed out, falling back to port 22..."
+    SSH_FALLBACK_USED=true
 
     # Fallback: Direct port 22 connection
     export GIT_SSH_COMMAND='ssh -p 22 -i ~/.ssh/id_ed25519_terrylica -o IdentitiesOnly=yes -o ConnectTimeout=10'
@@ -561,6 +565,14 @@ fi
 # Sync with fallback
 git_ssh_with_fallback "pull --rebase origin main" || { echo "FAIL: Pull failed"; exit 1; }
 git_ssh_with_fallback "push origin main" || { echo "FAIL: Push failed"; exit 1; }
+
+# CRITICAL: Update remote tracking ref so statusline shows correct state
+# When using GIT_SSH_COMMAND fallback, the tracking ref may not update properly
+if [ "$SSH_FALLBACK_USED" = true ]; then
+    echo "Updating remote tracking ref..."
+    GIT_SSH_COMMAND='ssh -p 22 -i ~/.ssh/id_ed25519_terrylica -o IdentitiesOnly=yes -o ConnectTimeout=10' \
+        git fetch origin main:refs/remotes/origin/main 2>/dev/null || true
+fi
 
 # Unset to avoid polluting subsequent commands
 unset GIT_SSH_COMMAND
@@ -1069,6 +1081,30 @@ rm -rf "$BUILD_LOCK_DIR"/*.lock* 2>/dev/null || true
 rm -rf "$BUILD_LOCK_DIR"/*.lock.d 2>/dev/null || true
 echo "OK: Locks cleared"
 ls -la "$BUILD_LOCK_DIR" 2>/dev/null || echo "Lock directory empty"
+"""
+
+[tasks."diag:fetch"]
+description = "Fetch and update remote tracking refs (fixes statusline ↑/↓ mismatch)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Fetching with SSH fallback..."
+
+# Try default first, fallback to port 22
+if timeout 15 git fetch origin 2>/dev/null; then
+    echo "OK: Fetched via default SSH"
+else
+    echo "WARN: Default SSH timed out, using port 22..."
+    GIT_SSH_COMMAND='ssh -p 22 -i ~/.ssh/id_ed25519_terrylica -o IdentitiesOnly=yes -o ConnectTimeout=10' \
+        git fetch origin main:refs/remotes/origin/main
+    echo "OK: Fetched via port 22"
+fi
+
+# Show current state
+echo ""
+echo "Local vs Remote:"
+git log --oneline origin/main..HEAD 2>/dev/null | head -5 || echo "  (in sync)"
 """
 
 [tasks."diag:ssh-fix"]
