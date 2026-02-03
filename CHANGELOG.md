@@ -1,3 +1,16 @@
+# [12.1.0](https://github.com/terrylica/rangebar-py/compare/v12.0.2...v12.1.0) (2026-02-03)
+
+
+### Bug Fixes
+
+* **mem:** MEM-012 streaming bar accumulation prevents OOM ([#67](https://github.com/terrylica/rangebar-py/issues/67)) ([6cf640c](https://github.com/terrylica/rangebar-py/commit/6cf640c2264ffdcf75efdb38af935e83b903c6c4))
+* **mise:** update tracking ref after SSH fallback push ([1b4f037](https://github.com/terrylica/rangebar-py/commit/1b4f037c145a0e79f91e4b1121ee9e0586cd6d44))
+
+
+### Features
+
+* **mise:** SSH fallback, PyPI pre-check, diagnostics ([c0533d8](https://github.com/terrylica/rangebar-py/commit/c0533d869a03bfcd11d35eb400682767d93e38cf))
+
 ## [12.0.2](https://github.com/terrylica/rangebar-py/compare/v12.0.1...v12.0.2) (2026-02-03)
 
 
