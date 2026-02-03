@@ -1,3 +1,10 @@
+## [12.1.1](https://github.com/terrylica/rangebar-py/compare/v12.1.0...v12.1.1) (2026-02-03)
+
+
+### Bug Fixes
+
+* **microstructure:** auto-enable v12 features when include_microstructure=True ([9288e2f](https://github.com/terrylica/rangebar-py/commit/9288e2f5bc2f412d81d1954d308cea938d027b48)), closes [#68](https://github.com/terrylica/rangebar-py/issues/68)
+
 # [12.1.0](https://github.com/terrylica/rangebar-py/compare/v12.0.2...v12.1.0) (2026-02-03)
 
 
