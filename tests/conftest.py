@@ -91,7 +91,7 @@ def setup_threshold_env_vars():
         pass
 
 
-def pytest_collection_modifyitems(_config, items):
+def pytest_collection_modifyitems(config, items):
     """Modify test collection to skip heavy tests when not in CI.
 
     Heavy E2E tests that use real market data are only run in CI to avoid
