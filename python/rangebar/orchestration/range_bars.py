@@ -545,11 +545,23 @@ def get_range_bars(
 
         # Process segment (reuse processor for state continuity within segment)
         # Issue #68: Auto-enable v12 features when include_microstructure=True
-        # - inter_bar_lookback_count defaults to 200 (recommended range: 100-500)
-        # - include_intra_bar_features enabled for ITH and statistical features
+        # SSoT: Defaults from mise.toml env vars (RANGEBAR_INTER_BAR_LOOKBACK_COUNT,
+        #       RANGEBAR_INCLUDE_INTRA_BAR_FEATURES)
+        import os
+
         effective_lookback = inter_bar_lookback_count
         if include_microstructure and effective_lookback is None:
-            effective_lookback = 200  # Sensible default for inter-bar features
+            # Read from env (mise SSoT) with fallback
+            effective_lookback = int(
+                os.environ.get("RANGEBAR_INTER_BAR_LOOKBACK_COUNT", "200")
+            )
+
+        # Intra-bar features: auto-enable if microstructure requested
+        # SSoT from mise.toml, defaults to True when include_microstructure=True
+        enable_intra = False
+        if include_microstructure:
+            intra_env = os.environ.get("RANGEBAR_INCLUDE_INTRA_BAR_FEATURES", "true")
+            enable_intra = intra_env.lower() in ("true", "1", "yes")
 
         segment_bars, processor = _process_binance_trades(
             segment_ticks,
@@ -560,7 +572,7 @@ def get_range_bars(
             symbol=symbol,
             prevent_same_timestamp_close=prevent_same_timestamp_close,
             inter_bar_lookback_count=effective_lookback,
-            include_intra_bar_features=include_microstructure,  # Auto-enable
+            include_intra_bar_features=enable_intra,
         )
 
         if segment_bars is not None and not segment_bars.empty:

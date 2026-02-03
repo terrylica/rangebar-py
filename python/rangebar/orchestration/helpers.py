@@ -95,9 +95,19 @@ def _stream_range_bars_binance(
     }[market]
 
     # Issue #68: Auto-enable v12 features when include_microstructure=True
+    # SSoT: Defaults from mise.toml env vars
+    import os
+
     effective_lookback = inter_bar_lookback_count
     if include_microstructure and effective_lookback is None:
-        effective_lookback = 200  # Sensible default for inter-bar features
+        effective_lookback = int(
+            os.environ.get("RANGEBAR_INTER_BAR_LOOKBACK_COUNT", "200")
+        )
+
+    enable_intra = False
+    if include_microstructure:
+        intra_env = os.environ.get("RANGEBAR_INCLUDE_INTRA_BAR_FEATURES", "true")
+        enable_intra = intra_env.lower() in ("true", "1", "yes")
 
     # Create processor with symbol for checkpoint support
     processor = RangeBarProcessor(
@@ -105,7 +115,7 @@ def _stream_range_bars_binance(
         symbol=symbol,
         prevent_same_timestamp_close=prevent_same_timestamp_close,
         inter_bar_lookback_count=effective_lookback,
-        include_intra_bar_features=include_microstructure,  # Auto-enable
+        include_intra_bar_features=enable_intra,
     )
     bar_buffer: list[dict] = []
 

@@ -28,6 +28,19 @@ RANGEBAR_EQUITIES_MIN_THRESHOLD = "100"
 RANGEBAR_UNKNOWN_MIN_THRESHOLD = "1"
 
 # =============================================================================
+# SSoT: Microstructure Feature Defaults (Issue #68)
+# =============================================================================
+# When include_microstructure=True, these defaults are used unless overridden.
+# INTER_BAR_LOOKBACK_COUNT: Trades in lookback window for inter-bar features.
+#   - Recommended: 100-500 (200 is good balance of signal vs compute)
+#   - Set to 0 to disable inter-bar features while keeping intra-bar
+# INCLUDE_INTRA_BAR_FEATURES: Enable ITH + statistical features within bars.
+#   - "true" enables 22 intra_* columns (ITH, complexity, statistical)
+#   - "false" disables (use if you only need lookback_* features)
+RANGEBAR_INTER_BAR_LOOKBACK_COUNT = "200"
+RANGEBAR_INCLUDE_INTRA_BAR_FEATURES = "true"
+
+# =============================================================================
 # GitHub Account Isolation
 # =============================================================================
 GH_ACCOUNT = "terrylica"

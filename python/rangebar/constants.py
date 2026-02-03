@@ -11,6 +11,12 @@ SSoT (Single Source of Truth) for:
 - _CRYPTO_BASES: Known crypto base symbols for asset class detection
 - _FOREX_CURRENCIES: Known forex currencies for asset class detection
 - MEM_GUARDS: Memory guard registry (Issue #49)
+
+Environment Variable SSoT (from .mise.toml):
+- RANGEBAR_CRYPTO_MIN_THRESHOLD: Minimum threshold for crypto (1000 dbps)
+- RANGEBAR_FOREX_MIN_THRESHOLD: Minimum threshold for forex (50 dbps)
+- RANGEBAR_INTER_BAR_LOOKBACK_COUNT: Lookback for inter-bar features (200)
+- RANGEBAR_INCLUDE_INTRA_BAR_FEATURES: Auto-enable intra-bar features (true)
 """
 
 from __future__ import annotations
