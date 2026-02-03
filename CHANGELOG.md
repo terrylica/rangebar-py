@@ -1,3 +1,28 @@
+# [12.0.0](https://github.com/terrylica/rangebar-py/compare/v11.7.0...v12.0.0) (2026-02-03)
+
+
+### Features
+
+* **threshold:** enforce configurable minimum threshold for crypto (Issue [#64](https://github.com/terrylica/rangebar-py/issues/64)) ([4030c7d](https://github.com/terrylica/rangebar-py/commit/4030c7dc9e6789a4c9ae11f21c03261dc56e6c95))
+
+
+### BREAKING CHANGES
+
+* **threshold:** ThresholdError raised for crypto symbols with threshold < 1000 dbps
+
+- Add threshold.py module with hierarchical SSoT configuration
+- Per-symbol override: RANGEBAR_MIN_THRESHOLD_<SYMBOL>
+- Asset-class default: RANGEBAR_<ASSET_CLASS>_MIN_THRESHOLD
+- Default crypto minimum: 1000 dbps (1%) per CFM research
+- Add validation to all Python entry points (21 locations)
+- Add validation to Rust checkpoint restoration (lib.rs, processor.rs)
+- Add NDJSON logging and Pushover alerts for violations
+- Add cache purge script for invalidating low-threshold data
+- Add 32 comprehensive tests for threshold enforcement
+
+SRED-Type: applied-research
+SRED-Claim: THRESHOLD
+
 # [11.7.0](https://github.com/terrylica/rangebar-py/compare/v11.6.1...v11.7.0) (2026-02-02)
 
 
