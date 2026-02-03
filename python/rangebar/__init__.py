@@ -50,6 +50,7 @@ __all__ = [
     "BinanceLiveStream",
     "ContinuityError",
     "ContinuityWarning",
+    "CryptoThresholdError",  # Issue #62: backward compat alias
     "GapInfo",
     "GapTier",
     "OrphanedBarMetadata",
@@ -65,15 +66,19 @@ __all__ = [
     "StreamingError",
     "StreamingMetrics",
     "StreamingRangeBarProcessor",
+    "ThresholdError",  # Issue #62: crypto minimum threshold
     "TierSummary",
     "TierThresholds",
     "TieredValidationResult",
     "ValidationPreset",
     "__version__",
     "auto_memory_guard",
+    "clear_threshold_cache",  # Issue #62: runtime config changes
     "detect_asset_class",
     "detect_staleness",
     "ensure_memory_limit",
+    "get_min_threshold",  # Issue #62: asset-class default
+    "get_min_threshold_for_symbol",  # Issue #62: per-symbol lookup
     "get_n_range_bars",
     "get_ouroboros_boundaries",
     "get_range_bars",
@@ -84,6 +89,7 @@ __all__ = [
     "precompute_range_bars",
     "process_trades_polars",
     "process_trades_to_dataframe",
+    "resolve_and_validate_threshold",  # Issue #62: central validation
     "stream_binance_live",
     "validate_continuity",
     "validate_continuity_tiered",
@@ -155,6 +161,16 @@ from .streaming import (
     StreamingMetrics,
     StreamingRangeBarProcessor,
     stream_binance_live,
+)
+
+# Import threshold validation utilities (Issue #62: crypto minimum threshold)
+from .threshold import (
+    CryptoThresholdError,
+    ThresholdError,
+    clear_threshold_cache,
+    get_min_threshold,
+    get_min_threshold_for_symbol,
+    resolve_and_validate_threshold,
 )
 
 # Import staleness detection for cache validation (Issue #39: Schema Evolution)

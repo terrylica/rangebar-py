@@ -1,5 +1,41 @@
 [env]
 # =============================================================================
+# SSoT: Minimum Thresholds by Asset Class (Issue #62)
+# =============================================================================
+# These are the canonical values for threshold validation. Change here, affects
+# all entry points (Python API + Rust core).
+#
+# Values are in decimal basis points (dbps): 1000 dbps = 1%
+# Research: docs/research/2026-02-03-cfm-optimal-threshold-gemini-3-pro.md
+#
+# Resolution order (highest priority first):
+#   1. Per-symbol: RANGEBAR_MIN_THRESHOLD_<SYMBOL>
+#   2. Asset-class: RANGEBAR_<ASSET_CLASS>_MIN_THRESHOLD
+#   3. Fallback defaults in code (with warning)
+
+# Crypto: Default minimum (1% - cannot overcome trading costs below this)
+# CFM formula validates this as "conservative guardrails"
+RANGEBAR_CRYPTO_MIN_THRESHOLD = "1000"
+
+# Forex: Default minimum (tighter spreads allow lower)
+RANGEBAR_FOREX_MIN_THRESHOLD = "50"
+
+# Equities: Default minimum
+RANGEBAR_EQUITIES_MIN_THRESHOLD = "100"
+
+# Unknown: Fallback (no enforcement)
+RANGEBAR_UNKNOWN_MIN_THRESHOLD = "1"
+
+# =============================================================================
+# Per-Symbol Overrides (Optional - uncomment to enable)
+# =============================================================================
+# Override specific symbols when research justifies different thresholds:
+#
+# RANGEBAR_MIN_THRESHOLD_BTCUSDT = "1500"   # BTC needs higher threshold
+# RANGEBAR_MIN_THRESHOLD_XAUUSD = "200"     # Gold needs higher than forex
+# RANGEBAR_MIN_THRESHOLD_EURUSD = "25"      # EUR/USD can go lower
+
+# =============================================================================
 # GitHub Account Isolation (CRITICAL for multi-account setups)
 # =============================================================================
 # See: ADR 2025-12-17-github-multi-account-authentication

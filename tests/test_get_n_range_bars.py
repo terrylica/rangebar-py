@@ -53,19 +53,38 @@ class TestBarCountBasics:
 
     def test_invalid_source_raises(self):
         """Invalid source should raise ValueError."""
+        # Use threshold_decimal_bps=1000 to pass crypto minimum validation (Issue #62)
         with pytest.raises(ValueError, match="Unknown source"):
-            get_n_range_bars(TEST_SYMBOL, n_bars=100, source="invalid", use_cache=False)
+            get_n_range_bars(
+                TEST_SYMBOL,
+                n_bars=100,
+                source="invalid",
+                threshold_decimal_bps=1000,
+                use_cache=False,
+            )
 
     def test_invalid_market_raises(self):
         """Invalid market should raise ValueError."""
+        # Use threshold_decimal_bps=1000 to pass crypto minimum validation (Issue #62)
         with pytest.raises(ValueError, match="Unknown market"):
-            get_n_range_bars(TEST_SYMBOL, n_bars=100, market="invalid", use_cache=False)
+            get_n_range_bars(
+                TEST_SYMBOL,
+                n_bars=100,
+                market="invalid",
+                threshold_decimal_bps=1000,
+                use_cache=False,
+            )
 
     def test_invalid_date_format_raises(self):
         """Invalid end_date format should raise ValueError."""
+        # Use threshold_decimal_bps=1000 to pass crypto minimum validation (Issue #62)
         with pytest.raises(ValueError, match="Invalid date format"):
             get_n_range_bars(
-                TEST_SYMBOL, n_bars=100, end_date="2024/01/01", use_cache=False
+                TEST_SYMBOL,
+                n_bars=100,
+                end_date="2024/01/01",
+                threshold_decimal_bps=1000,
+                use_cache=False,
             )
 
     def test_threshold_out_of_range_raises(self):

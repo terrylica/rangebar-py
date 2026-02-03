@@ -12,10 +12,6 @@ from collections.abc import Callable
 
 import pandas as pd
 
-from rangebar.constants import (
-    THRESHOLD_DECIMAL_MAX,
-    THRESHOLD_DECIMAL_MIN,
-)
 from rangebar.conversion import _concat_pandas_via_polars
 from rangebar.processors.core import RangeBarProcessor
 from rangebar.validation.continuity import ContinuityError, validate_continuity
@@ -143,9 +139,10 @@ def precompute_range_bars(
         msg = f"Invalid validate_on_complete: {validate_on_complete!r}. Must be 'error', 'warn', or 'skip'"
         raise ValueError(msg)
 
-    if not THRESHOLD_DECIMAL_MIN <= threshold_decimal_bps <= THRESHOLD_DECIMAL_MAX:
-        msg = f"threshold_decimal_bps must be between {THRESHOLD_DECIMAL_MIN} and {THRESHOLD_DECIMAL_MAX}"
-        raise ValueError(msg)
+    # Validate threshold with asset-class minimum (Issue #62)
+    from rangebar.threshold import resolve_and_validate_threshold
+
+    threshold_decimal_bps = resolve_and_validate_threshold(symbol, threshold_decimal_bps)
 
     # Parse dates
     try:

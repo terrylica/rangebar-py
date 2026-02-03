@@ -215,6 +215,12 @@ _CRYPTO_BASES: frozenset[str] = frozenset(
         "NEAR",
         "FIL",
         "APT",
+        # Wrapped tokens (Issue #62: crypto threshold enforcement)
+        "WBTC",  # Wrapped Bitcoin
+        "WETH",  # Wrapped Ethereum
+        "WMATIC",  # Wrapped Polygon
+        "WSTETH",  # Lido staked ETH
+        "CBETH",  # Coinbase staked ETH
     }
 )
 

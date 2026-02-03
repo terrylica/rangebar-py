@@ -136,7 +136,8 @@ def detect_asset_class(symbol: str) -> AssetClass:
     # Crypto patterns: contains known base or ends with stablecoin
     if any(base in symbol_upper for base in _CRYPTO_BASES):
         return AssetClass.CRYPTO
-    if symbol_upper.endswith(("USDT", "BUSD", "USDC", "TUSD", "FDUSD")):
+    # Stablecoins: USDE (Ethena), USDM (Mountain Protocol) added for Issue #62
+    if symbol_upper.endswith(("USDT", "BUSD", "USDC", "TUSD", "FDUSD", "USDE", "USDM")):
         return AssetClass.CRYPTO
 
     # Forex patterns: 6-char standard pairs (e.g., EURUSD)

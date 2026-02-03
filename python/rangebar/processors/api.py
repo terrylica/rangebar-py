@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 def process_trades_to_dataframe(
     trades: list[dict[str, int | float]] | pd.DataFrame,
     threshold_decimal_bps: int = 250,
+    *,
+    symbol: str | None = None,
 ) -> pd.DataFrame:
     """Convenience function to process trades directly to DataFrame.
 
@@ -39,6 +41,9 @@ def process_trades_to_dataframe(
         - quantity: float (or 'volume')
     threshold_decimal_bps : int, default=250
         Threshold in decimal basis points (250 = 25bps = 0.25%)
+    symbol : str, optional
+        Trading symbol (e.g., "BTCUSDT"). When provided, enables
+        asset-class minimum threshold validation (Issue #62).
 
     Returns
     -------
@@ -84,7 +89,7 @@ def process_trades_to_dataframe(
     >>> bt = Backtest(df, MyStrategy, cash=10000)
     >>> stats = bt.run()
     """
-    processor = RangeBarProcessor(threshold_decimal_bps)
+    processor = RangeBarProcessor(threshold_decimal_bps, symbol=symbol)
 
     # Convert DataFrame to list of dicts if needed
     if isinstance(trades, pd.DataFrame):
@@ -231,6 +236,8 @@ def process_trades_chunked(
     trades_iterator: Iterator[dict[str, int | float]],
     threshold_decimal_bps: int = 250,
     chunk_size: int = 100_000,
+    *,
+    symbol: str | None = None,
 ) -> Iterator[pd.DataFrame]:
     """Process trades in chunks to avoid memory spikes.
 
@@ -246,6 +253,9 @@ def process_trades_chunked(
         Threshold in decimal basis points (250 = 25bps = 0.25%)
     chunk_size : int, default=100_000
         Number of trades per chunk
+    symbol : str, optional
+        Trading symbol (e.g., "BTCUSDT"). When provided, enables
+        asset-class minimum threshold validation (Issue #62).
 
     Yields
     ------
@@ -272,7 +282,7 @@ def process_trades_chunked(
     """
     from itertools import islice
 
-    processor = RangeBarProcessor(threshold_decimal_bps)
+    processor = RangeBarProcessor(threshold_decimal_bps, symbol=symbol)
 
     while True:
         chunk = list(islice(trades_iterator, chunk_size))
@@ -287,6 +297,8 @@ def process_trades_chunked(
 def process_trades_polars(
     trades: pl.DataFrame | pl.LazyFrame,
     threshold_decimal_bps: int = 250,
+    *,
+    symbol: str | None = None,
 ) -> pd.DataFrame:
     """Process trades from Polars DataFrame (optimized pipeline).
 
@@ -302,6 +314,9 @@ def process_trades_polars(
         - quantity (or volume): float
     threshold_decimal_bps : int, default=250
         Threshold in decimal basis points (250 = 25bps = 0.25%)
+    symbol : str, optional
+        Trading symbol (e.g., "BTCUSDT"). When provided, enables
+        asset-class minimum threshold validation (Issue #62).
 
     Returns
     -------
@@ -371,7 +386,7 @@ def process_trades_polars(
     # MEM-002: Process in chunks to bound memory (2.5 GB → ~50 MB per chunk)
     # Chunked .to_dicts() avoids materializing 1M+ trade dicts at once
     chunk_size = 100_000
-    processor = RangeBarProcessor(threshold_decimal_bps)
+    processor = RangeBarProcessor(threshold_decimal_bps, symbol=symbol)
     all_bars: list[dict] = []
 
     n_rows = len(trades_minimal)

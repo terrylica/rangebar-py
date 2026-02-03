@@ -243,6 +243,14 @@ pub enum CheckpointError {
     /// Checkpoint serialization/deserialization error
     #[error("Checkpoint serialization error: {message}")]
     SerializationError { message: String },
+
+    /// Invalid threshold in checkpoint (Issue #62: crypto minimum threshold enforcement)
+    #[error("Invalid threshold in checkpoint: {threshold} dbps. Valid range: {min_threshold}-{max_threshold} dbps")]
+    InvalidThreshold {
+        threshold: u32,
+        min_threshold: u32,
+        max_threshold: u32,
+    },
 }
 
 /// Price window for computing position verification hash

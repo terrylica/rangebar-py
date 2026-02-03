@@ -13,11 +13,6 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import pandas as pd
 
-from rangebar.constants import (
-    THRESHOLD_DECIMAL_MAX,
-    THRESHOLD_DECIMAL_MIN,
-    THRESHOLD_PRESETS,
-)
 from rangebar.processors.core import RangeBarProcessor
 from rangebar.validation.cache_staleness import detect_staleness
 
@@ -284,23 +279,11 @@ def get_range_bars(
     from rangebar.storage.parquet import TickStorage
 
     # -------------------------------------------------------------------------
-    # Resolve threshold (support presets)
+    # Resolve threshold with asset-class validation (Issue #62)
     # -------------------------------------------------------------------------
-    if isinstance(threshold_decimal_bps, str):
-        if threshold_decimal_bps not in THRESHOLD_PRESETS:
-            msg = (
-                f"Unknown threshold preset: {threshold_decimal_bps!r}. "
-                f"Valid presets: {list(THRESHOLD_PRESETS.keys())}"
-            )
-            raise ValueError(msg)
-        threshold_decimal_bps = THRESHOLD_PRESETS[threshold_decimal_bps]
+    from rangebar.threshold import resolve_and_validate_threshold
 
-    if not THRESHOLD_DECIMAL_MIN <= threshold_decimal_bps <= THRESHOLD_DECIMAL_MAX:
-        msg = (
-            f"threshold_decimal_bps must be between {THRESHOLD_DECIMAL_MIN} and {THRESHOLD_DECIMAL_MAX}, "
-            f"got {threshold_decimal_bps}"
-        )
-        raise ValueError(msg)
+    threshold_decimal_bps = resolve_and_validate_threshold(symbol, threshold_decimal_bps)
 
     # -------------------------------------------------------------------------
     # Validate ouroboros mode (v11.0+)

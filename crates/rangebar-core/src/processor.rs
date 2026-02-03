@@ -623,6 +623,20 @@ impl RangeBarProcessor {
     /// let bars = processor.process_agg_trade_records(&next_file_trades)?;
     /// ```
     pub fn from_checkpoint(checkpoint: Checkpoint) -> Result<Self, CheckpointError> {
+        // Issue #62: Validate threshold range before restoring from checkpoint
+        // Valid range: 1-100,000 dbps (0.0001% to 10%)
+        const THRESHOLD_MIN: u32 = 1;
+        const THRESHOLD_MAX: u32 = 100_000;
+        if checkpoint.threshold_decimal_bps < THRESHOLD_MIN
+            || checkpoint.threshold_decimal_bps > THRESHOLD_MAX
+        {
+            return Err(CheckpointError::InvalidThreshold {
+                threshold: checkpoint.threshold_decimal_bps,
+                min_threshold: THRESHOLD_MIN,
+                max_threshold: THRESHOLD_MAX,
+            });
+        }
+
         // Validate checkpoint consistency
         if checkpoint.incomplete_bar.is_some() && checkpoint.thresholds.is_none() {
             return Err(CheckpointError::MissingThresholds);

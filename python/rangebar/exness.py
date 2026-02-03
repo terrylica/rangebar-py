@@ -123,6 +123,15 @@ def process_exness_ticks_to_dataframe(
     """
     _check_exness_available()
 
+    # Validate threshold with asset-class minimum (Issue #62)
+    # Extract symbol name from ExnessInstrument enum
+    from rangebar.threshold import resolve_and_validate_threshold
+
+    symbol_name = instrument.name if hasattr(instrument, "name") else str(instrument)
+    threshold_decimal_bps = resolve_and_validate_threshold(
+        symbol_name, threshold_decimal_bps
+    )
+
     # Set default strictness
     if strictness is None:
         strictness = ValidationStrictness.Strict  # type: ignore[attr-defined]
@@ -271,7 +280,7 @@ def get_range_bars_exness(
     """
     _check_exness_available()
 
-    from datetime import datetime as dt
+    from datetime import date
 
     # These imports are used in the implementation below (after NotImplementedError)
     from .ouroboros import (  # noqa: F401
@@ -293,10 +302,10 @@ def get_range_bars_exness(
         raise ValueError(msg) from e
 
     # Parse dates (validation happens before NotImplementedError)
-    # Note: Timezone not needed - we extract .date() which is timezone-naive by design
+    # Issue #64: Use date.fromisoformat() which is DTZ-compliant
     try:
-        start_dt = dt.strptime(start_date, "%Y-%m-%d").date()  # noqa: DTZ007
-        end_dt = dt.strptime(end_date, "%Y-%m-%d").date()  # noqa: DTZ007
+        start_dt = date.fromisoformat(start_date)
+        end_dt = date.fromisoformat(end_date)
         _ = (start_dt, end_dt)  # Used in implementation below
     except ValueError as e:
         msg = f"Invalid date format. Use YYYY-MM-DD. Error: {e}"

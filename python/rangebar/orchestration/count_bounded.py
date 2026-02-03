@@ -15,11 +15,6 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from rangebar.constants import (
-    THRESHOLD_DECIMAL_MAX,
-    THRESHOLD_DECIMAL_MIN,
-    THRESHOLD_PRESETS,
-)
 from rangebar.conversion import _concat_pandas_via_polars
 from rangebar.validation.cache_staleness import detect_staleness
 from rangebar.validation.continuity import (
@@ -230,25 +225,10 @@ def get_n_range_bars(
         msg = f"n_bars must be > 0, got {n_bars}"
         raise ValueError(msg)
 
-    # Resolve threshold (support presets)
-    threshold: int
-    if isinstance(threshold_decimal_bps, str):
-        if threshold_decimal_bps not in THRESHOLD_PRESETS:
-            msg = (
-                f"Unknown threshold preset: {threshold_decimal_bps!r}. "
-                f"Valid presets: {list(THRESHOLD_PRESETS.keys())}"
-            )
-            raise ValueError(msg)
-        threshold = THRESHOLD_PRESETS[threshold_decimal_bps]
-    else:
-        threshold = threshold_decimal_bps
+    # Resolve threshold with asset-class validation (Issue #62)
+    from rangebar.threshold import resolve_and_validate_threshold
 
-    if not THRESHOLD_DECIMAL_MIN <= threshold <= THRESHOLD_DECIMAL_MAX:
-        msg = (
-            f"threshold_decimal_bps must be between {THRESHOLD_DECIMAL_MIN} and "
-            f"{THRESHOLD_DECIMAL_MAX}, got {threshold}"
-        )
-        raise ValueError(msg)
+    threshold = resolve_and_validate_threshold(symbol, threshold_decimal_bps)
 
     # Normalize source and market
     source = source.lower()

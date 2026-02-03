@@ -133,6 +133,11 @@ async def stream_binance_live(
         >>> async for bar in stream_binance_live("BTCUSDT", threshold_bps=250):
         ...     print(f"New bar: {bar['close']}, OFI: {bar['ofi']}")
     """
+    # Validate threshold with asset-class minimum (Issue #62)
+    from rangebar.threshold import resolve_and_validate_threshold
+
+    threshold_bps = resolve_and_validate_threshold(symbol, threshold_bps)
+
     if reconnect_config is None:
         reconnect_config = ReconnectionConfig()
 
@@ -236,12 +241,26 @@ class AsyncStreamingProcessor:
         ...         await handle_new_bar(bar)
     """
 
-    def __init__(self, threshold_decimal_bps: int) -> None:
+    def __init__(
+        self,
+        threshold_decimal_bps: int,
+        *,
+        symbol: str | None = None,
+    ) -> None:
         """Create async streaming processor.
 
         Args:
             threshold_decimal_bps: Range bar threshold (250 = 0.25%)
+            symbol: Trading symbol (e.g., "BTCUSDT"). When provided, enables
+                asset-class minimum threshold validation (Issue #62).
         """
+        # Validate threshold with asset-class minimum (Issue #62)
+        from rangebar.threshold import resolve_and_validate_threshold
+
+        threshold_decimal_bps = resolve_and_validate_threshold(
+            symbol, threshold_decimal_bps
+        )
+
         self._processor = StreamingRangeBarProcessor(threshold_decimal_bps)
         self._lock = asyncio.Lock()
 

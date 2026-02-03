@@ -275,6 +275,17 @@ fn dict_to_checkpoint(py: Python, dict: &Bound<PyDict>) -> PyResult<Checkpoint> 
         .ok_or_else(|| PyKeyError::new_err("Missing 'threshold_decimal_bps'"))?
         .extract()?;
 
+    // Issue #62: Validate threshold range in checkpoint restoration
+    // Valid range: 1-100,000 dbps (0.0001% to 10%)
+    const THRESHOLD_MIN: u32 = 1;
+    const THRESHOLD_MAX: u32 = 100_000;
+    if threshold_decimal_bps < THRESHOLD_MIN || threshold_decimal_bps > THRESHOLD_MAX {
+        return Err(PyValueError::new_err(format!(
+            "Invalid checkpoint threshold: {} dbps. Valid range: {}-{} dbps",
+            threshold_decimal_bps, THRESHOLD_MIN, THRESHOLD_MAX
+        )));
+    }
+
     let last_timestamp_us: i64 = dict
         .get_item("last_timestamp_us")?
         .ok_or_else(|| PyKeyError::new_err("Missing 'last_timestamp_us'"))?
@@ -508,6 +519,15 @@ fn checkpoint_error_to_pyerr(e: CheckpointError) -> PyErr {
         CheckpointError::SerializationError { message } => {
             PyRuntimeError::new_err(format!("Checkpoint serialization error: {message}"))
         }
+        // Issue #62: Crypto minimum threshold enforcement
+        CheckpointError::InvalidThreshold {
+            threshold,
+            min_threshold,
+            max_threshold,
+        } => PyValueError::new_err(format!(
+            "Invalid checkpoint threshold: {} dbps. Valid range: {}-{} dbps",
+            threshold, min_threshold, max_threshold
+        )),
     }
 }
 

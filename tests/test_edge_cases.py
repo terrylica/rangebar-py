@@ -46,13 +46,14 @@ class TestErrorHandling:
         assert processor.threshold_decimal_bps == 100_000
 
     def test_negative_threshold(self):
-        """Test negative threshold (should fail with OverflowError from Rust u32)."""
-        with pytest.raises(OverflowError):
+        """Test negative threshold (should fail with ValueError from Python validation)."""
+        # Issue #62: Python validation catches this before Rust u32 overflow
+        with pytest.raises(ValueError, match="must be between"):
             RangeBarProcessor(threshold_decimal_bps=-1)
 
     def test_zero_threshold(self):
         """Test zero threshold (should fail)."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="must be between"):
             RangeBarProcessor(threshold_decimal_bps=0)
 
     def test_single_trade_no_bars(self):

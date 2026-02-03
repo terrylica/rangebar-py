@@ -113,8 +113,22 @@ class RangeBarProcessor:
             Timestamp gating for flash crash prevention (Issue #36)
         inter_bar_lookback_count : int, optional
             Lookback trade count for inter-bar features (Issue #59)
+
+        Raises
+        ------
+        ThresholdError
+            If threshold is below configured minimum for symbol's asset class
+        ValueError
+            If threshold is out of valid range [1, 100_000]
         """
-        # Validation happens in Rust layer, which raises PyValueError
+        # Python-layer validation (Issue #62: crypto minimum threshold)
+        from rangebar.threshold import resolve_and_validate_threshold
+
+        threshold_decimal_bps = resolve_and_validate_threshold(
+            symbol, threshold_decimal_bps
+        )
+
+        # Rust-layer validation (additional range checks)
         self._processor = _PyRangeBarProcessor(
             threshold_decimal_bps,
             symbol,
@@ -146,6 +160,8 @@ class RangeBarProcessor:
 
         Raises
         ------
+        ThresholdError
+            If checkpoint threshold is below configured minimum for symbol's asset class
         ValueError
             If checkpoint is invalid or corrupted
 
@@ -157,6 +173,11 @@ class RangeBarProcessor:
         >>> processor = RangeBarProcessor.from_checkpoint(checkpoint)
         >>> bars = processor.process_trades(next_file_trades)
         """
+        # Python-layer validation (Issue #62: crypto minimum threshold)
+        from rangebar.threshold import validate_checkpoint_threshold
+
+        validate_checkpoint_threshold(checkpoint)
+
         instance = cls.__new__(cls)
         instance._processor = _PyRangeBarProcessor.from_checkpoint(checkpoint)
         instance.threshold_decimal_bps = checkpoint["threshold_decimal_bps"]
