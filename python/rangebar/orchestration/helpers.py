@@ -297,9 +297,11 @@ def _process_binance_trades(
             inter_bar_lookback_count=inter_bar_lookback_count,
         )
 
-    # MEM-002: Process in chunks to bound memory (2.5 GB → ~50 MB per chunk)
-    # Chunked .to_dicts() avoids materializing 1M+ trade dicts at once
-    chunk_size = 100_000
+    # MEM-002 + MEM-011: Adaptive chunk size based on output features
+    # Base: 100K trades (~15 MB dicts, ~50 MB with OHLCV bars)
+    # Microstructure: 50K trades (62 columns = 12x more memory per bar)
+    # Issue #65: Fixed chunk size caused OOM on large date ranges with microstructure
+    chunk_size = 50_000 if include_microstructure else 100_000
     all_bars: list[dict] = []
 
     n_rows = len(trades_minimal)

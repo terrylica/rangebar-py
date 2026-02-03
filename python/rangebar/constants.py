@@ -336,4 +336,9 @@ MEM_GUARDS: dict[str, dict[str, str]] = {
         "location": "resource_guard.py",
         "stage": "loading",
     },
+    "MEM-011": {
+        "description": "Adaptive chunk size: 100K base, 50K with microstructure",
+        "location": "orchestration/helpers.py:304",
+        "stage": "processing",
+    },
 }
