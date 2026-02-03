@@ -1,0 +1,10 @@
+# ClickHouse Cache Tasks
+# Usage: mise run cache:status
+
+["cache:status"]
+description = "Show ClickHouse cache statistics"
+run = "python scripts/cache_status.py"
+
+["cache:clear"]
+description = "Clear ClickHouse cache for a symbol (interactive)"
+run = "python scripts/cache_clear.py"

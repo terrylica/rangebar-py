@@ -1,0 +1,44 @@
+# Checksum Verification Tasks (Issue #43)
+# Usage: mise run test:checksum
+
+["test:checksum"]
+description = "Test Rust checksum verification module"
+run = "cargo nextest run -p rangebar-providers checksum"
+
+["test:checksum:integration"]
+description = "Integration test with real Binance data (requires network)"
+run = """
+python -c '
+from rangebar import get_range_bars
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+# Test with checksum verification (should see checksum events in logs)
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-01", verify_checksum=True)
+print(f"Downloaded {len(df)} bars with checksum verification")
+'
+"""
+
+["checksum:audit"]
+description = "Audit Tier 1 cache for unverified files"
+run = """
+python -c '
+from rangebar.storage.checksum_registry import ChecksumRegistry
+registry = ChecksumRegistry()
+count = registry.get_verified_count("BTCUSDT")
+print(f"BTCUSDT verified dates: {count}")
+'
+"""
+
+["checksum:pushover-test"]
+description = "Send test Pushover alert to verify credentials"
+run = """
+python -c '
+from rangebar.notify.pushover import send_critical_alert
+result = send_critical_alert(
+    title="🧪 RB Test Alert",
+    message="Checksum verification test - ignore this alert.",
+)
+print(f"Pushover alert sent: {result}")
+'
+"""

@@ -1,0 +1,18 @@
+# Profiling Tasks
+# Usage: mise run prof:flamegraph
+
+["prof:flamegraph"]
+description = "Generate CPU flamegraph"
+run = """
+mkdir -p $PROFILE_DATA_DIR
+cargo flamegraph --bench rangebar_bench -o $PROFILE_DATA_DIR/flamegraph-$(date +%Y%m%d-%H%M%S).svg
+echo "Flamegraph saved to $PROFILE_DATA_DIR/"
+"""
+
+["prof:build-release"]
+description = "Build with profiling symbols"
+run = "CARGO_PROFILE_RELEASE_DEBUG=true cargo build --release"
+
+["prof:full"]
+description = "Comprehensive profiling suite (uses script for platform detection)"
+run = "./scripts/profiling_tools.sh full"

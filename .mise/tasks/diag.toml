@@ -1,0 +1,189 @@
+# Diagnostics Tasks
+# Usage: mise run diag:release
+
+["diag:release"]
+description = "Diagnose release environment (SSH, tools, PyPI)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== RELEASE DIAGNOSTICS ==="
+echo ""
+
+# Version info
+VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+echo "Local version: $VERSION"
+
+# PyPI check
+echo ""
+echo "--- PyPI Status ---"
+PYPI_VERSION=$(pip index versions rangebar 2>/dev/null | head -1 | sed 's/rangebar (\\(.*\\))/\\1/' || echo "unknown")
+echo "PyPI latest: $PYPI_VERSION"
+if [ "$VERSION" = "$PYPI_VERSION" ]; then
+    echo "STATUS: Version $VERSION already on PyPI"
+else
+    echo "STATUS: Version $VERSION NOT on PyPI (publishable)"
+fi
+
+# Git status
+echo ""
+echo "--- Git Status ---"
+echo "Branch: $(git branch --show-current)"
+echo "Clean: $(git status --porcelain | wc -l | tr -d ' ') uncommitted files"
+echo "Remote: $(git remote get-url origin)"
+
+# SSH connectivity
+echo ""
+echo "--- SSH Connectivity ---"
+echo -n "Port 443 (ssh.github.com): "
+SSH_OUT=$(timeout 15 ssh -T -o ConnectTimeout=10 git@github.com-terrylica 2>&1 || true)
+if echo "$SSH_OUT" | grep -q "successfully authenticated"; then
+    echo "OK"
+elif echo "$SSH_OUT" | grep -qi "timeout\\|timed out"; then
+    echo "TIMEOUT"
+else
+    echo "FAIL"
+fi
+
+echo -n "Port 22 (direct): "
+SSH_OUT=$(timeout 20 ssh -T -p 22 -i ~/.ssh/id_ed25519_terrylica -o IdentitiesOnly=yes -o ConnectTimeout=15 git@github.com 2>&1 || true)
+if echo "$SSH_OUT" | grep -q "successfully authenticated"; then
+    echo "OK"
+elif echo "$SSH_OUT" | grep -qi "timeout\\|timed out"; then
+    echo "TIMEOUT"
+else
+    echo "FAIL"
+fi
+
+# Tools
+echo ""
+echo "--- Build Tools ---"
+echo "Rust: $(rustc --version 2>/dev/null || echo 'not found')"
+echo "Zig: $(zig version 2>/dev/null || echo 'not found')"
+echo "Maturin: $(maturin --version 2>/dev/null || echo 'not found')"
+echo "Linux target: $(rustup target list --installed | grep -q x86_64-unknown-linux-gnu && echo 'installed' || echo 'missing')"
+
+# Cargo config
+echo ""
+echo "--- Cargo Config ---"
+if [ -f ".cargo/config.toml" ]; then
+    echo "Project .cargo/config.toml: exists"
+    if grep -A5 "^\\[build\\]" .cargo/config.toml | grep "^rustflags" | grep -q "target-cpu=native"; then
+        echo "  WARN: [build] section has target-cpu=native (breaks cross-compile)"
+    elif grep "^rustflags" .cargo/config.toml | grep -q "target-cpu=native"; then
+        echo "  OK: target-cpu=native only in target-specific sections"
+    else
+        echo "  OK: No target-cpu=native in rustflags"
+    fi
+else
+    echo "Project .cargo/config.toml: MISSING (may need for cross-compile)"
+fi
+
+# Build locks
+echo ""
+echo "--- Build Locks ---"
+if [ -d "$BUILD_LOCK_DIR" ]; then
+    LOCKS=$(find "$BUILD_LOCK_DIR" -name "*.lock*" 2>/dev/null | wc -l | tr -d ' ')
+    echo "Lock directory: $BUILD_LOCK_DIR"
+    echo "Active locks: $LOCKS"
+    ls -la "$BUILD_LOCK_DIR"/*.lock* 2>/dev/null || echo "  (none)"
+else
+    echo "Lock directory: not created yet"
+fi
+
+# 1Password
+echo ""
+echo "--- Credentials ---"
+echo -n "1Password PyPI token: "
+if op item get djevteztvbcqgcm3yl4njkawjq --fields credential --reveal 2>/dev/null | head -c 10 >/dev/null; then
+    echo "accessible"
+else
+    echo "FAIL (run: op signin)"
+fi
+
+echo ""
+echo "=== END DIAGNOSTICS ==="
+"""
+
+["diag:fetch"]
+description = "Fetch and update remote tracking refs (fixes statusline ↑/↓ mismatch)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Fetching with SSH fallback..."
+
+# Try default first, fallback to port 22
+if timeout 15 git fetch origin 2>/dev/null; then
+    echo "OK: Fetched via default SSH"
+else
+    echo "WARN: Default SSH timed out, using port 22..."
+    GIT_SSH_COMMAND='ssh -p 22 -i ~/.ssh/id_ed25519_terrylica -o IdentitiesOnly=yes -o ConnectTimeout=10' \
+        git fetch origin main:refs/remotes/origin/main
+    echo "OK: Fetched via port 22"
+fi
+
+# Show current state
+echo ""
+echo "Local vs Remote:"
+git log --oneline origin/main..HEAD 2>/dev/null | head -5 || echo "  (in sync)"
+"""
+
+["diag:locks-clear"]
+description = "Clear all build locks (use when stuck)"
+run = """
+#!/usr/bin/env bash
+echo "Clearing build locks..."
+rm -rf "$BUILD_LOCK_DIR"/*.lock* 2>/dev/null || true
+rm -rf "$BUILD_LOCK_DIR"/*.lock.d 2>/dev/null || true
+echo "OK: Locks cleared"
+ls -la "$BUILD_LOCK_DIR" 2>/dev/null || echo "Lock directory empty"
+"""
+
+["diag:ssh-fix"]
+description = "Test and fix SSH connectivity to GitHub"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== SSH Connectivity Fix ==="
+
+# Test port 443 (configured in ~/.ssh/config)
+echo -n "Testing port 443 (ssh.github.com)... "
+if timeout 15 ssh -T -o ConnectTimeout=10 git@github.com-terrylica 2>&1 | grep -q "successfully authenticated"; then
+    echo "OK"
+    echo "Port 443 works - no fix needed"
+    exit 0
+else
+    echo "TIMEOUT"
+fi
+
+# Test port 22 (direct)
+echo -n "Testing port 22 (github.com direct)... "
+if timeout 20 ssh -T -p 22 -i ~/.ssh/id_ed25519_terrylica -o IdentitiesOnly=yes -o ConnectTimeout=15 git@github.com 2>&1 | grep -q "successfully authenticated"; then
+    echo "OK"
+    echo ""
+    echo "Port 22 works but port 443 doesn't."
+    echo "Your network may be blocking port 443 to ssh.github.com"
+    echo ""
+    echo "Options:"
+    echo "  1. Update ~/.ssh/config to use port 22:"
+    echo "     Host github.com-terrylica"
+    echo "         HostName github.com"
+    echo "         Port 22"
+    echo "         User git"
+    echo "         IdentityFile ~/.ssh/id_ed25519_terrylica"
+    echo ""
+    echo "  2. Use mise run release:quick (skips sync)"
+    echo ""
+    echo "  3. Manually sync with:"
+    echo "     GIT_SSH_COMMAND='ssh -p 22 -i ~/.ssh/id_ed25519_terrylica' git pull --rebase origin main"
+else
+    echo "FAIL"
+    echo ""
+    echo "Both ports failing - check:"
+    echo "  1. SSH key exists: ls -la ~/.ssh/id_ed25519_terrylica"
+    echo "  2. Key added to GitHub: gh ssh-key list"
+    echo "  3. Network connectivity: ping github.com"
+fi
+"""

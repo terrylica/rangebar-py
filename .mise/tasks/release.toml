@@ -1,0 +1,375 @@
+# Release Tasks
+# Usage: mise run release:full
+# Docs: docs/development/RELEASE.md
+
+# =============================================================================
+# Legacy Entry Points
+# =============================================================================
+
+[release]
+description = "Build all release wheels"
+run = "./scripts/build-release.sh"
+
+[publish]
+description = "Publish wheels to PyPI"
+run = "./scripts/publish-wheels.sh"
+
+["release:local"]
+description = "Build local wheel only (macOS ARM64)"
+run = "maturin build --profile wheel"
+
+["release:sdist"]
+description = "Build source distribution"
+run = "maturin sdist"
+
+# =============================================================================
+# Platform-Specific Build Tasks
+# =============================================================================
+
+["release:macos-arm64"]
+description = "Build macOS ARM64 wheels for Python 3.13 (native)"
+run = """
+echo "=== Building macOS ARM64 wheels (Python 3.13) ==="
+for pyver in python3.13; do
+    if command -v $pyver &> /dev/null; then
+        echo "Building for $pyver..."
+        maturin build --profile wheel -i $pyver
+    else
+        echo "WARN: $pyver not found, skipping"
+    fi
+done
+echo "OK: macOS ARM64 wheels built"
+"""
+
+["release:linux-preflight"]
+description = "Verify Linux build prerequisites (zig or remote host)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== Linux Build Preflight ==="
+
+mkdir -p "$BUILD_LOCK_DIR"
+
+find "$BUILD_LOCK_DIR" -name "*.lock" -mmin +30 -delete 2>/dev/null || true
+find "$BUILD_LOCK_DIR" -name "*.lock.d" -type d -mmin +30 -exec rm -rf {} + 2>/dev/null || true
+
+if command -v zig &>/dev/null; then
+    echo "OK: Zig available: $(zig version)"
+else
+    echo "WARN: Zig not found - will use remote Docker fallback"
+fi
+
+if rustup target list --installed | grep -q x86_64-unknown-linux-gnu; then
+    echo "OK: Linux target installed"
+else
+    echo "INFO: Installing Linux target..."
+    rustup target add x86_64-unknown-linux-gnu
+    echo "OK: Linux target installed"
+fi
+
+if [ -f ".cargo/config.toml" ]; then
+    echo "OK: .cargo/config.toml exists"
+else
+    echo "WARN: .cargo/config.toml missing - cross-compile may fail"
+fi
+
+if [ "${LINUX_BUILD_STRATEGY:-zig}" = "remote" ]; then
+    if ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" "echo connected" >/dev/null 2>&1; then
+        echo "FAIL: Cannot connect to $LINUX_BUILD_USER@$LINUX_BUILD_HOST"
+        exit 1
+    fi
+    echo "OK: SSH connectivity verified (remote fallback ready)"
+fi
+
+echo "OK: Preflight passed"
+"""
+
+["release:linux"]
+description = "Build Linux x86_64 wheels (zig cross-compile)"
+depends = ["release:linux-preflight"]
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== Building Linux x86_64 Wheels ==="
+
+LOCK_FILE="$BUILD_LOCK_DIR/release-linux.lock"
+
+if [ -f "$LOCK_FILE" ]; then
+    LOCK_AGE=$(($(date +%s) - $(stat -f %m "$LOCK_FILE" 2>/dev/null || stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)))
+    if [ "$LOCK_AGE" -gt 600 ]; then
+        echo "WARN: Removing stale lock (age: ${LOCK_AGE}s)"
+        rm -f "$LOCK_FILE"
+    fi
+fi
+
+LOCK_DIR="${LOCK_FILE}.d"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo "FAIL: Another Linux build is running"
+    echo "To force: rm -rf $LOCK_DIR $LOCK_FILE"
+    exit 1
+fi
+echo "$$" > "$LOCK_FILE"
+echo "OK: Acquired build lock"
+
+cleanup() {
+    rm -rf "$LOCK_DIR" "$LOCK_FILE"
+    echo "Released build lock"
+}
+trap cleanup EXIT
+
+if [ "${LINUX_BUILD_STRATEGY:-zig}" = "zig" ]; then
+    echo "Strategy: Zig cross-compilation"
+
+    export RUSTFLAGS=""
+    export RUSTC_WRAPPER=""
+
+    maturin build --release \
+        --target x86_64-unknown-linux-gnu \
+        --zig \
+        --compatibility manylinux_2_17 \
+        -i python3.13
+
+    mkdir -p dist/
+    WHEEL=$(ls -t target/wheels/*manylinux*.whl | head -1)
+    cp "$WHEEL" dist/
+    echo "OK: Linux wheels built via zig"
+    ls -la "$WHEEL"
+    exit 0
+fi
+
+echo "Strategy: Remote Docker build (fallback)"
+PROJECT_DIR="$(pwd)"
+REMOTE_DIR="${LINUX_BUILD_DIR}-$$"
+
+remote_cleanup() {
+    ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" "rm -rf $REMOTE_DIR" 2>/dev/null || true
+    rm -f "$LOCK_FILE"
+}
+trap remote_cleanup EXIT
+
+ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" "mkdir -p $REMOTE_DIR"
+
+rsync -az --delete \
+    --exclude 'target/' --exclude 'dist/' --exclude '.git/' \
+    --exclude '__pycache__/' --exclude '*.egg-info/' --exclude 'node_modules/' \
+    "$PROJECT_DIR/" "$LINUX_BUILD_USER@$LINUX_BUILD_HOST:$REMOTE_DIR/"
+
+ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" 'cd '"$REMOTE_DIR"' && docker run --rm -v $(pwd):/io -w /io quay.io/pypa/manylinux2014_x86_64 bash -c "curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && /opt/python/cp313-cp313/bin/pip install maturin && /opt/python/cp313-cp313/bin/maturin build --profile wheel --compatibility manylinux2014 -i /opt/python/cp313-cp313/bin/python"'
+
+mkdir -p dist/
+scp "$LINUX_BUILD_USER@$LINUX_BUILD_HOST:$REMOTE_DIR/target/wheels/*manylinux*.whl" dist/
+echo "OK: Linux wheels built via remote Docker"
+"""
+
+# =============================================================================
+# 4-Phase Workflow Tasks
+# =============================================================================
+
+["release:preflight"]
+description = "Validate release prerequisites (Phase 1)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== PREFLIGHT ==="
+git update-index --refresh -q || true
+
+if [ -n "$(git status --porcelain)" ]; then
+    echo "FAIL: Working directory not clean"
+    git status --short
+    exit 1
+fi
+
+BRANCH=$(git branch --show-current)
+if [ "$BRANCH" != "main" ]; then
+    echo "FAIL: Not on main branch (on: $BRANCH)"
+    exit 1
+fi
+
+if [ -d dist ]; then
+    echo "Cleaning dist/ directory..."
+    rm -rf dist
+fi
+mkdir -p dist
+
+echo "OK: Preflight passed"
+"""
+
+["release:sync"]
+description = "Synchronize with remote (Phase 2) - SSH with port fallback"
+depends = ["release:preflight"]
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== SYNC ==="
+
+SSH_FALLBACK_USED=false
+
+git_ssh_with_fallback() {
+    local cmd="$1"
+
+    if timeout 15 git $cmd 2>/dev/null; then
+        return 0
+    fi
+
+    echo "WARN: Default SSH timed out, falling back to port 22..."
+    SSH_FALLBACK_USED=true
+
+    export GIT_SSH_COMMAND='ssh -p 22 -i ~/.ssh/id_ed25519_terrylica -o IdentitiesOnly=yes -o ConnectTimeout=10'
+    git $cmd
+}
+
+REMOTE_URL=$(git remote get-url origin)
+if [[ ! "$REMOTE_URL" =~ github.com-terrylica ]]; then
+    echo "Fixing remote URL for terrylica identity..."
+    git remote set-url origin "git@github.com-terrylica:terrylica/rangebar-py.git"
+fi
+
+git_ssh_with_fallback "pull --rebase origin main" || { echo "FAIL: Pull failed"; exit 1; }
+git_ssh_with_fallback "push origin main" || { echo "FAIL: Push failed"; exit 1; }
+
+if [ "$SSH_FALLBACK_USED" = true ]; then
+    echo "Updating remote tracking ref..."
+    GIT_SSH_COMMAND='ssh -p 22 -i ~/.ssh/id_ed25519_terrylica -o IdentitiesOnly=yes -o ConnectTimeout=10' \
+        git fetch origin main:refs/remotes/origin/main 2>/dev/null || true
+fi
+
+unset GIT_SSH_COMMAND
+echo "OK: Synced"
+"""
+
+["release:check-config"]
+description = "Verify release configuration (GitHub, Doppler, SSH)"
+run = "./scripts/check-release-config.sh"
+
+["release:version"]
+description = "Bump version via semantic-release"
+depends = ["release:sync"]
+run = "./scripts/semantic-release.sh"
+
+["release:build-all"]
+description = "Build all platform wheels + sdist (Phase 3)"
+depends = ["release:version"]
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== BUILD ALL PLATFORMS ==="
+
+VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+echo "Building version: $VERSION"
+
+echo "Checking PyPI for existing version..."
+if pip index versions rangebar 2>/dev/null | grep -q "^rangebar ($VERSION)$"; then
+    echo "WARN: Version $VERSION already exists on PyPI"
+    echo "INFO: semantic-release found no releasable commits (feat:/fix:)"
+    echo ""
+    echo "To force a release:"
+    echo "  1. Make a feat: or fix: commit"
+    echo "  2. Or run: mise run release:build-only"
+    exit 0
+fi
+
+mise run release:macos-arm64
+mise run release:linux
+mise run release:sdist
+
+cp -n target/wheels/rangebar-${VERSION}-*.whl dist/ 2>/dev/null || true
+cp -n target/wheels/rangebar-${VERSION}.tar.gz dist/ 2>/dev/null || true
+
+echo ""
+echo "OK: All wheels + sdist built for v$VERSION"
+ls -la dist/rangebar-${VERSION}* 2>/dev/null || true
+"""
+
+["release:build-only"]
+description = "Build wheels WITHOUT version check (for manual releases)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== BUILD ONLY (no version check) ==="
+
+VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+echo "Building version: $VERSION"
+
+rm -rf dist && mkdir -p dist
+
+mise run release:macos-arm64
+mise run release:linux
+mise run release:sdist
+
+cp -n target/wheels/rangebar-${VERSION}-*.whl dist/ 2>/dev/null || true
+cp -n target/wheels/rangebar-${VERSION}.tar.gz dist/ 2>/dev/null || true
+
+echo ""
+echo "OK: Wheels built"
+ls -la dist/rangebar-${VERSION}* 2>/dev/null || true
+"""
+
+["release:postflight"]
+description = "Verify builds (Phase 4)"
+depends = ["smoke", "release:build-all"]
+run = """
+echo "=== POSTFLIGHT ==="
+WHEEL_COUNT=$(find dist/ -name "*.whl" 2>/dev/null | wc -l | tr -d ' ')
+echo "Found $WHEEL_COUNT wheel(s)"
+ls -la dist/*.whl 2>/dev/null || true
+echo ""
+echo "To publish: mise run publish"
+"""
+
+["release:dry"]
+description = "Preview what semantic-release would do (no changes)"
+# PROCESS-STORM-OK: This reads token from file, not gh auth
+run = "bun install --silent 2>/dev/null && GH_CONFIG_DIR=$HOME/.config/gh/profiles/terrylica GITHUB_TOKEN=$(cat ~/.claude/.secrets/gh-token-terrylica) bun run semantic-release --dry-run --no-ci"
+
+["release:pypi"]
+description = "Publish to PyPI using 1Password credentials"
+depends = ["release:build-all"]
+run = "./scripts/publish-to-pypi.sh"
+
+["release:full"]
+description = "Full release workflow: version bump → build → smoke → publish"
+depends = ["release:postflight", "release:pypi"]
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+
+echo '========================================='
+echo " Release v$VERSION complete!"
+echo '========================================='
+echo ""
+echo "Published to PyPI: https://pypi.org/project/rangebar/$VERSION/"
+"""
+
+["release:quick"]
+description = "Quick release: build + publish (skips sync)"
+depends = ["release:preflight", "smoke"]
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== QUICK RELEASE (no sync) ==="
+echo "WARN: Skipping GitHub sync - ensure you're up to date manually"
+
+VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+echo "Version: $VERSION"
+
+if pip index versions rangebar 2>/dev/null | grep -q "^rangebar ($VERSION)$"; then
+    echo "FAIL: Version $VERSION already on PyPI"
+    echo "Bump version in Cargo.toml first"
+    exit 1
+fi
+
+mise run release:build-only
+mise run publish
+
+echo ""
+echo "OK: v$VERSION published to PyPI"
+"""

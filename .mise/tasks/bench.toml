@@ -1,0 +1,34 @@
+# Benchmarking Tasks
+# Usage: mise run bench:run, mise run bench:validate
+
+["bench:run"]
+description = "Run performance benchmarks"
+run = "cargo bench --bench rangebar_bench"
+
+["bench:quick"]
+description = "Run quick benchmarks (reduced iterations)"
+run = "cargo bench --bench rangebar_bench -- --quick"
+
+["bench:baseline"]
+description = "Create performance baseline"
+run = """
+mkdir -p $BENCH_DATA_DIR
+cargo bench --bench rangebar_bench -- --save-baseline main
+echo "Baseline saved to $BENCH_DATA_DIR/main"
+"""
+
+["bench:compare"]
+description = "Compare current performance with baseline"
+run = "cargo bench --bench rangebar_bench -- --baseline main"
+
+["bench:validate"]
+description = "Validate performance targets (1M ticks < 100ms)"
+run = """
+echo "Running performance validation..."
+cargo bench --bench rangebar_bench -- --quick 2>&1 | tee /tmp/bench_output.txt
+if grep -q "1M.*time:.*[0-9][0-9][0-9]\\.[0-9]* ms" /tmp/bench_output.txt; then
+  echo "FAIL: 1M ticks benchmark exceeds 100ms target"
+  exit 1
+fi
+echo "PASS: Performance targets met"
+"""

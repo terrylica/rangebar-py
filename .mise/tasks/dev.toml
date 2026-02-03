@@ -1,0 +1,62 @@
+# Development Tasks
+# Usage: mise run fmt, mise run test, mise run build
+
+[fmt]
+description = "Format code with cargo fmt"
+run = "cargo fmt --all"
+
+[lint]
+description = "Run clippy linting"
+run = "cargo clippy --all-targets --all-features"
+
+[test]
+description = "Run Rust tests with cargo nextest (excludes PyO3 root crate)"
+run = "cargo nextest run --workspace --exclude rangebar-py"
+
+[test-py]
+description = "Run Python tests"
+run = "pytest tests/ -v"
+
+["test:e2e"]
+description = "Run end-to-end tests (requires ClickHouse)"
+run = "pytest tests/ -v -m 'not slow' --tb=short"
+
+["test:clickhouse"]
+description = "Run ClickHouse-specific tests"
+run = "pytest tests/ -v -m clickhouse --tb=short"
+
+["test:all"]
+description = "Run all tests including slow and ClickHouse"
+run = "pytest tests/ -v --tb=short"
+
+[deny]
+description = "Run cargo deny security checks"
+run = "cargo deny check"
+
+[check]
+description = "Run all quality checks (fmt + test)"
+depends = ["fmt", "test"]
+
+[check-full]
+description = "Full quality checks including lint and deny"
+depends = ["fmt", "lint", "test", "deny"]
+
+[build]
+description = "Build Python extension (development)"
+run = "maturin develop"
+
+[build-release]
+description = "Build in release mode"
+run = "cargo build --release"
+
+[clean]
+description = "Clean build artifacts"
+run = "cargo clean && rm -rf dist/ build/ *.egg-info"
+
+[docs]
+description = "Generate documentation"
+run = "cargo doc --open --all-features"
+
+[dev]
+description = "Quick development cycle (fmt + test)"
+depends = ["fmt", "test"]

@@ -1,0 +1,26 @@
+# Dependency Management Tasks
+# Usage: mise run deps:check, mise run deps:security
+
+["deps:check"]
+description = "Check for outdated dependencies"
+run = "cargo outdated -R --color always"
+
+["deps:security"]
+description = "Run security audit on dependencies"
+run = "cargo deny check advisories && cargo deny check licenses"
+
+["deps:tree"]
+description = "Show dependency tree (depth 1)"
+run = "cargo tree --depth 1 | grep -E '^[a-z]'"
+
+["deps:update"]
+description = "Update dependencies (simple - no rollback)"
+run = """
+cargo update
+cargo nextest run --no-fail-fast
+echo "Dependencies updated and tests passed"
+"""
+
+["deps:update-safe"]
+description = "Update dependencies with backup/rollback (uses script)"
+run = "./scripts/dependency_monitor.sh auto"

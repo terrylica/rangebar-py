@@ -1,0 +1,33 @@
+# Validation Tasks
+# Usage: mise run validate:all
+
+["validate:security"]
+description = "Validate no privilege escalation in scripts"
+run = """
+if grep -r 'sudo' scripts/*.sh 2>/dev/null; then
+  echo "FAIL: Found sudo usage in scripts"
+  exit 1
+fi
+echo "PASS: No privilege escalation detected"
+"""
+
+["validate:injection"]
+description = "Validate command injection prevention"
+run = """
+if grep -E '\\$\\(.*\\$[A-Z]' scripts/*.sh 2>/dev/null; then
+  echo "WARN: Potential command injection pattern found"
+fi
+echo "PASS: Command injection check complete"
+"""
+
+["validate:memory"]
+description = "Validate memory efficiency for high-volume months (prevents OOM regressions)"
+run = "python scripts/validate_memory_efficiency.py"
+
+["validate:all"]
+description = "Run all production validation checks"
+depends = ["validate:security", "validate:injection", "validate:memory"]
+
+["validate:clickhouse"]
+description = "Validate ClickHouse connectivity and cache integrity"
+run = "python scripts/validate_clickhouse.py"

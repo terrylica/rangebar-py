@@ -1,0 +1,23 @@
+# Smoke Test Tasks
+# Usage: mise run smoke
+
+["smoke:import"]
+description = "Verify Python import works"
+run = "python -c 'from rangebar import RangeBarProcessor; print(\"OK: import works\")'"
+
+["smoke:process"]
+description = "Verify basic processing works"
+run = """
+python -c '
+from rangebar._core import PyRangeBarProcessor
+proc = PyRangeBarProcessor(threshold_decimal_bps=250)
+assert proc.threshold_decimal_bps == 250
+bars = proc.process_trades([])
+assert bars == []
+print("OK: basic processing works")
+'
+"""
+
+[smoke]
+description = "Run all smoke tests"
+depends = ["smoke:import", "smoke:process"]
