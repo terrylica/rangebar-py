@@ -12,12 +12,10 @@
 | Understand architecture | [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)                       | 8-crate workspace             |
 | Work with Rust crates   | [crates/CLAUDE.md](/crates/CLAUDE.md)                               | Crate details, microstructure |
 | Work with Python layer  | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)             | API, caching, validation      |
-| Release workflow        | [docs/development/RELEASE.md](/docs/development/RELEASE.md)         | mise tasks, PyPI              |
+| Release workflow        | [docs/development/RELEASE.md](/docs/development/RELEASE.md)         | Zig cross-compile, mise tasks |
 | Performance monitoring  | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics           |
 | Project context         | [docs/CONTEXT.md](/docs/CONTEXT.md)                                 | Why this project exists       |
 | API reference           | [docs/api.md](/docs/api.md)                                         | Full Python API docs          |
-| Pattern research        | [docs/research/INDEX.md](/docs/research/INDEX.md)                   | Research findings (complete)  |
-| Session handoff         | [RESUME.md](/RESUME.md)                                             | Context for new sessions      |
 
 ---
 
@@ -89,6 +87,7 @@ rangebar-py/
 │   ├── clickhouse/            Tier 2 cache
 │   ├── validation/            Microstructure validation (v7.0+)
 │   └── storage/               Tier 1 cache (Parquet)
+├── .cargo/config.toml         Cross-compile friendly rustflags
 └── pyproject.toml             Maturin config
 ```
 
@@ -107,7 +106,7 @@ rangebar-py/
 **mise patterns**: `Skill(itp:mise-configuration)` | `Skill(itp:mise-tasks)`
 
 ```bash
-# Setup (mise manages all tools)
+# Setup (mise manages all tools including zig)
 mise install
 
 # Build & test
@@ -120,12 +119,54 @@ mise run check-full         # fmt + lint + test + deny
 
 # Release (see docs/development/RELEASE.md)
 mise run release:full       # Full 4-phase workflow
+mise run release:linux      # Zig cross-compile (~55 sec)
 mise run publish            # Upload to PyPI
 
 # Benchmarks
 mise run bench:run          # Full benchmarks
 mise run bench:validate     # Verify 1M ticks < 100ms
 ```
+
+---
+
+## Build System
+
+### Cross-Platform Wheel Building
+
+**Strategy**: Zig cross-compilation from macOS (no remote SSH needed).
+
+| Platform         | Strategy          | Time    | Details                        |
+| ---------------- | ----------------- | ------- | ------------------------------ |
+| macOS ARM64      | Native maturin    | ~10 sec | `mise run release:macos-arm64` |
+| Linux x86_64     | Zig cross-compile | ~55 sec | `mise run release:linux`       |
+| Linux (fallback) | SSH + Docker      | ~5 min  | `LINUX_BUILD_STRATEGY=remote`  |
+
+**Key configuration**:
+
+| File                 | Purpose                                          |
+| -------------------- | ------------------------------------------------ |
+| `.mise.toml`         | Tools (zig, rust, python) + release tasks        |
+| `.cargo/config.toml` | Cross-compile rustflags (no `target-cpu=native`) |
+| `Cargo.toml`         | `rustls-tls` (no OpenSSL dependency)             |
+
+**Why rustls**: Eliminates OpenSSL dependency, enabling pure Rust cross-compilation.
+
+**Full release workflow**: [docs/development/RELEASE.md](/docs/development/RELEASE.md)
+
+---
+
+## Memory Guards (MEM-\*)
+
+Production memory optimization infrastructure:
+
+| Guard   | Description                                   | Location            |
+| ------- | --------------------------------------------- | ------------------- |
+| MEM-001 | Memory estimation before fetch                | `resource_guard.py` |
+| MEM-002 | Chunked dict conversion (100K trades)         | `helpers.py`        |
+| MEM-006 | Polars concat instead of pandas               | `conversion.py`     |
+| MEM-011 | Adaptive chunk size (50K with microstructure) | `helpers.py:304`    |
+
+**Issue #65 Fix**: MEM-011 reduces chunk size from 100K to 50K when `include_microstructure=True`, preventing OOM on large date ranges.
 
 ---
 
@@ -154,12 +195,13 @@ mise run bench:validate     # Verify 1M ticks < 100ms
 
 ## Common Errors
 
-| Error                                         | Cause            | Fix               |
-| --------------------------------------------- | ---------------- | ----------------- |
-| `RangeBarProcessor has no attribute X`        | Outdated binding | `maturin develop` |
-| `Invalid threshold_decimal_bps`               | Wrong units      | Use 250 for 0.25% |
-| `High < Low` assertion                        | Bad input data   | Check sorting     |
-| `dtype mismatch (double[pyarrow] vs float64)` | Cache issue      | Fixed in v2.2.0   |
+| Error                                   | Cause               | Fix                                        |
+| --------------------------------------- | ------------------- | ------------------------------------------ |
+| `RangeBarProcessor has no attribute X`  | Outdated binding    | `maturin develop`                          |
+| `Invalid threshold_decimal_bps`         | Wrong units         | Use 250 for 0.25%                          |
+| `High < Low` assertion                  | Bad input data      | Check sorting                              |
+| `target-cpu=native` cross-compile error | RUSTFLAGS pollution | Use `RUSTFLAGS=""` or `.cargo/config.toml` |
+| OOM with `include_microstructure=True`  | Large date range    | Fixed by MEM-011 adaptive chunk size       |
 
 ---
 
@@ -209,7 +251,7 @@ df = get_range_bars(
 | [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)                       | System design, dependency graph         |
 | [docs/CONTEXT.md](/docs/CONTEXT.md)                                 | Why this project exists, backtesting.py |
 | [docs/api.md](/docs/api.md)                                         | Python API reference                    |
-| [docs/development/RELEASE.md](/docs/development/RELEASE.md)         | Release workflow, mise tasks            |
+| [docs/development/RELEASE.md](/docs/development/RELEASE.md)         | Release workflow, zig cross-compile     |
 | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics, viability          |
 
 ---

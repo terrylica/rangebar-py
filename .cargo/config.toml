@@ -1,0 +1,36 @@
+# Project-local Cargo configuration
+# Overrides ~/.cargo/config.toml for cross-compilation compatibility
+
+# =============================================================================
+# Cross-Compilation Settings
+# =============================================================================
+# IMPORTANT: Do NOT use target-cpu=native here - it breaks cross-compilation.
+# The global ~/.cargo/config.toml may have target-cpu=native, which works for
+# native builds but fails when cross-compiling to x86_64-linux from ARM macOS.
+#
+# Per-target flags override global [build] rustflags, enabling zig cross-compile.
+
+[build]
+# Remove target-cpu=native to allow cross-compilation
+rustflags = ["-C", "opt-level=3", "-C", "strip=symbols"]
+
+# =============================================================================
+# Target-Specific Overrides
+# =============================================================================
+# These apply ONLY when building for the specific target, allowing us to
+# use native optimizations on macOS while keeping Linux cross-compile friendly.
+
+[target.aarch64-apple-darwin]
+# Native macOS ARM64: can use native CPU features
+rustflags = ["-C", "opt-level=3", "-C", "target-cpu=native", "-C", "strip=symbols"]
+
+[target.x86_64-unknown-linux-gnu]
+# Linux cross-compile: generic x86_64, no native CPU features
+rustflags = ["-C", "opt-level=3", "-C", "strip=symbols"]
+
+# =============================================================================
+# Linker Settings (for cross-compilation)
+# =============================================================================
+# Maturin --zig sets these automatically, but documenting for reference:
+# [target.x86_64-unknown-linux-gnu]
+# linker = "zig cc -target x86_64-linux-gnu.2.17"

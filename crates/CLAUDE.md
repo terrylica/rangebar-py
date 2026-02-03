@@ -179,6 +179,7 @@ How a range bar is built, step by step:
   - `binance` (default) - Spot, UM futures, CM futures
   - `exness` - 10 forex pairs
   - `all-providers` - Enable all
+- **TLS**: Uses `rustls-tls` (no OpenSSL dependency, enables zig cross-compilation)
 
 **Binance types**: `HistoricalDataLoader`, `BinanceMarket`
 **Exness types**: `ExnessFetcher`, `ExnessInstrument`
