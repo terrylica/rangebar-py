@@ -4,7 +4,7 @@
 
 **Date**: 2026-02-03
 **Plan**: `/Users/terryli/.claude/plans/sparkling-coalescing-dijkstra.md`
-**GitHub Issue**: <https://github.com/terrylica/rangebar-py/issues/63>
+**GitHub Issue**: <https://github.com/terrylica/rangebar-py/issues/62>
 
 ---
 

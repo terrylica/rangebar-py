@@ -135,16 +135,16 @@ mise run bench:validate     # Verify 1M ticks < 100ms
 
 | Feature                | Formula                                     | Range        |
 | ---------------------- | ------------------------------------------- | ------------ |
-| `duration_us`          | (close_time - open_time) \* 1000            | [0, +inf)    |
+| `duration_us`          | close_time - open_time                      | [0, +inf)    |
 | `ofi`                  | (buy_vol - sell_vol) / total                | [-1, 1]      |
-| `vwap_close_deviation` | (close - vwap) / range                      | ~[-1, 1]     |
+| `vwap_close_deviation` | (close - vwap) / (high - low)               | ~[-1, 1]     |
 | `price_impact`         | abs(close - open) / volume                  | [0, +inf)    |
 | `kyle_lambda_proxy`    | ((close-open)/open) / (imbalance/total_vol) | (-inf, +inf) |
 | `trade_intensity`      | trades / duration_sec                       | [0, +inf)    |
 | `volume_per_trade`     | volume / trade_count                        | [0, +inf)    |
 | `aggression_ratio`     | buy_count / sell_count                      | [0, 100]     |
 | `aggregation_density`  | individual_count / agg_count                | [1, +inf)    |
-| `turnover_imbalance`   | (buy_turn - sell_turn) / volume             | [-1, 1]      |
+| `turnover_imbalance`   | (buy_turn - sell_turn) / total_turnover     | [-1, 1]      |
 
 **Full details**: [crates/CLAUDE.md](/crates/CLAUDE.md#microstructure-features-v70)
 

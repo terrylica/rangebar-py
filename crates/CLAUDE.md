@@ -49,18 +49,18 @@ rangebar-cli         rangebar-batch      rangebar-streaming
 
 10 features computed in Rust during bar construction:
 
-| #   | Feature                | Formula                                     | Range        |
-| --- | ---------------------- | ------------------------------------------- | ------------ |
-| 1   | `duration_us`          | (close_time - open_time) \* 1000            | [0, +inf)    |
-| 2   | `ofi`                  | (buy_vol - sell_vol) / total                | [-1, 1]      |
-| 3   | `vwap_close_deviation` | (close - vwap) / (high - low)               | ~[-1, 1]     |
-| 4   | `price_impact`         | abs(close - open) / volume                  | [0, +inf)    |
-| 5   | `kyle_lambda_proxy`    | ((close-open)/open) / (imbalance/total_vol) | (-inf, +inf) |
-| 6   | `trade_intensity`      | trade_count / duration_sec                  | [0, +inf)    |
-| 7   | `volume_per_trade`     | volume / trade_count                        | [0, +inf)    |
-| 8   | `aggression_ratio`     | buy_count / sell_count                      | [0, 100]     |
-| 9   | `aggregation_density`  | individual_count / agg_count                | [1, +inf)    |
-| 10  | `turnover_imbalance`   | (buy_turn - sell_turn) / volume             | [-1, 1]      |
+| #   | Feature                   | Formula                                     | Range        |
+| --- | ------------------------- | ------------------------------------------- | ------------ |
+| 1   | `duration_us`             | close_time - open_time                      | [0, +inf)    |
+| 2   | `ofi`                     | (buy_vol - sell_vol) / total                | [-1, 1]      |
+| 3   | `vwap_close_deviation`    | (close - vwap) / (high - low)               | ~[-1, 1]     |
+| 4   | `price_impact`            | abs(close - open) / volume                  | [0, +inf)    |
+| 5   | `kyle_lambda_proxy`       | ((close-open)/open) / (imbalance/total_vol) | (-inf, +inf) |
+| 6   | `trade_intensity`         | trade_count / duration_sec                  | [0, +inf)    |
+| 7   | `volume_per_trade`        | volume / trade_count                        | [0, +inf)    |
+| 8   | `aggression_ratio`        | buy_count / sell_count                      | [0, 100]     |
+| 9   | `aggregation_density_f64` | individual_count / agg_count                | [1, +inf)    |
+| 10  | `turnover_imbalance`      | (buy_turn - sell_turn) / total_turnover     | [-1, 1]      |
 
 **Edge cases**: Division by zero returns 0.0 (no information).
 

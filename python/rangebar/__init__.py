@@ -87,6 +87,7 @@ __all__ = [
     "normalize_temporal_precision",
     "populate_cache_resumable",
     "precompute_range_bars",
+    "process_trades_chunked",
     "process_trades_polars",
     "process_trades_to_dataframe",
     "resolve_and_validate_threshold",  # Issue #62: central validation

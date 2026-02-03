@@ -105,7 +105,7 @@ df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", threshold_decimal_bps
 # Binance USD-M Futures
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", market="futures-um", threshold_decimal_bps=1000)
 
-# With microstructure features (53 total columns)
+# With microstructure features (62 total columns)
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_decimal_bps=1000, include_microstructure=True)
 ```
 
@@ -117,7 +117,7 @@ df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_decimal_bps
 - `threshold_decimal_bps`: Threshold in decimal basis points or preset name (default: 250, but crypto requires >= 1000)
 - `source`: Data source - "binance" or "exness" (default: "binance")
 - `market`: Market type - "spot", "futures-um"/"um", "futures-cm"/"cm" (default: "spot")
-- `include_microstructure`: Include 53 microstructure feature columns (default: False)
+- `include_microstructure`: Include 57 microstructure feature columns (default: False)
 - `use_cache`: Cache tick data locally (default: True)
 
 **Returns**: pandas DataFrame with DatetimeIndex and columns `Open`, `High`, `Low`, `Close`, `Volume`
@@ -221,7 +221,7 @@ clear_threshold_cache()
 
 ### Microstructure Features (v7.0+)
 
-When `include_microstructure=True`, the DataFrame includes 53 feature columns organized into three categories:
+When `include_microstructure=True`, the DataFrame includes 57 feature columns (62 total with OHLCV) organized into three categories:
 
 **Base Microstructure (15 columns)**:
 
@@ -330,19 +330,20 @@ for bars_df in process_trades_chunked(iter(trades), chunk_size=50_000, symbol="B
 Real-time range bar generation from Binance WebSocket:
 
 ```python
-from rangebar import stream_binance_live, StreamingConfig, ReconnectionConfig
+from rangebar import stream_binance_live, ReconnectionConfig
 
-# Basic streaming
-async for bar in stream_binance_live("BTCUSDT", threshold_decimal_bps=1000):
+# Basic streaming (uses threshold_bps, not threshold_decimal_bps)
+async for bar in stream_binance_live("BTCUSDT", threshold_bps=1000):
     print(f"New bar: {bar}")
 
-# With configuration
-config = StreamingConfig(
-    buffer_size=1000,
-    emit_partial_bars=False,
-    reconnection=ReconnectionConfig(max_retries=5, base_delay_ms=1000),
+# With reconnection configuration
+reconnect_config = ReconnectionConfig(
+    max_retries=5,
+    initial_delay_s=1.0,
+    max_delay_s=60.0,
+    backoff_factor=2.0,
 )
-async for bar in stream_binance_live("BTCUSDT", threshold_decimal_bps=1000, config=config):
+async for bar in stream_binance_live("BTCUSDT", threshold_bps=1000, reconnect_config=reconnect_config):
     process_bar(bar)
 ```
 
