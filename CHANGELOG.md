@@ -1,3 +1,10 @@
+## [12.0.2](https://github.com/terrylica/rangebar-py/compare/v12.0.1...v12.0.2) (2026-02-03)
+
+
+### Bug Fixes
+
+* **memory:** adaptive chunk size for microstructure mode (MEM-011) ([214d3bc](https://github.com/terrylica/rangebar-py/commit/214d3bc6d965a15c869441265e393bd6e5678dd3)), closes [#65](https://github.com/terrylica/rangebar-py/issues/65)
+
 # [12.0.0](https://github.com/terrylica/rangebar-py/compare/v11.7.0...v12.0.0) (2026-02-03)
 
 
