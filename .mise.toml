@@ -351,6 +351,9 @@ echo "OK: macOS ARM64 wheels built"
 [tasks."release:linux-preflight"]
 description = "Verify Linux build prerequisites (zig or remote host)"
 run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
 echo "=== Linux Build Preflight ==="
 
 # Ensure lock directory exists
@@ -358,11 +361,14 @@ mkdir -p "$BUILD_LOCK_DIR"
 
 # Check for stale locks (older than 30 minutes)
 find "$BUILD_LOCK_DIR" -name "*.lock" -mmin +30 -delete 2>/dev/null || true
+find "$BUILD_LOCK_DIR" -name "*.lock.d" -type d -mmin +30 -exec rm -rf {} + 2>/dev/null || true
 
 # Check zig availability (primary strategy)
 if command -v zig &>/dev/null; then
     ZIG_VERSION=$(zig version)
     echo "OK: Zig available: $ZIG_VERSION"
+else
+    echo "WARN: Zig not found - will use remote Docker fallback"
 fi
 
 # Check rustup target
@@ -374,8 +380,16 @@ else
     echo "OK: Linux target installed"
 fi
 
+# Verify .cargo/config.toml exists (prevents target-cpu=native errors)
+if [ -f ".cargo/config.toml" ]; then
+    echo "OK: .cargo/config.toml exists"
+else
+    echo "WARN: .cargo/config.toml missing - cross-compile may fail"
+    echo "      Create it with cross-compile friendly rustflags"
+fi
+
 # Fallback: check remote host if zig strategy fails
-if [ "$LINUX_BUILD_STRATEGY" = "remote" ]; then
+if [ "${LINUX_BUILD_STRATEGY:-zig}" = "remote" ]; then
     if ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" "echo connected" >/dev/null 2>&1; then
         echo "FAIL: Cannot connect to $LINUX_BUILD_USER@$LINUX_BUILD_HOST"
         exit 1
@@ -483,6 +497,9 @@ echo "OK: Linux wheels built via remote Docker (~5 min)"
 [tasks."release:preflight"]
 description = "Validate release prerequisites (Phase 1)"
 run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
 echo "=== PREFLIGHT ==="
 git update-index --refresh -q || true
 
@@ -498,11 +515,18 @@ if [ "$BRANCH" != "main" ]; then
     exit 1
 fi
 
+# Clean dist/ to prevent stale wheel accumulation
+if [ -d dist ]; then
+    echo "Cleaning dist/ directory..."
+    rm -rf dist
+fi
+mkdir -p dist
+
 echo "OK: Preflight passed"
 """
 
 [tasks."release:sync"]
-description = "Synchronize with remote (Phase 2)"
+description = "Synchronize with remote (Phase 2) - SSH with port fallback"
 depends = ["release:preflight"]
 run = """
 #!/usr/bin/env bash
@@ -510,15 +534,37 @@ set -euo pipefail
 
 echo "=== SYNC ==="
 
-# Ensure SSH remote for terrylica account
+# Git SSH with automatic port fallback (443 → 22)
+# Port 443 is configured in ~/.ssh/config but can timeout on some networks
+git_ssh_with_fallback() {
+    local cmd="$1"
+
+    # Try default SSH config first (uses port 443 via ssh.github.com)
+    if timeout 15 git $cmd 2>/dev/null; then
+        return 0
+    fi
+
+    echo "WARN: Default SSH timed out, falling back to port 22..."
+
+    # Fallback: Direct port 22 connection
+    export GIT_SSH_COMMAND='ssh -p 22 -i ~/.ssh/id_ed25519_terrylica -o IdentitiesOnly=yes -o ConnectTimeout=10'
+    git $cmd
+}
+
+# Ensure remote URL uses SSH with host alias
 REMOTE_URL=$(git remote get-url origin)
 if [[ ! "$REMOTE_URL" =~ github.com-terrylica ]]; then
-  echo "Fixing remote URL for terrylica identity..."
-  git remote set-url origin "git@github.com-terrylica:terrylica/rangebar-py.git"
+    echo "Fixing remote URL for terrylica identity..."
+    git remote set-url origin "git@github.com-terrylica:terrylica/rangebar-py.git"
 fi
 
-git pull --rebase origin main || { echo "FAIL: Pull failed"; exit 1; }
-git push origin main || { echo "FAIL: Push failed"; exit 1; }
+# Sync with fallback
+git_ssh_with_fallback "pull --rebase origin main" || { echo "FAIL: Pull failed"; exit 1; }
+git_ssh_with_fallback "push origin main" || { echo "FAIL: Push failed"; exit 1; }
+
+# Unset to avoid polluting subsequent commands
+unset GIT_SSH_COMMAND
+
 echo "OK: Synced"
 """
 
@@ -530,15 +576,65 @@ run = "./scripts/check-release-config.sh"
 description = "Build all platform wheels + sdist (Phase 3 - runs AFTER version bump)"
 depends = ["release:version"]
 run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
 echo "=== BUILD ALL PLATFORMS ==="
+
+# Get version from Cargo.toml (SSoT)
+VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+echo "Building version: $VERSION"
+
+# Check if this version already exists on PyPI (prevents wasted build time)
+echo "Checking PyPI for existing version..."
+if pip index versions rangebar 2>/dev/null | grep -q "^rangebar ($VERSION)$"; then
+    echo "WARN: Version $VERSION already exists on PyPI"
+    echo "INFO: semantic-release found no releasable commits (feat:/fix:)"
+    echo "INFO: The 'build:' commit type does not trigger version bumps"
+    echo ""
+    echo "To force a release, make a feat: or fix: commit, or:"
+    echo "  1. Manually bump version in Cargo.toml"
+    echo "  2. Run: mise run release:build-only"
+    exit 0
+fi
+
+# Build all platforms
 mise run release:macos-arm64
 mise run release:linux
 mise run release:sdist
-# Copy macOS wheel and sdist to dist/ (Linux wheel already lands there via scp)
-VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+
+# Copy to dist/ (Linux wheel already lands there)
 cp -n target/wheels/rangebar-${VERSION}-*.whl dist/ 2>/dev/null || true
 cp -n target/wheels/rangebar-${VERSION}.tar.gz dist/ 2>/dev/null || true
-echo "OK: All wheels + sdist built"
+
+echo ""
+echo "OK: All wheels + sdist built for v$VERSION"
+ls -la dist/rangebar-${VERSION}* 2>/dev/null || true
+"""
+
+[tasks."release:build-only"]
+description = "Build wheels WITHOUT version check (for manual releases)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== BUILD ONLY (no version check) ==="
+
+VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+echo "Building version: $VERSION"
+
+# Clean dist/
+rm -rf dist && mkdir -p dist
+
+mise run release:macos-arm64
+mise run release:linux
+mise run release:sdist
+
+cp -n target/wheels/rangebar-${VERSION}-*.whl dist/ 2>/dev/null || true
+cp -n target/wheels/rangebar-${VERSION}.tar.gz dist/ 2>/dev/null || true
+
+echo ""
+echo "OK: Wheels built"
 ls -la dist/rangebar-${VERSION}* 2>/dev/null || true
 """
 
@@ -577,9 +673,49 @@ description = "Full release workflow: version bump → build → smoke → publi
 # mise resolves the full DAG automatically.
 depends = ["release:postflight", "release:pypi"]
 run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+
 echo '========================================='
-echo ' Release complete and published to PyPI!'
+echo " Release v$VERSION complete!"
 echo '========================================='
+echo ""
+echo "Published to PyPI: https://pypi.org/project/rangebar/$VERSION/"
+echo ""
+echo "Wheels:"
+ls dist/rangebar-${VERSION}*.whl 2>/dev/null || echo "  (none in dist/)"
+"""
+
+[tasks."release:quick"]
+description = "Quick release: build + publish (skips sync, for when GitHub is unreachable)"
+depends = ["release:preflight", "smoke"]
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== QUICK RELEASE (no sync) ==="
+echo "WARN: Skipping GitHub sync - ensure you're up to date manually"
+
+VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+echo "Version: $VERSION"
+
+# Check PyPI
+if pip index versions rangebar 2>/dev/null | grep -q "^rangebar ($VERSION)$"; then
+    echo "FAIL: Version $VERSION already on PyPI"
+    echo "Bump version in Cargo.toml first"
+    exit 1
+fi
+
+# Build
+mise run release:build-only
+
+# Publish
+mise run publish
+
+echo ""
+echo "OK: v$VERSION published to PyPI"
 """
 
 # =============================================================================
@@ -813,3 +949,172 @@ run = "python scripts/run_length_momentum_multi_symbol.py"
 [tasks."research:wfo-analysis"]
 description = "Run Walk-Forward regime detection"
 run = "python scripts/run_length_momentum_wfo.py"
+
+# =============================================================================
+# Diagnostics Tasks
+# =============================================================================
+
+[tasks."diag:release"]
+description = "Diagnose release environment (SSH, tools, PyPI)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== RELEASE DIAGNOSTICS ==="
+echo ""
+
+# Version info
+VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+echo "Local version: $VERSION"
+
+# PyPI check
+echo ""
+echo "--- PyPI Status ---"
+PYPI_VERSION=$(pip index versions rangebar 2>/dev/null | head -1 | sed 's/rangebar (\\(.*\\))/\\1/' || echo "unknown")
+echo "PyPI latest: $PYPI_VERSION"
+if [ "$VERSION" = "$PYPI_VERSION" ]; then
+    echo "STATUS: Version $VERSION already on PyPI"
+else
+    echo "STATUS: Version $VERSION NOT on PyPI (publishable)"
+fi
+
+# Git status
+echo ""
+echo "--- Git Status ---"
+echo "Branch: $(git branch --show-current)"
+echo "Clean: $(git status --porcelain | wc -l | tr -d ' ') uncommitted files"
+echo "Remote: $(git remote get-url origin)"
+
+# SSH connectivity
+echo ""
+echo "--- SSH Connectivity ---"
+echo -n "Port 443 (ssh.github.com): "
+SSH_OUT=$(timeout 15 ssh -T -o ConnectTimeout=10 git@github.com-terrylica 2>&1 || true)
+if echo "$SSH_OUT" | grep -q "successfully authenticated"; then
+    echo "OK"
+elif echo "$SSH_OUT" | grep -qi "timeout\\|timed out"; then
+    echo "TIMEOUT"
+else
+    echo "FAIL"
+fi
+
+echo -n "Port 22 (direct): "
+SSH_OUT=$(timeout 20 ssh -T -p 22 -i ~/.ssh/id_ed25519_terrylica -o IdentitiesOnly=yes -o ConnectTimeout=15 git@github.com 2>&1 || true)
+if echo "$SSH_OUT" | grep -q "successfully authenticated"; then
+    echo "OK"
+elif echo "$SSH_OUT" | grep -qi "timeout\\|timed out"; then
+    echo "TIMEOUT"
+else
+    echo "FAIL"
+fi
+
+# Tools
+echo ""
+echo "--- Build Tools ---"
+echo "Rust: $(rustc --version 2>/dev/null || echo 'not found')"
+echo "Zig: $(zig version 2>/dev/null || echo 'not found')"
+echo "Maturin: $(maturin --version 2>/dev/null || echo 'not found')"
+echo "Linux target: $(rustup target list --installed | grep -q x86_64-unknown-linux-gnu && echo 'installed' || echo 'missing')"
+
+# Cargo config
+echo ""
+echo "--- Cargo Config ---"
+if [ -f ".cargo/config.toml" ]; then
+    echo "Project .cargo/config.toml: exists"
+    # Check if target-cpu=native is in [build] section (bad) vs target-specific (ok)
+    # Only check non-comment lines (rustflags = [...])
+    if grep -A5 "^\\[build\\]" .cargo/config.toml | grep "^rustflags" | grep -q "target-cpu=native"; then
+        echo "  WARN: [build] section has target-cpu=native (breaks cross-compile)"
+    elif grep "^rustflags" .cargo/config.toml | grep -q "target-cpu=native"; then
+        echo "  OK: target-cpu=native only in target-specific sections"
+    else
+        echo "  OK: No target-cpu=native in rustflags"
+    fi
+else
+    echo "Project .cargo/config.toml: MISSING (may need for cross-compile)"
+fi
+
+# Build locks
+echo ""
+echo "--- Build Locks ---"
+if [ -d "$BUILD_LOCK_DIR" ]; then
+    LOCKS=$(find "$BUILD_LOCK_DIR" -name "*.lock*" 2>/dev/null | wc -l | tr -d ' ')
+    echo "Lock directory: $BUILD_LOCK_DIR"
+    echo "Active locks: $LOCKS"
+    ls -la "$BUILD_LOCK_DIR"/*.lock* 2>/dev/null || echo "  (none)"
+else
+    echo "Lock directory: not created yet"
+fi
+
+# 1Password
+echo ""
+echo "--- Credentials ---"
+echo -n "1Password PyPI token: "
+if op item get djevteztvbcqgcm3yl4njkawjq --fields credential --reveal 2>/dev/null | head -c 10 >/dev/null; then
+    echo "accessible"
+else
+    echo "FAIL (run: op signin)"
+fi
+
+echo ""
+echo "=== END DIAGNOSTICS ==="
+"""
+
+[tasks."diag:locks-clear"]
+description = "Clear all build locks (use when stuck)"
+run = """
+#!/usr/bin/env bash
+echo "Clearing build locks..."
+rm -rf "$BUILD_LOCK_DIR"/*.lock* 2>/dev/null || true
+rm -rf "$BUILD_LOCK_DIR"/*.lock.d 2>/dev/null || true
+echo "OK: Locks cleared"
+ls -la "$BUILD_LOCK_DIR" 2>/dev/null || echo "Lock directory empty"
+"""
+
+[tasks."diag:ssh-fix"]
+description = "Test and fix SSH connectivity to GitHub"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== SSH Connectivity Fix ==="
+
+# Test port 443 (configured in ~/.ssh/config)
+echo -n "Testing port 443 (ssh.github.com)... "
+if timeout 15 ssh -T -o ConnectTimeout=10 git@github.com-terrylica 2>&1 | grep -q "successfully authenticated"; then
+    echo "OK"
+    echo "Port 443 works - no fix needed"
+    exit 0
+else
+    echo "TIMEOUT"
+fi
+
+# Test port 22 (direct)
+echo -n "Testing port 22 (github.com direct)... "
+if timeout 20 ssh -T -p 22 -i ~/.ssh/id_ed25519_terrylica -o IdentitiesOnly=yes -o ConnectTimeout=15 git@github.com 2>&1 | grep -q "successfully authenticated"; then
+    echo "OK"
+    echo ""
+    echo "Port 22 works but port 443 doesn't."
+    echo "Your network may be blocking port 443 to ssh.github.com"
+    echo ""
+    echo "Options:"
+    echo "  1. Update ~/.ssh/config to use port 22:"
+    echo "     Host github.com-terrylica"
+    echo "         HostName github.com"
+    echo "         Port 22"
+    echo "         User git"
+    echo "         IdentityFile ~/.ssh/id_ed25519_terrylica"
+    echo ""
+    echo "  2. Use mise run release:quick (skips sync)"
+    echo ""
+    echo "  3. Manually sync with:"
+    echo "     GIT_SSH_COMMAND='ssh -p 22 -i ~/.ssh/id_ed25519_terrylica' git pull --rebase origin main"
+else
+    echo "FAIL"
+    echo ""
+    echo "Both ports failing - check:"
+    echo "  1. SSH key exists: ls -la ~/.ssh/id_ed25519_terrylica"
+    echo "  2. Key added to GitHub: gh ssh-key list"
+    echo "  3. Network connectivity: ping github.com"
+fi
+"""
