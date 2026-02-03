@@ -544,6 +544,13 @@ def get_range_bars(
         any_data_found = True
 
         # Process segment (reuse processor for state continuity within segment)
+        # Issue #68: Auto-enable v12 features when include_microstructure=True
+        # - inter_bar_lookback_count defaults to 200 (recommended range: 100-500)
+        # - include_intra_bar_features enabled for ITH and statistical features
+        effective_lookback = inter_bar_lookback_count
+        if include_microstructure and effective_lookback is None:
+            effective_lookback = 200  # Sensible default for inter-bar features
+
         segment_bars, processor = _process_binance_trades(
             segment_ticks,
             threshold_decimal_bps,
@@ -552,7 +559,8 @@ def get_range_bars(
             processor=processor,
             symbol=symbol,
             prevent_same_timestamp_close=prevent_same_timestamp_close,
-            inter_bar_lookback_count=inter_bar_lookback_count,
+            inter_bar_lookback_count=effective_lookback,
+            include_intra_bar_features=include_microstructure,  # Auto-enable
         )
 
         if segment_bars is not None and not segment_bars.empty:

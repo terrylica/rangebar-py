@@ -94,12 +94,18 @@ def _stream_range_bars_binance(
         "cm": MarketType.FuturesCM,
     }[market]
 
+    # Issue #68: Auto-enable v12 features when include_microstructure=True
+    effective_lookback = inter_bar_lookback_count
+    if include_microstructure and effective_lookback is None:
+        effective_lookback = 200  # Sensible default for inter-bar features
+
     # Create processor with symbol for checkpoint support
     processor = RangeBarProcessor(
         threshold_decimal_bps,
         symbol=symbol,
         prevent_same_timestamp_close=prevent_same_timestamp_close,
-        inter_bar_lookback_count=inter_bar_lookback_count,
+        inter_bar_lookback_count=effective_lookback,
+        include_intra_bar_features=include_microstructure,  # Auto-enable
     )
     bar_buffer: list[dict] = []
 
@@ -285,6 +291,7 @@ def _process_binance_trades(
     symbol: str | None = None,
     prevent_same_timestamp_close: bool = True,
     inter_bar_lookback_count: int | None = None,
+    include_intra_bar_features: bool = False,
 ) -> tuple[pd.DataFrame, RangeBarProcessor]:
     """Process Binance trades to range bars (internal).
 
@@ -307,6 +314,8 @@ def _process_binance_trades(
         Timestamp gating for flash crash prevention
     inter_bar_lookback_count : int, optional
         Lookback trade count for inter-bar features (Issue #59)
+    include_intra_bar_features : bool, default=False
+        Enable intra-bar features (Issue #59)
 
     Returns
     -------
@@ -353,6 +362,7 @@ def _process_binance_trades(
             symbol=symbol,
             prevent_same_timestamp_close=prevent_same_timestamp_close,
             inter_bar_lookback_count=inter_bar_lookback_count,
+            include_intra_bar_features=include_intra_bar_features,
         )
 
     # MEM-012: Stream bars in batches instead of accumulating all in memory

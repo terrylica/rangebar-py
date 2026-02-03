@@ -100,6 +100,7 @@ class RangeBarProcessor:
         *,
         prevent_same_timestamp_close: bool = True,
         inter_bar_lookback_count: int | None = None,
+        include_intra_bar_features: bool = False,
     ) -> None:
         """Initialize processor with given threshold.
 
@@ -112,7 +113,11 @@ class RangeBarProcessor:
         prevent_same_timestamp_close : bool, default=True
             Timestamp gating for flash crash prevention (Issue #36)
         inter_bar_lookback_count : int, optional
-            Lookback trade count for inter-bar features (Issue #59)
+            Lookback trade count for inter-bar features (Issue #59).
+            Enables 16 lookback_* features computed from trades BEFORE bar opens.
+        include_intra_bar_features : bool, default=False
+            Enable intra-bar features (Issue #59). When True, computes 22 intra_*
+            features from trades WITHIN each bar, including ITH metrics.
 
         Raises
         ------
@@ -134,11 +139,13 @@ class RangeBarProcessor:
             symbol,
             prevent_same_timestamp_close,
             inter_bar_lookback_count,
+            include_intra_bar_features,
         )
         self.threshold_decimal_bps = threshold_decimal_bps
         self.symbol = symbol
         self.prevent_same_timestamp_close = prevent_same_timestamp_close
         self.inter_bar_lookback_count = inter_bar_lookback_count
+        self.include_intra_bar_features = include_intra_bar_features
 
     @classmethod
     def from_checkpoint(cls, checkpoint: dict) -> RangeBarProcessor:
