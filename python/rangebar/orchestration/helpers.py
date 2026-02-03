@@ -217,6 +217,64 @@ def _fetch_exness(
         raise RuntimeError(msg) from e
 
 
+def _stream_bars_from_trades(
+    trades: pl.DataFrame,
+    threshold_decimal_bps: int,
+    include_microstructure: bool,
+    processor: RangeBarProcessor,
+    bar_batch_size: int = 10_000,
+) -> Iterator[list[dict]]:
+    """Stream range bars in batches from trades (MEM-012).
+
+    This generator yields bars in bounded batches instead of accumulating
+    all bars in memory. Critical for large date ranges (2.5+ years) with
+    microstructure features enabled.
+
+    Parameters
+    ----------
+    trades : pl.DataFrame
+        Polars DataFrame with tick data (already column-selected)
+    threshold_decimal_bps : int
+        Threshold in decimal basis points
+    include_microstructure : bool
+        Affects trade chunk size (50K vs 100K)
+    processor : RangeBarProcessor
+        Processor with state for cross-file continuity
+    bar_batch_size : int, default=10_000
+        Number of bars per yielded batch (~60 MB with microstructure)
+
+    Yields
+    ------
+    list[dict]
+        Batches of bar dictionaries (bounded memory)
+
+    Memory Usage
+    ------------
+    Peak: ~60 MB per batch (10K bars x 58 columns)
+    vs. Previous: 2.9 GB for 50K bars (unbounded accumulation)
+    """
+    # MEM-002 + MEM-011: Adaptive chunk size based on output features
+    # Base: 100K trades (~15 MB dicts, ~50 MB with OHLCV bars)
+    # Microstructure: 50K trades (62 columns = 12x more memory per bar)
+    trade_chunk_size = 50_000 if include_microstructure else 100_000
+    bar_buffer: list[dict] = []
+
+    n_rows = len(trades)
+    for start in range(0, n_rows, trade_chunk_size):
+        chunk = trades.slice(start, trade_chunk_size).to_dicts()
+        bars = processor.process_trades_streaming(chunk)
+        bar_buffer.extend(bars)
+
+        # MEM-012: Yield when buffer exceeds batch_size to bound memory
+        while len(bar_buffer) >= bar_batch_size:
+            yield bar_buffer[:bar_batch_size]
+            bar_buffer = bar_buffer[bar_batch_size:]
+
+    # Yield remaining bars
+    if bar_buffer:
+        yield bar_buffer
+
+
 def _process_binance_trades(
     trades: pl.DataFrame,
     threshold_decimal_bps: int,
@@ -297,29 +355,35 @@ def _process_binance_trades(
             inter_bar_lookback_count=inter_bar_lookback_count,
         )
 
-    # MEM-002 + MEM-011: Adaptive chunk size based on output features
-    # Base: 100K trades (~15 MB dicts, ~50 MB with OHLCV bars)
-    # Microstructure: 50K trades (62 columns = 12x more memory per bar)
-    # Issue #65: Fixed chunk size caused OOM on large date ranges with microstructure
-    chunk_size = 50_000 if include_microstructure else 100_000
-    all_bars: list[dict] = []
+    # MEM-012: Stream bars in batches instead of accumulating all in memory
+    # This prevents OOM on large date ranges (2.5+ years) with microstructure
+    # Previous: all_bars.extend() caused 2.9GB allocation for 50K bars
+    # Now: bounded batches of 10K bars (~60 MB each)
+    bar_batches: list[pl.DataFrame] = []
 
-    n_rows = len(trades_minimal)
-    for start in range(0, n_rows, chunk_size):
-        chunk = trades_minimal.slice(start, chunk_size).to_dicts()
-        bars = processor.process_trades_streaming(chunk)
-        all_bars.extend(bars)
+    for bar_batch in _stream_bars_from_trades(
+        trades_minimal,
+        threshold_decimal_bps,
+        include_microstructure,
+        processor,
+        bar_batch_size=10_000,
+    ):
+        if bar_batch:
+            # Convert batch to Polars DataFrame immediately
+            # This allows garbage collection of dict batch
+            batch_df = pl.DataFrame(bar_batch)
+            bar_batches.append(batch_df)
 
-    bars = all_bars
-
-    if not bars:
+    if not bar_batches:
         empty_df = pd.DataFrame(
             columns=["Open", "High", "Low", "Close", "Volume"]
         ).set_index(pd.DatetimeIndex([]))
         return empty_df, processor
 
-    # Build DataFrame with all fields
-    result = pd.DataFrame(bars)
+    # MEM-006: Single Polars concat (efficient, no 2x memory spike like pandas)
+    result_pl = pl.concat(bar_batches)
+    result = result_pl.to_pandas()
+
     result["timestamp"] = pd.to_datetime(result["timestamp"], format="ISO8601")
     result = result.set_index("timestamp")
 
