@@ -197,6 +197,39 @@ Production memory optimization infrastructure:
 
 ---
 
+## Trade ID Tracking (v12.4+, Issue #72)
+
+Each `RangeBar` tracks aggregate trade ID range for data integrity verification:
+
+| Field                | Type  | Description                            |
+| -------------------- | ----- | -------------------------------------- |
+| `first_agg_trade_id` | `i64` | First AggTrade ID that opened this bar |
+| `last_agg_trade_id`  | `i64` | Last AggTrade ID processed in this bar |
+
+**Use cases**:
+
+- **Gap detection**: `bars[i].first_agg_trade_id == bars[i-1].last_agg_trade_id + 1`
+- **Data integrity**: Verify no trades were dropped during processing
+- **Checkpoint validation**: Confirm resume alignment after interruption
+
+```python
+from rangebar import TRADE_ID_RANGE_COLUMNS
+
+# Constant for column selection
+TRADE_ID_RANGE_COLUMNS  # ("first_agg_trade_id", "last_agg_trade_id")
+
+# Gap detection pattern
+for i in range(1, len(bars)):
+    expected = bars[i-1]["last_agg_trade_id"] + 1
+    actual = bars[i]["first_agg_trade_id"]
+    if actual != expected:
+        print(f"Gap detected: expected {expected}, got {actual}")
+```
+
+**Full details**: [crates/CLAUDE.md](/crates/CLAUDE.md#trade-id-tracking-issue-72-v124)
+
+---
+
 ## Common Errors
 
 | Error                                   | Cause               | Fix                                        |

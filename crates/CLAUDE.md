@@ -68,6 +68,29 @@ rangebar-cli         rangebar-batch      rangebar-streaming
 
 ---
 
+## Trade ID Tracking (Issue #72, v12.4+)
+
+**Location**: `rangebar-core/src/types.rs`
+
+Each `RangeBar` tracks aggregate trade ID range for data integrity verification:
+
+| Field                | Type  | Description                            |
+| -------------------- | ----- | -------------------------------------- |
+| `first_agg_trade_id` | `i64` | First AggTrade ID that opened this bar |
+| `last_agg_trade_id`  | `i64` | Last AggTrade ID processed in this bar |
+
+**Use cases**:
+
+- **Gap detection**: `bars[i].first_agg_trade_id == bars[i-1].last_agg_trade_id + 1`
+- **Data integrity**: Verify no trades were dropped during processing
+- **Checkpoint validation**: Confirm resume alignment after interruption
+
+**Python constant**: `TRADE_ID_RANGE_COLUMNS = ("first_agg_trade_id", "last_agg_trade_id")`
+
+**ClickHouse schema**: Columns added via migration (see `schema.sql` v12.4 migration section)
+
+---
+
 ## Inter-Bar Features (Issue #59)
 
 **Location**: `rangebar-core/src/interbar.rs`

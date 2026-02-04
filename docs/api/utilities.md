@@ -17,6 +17,7 @@ from rangebar import (
     LONG_RANGE_DAYS,
     MICROSTRUCTURE_COLUMNS,
     EXCHANGE_SESSION_COLUMNS,
+    TRADE_ID_RANGE_COLUMNS,
     ALL_OPTIONAL_COLUMNS,
 )
 
@@ -38,6 +39,9 @@ MICROSTRUCTURE_COLUMNS  # ('vwap', 'buy_volume', 'sell_volume', 'duration_us', '
 
 # Exchange session columns (Ouroboros feature)
 EXCHANGE_SESSION_COLUMNS  # ('exchange_session_sydney', 'exchange_session_tokyo', ...)
+
+# Trade ID range columns for data integrity (v12.4+, Issue #72)
+TRADE_ID_RANGE_COLUMNS  # ('first_agg_trade_id', 'last_agg_trade_id')
 
 # All optional columns (microstructure + exchange sessions)
 ALL_OPTIONAL_COLUMNS  # Union of MICROSTRUCTURE_COLUMNS and EXCHANGE_SESSION_COLUMNS
