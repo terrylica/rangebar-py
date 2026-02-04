@@ -1,3 +1,10 @@
+# [12.5.0](https://github.com/terrylica/rangebar-py/compare/v12.4.0...v12.5.0) (2026-02-04)
+
+
+### Features
+
+* **storage:** atomic Parquet writes with corruption detection ([#73](https://github.com/terrylica/rangebar-py/issues/73)) ([58d05be](https://github.com/terrylica/rangebar-py/commit/58d05be5aaa93a815a63abd16cc654aa290f68a5))
+
 # [12.4.0](https://github.com/terrylica/rangebar-py/compare/v12.3.0...v12.4.0) (2026-02-04)
 
 
