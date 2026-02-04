@@ -1,3 +1,10 @@
+# [12.2.0](https://github.com/terrylica/rangebar-py/compare/v12.1.2...v12.2.0) (2026-02-04)
+
+
+### Features
+
+* **mem-013:** long-range date protection and cache workflow ([#69](https://github.com/terrylica/rangebar-py/issues/69)) ([8a07b50](https://github.com/terrylica/rangebar-py/commit/8a07b5076344d837459cadfab9f3c99270420f73))
+
 ## [12.1.2](https://github.com/terrylica/rangebar-py/compare/v12.1.1...v12.1.2) (2026-02-04)
 
 
