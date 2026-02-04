@@ -1,3 +1,15 @@
+# [12.3.0](https://github.com/terrylica/rangebar-py/compare/v12.2.0...v12.3.0) (2026-02-04)
+
+
+### Bug Fixes
+
+* **publish:** add 1Password vault parameter for PyPI token ([559c0cf](https://github.com/terrylica/rangebar-py/commit/559c0cf6554353a4763dfd14d8c9ef0aefaae30b))
+
+
+### Features
+
+* **progress:** add tqdm progress bar for populate_cache_resumable ([#70](https://github.com/terrylica/rangebar-py/issues/70)) ([cd5a662](https://github.com/terrylica/rangebar-py/commit/cd5a6623fddb93986e1dae562ede680e65206e02))
+
 # [12.2.0](https://github.com/terrylica/rangebar-py/compare/v12.1.2...v12.2.0) (2026-02-04)
 
 
