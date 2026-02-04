@@ -330,6 +330,7 @@ def populate_cache_resumable(
     ouroboros: str = "year",
     checkpoint_dir: Path | None = None,
     notify: bool = True,
+    verbose: bool = True,
 ) -> int:
     """Populate cache for a date range with automatic checkpointing.
 
@@ -363,6 +364,9 @@ def populate_cache_resumable(
         Custom checkpoint directory. Uses default if None.
     notify : bool
         Whether to emit hook events for progress tracking.
+    verbose : bool
+        Show progress bar (tqdm) and structured logging (default: True).
+        Set to False for batch/CI environments.
 
     Returns
     -------
@@ -471,6 +475,28 @@ def populate_cache_resumable(
     dates = list(_date_range(resume_date, end_date))
     total_days = len(dates)
 
+    # Issue #70: Progress tracking with ResumableObserver
+    # Calculate initial count for resumed operations
+    if checkpoint:
+        # Count days already completed
+        all_dates = list(_date_range(start_date, end_date))
+        initial_days = len(all_dates) - total_days
+    else:
+        initial_days = 0
+
+    # Initialize progress observer (lazy import to avoid circular deps)
+    observer = None
+    if verbose:
+        from rangebar.progress import ResumableObserver
+
+        observer = ResumableObserver(
+            total=len(list(_date_range(start_date, end_date))),
+            initial=initial_days,
+            desc=symbol,
+            unit="days",
+            verbose=True,
+        )
+
     for i, date in enumerate(dates, 1):
         logger.info(
             "Processing %s [%d/%d]: %s",
@@ -503,6 +529,17 @@ def populate_cache_resumable(
                 bars_today,
                 total_bars,
             )
+
+            # Issue #70: Update progress observer
+            if observer is not None:
+                observer.update(1)
+                observer.set_postfix(bars=total_bars)
+                observer.log_event(
+                    "day_complete",
+                    date=date,
+                    bars_today=bars_today,
+                    total_bars=total_bars,
+                )
 
             # Save checkpoint after each successful day
             # Issue #69: Include new fields for bar-level resumability
@@ -551,6 +588,10 @@ def populate_cache_resumable(
                     total_bars=total_bars,
                 )
             raise
+
+    # Issue #70: Close progress observer
+    if observer is not None:
+        observer.close()
 
     # Clean up checkpoint on success
     try:

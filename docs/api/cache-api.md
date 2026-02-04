@@ -20,6 +20,7 @@ def populate_cache_resumable(
     ouroboros: Literal["year", "month", "week"] = "year",
     checkpoint_dir: str | None = None,
     notify: bool = True,
+    verbose: bool = True,
 ) -> int
 ```
 
@@ -34,6 +35,7 @@ def populate_cache_resumable(
 - **ouroboros**: Reset mode for reproducibility (default: "year")
 - **checkpoint_dir**: Custom checkpoint directory (default: platform-specific)
 - **notify**: Send progress notifications (default: True)
+- **verbose**: Show tqdm progress bar and structured logging (default: True)
 
 ### Returns
 
@@ -47,6 +49,36 @@ Checkpoints are saved after each day to both:
 - **ClickHouse**: `population_checkpoints` table (cross-machine resume)
 
 The checkpoint includes processor state, preserving incomplete bars across interrupts.
+
+### Progress Logging
+
+When `verbose=True` (default), the function shows:
+
+- **tqdm progress bar**: Real-time ETA estimation with day-level progress
+- **Structured NDJSON logging**: Events logged to `logs/events.jsonl`
+
+```
+BTCUSDT:  45%|████████▌          | 274/608 [02:15<02:45, 2.02days/s]
+```
+
+Progress bar shows:
+
+- Symbol name as description
+- Percentage complete
+- Days processed / total days
+- Elapsed time and ETA
+- Processing rate (days per second)
+
+Disable for batch/CI environments:
+
+```python
+populate_cache_resumable(
+    "BTCUSDT",
+    "2019-01-01",
+    "2025-12-31",
+    verbose=False,  # Silent mode for scripts
+)
+```
 
 ### Example
 

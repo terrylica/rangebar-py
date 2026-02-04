@@ -34,6 +34,7 @@ dependencies = [
     "click>=8.0",               # CLI framework (#42)
     "requests>=2.28",           # Telegram notifications (#41)
     "loguru>=0.7.0",            # Structured NDJSON logging (#43)
+    "tqdm>=4.66",               # Progress bars for long-running operations (#70)
 ]
 
 [project.scripts]
@@ -287,6 +288,13 @@ ignore = [
 "python/rangebar/ouroboros.py" = [
     "PLR2004", # Magic values (weekday numbers 5/6 for Saturday/Sunday, month 12)
     "PLC0415", # Lazy imports (zoneinfo for exchange session detection)
+]
+"python/rangebar/progress.py" = [
+    "PLC0415", # Lazy imports (tqdm/loguru for optional progress tracking)
+    "ANN401",  # Any type in kwargs (intentionally flexible for postfix/event details)
+    "N812",    # tqdm as TqdmType (TYPE_CHECKING alias for type hints)
+    "E501",    # Line too long (log format strings)
+    "PYI034",  # Self return type (dataclass context manager)
 ]
 
 [tool.semantic_release]

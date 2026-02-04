@@ -1023,6 +1023,7 @@ def populate_cache_resumable(
     ouroboros: Literal["year", "month", "week"] = "year",
     checkpoint_dir: str | None = None,
     notify: bool = True,
+    verbose: bool = True,
 ) -> int:
     """Populate ClickHouse cache incrementally with resumable checkpoints.
 
@@ -1050,6 +1051,9 @@ def populate_cache_resumable(
         Custom checkpoint directory (default: platform-specific)
     notify : bool, default=True
         Send progress notifications
+    verbose : bool, default=True
+        Show tqdm progress bar and structured logging.
+        Set to False for batch/CI environments.
 
     Returns
     -------

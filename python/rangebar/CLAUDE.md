@@ -313,6 +313,7 @@ df = get_range_bars("BTCUSDT", "2019-01-01", "2025-12-31")
 | `include_microstructure` | `False`  | Include microstructure features    |
 | `ouroboros`              | `"year"` | Reset mode for reproducibility     |
 | `notify`                 | `True`   | Send progress notifications        |
+| `verbose`                | `True`   | Show tqdm progress bar and logging |
 
 ### Resumability
 
