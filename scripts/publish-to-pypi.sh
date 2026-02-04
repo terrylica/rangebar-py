@@ -23,7 +23,9 @@ set -euo pipefail
 # CONFIGURATION
 # ============================================================================
 # 1Password item ID for PyPI token (project-scoped for rangebar)
+# Vault: Engineering (fnzrqcsl3pl3bcdojrxf46whnu)
 OP_PYPI_ITEM="${OP_PYPI_ITEM:-djevteztvbcqgcm3yl4njkawjq}"
+OP_PYPI_VAULT="${OP_PYPI_VAULT:-fnzrqcsl3pl3bcdojrxf46whnu}"
 PYPI_VERIFY_DELAY="${PYPI_VERIFY_DELAY:-3}"
 
 # ============================================================================
@@ -223,13 +225,16 @@ if ! command -v op &> /dev/null; then
     exit 1
 fi
 
-# Try to get PyPI token from 1Password
-if ! PYPI_TOKEN=$(op item get "$OP_PYPI_ITEM" --fields credential --reveal 2>/dev/null); then
-    echo "   ERROR: PyPI token not found in 1Password (item: $OP_PYPI_ITEM)"
+# Try to get PyPI token from 1Password (Engineering vault)
+if ! PYPI_TOKEN=$(op item get "$OP_PYPI_ITEM" --vault "$OP_PYPI_VAULT" --fields credential --reveal 2>/dev/null); then
+    echo "   ERROR: PyPI token not found in 1Password"
+    echo "   Item: $OP_PYPI_ITEM"
+    echo "   Vault: $OP_PYPI_VAULT (Engineering)"
     echo ""
     echo "   To fix, create a PyPI token and save to 1Password:"
     echo "     1. Get token from: https://pypi.org/manage/account/token/"
-    echo "     2. Save to 1Password with: op item create --category='API Credential' --title='PyPI Token' 'credential=pypi-xxx'"
+    echo "     2. Save to 1Password Engineering vault with:"
+    echo "        op item create --category='API Credential' --title='PyPI Token - rangebar (project-scoped)' --vault='$OP_PYPI_VAULT' 'credential=pypi-xxx'"
     echo ""
     exit 1
 fi
