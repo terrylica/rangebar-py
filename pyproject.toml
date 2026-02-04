@@ -244,11 +244,14 @@ ignore = [
 ]
 "python/rangebar/checkpoint.py" = [
     "PLC0415", # Lazy imports (avoid circular imports)
+    "PLR0912", # Too many branches (populate_cache_resumable is inherently complex)
     "PLR0913", # Too many arguments (resumable population API)
+    "PLR0915", # Too many statements (populate_cache_resumable manages full workflow)
     "UP035",   # Import from collections.abc (typing.Iterator is fine)
     "PTH105",  # os.replace for atomic operations
     "PTH108",  # os.unlink for cleanup
     "SIM105",  # contextlib.suppress (explicit try-except is clearer)
+    "TRY300",  # Consider moving to else block
     "PD901",   # Generic variable name 'df' (common in data processing)
 ]
 "python/rangebar/hooks.py" = [

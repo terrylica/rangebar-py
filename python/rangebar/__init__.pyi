@@ -259,6 +259,14 @@ Tier 3 - Advanced (4 features):
 All inter-bar features are Optional - None when no lookback data available.
 """
 
+# Issue #69: Long range threshold for MEM-013 guard
+LONG_RANGE_DAYS: int
+"""Maximum days for direct get_range_bars() processing (30).
+
+Date ranges exceeding this limit require populate_cache_resumable() first.
+This is MEM-013 guard to prevent OOM on long backfills.
+"""
+
 # ============================================================================
 # Tiered Validation System (Issue #19 - v6.2.0+)
 # ============================================================================
@@ -1002,6 +1010,83 @@ def precompute_range_bars(
     --------
     get_n_range_bars : Count-bounded bar retrieval (uses precomputed cache)
     get_range_bars : Date-bounded bar retrieval
+    """
+
+def populate_cache_resumable(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    *,
+    threshold_decimal_bps: int = 250,
+    force_refresh: bool = False,
+    include_microstructure: bool = False,
+    ouroboros: Literal["year", "month", "week"] = "year",
+    checkpoint_dir: str | None = None,
+    notify: bool = True,
+) -> int:
+    """Populate ClickHouse cache incrementally with resumable checkpoints.
+
+    Required for date ranges > 30 days (MEM-013 guard). Uses memory-safe
+    day-by-day processing with bar-level checkpointing for accurate resume.
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol (e.g., "BTCUSDT")
+    start_date : str
+        Start date in YYYY-MM-DD format
+    end_date : str
+        End date in YYYY-MM-DD format
+    threshold_decimal_bps : int, default=250
+        Threshold in decimal basis points
+    force_refresh : bool, default=False
+        If True, wipe existing cache and checkpoint, start fresh.
+        If False, resume from last checkpoint.
+    include_microstructure : bool, default=False
+        Include microstructure features
+    ouroboros : str, default="year"
+        Reset mode for reproducibility ("year", "month", "week")
+    checkpoint_dir : str or None, default=None
+        Custom checkpoint directory (default: platform-specific)
+    notify : bool, default=True
+        Send progress notifications
+
+    Returns
+    -------
+    int
+        Total number of bars written
+
+    Raises
+    ------
+    ValueError
+        Invalid parameters (dates, threshold, symbol)
+    RuntimeError
+        Fetch or processing failure
+    ConnectionError
+        ClickHouse unavailable
+
+    Examples
+    --------
+    Populate cache for multi-year backfill:
+
+    >>> from rangebar import populate_cache_resumable, get_range_bars
+    >>> # Step 1: Populate (can be interrupted and resumed)
+    >>> populate_cache_resumable("BTCUSDT", "2019-01-01", "2025-12-31")
+    >>> # Step 2: Read from cache
+    >>> df = get_range_bars("BTCUSDT", "2019-01-01", "2025-12-31")
+
+    Force restart (wipe and repopulate):
+
+    >>> populate_cache_resumable(
+    ...     "BTCUSDT", "2019-01-01", "2025-12-31",
+    ...     force_refresh=True,
+    ... )
+
+    See Also
+    --------
+    get_range_bars : Date-bounded bar retrieval (requires cache for >30 days)
+    precompute_range_bars : Batch precompute to ClickHouse
+    LONG_RANGE_DAYS : Threshold constant (30 days)
     """
 
 def process_trades_polars(

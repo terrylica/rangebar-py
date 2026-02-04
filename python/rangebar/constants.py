@@ -352,4 +352,17 @@ MEM_GUARDS: dict[str, dict[str, str]] = {
         "location": "orchestration/helpers.py:236",
         "stage": "processing",
     },
+    "MEM-013": {
+        "description": "Force ClickHouse-first for long date ranges (>30 days)",
+        "location": "orchestration/range_bars.py",
+        "stage": "routing",
+    },
 }
+
+# =============================================================================
+# Long Range Threshold (MEM-013)
+# =============================================================================
+# Date ranges exceeding this limit require populate_cache_resumable() first.
+# This prevents OOM on long backfills by forcing incremental caching.
+
+LONG_RANGE_DAYS: int = 30

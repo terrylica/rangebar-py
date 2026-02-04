@@ -345,6 +345,66 @@ def get_range_bars(
     end_ts = int((end_dt.timestamp() + 86399) * 1000)  # End of day
 
     # -------------------------------------------------------------------------
+    # MEM-013: Force ClickHouse-first for long date ranges (>30 days)
+    # -------------------------------------------------------------------------
+    # For long ranges, require cache population first to prevent OOM.
+    # This forces users to use the memory-safe incremental workflow.
+    from rangebar.constants import LONG_RANGE_DAYS
+
+    days = (end_dt - start_dt).days
+    if days > LONG_RANGE_DAYS:
+        # For long ranges, data MUST come from cache
+        if not use_cache:
+            msg = (
+                f"Date range of {days} days requires use_cache=True.\n"
+                f"Long ranges must use ClickHouse cache for memory safety."
+            )
+            raise ValueError(msg)
+
+        # Check if cache has data for long range
+        try:
+            from rangebar.clickhouse import RangeBarCache
+
+            with RangeBarCache() as cache:
+                cached = cache.get_bars_by_timestamp_range(
+                    symbol=symbol,
+                    threshold_decimal_bps=threshold_decimal_bps,
+                    start_ts=start_ts,
+                    end_ts=end_ts,
+                    include_microstructure=include_microstructure,
+                    ouroboros_mode=ouroboros,
+                )
+                if cached is not None and len(cached) > 0:
+                    # Success: return cached data
+                    cached.index.name = "timestamp"
+                    return cached
+
+        except ImportError:
+            msg = (
+                f"Date range of {days} days requires ClickHouse cache.\n"
+                f"Install: pip install clickhouse-connect"
+            )
+            raise ValueError(msg) from None
+        except ConnectionError as e:
+            msg = (
+                f"Date range of {days} days requires ClickHouse cache.\n"
+                f"Connection failed: {e}\n"
+                f"Configure ClickHouse or reduce date range to <= {LONG_RANGE_DAYS} days."
+            )
+            raise ValueError(msg) from None
+
+        # Cache empty: direct user to populate it
+        msg = (
+            f"Date range {start_date} to {end_date} ({days} days) exceeds "
+            f"{LONG_RANGE_DAYS}-day limit.\n\n"
+            f"Cache is empty. Populate it first:\n"
+            f"  populate_cache_resumable('{symbol}', '{start_date}', '{end_date}', "
+            f"threshold_decimal_bps={threshold_decimal_bps})\n\n"
+            f"Then call get_range_bars() again to read from cache."
+        )
+        raise ValueError(msg)
+
+    # -------------------------------------------------------------------------
     # Streaming mode (v8.0+): Return generator instead of materializing
     # -------------------------------------------------------------------------
     if not materialize:

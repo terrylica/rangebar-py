@@ -179,6 +179,42 @@ ORDER BY (symbol, threshold_decimal_bps, timestamp_ms);
 -- GROUP BY symbol, date;
 
 -- ============================================================================
+-- Population Checkpoints (Issue #69: Cross-machine resume for long backfills)
+-- ============================================================================
+-- Stores checkpoint state for populate_cache_resumable() to enable:
+-- - Cross-machine resume (continue backfill on different machine)
+-- - Bar-level resumability (preserves incomplete bar state)
+-- - Hybrid storage with local filesystem checkpoints
+--
+-- Local checkpoints: ~/.cache/rangebar/checkpoints/ (fast, same-machine)
+-- ClickHouse checkpoints: This table (cross-machine resume)
+
+CREATE TABLE IF NOT EXISTS rangebar_cache.population_checkpoints (
+    -- Key components
+    symbol LowCardinality(String),
+    threshold_decimal_bps UInt32,
+    start_date String,
+    end_date String,
+
+    -- Progress tracking
+    last_completed_date String,
+    last_trade_timestamp_ms Int64,
+    bars_written UInt64,
+
+    -- Processor state for bar-level resumability (JSON serialized)
+    -- Contains incomplete bar state, defer_open flag, etc.
+    processor_checkpoint String DEFAULT '',
+
+    -- Metadata
+    include_microstructure UInt8 DEFAULT 0,
+    ouroboros_mode LowCardinality(String) DEFAULT 'year',
+    created_at DateTime64(3) DEFAULT now64(3),
+    updated_at DateTime64(3) DEFAULT now64(3)
+)
+ENGINE = ReplacingMergeTree(updated_at)
+ORDER BY (symbol, threshold_decimal_bps, start_date, end_date);
+
+-- ============================================================================
 -- Indexes (ClickHouse creates automatically based on ORDER BY)
 -- ============================================================================
 -- No additional indexes needed - ORDER BY creates primary key index

@@ -34,6 +34,7 @@ __all__ = [
     "EXCHANGE_SESSION_COLUMNS",
     "INTER_BAR_FEATURE_COLUMNS",  # Issue #59 (lookback window BEFORE bar)
     "INTRA_BAR_FEATURE_COLUMNS",  # Issue #59 (trades WITHIN bar)
+    "LONG_RANGE_DAYS",  # Issue #69: MEM-013 threshold (30 days)
     "MICROSTRUCTURE_COLUMNS",
     "MIN_VERSION_FOR_MICROSTRUCTURE",
     "MIN_VERSION_FOR_OUROBOROS",
@@ -105,6 +106,7 @@ from .constants import (
     EXCHANGE_SESSION_COLUMNS,
     INTER_BAR_FEATURE_COLUMNS,  # Issue #59 (lookback window BEFORE bar)
     INTRA_BAR_FEATURE_COLUMNS,  # Issue #59 (trades WITHIN bar)
+    LONG_RANGE_DAYS,  # Issue #69: MEM-013 threshold (30 days)
     MICROSTRUCTURE_COLUMNS,
     MIN_VERSION_FOR_MICROSTRUCTURE,
     MIN_VERSION_FOR_OUROBOROS,

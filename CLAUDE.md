@@ -15,7 +15,7 @@
 | Release workflow        | [docs/development/RELEASE.md](/docs/development/RELEASE.md)         | Zig cross-compile, mise tasks |
 | Performance monitoring  | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics           |
 | Project context         | [docs/CONTEXT.md](/docs/CONTEXT.md)                                 | Why this project exists       |
-| API reference           | [docs/api.md](/docs/api.md)                                         | Full Python API docs          |
+| API reference           | [docs/api/INDEX.md](/docs/api/INDEX.md)                             | Full Python API docs          |
 
 ---
 
@@ -65,14 +65,15 @@ df = process_trades_polars(trades, threshold_decimal_bps=250)
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30", include_microstructure=True)
 ```
 
-| API                        | Use Case                       | Details                                            |
-| -------------------------- | ------------------------------ | -------------------------------------------------- |
-| `get_range_bars()`         | Date range, backtesting        | [docs/api.md](/docs/api.md#get_range_bars)         |
-| `get_n_range_bars()`       | Exact N bars, ML               | [docs/api.md](/docs/api.md#get_n_range_bars)       |
-| `process_trades_polars()`  | Polars DataFrames, 2-3x faster | [docs/api.md](/docs/api.md#process_trades_polars)  |
-| `process_trades_chunked()` | Large datasets >10M trades     | [docs/api.md](/docs/api.md#process_trades_chunked) |
+| API                          | Use Case                       | Details                                                   |
+| ---------------------------- | ------------------------------ | --------------------------------------------------------- |
+| `get_range_bars()`           | Date range, backtesting        | [docs/api/primary-api.md](/docs/api/primary-api.md)       |
+| `get_n_range_bars()`         | Exact N bars, ML               | [docs/api/primary-api.md](/docs/api/primary-api.md)       |
+| `populate_cache_resumable()` | Long ranges (>30 days)         | [docs/api/cache-api.md](/docs/api/cache-api.md)           |
+| `process_trades_polars()`    | Polars DataFrames, 2-3x faster | [docs/api/processing-api.md](/docs/api/processing-api.md) |
+| `process_trades_chunked()`   | Large datasets >10M trades     | [docs/api/processing-api.md](/docs/api/processing-api.md) |
 
-**Full API reference**: [docs/api.md](/docs/api.md)
+**Full API reference**: [docs/api/INDEX.md](/docs/api/INDEX.md)
 
 ---
 
@@ -159,14 +160,17 @@ mise run bench:validate     # Verify 1M ticks < 100ms
 
 Production memory optimization infrastructure:
 
-| Guard   | Description                                   | Location            |
-| ------- | --------------------------------------------- | ------------------- |
-| MEM-001 | Memory estimation before fetch                | `resource_guard.py` |
-| MEM-002 | Chunked dict conversion (100K trades)         | `helpers.py`        |
-| MEM-006 | Polars concat instead of pandas               | `conversion.py`     |
-| MEM-011 | Adaptive chunk size (50K with microstructure) | `helpers.py:304`    |
+| Guard   | Description                                   | Location                      |
+| ------- | --------------------------------------------- | ----------------------------- |
+| MEM-001 | Memory estimation before fetch                | `resource_guard.py`           |
+| MEM-002 | Chunked dict conversion (100K trades)         | `helpers.py`                  |
+| MEM-006 | Polars concat instead of pandas               | `conversion.py`               |
+| MEM-011 | Adaptive chunk size (50K with microstructure) | `helpers.py:304`              |
+| MEM-013 | Force ClickHouse-first for >30 day ranges     | `orchestration/range_bars.py` |
 
 **Issue #65 Fix**: MEM-011 reduces chunk size from 100K to 50K when `include_microstructure=True`, preventing OOM on large date ranges.
+
+**Issue #69 Fix**: MEM-013 requires ClickHouse cache for date ranges >30 days. See [Long Date Ranges](#long-date-ranges-30-days) below.
 
 ---
 
@@ -202,6 +206,35 @@ Production memory optimization infrastructure:
 | `High < Low` assertion                  | Bad input data      | Check sorting                              |
 | `target-cpu=native` cross-compile error | RUSTFLAGS pollution | Use `RUSTFLAGS=""` or `.cargo/config.toml` |
 | OOM with `include_microstructure=True`  | Large date range    | Fixed by MEM-011 adaptive chunk size       |
+
+---
+
+## Long Date Ranges (>30 days)
+
+For date ranges exceeding 30 days, ClickHouse cache is **required** (MEM-013 guard):
+
+```python
+from rangebar import populate_cache_resumable, get_range_bars
+
+# Step 1: Populate cache incrementally (memory-safe, resumable)
+populate_cache_resumable("BTCUSDT", "2019-01-01", "2025-12-31")
+
+# Step 2: Read from cache (fast, memory-safe)
+df = get_range_bars("BTCUSDT", "2019-01-01", "2025-12-31")
+```
+
+**Why**: Direct processing of multi-year ranges causes OOM. The `populate_cache_resumable()` function processes day-by-day with checkpoints, enabling:
+
+- **Cross-machine resume**: Checkpoints stored in both local filesystem and ClickHouse
+- **Bar-level accuracy**: Incomplete bars preserved across interrupts
+- **Force refresh**: `force_refresh=True` wipes cache and restarts
+
+| Parameter       | Default | Description                        |
+| --------------- | ------- | ---------------------------------- |
+| `force_refresh` | `False` | Wipe existing cache and checkpoint |
+| `notify`        | `True`  | Send progress notifications        |
+
+**Full API**: [docs/api/cache-api.md](/docs/api/cache-api.md#populate_cache_resumable)
 
 ---
 
@@ -250,7 +283,7 @@ df = get_range_bars(
 | ------------------------------------------------------------------- | --------------------------------------- |
 | [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)                       | System design, dependency graph         |
 | [docs/CONTEXT.md](/docs/CONTEXT.md)                                 | Why this project exists, backtesting.py |
-| [docs/api.md](/docs/api.md)                                         | Python API reference                    |
+| [docs/api/INDEX.md](/docs/api/INDEX.md)                             | Python API reference                    |
 | [docs/development/RELEASE.md](/docs/development/RELEASE.md)         | Release workflow, zig cross-compile     |
 | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics, viability          |
 

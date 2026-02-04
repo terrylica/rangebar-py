@@ -1,6 +1,6 @@
 # Python Layer
 
-**Parent**: [/CLAUDE.md](/CLAUDE.md) | **API Reference**: [/docs/api.md](/docs/api.md)
+**Parent**: [/CLAUDE.md](/CLAUDE.md) | **API Reference**: [/docs/api/INDEX.md](/docs/api/INDEX.md)
 
 This directory contains the Python API layer for rangebar-py.
 
@@ -10,22 +10,24 @@ This directory contains the Python API layer for rangebar-py.
 
 ### Common Tasks & Entry Points
 
-| When Claude is asked to... | Primary File | Function/Class |
-|---------------------------|--------------|----------------|
-| Generate range bars (date-bounded) | `__init__.py` | `get_range_bars()` |
-| Generate range bars (count-bounded, ML) | `__init__.py` | `get_n_range_bars()` |
-| Generate range bars (existing data) | `__init__.py` | `process_trades_to_dataframe()` |
-| Generate range bars (Polars) | `__init__.py` | `process_trades_polars()` |
-| Process large datasets | `__init__.py` | `process_trades_chunked()` |
-| Read/write tick data | `storage/parquet.py` | `TickStorage` class |
-| Bar-count cache operations | `clickhouse/cache.py` | `count_bars()`, `get_n_bars()` |
-| Validate microstructure features | `validation/tier1.py` | `validate_tier1()` |
+| When Claude is asked to...              | Primary File          | Function/Class                  |
+| --------------------------------------- | --------------------- | ------------------------------- |
+| Generate range bars (date-bounded)      | `__init__.py`         | `get_range_bars()`              |
+| Generate range bars (count-bounded, ML) | `__init__.py`         | `get_n_range_bars()`            |
+| Generate range bars (existing data)     | `__init__.py`         | `process_trades_to_dataframe()` |
+| Generate range bars (Polars)            | `__init__.py`         | `process_trades_polars()`       |
+| Process large datasets                  | `__init__.py`         | `process_trades_chunked()`      |
+| Populate cache for long ranges          | `checkpoint.py`       | `populate_cache_resumable()`    |
+| Read/write tick data                    | `storage/parquet.py`  | `TickStorage` class             |
+| Bar-count cache operations              | `clickhouse/cache.py` | `count_bars()`, `get_n_bars()`  |
+| Validate microstructure features        | `validation/tier1.py` | `validate_tier1()`              |
 
 ### API Selection Guide
 
 ```
 Starting Point?
-├── Need data fetching (date range)? → get_range_bars() [DATE-BOUNDED]
+├── Date range > 30 days? → populate_cache_resumable() first, then get_range_bars()
+├── Need data fetching (date range ≤ 30 days)? → get_range_bars() [DATE-BOUNDED]
 ├── Need exactly N bars (ML/walk-forward)? → get_n_range_bars() [COUNT-BOUNDED]
 ├── Have pandas DataFrame → process_trades_to_dataframe()
 ├── Have Polars DataFrame/LazyFrame → process_trades_polars() [2-3x faster]
@@ -34,20 +36,21 @@ Starting Point?
 
 ### File-to-Responsibility Mapping
 
-| File | Responsibility |
-|------|----------------|
-| `__init__.py` | Public Python API |
-| `__init__.pyi` | Type stubs for IDE/AI |
-| `storage/parquet.py` | Tier 1 cache (local Parquet) |
-| `clickhouse/cache.py` | Tier 2 cache (ClickHouse) |
-| `clickhouse/schema.sql` | ClickHouse table schema |
-| `validation/tier1.py` | Fast validation (<30 sec) |
-| `validation/tier2.py` | Statistical validation (~10 min) |
-| `exness.py` | Exness data source utilities |
+| File                    | Responsibility                   |
+| ----------------------- | -------------------------------- |
+| `__init__.py`           | Public Python API                |
+| `__init__.pyi`          | Type stubs for IDE/AI            |
+| `storage/parquet.py`    | Tier 1 cache (local Parquet)     |
+| `clickhouse/cache.py`   | Tier 2 cache (ClickHouse)        |
+| `clickhouse/schema.sql` | ClickHouse table schema          |
+| `validation/tier1.py`   | Fast validation (<30 sec)        |
+| `validation/tier2.py`   | Statistical validation (~10 min) |
+| `exness.py`             | Exness data source utilities     |
 
 ### Performance Optimization Checklist
 
 When optimizing data processing:
+
 1. Use `pl.scan_parquet()` instead of `pl.read_parquet()` (lazy loading)
 2. Apply filters on LazyFrame before `.collect()` (predicate pushdown)
 3. Select only required columns before `.to_dicts()` (minimal conversion)
@@ -81,16 +84,17 @@ python/rangebar/
 
 **Entry points**:
 
-| Function | Purpose |
-|----------|---------|
-| `get_range_bars()` | Date-bounded, auto-fetch, caching |
-| `get_n_range_bars()` | Count-bounded, ML training |
-| `process_trades_to_dataframe()` | From existing pandas DataFrame |
-| `process_trades_polars()` | From Polars, 2-3x faster |
-| `process_trades_chunked()` | Streaming, memory-safe |
-| `precompute_range_bars()` | Batch precompute to ClickHouse |
+| Function                        | Purpose                           |
+| ------------------------------- | --------------------------------- |
+| `get_range_bars()`              | Date-bounded, auto-fetch, caching |
+| `get_n_range_bars()`            | Count-bounded, ML training        |
+| `process_trades_to_dataframe()` | From existing pandas DataFrame    |
+| `process_trades_polars()`       | From Polars, 2-3x faster          |
+| `process_trades_chunked()`      | Streaming, memory-safe            |
+| `precompute_range_bars()`       | Batch precompute to ClickHouse    |
 
 **Constants**:
+
 - `TIER1_SYMBOLS` - 18 high-liquidity symbols
 - `THRESHOLD_PRESETS` - Named thresholds (micro, tight, standard, etc.)
 
@@ -101,6 +105,7 @@ Provides type hints for IDE autocompletion and AI assistants. Keep in sync with 
 ### `_core.abi3.so` - PyO3 Extension
 
 Binary built by `maturin develop`. Contains:
+
 - `PyRangeBarProcessor` - Wraps Rust processor
 - `PyAggTrade` - Trade data type
 - Data fetching (when providers feature enabled)
@@ -242,6 +247,7 @@ bt.plot()
 ```
 
 **Output Format** (backtesting.py compatible):
+
 ```python
 # DataFrame with DatetimeIndex and OHLCV columns
                           Open      High       Low     Close  Volume
@@ -259,6 +265,7 @@ timestamp
 - [x] **OHLC invariants**: High ≥ max(Open, Close), Low ≤ min(Open, Close)
 
 **Validation Script**:
+
 ```python
 def validate_for_backtesting_py(df: pd.DataFrame) -> bool:
     """Validate DataFrame is compatible with backtesting.py."""
@@ -275,16 +282,56 @@ def validate_for_backtesting_py(df: pd.DataFrame) -> bool:
 
 ---
 
+## Long Range Processing (MEM-013)
+
+For date ranges > 30 days, direct `get_range_bars()` is blocked to prevent OOM.
+
+### Workflow
+
+```python
+from rangebar import populate_cache_resumable, get_range_bars
+
+# Step 1: Populate cache (resumable, memory-safe)
+populate_cache_resumable(
+    "BTCUSDT",
+    "2019-01-01",
+    "2025-12-31",
+    threshold_decimal_bps=250,
+    force_refresh=False,  # Resume from last checkpoint
+)
+
+# Step 2: Read from cache
+df = get_range_bars("BTCUSDT", "2019-01-01", "2025-12-31")
+```
+
+### Parameters
+
+| Parameter                | Default  | Description                        |
+| ------------------------ | -------- | ---------------------------------- |
+| `force_refresh`          | `False`  | Wipe existing cache and checkpoint |
+| `threshold_decimal_bps`  | `250`    | Threshold (same as get_range_bars) |
+| `include_microstructure` | `False`  | Include microstructure features    |
+| `ouroboros`              | `"year"` | Reset mode for reproducibility     |
+| `notify`                 | `True`   | Send progress notifications        |
+
+### Resumability
+
+- **Local checkpoint**: `~/.cache/rangebar/checkpoints/` (fast)
+- **ClickHouse checkpoint**: `population_checkpoints` table (cross-machine)
+- **Bar-level**: Incomplete bars preserved across interrupts
+
+---
+
 ## Error Handling
 
-| Exception | When | Fix |
-|-----------|------|-----|
-| `ValueError` | Invalid threshold, bad dates | Check parameters |
-| `RuntimeError` | Processing failure | Check data sorting |
-| `ConnectionError` | ClickHouse unavailable | Check network/credentials |
-| `FileNotFoundError` | Tick data not cached | Set `use_cache=False` |
-| `AttributeError: RangeBarProcessor has no attribute X` | Rust binding outdated | Run `maturin develop` |
-| `AssertionError: High < Low` | OHLC invariant violation | Check input data sorting |
+| Exception                                              | When                         | Fix                       |
+| ------------------------------------------------------ | ---------------------------- | ------------------------- |
+| `ValueError`                                           | Invalid threshold, bad dates | Check parameters          |
+| `RuntimeError`                                         | Processing failure           | Check data sorting        |
+| `ConnectionError`                                      | ClickHouse unavailable       | Check network/credentials |
+| `FileNotFoundError`                                    | Tick data not cached         | Set `use_cache=False`     |
+| `AttributeError: RangeBarProcessor has no attribute X` | Rust binding outdated        | Run `maturin develop`     |
+| `AssertionError: High < Low`                           | OHLC invariant violation     | Check input data sorting  |
 
 ---
 
@@ -314,6 +361,7 @@ pytest tests/test_get_n_range_bars.py -v
 ### Portable Validation Scripts
 
 For GPU workstations without full dev environment:
+
 - `scripts/validate_n_range_bars.py` - Count-bounded API validation
 - `scripts/validate_microstructure_features.py` - v7.0 feature validation
 
@@ -322,6 +370,6 @@ For GPU workstations without full dev environment:
 ## Related
 
 - [/CLAUDE.md](/CLAUDE.md) - Project hub
-- [/docs/api.md](/docs/api.md) - Full API reference
+- [/docs/api/INDEX.md](/docs/api/INDEX.md) - Full API reference
 - [/crates/CLAUDE.md](/crates/CLAUDE.md) - Rust crate details
 - [/src/lib.rs](/src/lib.rs) - PyO3 bindings source

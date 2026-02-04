@@ -6,7 +6,39 @@
 
 ## Cache Population
 
-### Native Method (Recommended)
+### Resumable Population (Recommended for Long Ranges)
+
+For date ranges > 30 days, use `populate_cache_resumable()`:
+
+```python
+from rangebar import populate_cache_resumable
+
+# Incremental, resumable, memory-safe
+populate_cache_resumable(
+    "BTCUSDT",
+    start_date="2019-01-01",
+    end_date="2025-12-31",
+    threshold_decimal_bps=100,
+)
+
+# Force restart (wipe cache and checkpoint)
+populate_cache_resumable(
+    "BTCUSDT",
+    start_date="2019-01-01",
+    end_date="2025-12-31",
+    force_refresh=True,
+)
+```
+
+**How it works**:
+
+1. Resumes from last checkpoint (local or ClickHouse)
+2. Fetches raw tick data day-by-day
+3. Processes with stateful `RangeBarProcessor` (preserves incomplete bars)
+4. Stores bars incrementally to `rangebar_cache.range_bars`
+5. Saves checkpoint after each day (both local and ClickHouse)
+
+### Native Method (Short Ranges ≤ 30 days)
 
 Use `get_range_bars()` with `fetch_if_missing=True` to populate the cache:
 
@@ -120,15 +152,15 @@ To add a threshold to a host, run the population script above on that host.
 
 ## Files
 
-| File                  | Purpose                                                        |
-| --------------------- | -------------------------------------------------------------- |
-| `cache.py`            | RangeBarCache class, core cache operations                     |
-| `bulk_operations.py`  | BulkStoreMixin (store_bars_bulk, store_bars_batch)             |
-| `query_operations.py` | QueryOperationsMixin (get_n_bars, get_bars_by_timestamp_range) |
-| `schema.sql`          | ClickHouse table schema (v7.0: 10 microstructure cols)         |
-| `config.py`           | Connection configuration                                       |
-| `preflight.py`        | Installation checks                                            |
-| `tunnel.py`           | SSH tunnel support                                             |
+| File                  | Purpose                                                              |
+| --------------------- | -------------------------------------------------------------------- |
+| `cache.py`            | RangeBarCache class, core cache operations                           |
+| `bulk_operations.py`  | BulkStoreMixin (store_bars_bulk, store_bars_batch)                   |
+| `query_operations.py` | QueryOperationsMixin (get_n_bars, get_bars_by_timestamp_range)       |
+| `schema.sql`          | ClickHouse table schema (range_bars + population_checkpoints tables) |
+| `config.py`           | Connection configuration                                             |
+| `preflight.py`        | Installation checks                                                  |
+| `tunnel.py`           | SSH tunnel support                                                   |
 
 ---
 
