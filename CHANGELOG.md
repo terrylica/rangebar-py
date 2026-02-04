@@ -1,3 +1,10 @@
+## [12.5.2](https://github.com/terrylica/rangebar-py/compare/v12.5.1...v12.5.2) (2026-02-04)
+
+
+### Bug Fixes
+
+* **orchestration:** preserve trade ID columns through cache write ([#75](https://github.com/terrylica/rangebar-py/issues/75)) ([c103c50](https://github.com/terrylica/rangebar-py/commit/c103c5068f917b6663095444329d50ae611aa4f5))
+
 ## [12.5.1](https://github.com/terrylica/rangebar-py/compare/v12.5.0...v12.5.1) (2026-02-04)
 
 
