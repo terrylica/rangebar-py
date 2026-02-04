@@ -10,9 +10,8 @@
 description = "Build all release wheels"
 run = "./scripts/build-release.sh"
 
-[publish]
-description = "Publish wheels to PyPI"
-run = "./scripts/publish-wheels.sh"
+# [publish] - REMOVED: Use release:pypi instead (1Password credentials)
+# The old publish-wheels.sh used Doppler which is not configured for this project.
 
 ["release:local"]
 description = "Build local wheel only (macOS ARM64)"
@@ -319,7 +318,7 @@ WHEEL_COUNT=$(find dist/ -name "*.whl" 2>/dev/null | wc -l | tr -d ' ')
 echo "Found $WHEEL_COUNT wheel(s)"
 ls -la dist/*.whl 2>/dev/null || true
 echo ""
-echo "To publish: mise run publish"
+echo "To publish: mise run release:pypi"
 """
 
 ["release:dry"]
@@ -368,7 +367,7 @@ if pip index versions rangebar 2>/dev/null | grep -q "^rangebar ($VERSION)$"; th
 fi
 
 mise run release:build-only
-mise run publish
+mise run release:pypi
 
 echo ""
 echo "OK: v$VERSION published to PyPI"
