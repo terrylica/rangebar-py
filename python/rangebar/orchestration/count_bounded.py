@@ -174,7 +174,17 @@ def get_n_range_bars(
     # Validation helper (closure over validate_on_return, continuity_action)
     # -------------------------------------------------------------------------
     def _apply_validation(df: pd.DataFrame) -> pd.DataFrame:
-        """Apply continuity validation if enabled, then return DataFrame."""
+        """Apply continuity validation if enabled, filter columns, then return.
+
+        Issue #75: Column filtering happens here (after cache writes) to ensure
+        cache receives full DataFrame with trade IDs while user gets filtered output.
+        """
+        # Filter output columns based on include_microstructure
+        if not include_microstructure and not df.empty:
+            ohlcv_cols = ["Open", "High", "Low", "Close", "Volume"]
+            available_cols = [c for c in ohlcv_cols if c in df.columns]
+            df = df[available_cols]
+
         if not validate_on_return or df.empty or len(df) <= 1:
             return df
 

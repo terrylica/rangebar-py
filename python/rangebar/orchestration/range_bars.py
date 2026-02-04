@@ -732,6 +732,16 @@ def get_range_bars(
             logger = logging.getLogger(__name__)
             logger.warning("Cache write failed (non-fatal): %s", e)
 
+    # -------------------------------------------------------------------------
+    # Filter output columns based on include_microstructure (Issue #75)
+    # -------------------------------------------------------------------------
+    # Cache storage uses full DataFrame (with trade IDs for data integrity).
+    # User-facing output respects include_microstructure for backtesting.py compat.
+    if not include_microstructure and bars_df is not None and not bars_df.empty:
+        ohlcv_cols = ["Open", "High", "Low", "Close", "Volume"]
+        available_cols = [c for c in ohlcv_cols if c in bars_df.columns]
+        bars_df = bars_df[available_cols]
+
     return bars_df
 
 

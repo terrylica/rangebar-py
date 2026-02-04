@@ -439,12 +439,10 @@ def _process_binance_trades(
         }
     )
 
-    if include_microstructure:
-        # Return all columns including microstructure
-        return result, processor
-
-    # Return only OHLCV columns (backtesting.py compatible)
-    return result[["Open", "High", "Low", "Close", "Volume"]], processor
+    # Issue #75: Always return all available columns including trade IDs
+    # The caller (get_range_bars) handles filtering for user-facing output AFTER cache write.
+    # This ensures cache always has trade IDs for data integrity verification.
+    return result, processor
 
 
 def _process_exness_ticks(
