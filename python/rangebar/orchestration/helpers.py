@@ -356,6 +356,12 @@ def _process_binance_trades(
     if "is_buyer_maker" in available_cols:
         columns.append(pl.col("is_buyer_maker"))
 
+    # Issue #75: Include trade ID columns for data integrity tracking (Issue #72)
+    # These are required for first_agg_trade_id and last_agg_trade_id in output bars
+    for trade_id_col in ("agg_trade_id", "first_trade_id", "last_trade_id"):
+        if trade_id_col in available_cols:
+            columns.append(pl.col(trade_id_col))
+
     # Apply selection (predicates pushed down for LazyFrame)
     trades_selected = trades.select(columns)
 
