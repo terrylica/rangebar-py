@@ -81,6 +81,23 @@
 -- Note: New installations do not need this migration.
 
 -- ============================================================================
+-- Migration for v12.4.x (Issue #72: Aggregate trade ID range for data integrity)
+-- ============================================================================
+-- Run this ONCE if upgrading from rangebar-py v12.3.x with existing cache:
+--
+-- -- range_bars table
+-- ALTER TABLE rangebar_cache.range_bars
+--     ADD COLUMN first_agg_trade_id Int64 DEFAULT 0,
+--     ADD COLUMN last_agg_trade_id Int64 DEFAULT 0;
+--
+-- -- population_checkpoints table (Full Audit Trail)
+-- ALTER TABLE rangebar_cache.population_checkpoints
+--     ADD COLUMN first_agg_trade_id_in_bar Int64 DEFAULT 0,
+--     ADD COLUMN last_agg_trade_id_in_bar Int64 DEFAULT 0;
+--
+-- Note: New installations do not need this migration.
+
+-- ============================================================================
 -- Computed Range Bars Cache (Tier 2)
 -- ============================================================================
 -- Stores computed range bars with all parameters as cache key
@@ -148,6 +165,10 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
     lookback_hurst Nullable(Float64) DEFAULT NULL,
     lookback_permutation_entropy Nullable(Float64) DEFAULT NULL,
 
+    -- Trade ID range (Issue #72: data integrity verification)
+    first_agg_trade_id Int64 DEFAULT 0,
+    last_agg_trade_id Int64 DEFAULT 0,
+
     -- Cache metadata
     cache_key String,                        -- Hash of full parameters
     rangebar_version String DEFAULT '',      -- Version for invalidation
@@ -204,6 +225,11 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.population_checkpoints (
     -- Processor state for bar-level resumability (JSON serialized)
     -- Contains incomplete bar state, defer_open flag, etc.
     processor_checkpoint String DEFAULT '',
+
+    -- Aggregate trade ID tracking (Issue #72: Full Audit Trail)
+    -- Tracks agg_trade_id range in incomplete bar for resume alignment verification
+    first_agg_trade_id_in_bar Int64 DEFAULT 0,
+    last_agg_trade_id_in_bar Int64 DEFAULT 0,
 
     -- Metadata
     include_microstructure UInt8 DEFAULT 0,

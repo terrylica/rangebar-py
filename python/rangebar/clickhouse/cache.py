@@ -26,6 +26,7 @@ from .._core import __version__
 from ..constants import (
     EXCHANGE_SESSION_COLUMNS,
     MICROSTRUCTURE_COLUMNS,
+    TRADE_ID_RANGE_COLUMNS,  # Issue #72
 )
 from ..conversion import normalize_arrow_dtypes
 from ..exceptions import (
@@ -291,6 +292,11 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
 
         # Add optional exchange session columns if present (Issue #8)
         for col in EXCHANGE_SESSION_COLUMNS:
+            if col in df.columns:
+                columns.append(col)
+
+        # Add trade ID range columns if present (Issue #72)
+        for col in TRADE_ID_RANGE_COLUMNS:
             if col in df.columns:
                 columns.append(col)
 
@@ -780,6 +786,9 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
         bars_written: int,
         include_microstructure: bool = False,
         ouroboros_mode: str = "year",
+        # Issue #72: Full Audit Trail - agg_trade_id range in incomplete bar
+        first_agg_trade_id_in_bar: int | None = None,
+        last_agg_trade_id_in_bar: int | None = None,
     ) -> None:
         """Save population checkpoint to ClickHouse.
 
@@ -817,12 +826,14 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
             (symbol, threshold_decimal_bps, start_date, end_date,
              last_completed_date, last_trade_timestamp_ms, bars_written,
              processor_checkpoint, include_microstructure, ouroboros_mode,
+             first_agg_trade_id_in_bar, last_agg_trade_id_in_bar,
              updated_at)
             VALUES
             ({symbol:String}, {threshold:UInt32}, {start_date:String},
              {end_date:String}, {last_date:String}, {last_ts:Int64},
              {bars:UInt64}, {checkpoint:String}, {micro:UInt8},
-             {ouroboros:String}, now64(3))
+             {ouroboros:String}, {first_agg:Int64}, {last_agg:Int64},
+             now64(3))
         """
         self.client.command(
             query,
@@ -837,6 +848,8 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
                 "checkpoint": processor_checkpoint,
                 "micro": 1 if include_microstructure else 0,
                 "ouroboros": ouroboros_mode,
+                "first_agg": first_agg_trade_id_in_bar or 0,  # Issue #72
+                "last_agg": last_agg_trade_id_in_bar or 0,    # Issue #72
             },
         )
         logger.debug(
@@ -987,6 +1000,8 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
                 last_trade_timestamp_ms Int64,
                 bars_written UInt64,
                 processor_checkpoint String DEFAULT '',
+                first_agg_trade_id_in_bar Int64 DEFAULT 0,
+                last_agg_trade_id_in_bar Int64 DEFAULT 0,
                 include_microstructure UInt8 DEFAULT 0,
                 ouroboros_mode LowCardinality(String) DEFAULT 'year',
                 created_at DateTime64(3) DEFAULT now64(3),

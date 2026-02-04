@@ -47,6 +47,8 @@ pub fn rangebar_schema() -> Schema {
         Field::new("agg_record_count", DataType::UInt32, false),
         Field::new("first_trade_id", DataType::Int64, false),
         Field::new("last_trade_id", DataType::Int64, false),
+        Field::new("first_agg_trade_id", DataType::Int64, false),
+        Field::new("last_agg_trade_id", DataType::Int64, false),
         Field::new("data_source", DataType::Utf8, false),
         // Order flow
         Field::new("buy_volume", DataType::Float64, false),
@@ -106,6 +108,9 @@ pub fn rangebar_vec_to_record_batch(bars: &[RangeBar]) -> RecordBatch {
     let agg_record_count: UInt32Array = bars.iter().map(|b| b.agg_record_count).collect();
     let first_trade_id: Int64Array = bars.iter().map(|b| b.first_trade_id).collect();
     let last_trade_id: Int64Array = bars.iter().map(|b| b.last_trade_id).collect();
+    // Issue #72: Aggregate trade ID range for data integrity verification
+    let first_agg_trade_id: Int64Array = bars.iter().map(|b| b.first_agg_trade_id).collect();
+    let last_agg_trade_id: Int64Array = bars.iter().map(|b| b.last_agg_trade_id).collect();
     // StringArray requires Option<&str> for FromIterator
     let data_source: StringArray = bars
         .iter()
@@ -155,6 +160,8 @@ pub fn rangebar_vec_to_record_batch(bars: &[RangeBar]) -> RecordBatch {
             Arc::new(agg_record_count),
             Arc::new(first_trade_id),
             Arc::new(last_trade_id),
+            Arc::new(first_agg_trade_id),
+            Arc::new(last_agg_trade_id),
             Arc::new(data_source),
             Arc::new(buy_volume),
             Arc::new(sell_volume),
@@ -252,6 +259,8 @@ mod tests {
             agg_record_count: 10,
             first_trade_id: 1,
             last_trade_id: 100,
+            first_agg_trade_id: 1000, // Issue #72
+            last_agg_trade_id: 1009,  // Issue #72
             data_source: DataSource::BinanceFuturesUM,
             buy_volume: FixedPoint::from_str("6.0").unwrap(),
             sell_volume: FixedPoint::from_str("4.5").unwrap(),
@@ -287,6 +296,29 @@ mod tests {
             lookback_garman_klass_vol: None,
             lookback_hurst: None,
             lookback_permutation_entropy: None,
+            // Intra-bar features (Issue #59) - test defaults
+            intra_bull_epoch_density: None,
+            intra_bear_epoch_density: None,
+            intra_bull_excess_gain: None,
+            intra_bear_excess_gain: None,
+            intra_bull_cv: None,
+            intra_bear_cv: None,
+            intra_max_drawdown: None,
+            intra_max_runup: None,
+            intra_trade_count: None,
+            intra_ofi: None,
+            intra_duration_us: None,
+            intra_intensity: None,
+            intra_vwap_position: None,
+            intra_count_imbalance: None,
+            intra_kyle_lambda: None,
+            intra_burstiness: None,
+            intra_volume_skew: None,
+            intra_volume_kurt: None,
+            intra_kaufman_er: None,
+            intra_garman_klass_vol: None,
+            intra_hurst: None,
+            intra_permutation_entropy: None,
         }
     }
 
@@ -309,11 +341,11 @@ mod tests {
         let batch = rangebar_vec_to_record_batch(&[bar]);
 
         assert_eq!(batch.num_rows(), 1);
-        assert_eq!(batch.num_columns(), 30);
+        assert_eq!(batch.num_columns(), 32); // Issue #72: +2 for agg_trade_id fields
 
         // Verify schema
         assert_eq!(batch.schema().field(0).name(), "open_time");
-        assert_eq!(batch.schema().field(29).name(), "turnover_imbalance");
+        assert_eq!(batch.schema().field(31).name(), "turnover_imbalance");
     }
 
     #[test]
@@ -322,14 +354,14 @@ mod tests {
         let batch = rangebar_vec_to_record_batch(&bars);
 
         assert_eq!(batch.num_rows(), 1000);
-        assert_eq!(batch.num_columns(), 30);
+        assert_eq!(batch.num_columns(), 32); // Issue #72: +2 for agg_trade_id fields
     }
 
     #[test]
     fn test_rangebar_to_record_batch_empty() {
         let batch = rangebar_vec_to_record_batch(&[]);
         assert_eq!(batch.num_rows(), 0);
-        assert_eq!(batch.num_columns(), 30);
+        assert_eq!(batch.num_columns(), 32); // Issue #72: +2 for agg_trade_id fields
     }
 
     #[test]

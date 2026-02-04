@@ -99,6 +99,9 @@ class PopulationCheckpoint:
     last_trade_timestamp_ms: int | None = None
     include_microstructure: bool = False
     ouroboros_mode: str = "year"
+    # Issue #72: Full Audit Trail - agg_trade_id range in incomplete bar
+    first_agg_trade_id_in_bar: int | None = None
+    last_agg_trade_id_in_bar: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -255,6 +258,9 @@ def _load_checkpoint_from_clickhouse(
                 last_trade_timestamp_ms=data.get("last_trade_timestamp_ms"),
                 include_microstructure=data.get("include_microstructure", False),
                 ouroboros_mode=data.get("ouroboros_mode", "year"),
+                # Issue #72: Full Audit Trail
+                first_agg_trade_id_in_bar=data.get("first_agg_trade_id_in_bar"),
+                last_agg_trade_id_in_bar=data.get("last_agg_trade_id_in_bar"),
             )
     except (ImportError, ConnectionError, OSError, RuntimeError) as e:
         logger.debug("ClickHouse checkpoint load failed: %s", e)
@@ -288,6 +294,9 @@ def _save_checkpoint_to_clickhouse(checkpoint: PopulationCheckpoint) -> None:
                 bars_written=checkpoint.bars_written,
                 include_microstructure=checkpoint.include_microstructure,
                 ouroboros_mode=checkpoint.ouroboros_mode,
+                # Issue #72: Full Audit Trail
+                first_agg_trade_id_in_bar=checkpoint.first_agg_trade_id_in_bar,
+                last_agg_trade_id_in_bar=checkpoint.last_agg_trade_id_in_bar,
             )
     except (ImportError, ConnectionError, OSError, RuntimeError) as e:
         logger.debug("ClickHouse checkpoint save failed (non-fatal): %s", e)

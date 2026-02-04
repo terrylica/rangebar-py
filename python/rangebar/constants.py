@@ -148,6 +148,21 @@ INTRA_BAR_FEATURE_COLUMNS: tuple[str, ...] = (
 )
 
 # =============================================================================
+# Trade ID Range Columns (Issue #72, v12.4+)
+# =============================================================================
+# Aggregate trade ID range for data integrity verification.
+# Enables gap detection: bars[i].first_agg_trade_id == bars[i-1].last_agg_trade_id + 1
+#
+# IMPORTANT: Keep this list in sync with:
+# - crates/rangebar-core/src/types.rs (RangeBar struct fields)
+# - python/rangebar/clickhouse/schema.sql (ClickHouse columns)
+
+TRADE_ID_RANGE_COLUMNS: tuple[str, ...] = (
+    "first_agg_trade_id",
+    "last_agg_trade_id",
+)
+
+# =============================================================================
 # Tier-1 Symbols (high-liquidity, available on all Binance markets)
 # =============================================================================
 
@@ -267,13 +282,14 @@ EXCHANGE_SESSION_COLUMNS: tuple[str, ...] = (
 # =============================================================================
 # All Optional Columns (for cache operations)
 # =============================================================================
-# Union of microstructure + exchange session + inter-bar + intra-bar columns
+# Union of microstructure + exchange session + inter-bar + intra-bar + trade ID columns
 
 ALL_OPTIONAL_COLUMNS: tuple[str, ...] = (
     *MICROSTRUCTURE_COLUMNS,
     *EXCHANGE_SESSION_COLUMNS,
     *INTER_BAR_FEATURE_COLUMNS,
     *INTRA_BAR_FEATURE_COLUMNS,
+    *TRADE_ID_RANGE_COLUMNS,  # Issue #72
 )
 
 # =============================================================================

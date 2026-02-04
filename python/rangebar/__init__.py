@@ -45,6 +45,7 @@ __all__ = [
     "THRESHOLD_DECIMAL_MIN",
     "THRESHOLD_PRESETS",
     "TIER1_SYMBOLS",
+    "TRADE_ID_RANGE_COLUMNS",  # Issue #72: agg_trade_id for data integrity
     "VALIDATION_PRESETS",
     "AssetClass",
     "AsyncStreamingProcessor",
@@ -117,6 +118,7 @@ from .constants import (
     THRESHOLD_DECIMAL_MIN,
     THRESHOLD_PRESETS,
     TIER1_SYMBOLS,
+    TRADE_ID_RANGE_COLUMNS,  # Issue #72: agg_trade_id for data integrity
 )
 
 # Import conversion utilities from centralized module (SSoT)

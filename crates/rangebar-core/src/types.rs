@@ -108,6 +108,14 @@ pub struct RangeBar {
     /// Last individual trade ID in this range bar
     pub last_trade_id: i64,
 
+    /// First aggregate trade ID in this range bar (Issue #72)
+    /// Tracks the first AggTrade record that opened this bar
+    pub first_agg_trade_id: i64,
+
+    /// Last aggregate trade ID in this range bar (Issue #72)
+    /// Tracks the last AggTrade record processed in this bar
+    pub last_agg_trade_id: i64,
+
     /// Data source this range bar was created from
     pub data_source: DataSource,
 
@@ -396,6 +404,9 @@ impl RangeBar {
             agg_record_count: 1, // This is the first AggTrade record
             first_trade_id: trade.first_trade_id,
             last_trade_id: trade.last_trade_id,
+            // Issue #72: Track aggregate trade IDs for data integrity verification
+            first_agg_trade_id: trade.agg_trade_id,
+            last_agg_trade_id: trade.agg_trade_id,
             data_source: DataSource::default(),
 
             // Market microstructure fields
@@ -489,6 +500,7 @@ impl RangeBar {
         self.close = trade.price;
         self.close_time = trade.timestamp;
         self.last_trade_id = trade.last_trade_id; // NEW: Track individual trade ID
+        self.last_agg_trade_id = trade.agg_trade_id; // Issue #72: Track aggregate trade ID
 
         // Cache trade metrics for efficiency
         let trade_turnover = trade.turnover();

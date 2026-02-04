@@ -1546,6 +1546,10 @@ struct InternalRangeBar {
     agg_record_count: u32,
     first_trade_id: i64,
     last_trade_id: i64,
+    /// First aggregate trade ID in this range bar (Issue #72)
+    first_agg_trade_id: i64,
+    /// Last aggregate trade ID in this range bar (Issue #72)
+    last_agg_trade_id: i64,
     /// Volume from buy-side trades (is_buyer_maker = false)
     buy_volume: FixedPoint,
     /// Volume from sell-side trades (is_buyer_maker = true)
@@ -1657,8 +1661,11 @@ impl ExportRangeBarProcessor {
                 turnover: trade_turnover,
                 individual_trade_count: 1,
                 agg_record_count: 1,
-                first_trade_id: trade.agg_trade_id,
-                last_trade_id: trade.agg_trade_id,
+                first_trade_id: trade.first_trade_id,
+                last_trade_id: trade.last_trade_id,
+                // Issue #72: Track aggregate trade IDs
+                first_agg_trade_id: trade.agg_trade_id,
+                last_agg_trade_id: trade.agg_trade_id,
                 // Market microstructure fields
                 buy_volume: if trade.is_buyer_maker {
                     FixedPoint(0)
@@ -1707,7 +1714,8 @@ impl ExportRangeBarProcessor {
         bar.turnover += trade_turnover;
         bar.individual_trade_count += 1;
         bar.agg_record_count += 1;
-        bar.last_trade_id = trade.agg_trade_id;
+        bar.last_trade_id = trade.last_trade_id;
+        bar.last_agg_trade_id = trade.agg_trade_id; // Issue #72
 
         // Update high/low
         if price_val > bar.high.0 {
@@ -1756,6 +1764,9 @@ impl ExportRangeBarProcessor {
                 agg_record_count: completed_bar.agg_record_count,
                 first_trade_id: completed_bar.first_trade_id,
                 last_trade_id: completed_bar.last_trade_id,
+                // Issue #72: Aggregate trade ID tracking
+                first_agg_trade_id: completed_bar.first_agg_trade_id,
+                last_agg_trade_id: completed_bar.last_agg_trade_id,
                 data_source: crate::types::DataSource::default(),
 
                 // Market microstructure fields
@@ -1858,6 +1869,8 @@ impl ExportRangeBarProcessor {
                 agg_record_count: incomplete.agg_record_count,
                 first_trade_id: incomplete.first_trade_id,
                 last_trade_id: incomplete.last_trade_id,
+                first_agg_trade_id: incomplete.first_agg_trade_id,
+                last_agg_trade_id: incomplete.last_agg_trade_id,
                 data_source: crate::types::DataSource::default(),
 
                 // Market microstructure fields

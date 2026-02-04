@@ -94,6 +94,8 @@ pub fn create_test_range_bar(
         agg_record_count: 1,
         first_trade_id: 1,
         last_trade_id: individual_trade_count as i64,
+        first_agg_trade_id: 1, // Issue #72
+        last_agg_trade_id: 1,  // Issue #72
         data_source: DataSource::BinanceFuturesUM,
         buy_volume: FixedPoint::from_str("0.0").unwrap(),
         buy_turnover: 0,

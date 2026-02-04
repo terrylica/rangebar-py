@@ -14,7 +14,11 @@ from typing import TYPE_CHECKING
 import pandas as pd
 
 from .._core import __version__
-from ..constants import EXCHANGE_SESSION_COLUMNS, MICROSTRUCTURE_COLUMNS
+from ..constants import (
+    EXCHANGE_SESSION_COLUMNS,
+    MICROSTRUCTURE_COLUMNS,
+    TRADE_ID_RANGE_COLUMNS,  # Issue #72
+)
 from ..exceptions import CacheWriteError
 
 if TYPE_CHECKING:
@@ -141,6 +145,11 @@ class BulkStoreMixin:
         for col in EXCHANGE_SESSION_COLUMNS:
             if col in df.columns:
                 df[col] = df[col].astype(int)
+                columns.append(col)
+
+        # Add trade ID range columns if present (Issue #72)
+        for col in TRADE_ID_RANGE_COLUMNS:
+            if col in df.columns:
                 columns.append(col)
 
         # Filter to existing columns
@@ -294,6 +303,11 @@ class BulkStoreMixin:
         for col in EXCHANGE_SESSION_COLUMNS:
             if col in df.columns:
                 df = df.with_columns(pl.col(col).cast(pl.UInt8))
+                columns.append(col)
+
+        # Add trade ID range columns if present (Issue #72)
+        for col in TRADE_ID_RANGE_COLUMNS:
+            if col in df.columns:
                 columns.append(col)
 
         # Filter to existing columns

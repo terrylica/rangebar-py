@@ -211,6 +211,7 @@ ignore = [
     "ANN401",  # Any type in kwargs
     "PYI034",  # Self return type
     "PLR2004", # Magic values (port numbers, etc.)
+    "PLR0912", # Too many branches (bulk storage handles many optional column groups)
     "PLR0913", # Too many arguments (cache API needs symbol, threshold, timestamps, etc.)
     "PLC0415", # Lazy imports for optional dependencies
     "TID252",  # Relative imports from parent (intentional for package structure)

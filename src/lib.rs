@@ -120,6 +120,10 @@ fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject> {
     dict.set_item("individual_trade_count", bar.individual_trade_count)?;
     dict.set_item("agg_record_count", bar.agg_record_count)?;
 
+    // Trade ID range (Issue #72)
+    dict.set_item("first_agg_trade_id", bar.first_agg_trade_id)?;
+    dict.set_item("last_agg_trade_id", bar.last_agg_trade_id)?;
+
     // Microstructure features (Issue #25)
     dict.set_item("duration_us", bar.duration_us)?;
     dict.set_item("ofi", bar.ofi)?;
@@ -430,6 +434,8 @@ fn dict_to_rangebar(_py: Python, dict: &Bound<PyDict>) -> PyResult<RangeBar> {
         agg_record_count,
         first_trade_id: 0,
         last_trade_id: 0,
+        first_agg_trade_id: 0, // Issue #72 - default 0 for backward compatibility
+        last_agg_trade_id: 0,  // Issue #72 - default 0 for backward compatibility
         data_source: rangebar_core::DataSource::BinanceSpot,
         buy_volume: FixedPoint(0),
         sell_volume: FixedPoint(0),
@@ -1359,6 +1365,9 @@ mod arrow_bindings {
         let agg_record_count = get_u32_opt(dict, "agg_record_count", 0)?;
         let first_trade_id = get_i64(dict, "first_trade_id", index).unwrap_or(0);
         let last_trade_id = get_i64(dict, "last_trade_id", index).unwrap_or(0);
+        // Issue #72: Aggregate trade ID range for data integrity verification
+        let first_agg_trade_id = get_i64(dict, "first_agg_trade_id", index).unwrap_or(0);
+        let last_agg_trade_id = get_i64(dict, "last_agg_trade_id", index).unwrap_or(0);
 
         // Order flow
         let buy_volume = get_f64_opt(dict, "buy_volume", 0.0)?;
@@ -1395,6 +1404,8 @@ mod arrow_bindings {
             agg_record_count,
             first_trade_id,
             last_trade_id,
+            first_agg_trade_id, // Issue #72
+            last_agg_trade_id,  // Issue #72
             data_source: rangebar_core::DataSource::BinanceFuturesUM,
             buy_volume: f64_to_fixed_point(buy_volume),
             sell_volume: f64_to_fixed_point(sell_volume),

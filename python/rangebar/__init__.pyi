@@ -19,6 +19,7 @@ TierSummary : Per-tier statistics for gap analysis.
 TieredValidationResult : Comprehensive validation result with tier breakdown.
 TIER1_SYMBOLS : High-liquidity symbols available on all Binance markets.
 THRESHOLD_PRESETS : Named threshold presets (micro, tight, standard, etc.).
+TRADE_ID_RANGE_COLUMNS : Trade ID range columns for data integrity (Issue #72).
 VALIDATION_PRESETS : Named validation presets (research, strict, crypto, etc.).
 THRESHOLD_DECIMAL_MIN : Minimum valid threshold (1 = 0.1bps).
 THRESHOLD_DECIMAL_MAX : Maximum valid threshold (100,000 = 10,000bps).
@@ -257,6 +258,16 @@ Tier 3 - Advanced (4 features):
 - lookback_permutation_entropy: Permutation entropy [0, 1]
 
 All inter-bar features are Optional - None when no lookback data available.
+"""
+
+# Issue #72: Trade ID range for data integrity verification
+TRADE_ID_RANGE_COLUMNS: tuple[str, ...]
+"""2 trade ID range columns for data integrity verification (Issue #72).
+
+- first_agg_trade_id: First aggregate trade ID in the bar
+- last_agg_trade_id: Last aggregate trade ID in the bar
+
+Enables gap detection: bars[i].first_agg_trade_id == bars[i-1].last_agg_trade_id + 1
 """
 
 # Issue #69: Long range threshold for MEM-013 guard
