@@ -1,3 +1,10 @@
+## [12.1.2](https://github.com/terrylica/rangebar-py/compare/v12.1.1...v12.1.2) (2026-02-04)
+
+
+### Bug Fixes
+
+* **interbar:** preserve lookback trades across bar boundaries ([#68](https://github.com/terrylica/rangebar-py/issues/68)) ([d8e3fc9](https://github.com/terrylica/rangebar-py/commit/d8e3fc94bc160c20314801e5e3be684969972888))
+
 ## [12.1.1](https://github.com/terrylica/rangebar-py/compare/v12.1.0...v12.1.1) (2026-02-03)
 
 
