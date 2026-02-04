@@ -367,12 +367,27 @@ def _process_binance_trades(
 
     # Use provided processor or create new one
     if processor is None:
+        # Issue #68: Auto-enable v12 features when include_microstructure=True
+        # This ensures all code paths apply defaults, not just range_bars.py
+        import os
+
+        effective_lookback = inter_bar_lookback_count
+        if include_microstructure and effective_lookback is None:
+            effective_lookback = int(
+                os.environ.get("RANGEBAR_INTER_BAR_LOOKBACK_COUNT", "200")
+            )
+
+        enable_intra = include_intra_bar_features
+        if include_microstructure and not enable_intra:
+            intra_env = os.environ.get("RANGEBAR_INCLUDE_INTRA_BAR_FEATURES", "true")
+            enable_intra = intra_env.lower() in ("true", "1", "yes")
+
         processor = RangeBarProcessor(
             threshold_decimal_bps,
             symbol=symbol,
             prevent_same_timestamp_close=prevent_same_timestamp_close,
-            inter_bar_lookback_count=inter_bar_lookback_count,
-            include_intra_bar_features=include_intra_bar_features,
+            inter_bar_lookback_count=effective_lookback,
+            include_intra_bar_features=enable_intra,
         )
 
     # MEM-012: Stream bars in batches instead of accumulating all in memory

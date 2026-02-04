@@ -260,6 +260,10 @@ impl RangeBarProcessor {
         // This matches the batch path's defer_open semantics - the breaching trade
         // closes the current bar, and the NEXT trade opens the new bar.
         if self.defer_open {
+            // Issue #68: Notify history that new bar is opening (preserves pre-bar trades)
+            if let Some(ref mut history) = self.trade_history {
+                history.on_bar_open(trade.timestamp);
+            }
             self.current_bar_state = Some(if self.include_intra_bar_features {
                 RangeBarState::new_with_trade_accumulation(&trade, self.threshold_decimal_bps)
             } else {
@@ -272,6 +276,10 @@ impl RangeBarProcessor {
         match &mut self.current_bar_state {
             None => {
                 // First trade - initialize new bar
+                // Issue #68: Notify history that new bar is opening (preserves pre-bar trades)
+                if let Some(ref mut history) = self.trade_history {
+                    history.on_bar_open(trade.timestamp);
+                }
                 self.current_bar_state = Some(if self.include_intra_bar_features {
                     RangeBarState::new_with_trade_accumulation(&trade, self.threshold_decimal_bps)
                 } else {
@@ -313,9 +321,11 @@ impl RangeBarProcessor {
 
                     // Issue #59: Compute inter-bar features from lookback window
                     // Features are computed from trades BEFORE bar.open_time (no lookahead)
-                    if let Some(ref history) = self.trade_history {
+                    if let Some(ref mut history) = self.trade_history {
                         let inter_bar_features = history.compute_features(bar_state.bar.open_time);
                         bar_state.bar.set_inter_bar_features(&inter_bar_features);
+                        // Issue #68: Notify history that bar is closing (resumes normal pruning)
+                        history.on_bar_close();
                     }
 
                     // Issue #59: Compute intra-bar features from accumulated trades
@@ -451,6 +461,10 @@ impl RangeBarProcessor {
 
             if defer_open {
                 // Previous bar closed, this agg_record opens new bar
+                // Issue #68: Notify history that new bar is opening (preserves pre-bar trades)
+                if let Some(ref mut history) = self.trade_history {
+                    history.on_bar_open(agg_record.timestamp);
+                }
                 current_bar = Some(if self.include_intra_bar_features {
                     RangeBarState::new_with_trade_accumulation(agg_record, self.threshold_decimal_bps)
                 } else {
@@ -463,6 +477,10 @@ impl RangeBarProcessor {
             match current_bar {
                 None => {
                     // First bar initialization
+                    // Issue #68: Notify history that new bar is opening (preserves pre-bar trades)
+                    if let Some(ref mut history) = self.trade_history {
+                        history.on_bar_open(agg_record.timestamp);
+                    }
                     current_bar = Some(if self.include_intra_bar_features {
                         RangeBarState::new_with_trade_accumulation(agg_record, self.threshold_decimal_bps)
                     } else {
@@ -504,10 +522,12 @@ impl RangeBarProcessor {
                         bar_state.bar.compute_microstructure_features();
 
                         // Issue #59: Compute inter-bar features from lookback window
-                        if let Some(ref history) = self.trade_history {
+                        if let Some(ref mut history) = self.trade_history {
                             let inter_bar_features =
                                 history.compute_features(bar_state.bar.open_time);
                             bar_state.bar.set_inter_bar_features(&inter_bar_features);
+                            // Issue #68: Notify history that bar is closing (resumes normal pruning)
+                            history.on_bar_close();
                         }
 
                         // Issue #59: Compute intra-bar features from accumulated trades

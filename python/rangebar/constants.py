@@ -347,4 +347,9 @@ MEM_GUARDS: dict[str, dict[str, str]] = {
         "location": "orchestration/helpers.py:304",
         "stage": "processing",
     },
+    "MEM-012": {
+        "description": "Streaming bar batches (10K) to prevent OOM",
+        "location": "orchestration/helpers.py:236",
+        "stage": "processing",
+    },
 }

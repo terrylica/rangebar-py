@@ -145,41 +145,93 @@ pub struct TradeHistory {
     trades: VecDeque<TradeSnapshot>,
     /// Configuration for lookback
     config: InterBarConfig,
+    /// Timestamp threshold: trades with timestamp < this are protected from pruning.
+    /// Set to the oldest timestamp we might need for lookback computation.
+    /// Updated each time a new bar opens.
+    protected_until: Option<i64>,
 }
 
 impl TradeHistory {
     /// Create new trade history with given configuration
     pub fn new(config: InterBarConfig) -> Self {
         let capacity = match &config.lookback_mode {
-            LookbackMode::FixedCount(n) => *n,
-            LookbackMode::FixedWindow(_) => 1000, // Initial capacity for time-based
+            LookbackMode::FixedCount(n) => *n * 2, // 2x capacity to hold pre-bar + in-bar trades
+            LookbackMode::FixedWindow(_) => 2000, // Initial capacity for time-based
         };
         Self {
             trades: VecDeque::with_capacity(capacity),
             config,
+            protected_until: None,
         }
     }
 
     /// Push a new trade to the history buffer
     ///
-    /// Automatically prunes old entries based on lookback mode.
+    /// Automatically prunes old entries based on lookback mode, but preserves
+    /// trades needed for lookback computation (timestamp < protected_until).
     pub fn push(&mut self, trade: &AggTrade) {
         let snapshot = TradeSnapshot::from(trade);
         self.trades.push_back(snapshot);
-        self.prune(trade.timestamp);
+        self.prune();
+    }
+
+    /// Notify that a new bar has opened at the given timestamp
+    ///
+    /// This sets the protection threshold to ensure trades from before the bar
+    /// opened are preserved for lookback computation. The protection extends
+    /// until the next bar opens and calls this method again.
+    pub fn on_bar_open(&mut self, bar_open_time: i64) {
+        // Protect all trades with timestamp < bar_open_time
+        // These are the trades that can be used for lookback computation
+        self.protected_until = Some(bar_open_time);
+    }
+
+    /// Notify that the current bar has closed
+    ///
+    /// This is intentionally a no-op. We keep protection until the next bar opens,
+    /// which ensures the lookback window is available for feature computation.
+    pub fn on_bar_close(&mut self) {
+        // No-op: Keep protection until next bar opens
+        // This ensures lookback trades survive between bars
     }
 
     /// Prune old trades based on lookback configuration
-    fn prune(&mut self, current_timestamp: i64) {
+    ///
+    /// Pruning logic:
+    /// - For FixedCount(n): Keep up to 2*n trades total, but never prune trades
+    ///   with timestamp < protected_until (needed for lookback)
+    /// - For FixedWindow: Standard time-based pruning, but respect protected_until
+    fn prune(&mut self) {
         match &self.config.lookback_mode {
             LookbackMode::FixedCount(n) => {
-                while self.trades.len() > *n {
+                // Keep at most 2*n trades (n for lookback + n for next bar's lookback)
+                let max_trades = *n * 2;
+                while self.trades.len() > max_trades {
+                    // Check if front trade is protected
+                    if let Some(front) = self.trades.front() {
+                        if let Some(protected) = self.protected_until {
+                            if front.timestamp < protected {
+                                // Don't prune protected trades
+                                break;
+                            }
+                        }
+                    }
                     self.trades.pop_front();
                 }
             }
             LookbackMode::FixedWindow(window_us) => {
-                let cutoff = current_timestamp - window_us;
+                // Find the oldest trade we need
+                let newest_timestamp = self.trades.back().map(|t| t.timestamp).unwrap_or(0);
+                let cutoff = newest_timestamp - window_us;
+
                 while let Some(front) = self.trades.front() {
+                    // Respect protection
+                    if let Some(protected) = self.protected_until {
+                        if front.timestamp < protected {
+                            break;
+                        }
+                    }
+                    // Prune if outside time window
                     if front.timestamp < cutoff {
                         self.trades.pop_front();
                     } else {
