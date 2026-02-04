@@ -11,8 +11,11 @@ Compression choice (based on empirical benchmark 2026-01-07):
 
 from __future__ import annotations
 
+import contextlib
+import logging
 import os
 import shutil
+import tempfile
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,6 +32,182 @@ COMPRESSION = "zstd"
 COMPRESSION_LEVEL = 3
 APP_NAME = "rangebar"
 APP_AUTHOR = "terrylica"
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Parquet Validation and Atomic Write Helpers (Issue #73)
+# =============================================================================
+
+# Minimum valid Parquet file size: 4 (header) + 4 (footer length) + 4 (footer magic)
+_MIN_PARQUET_SIZE = 12
+_PARQUET_MAGIC = b"PAR1"
+
+
+def _is_valid_parquet(path: Path) -> tuple[bool, str]:  # noqa: PLR0911
+    """Check if file is valid Parquet by verifying PAR1 magic bytes.
+
+    Parquet files MUST start and end with b"PAR1" (4 bytes each).
+    Minimum valid size: 12 bytes (4 header + 4 footer length + 4 footer magic).
+
+    Parameters
+    ----------
+    path : Path
+        Path to the Parquet file to validate.
+
+    Returns
+    -------
+    tuple[bool, str]
+        (is_valid, reason) - reason is empty string if valid.
+
+    Examples
+    --------
+    >>> is_valid, reason = _is_valid_parquet(Path("data.parquet"))
+    >>> if not is_valid:
+    ...     print(f"Corrupted: {reason}")
+    """
+    if not path.exists():
+        return False, "file does not exist"
+
+    try:
+        size = path.stat().st_size
+    except OSError as e:
+        return False, f"stat error: {e}"
+
+    if size < _MIN_PARQUET_SIZE:
+        return False, f"file too small ({size} bytes, minimum {_MIN_PARQUET_SIZE})"
+
+    try:
+        with path.open("rb") as f:
+            header = f.read(4)
+            if header != _PARQUET_MAGIC:
+                return False, f"invalid header magic: {header!r}"
+            f.seek(-4, 2)  # Seek to 4 bytes before end
+            footer = f.read(4)
+            if footer != _PARQUET_MAGIC:
+                return False, f"invalid footer magic: {footer!r}"
+    except OSError as e:
+        return False, f"read error: {e}"
+
+    return True, ""
+
+
+def _validate_and_recover_parquet(path: Path, *, auto_delete: bool = True) -> bool:
+    """Validate Parquet file and auto-delete if corrupted.
+
+    Returns True if valid, False if corrupted (and deleted if auto_delete=True).
+    Raises ParquetCorruptionError if corrupted and auto_delete=False.
+
+    Parameters
+    ----------
+    path : Path
+        Path to the Parquet file to validate.
+    auto_delete : bool
+        If True (default), delete corrupted files for re-fetch.
+        If False, raise ParquetCorruptionError instead.
+
+    Returns
+    -------
+    bool
+        True if file is valid, False if corrupted and deleted.
+
+    Raises
+    ------
+    ParquetCorruptionError
+        If file is corrupted and auto_delete=False.
+
+    Examples
+    --------
+    >>> if not _validate_and_recover_parquet(path, auto_delete=True):
+    ...     # File was corrupted and deleted, will be re-fetched
+    ...     pass
+    """
+    is_valid, reason = _is_valid_parquet(path)
+    if is_valid:
+        return True
+
+    logger.warning("Corrupted Parquet file detected: %s (%s)", path, reason)
+
+    if auto_delete:
+        try:
+            path.unlink()
+            logger.info("Auto-deleted corrupted file for re-fetch: %s", path)
+        except OSError:
+            logger.exception("Failed to delete corrupted file %s", path)
+        return False
+
+    from rangebar.exceptions import ParquetCorruptionError
+
+    msg = f"Corrupted Parquet file: {path} ({reason})"
+    raise ParquetCorruptionError(msg, path=path, reason=reason)
+
+
+def _atomic_write_parquet(
+    df: pl.DataFrame,
+    target_path: Path,
+    *,
+    compression: str = COMPRESSION,
+    compression_level: int = COMPRESSION_LEVEL,
+) -> None:
+    """Write Parquet file atomically using tempfile + fsync + rename.
+
+    Guarantees: target_path is either complete valid Parquet or doesn't exist.
+    Never leaves partial/corrupted files on crash or kill.
+
+    Parameters
+    ----------
+    df : pl.DataFrame
+        DataFrame to write.
+    target_path : Path
+        Final destination path for the Parquet file.
+    compression : str
+        Compression codec (default: "zstd").
+    compression_level : int
+        Compression level (default: 3).
+
+    Raises
+    ------
+    OSError
+        If write fails (temp file is cleaned up automatically).
+    RuntimeError
+        If Polars write fails (temp file is cleaned up automatically).
+
+    Notes
+    -----
+    This function uses the POSIX atomic rename guarantee: Path.replace() is
+    atomic on the same filesystem. The temp file is created in the same
+    directory to ensure it's on the same filesystem.
+
+    Examples
+    --------
+    >>> _atomic_write_parquet(df, Path("data.parquet"))
+    """
+    # Create temp file in same directory (required for atomic rename on same filesystem)
+    fd, temp_path_str = tempfile.mkstemp(
+        dir=target_path.parent,
+        prefix=".parquet_",
+        suffix=".tmp",
+    )
+    temp_path = Path(temp_path_str)
+
+    try:
+        os.close(fd)  # Close fd, Polars will open it itself
+        df.write_parquet(
+            temp_path,
+            compression=compression,
+            compression_level=compression_level,
+        )
+        # Sync to disk before rename to ensure durability
+        with temp_path.open("rb") as f:
+            os.fsync(f.fileno())
+        # Atomic rename (POSIX guarantees atomicity on same filesystem)
+        temp_path.replace(target_path)
+    except (OSError, RuntimeError):
+        # Clean up temp file on any failure
+        with contextlib.suppress(OSError):
+            temp_path.unlink(missing_ok=True)
+        raise
 
 
 def get_cache_dir() -> Path:
@@ -191,7 +370,7 @@ class TickStorage:
             .alias("_year_month")
         )
 
-        # Group by month and write
+        # Group by month and write (Issue #73: atomic writes + corruption recovery)
         total_rows = 0
         for (year_month,), group_df in ticks.group_by("_year_month"):
             parquet_path = self._get_parquet_path(symbol, year_month)
@@ -200,21 +379,18 @@ class TickStorage:
             write_df = group_df.drop("_year_month")
 
             if parquet_path.exists():
-                # Append to existing file
-                existing_df = pl.read_parquet(parquet_path)
-                combined_df = pl.concat([existing_df, write_df])
-                combined_df.write_parquet(
-                    parquet_path,
-                    compression=COMPRESSION,
-                    compression_level=COMPRESSION_LEVEL,
-                )
+                # Validate existing file before reading (Issue #73)
+                if not _validate_and_recover_parquet(parquet_path, auto_delete=True):
+                    # File was corrupted and deleted, write fresh
+                    _atomic_write_parquet(write_df, parquet_path)
+                else:
+                    # Append to existing valid file
+                    existing_df = pl.read_parquet(parquet_path)
+                    combined_df = pl.concat([existing_df, write_df])
+                    _atomic_write_parquet(combined_df, parquet_path)
             else:
-                # Write new file
-                write_df.write_parquet(
-                    parquet_path,
-                    compression=COMPRESSION,
-                    compression_level=COMPRESSION_LEVEL,
-                )
+                # Write new file atomically
+                _atomic_write_parquet(write_df, parquet_path)
 
             total_rows += len(write_df)
 
@@ -287,6 +463,18 @@ class TickStorage:
 
         if not parquet_files:
             return pl.DataFrame()
+
+        # Issue #73: Validate files before reading, auto-delete corrupted ones
+        valid_files = []
+        for f in parquet_files:
+            if _validate_and_recover_parquet(f, auto_delete=True):
+                valid_files.append(f)
+            # else: corrupted file deleted, will be re-fetched on next call
+
+        if not valid_files:
+            return pl.DataFrame()
+
+        parquet_files = valid_files
 
         # MEM-004: Estimate size before materializing (Issue #49)
         if max_memory_mb is not None:
@@ -386,6 +574,18 @@ class TickStorage:
 
         if not parquet_files:
             return
+
+        # Issue #73: Validate files before streaming, auto-delete corrupted ones
+        valid_files = []
+        for f in parquet_files:
+            if _validate_and_recover_parquet(f, auto_delete=True):
+                valid_files.append(f)
+            # else: corrupted file deleted, will be re-fetched on next call
+
+        if not valid_files:
+            return
+
+        parquet_files = valid_files
 
         # Process each parquet file using PyArrow's row group-based reading
         # Row groups are Parquet's native chunking mechanism (typically 64K-1M rows)

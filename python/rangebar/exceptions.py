@@ -28,6 +28,8 @@ Usage
 
 from __future__ import annotations
 
+from pathlib import Path
+
 
 class RangeBarError(Exception):
     """Base exception for all rangebar-py errors.
@@ -195,12 +197,52 @@ class ProcessingError(RangeBarError):
     """
 
 
+class ParquetCorruptionError(RangeBarError):
+    """Raised when a Parquet file is corrupted or invalid (Issue #73).
+
+    This exception is raised when:
+    - Parquet file is truncated (process killed mid-write)
+    - PAR1 magic bytes are missing or invalid
+    - File is too small to be valid Parquet
+
+    By default, corrupted files are auto-deleted to trigger re-fetch.
+    Set auto_delete=False in validation functions to raise this instead.
+
+    Attributes
+    ----------
+    path : Path
+        Path to the corrupted file.
+    reason : str
+        Description of the corruption (e.g., "invalid footer magic").
+
+    Examples
+    --------
+    >>> from rangebar.storage.parquet import _validate_and_recover_parquet
+    >>> try:
+    ...     _validate_and_recover_parquet(path, auto_delete=False)
+    ... except ParquetCorruptionError as e:
+    ...     print(f"Corrupted: {e.path} ({e.reason})")
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        path: Path,
+        reason: str,
+    ) -> None:
+        super().__init__(message)
+        self.path = path
+        self.reason = reason
+
+
 __all__ = [
     "CacheConnectionError",
     "CacheError",
     "CacheReadError",
     "CacheSchemaError",
     "CacheWriteError",
+    "ParquetCorruptionError",
     "ProcessingError",
     "RangeBarError",
     "ValidationError",
