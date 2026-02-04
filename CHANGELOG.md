@@ -1,3 +1,10 @@
+## [12.5.1](https://github.com/terrylica/rangebar-py/compare/v12.5.0...v12.5.1) (2026-02-04)
+
+
+### Bug Fixes
+
+* **helpers:** include trade ID columns in column selection ([#75](https://github.com/terrylica/rangebar-py/issues/75)) ([7cf0eb9](https://github.com/terrylica/rangebar-py/commit/7cf0eb983010c73c2bdaff01ca6e3b921aedf98c))
+
 # [12.5.0](https://github.com/terrylica/rangebar-py/compare/v12.4.0...v12.5.0) (2026-02-04)
 
 
