@@ -1,3 +1,10 @@
+# [12.4.0](https://github.com/terrylica/rangebar-py/compare/v12.3.0...v12.4.0) (2026-02-04)
+
+
+### Features
+
+* **tracking:** add first/last agg_trade_id to Range Bars ([#72](https://github.com/terrylica/rangebar-py/issues/72)) ([9b6e379](https://github.com/terrylica/rangebar-py/commit/9b6e379d3773e6825a41c3700a0563a44eacef1e))
+
 # [12.3.0](https://github.com/terrylica/rangebar-py/compare/v12.2.0...v12.3.0) (2026-02-04)
 
 
