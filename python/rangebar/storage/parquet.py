@@ -387,6 +387,12 @@ class TickStorage:
                     # Append to existing valid file
                     existing_df = pl.read_parquet(parquet_path)
                     combined_df = pl.concat([existing_df, write_df])
+                    # Issue #78: Deduplicate on agg_trade_id to prevent accumulation
+                    # when same date range is fetched multiple times (retry, resume)
+                    if "agg_trade_id" in combined_df.columns:
+                        combined_df = combined_df.unique(
+                            subset=["agg_trade_id"], maintain_order=True
+                        )
                     _atomic_write_parquet(combined_df, parquet_path)
             else:
                 # Write new file atomically

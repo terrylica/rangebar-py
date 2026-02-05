@@ -239,6 +239,7 @@ for i in range(1, len(bars)):
 | `High < Low` assertion                  | Bad input data      | Check sorting                              |
 | `target-cpu=native` cross-compile error | RUSTFLAGS pollution | Use `RUSTFLAGS=""` or `.cargo/config.toml` |
 | OOM with `include_microstructure=True`  | Large date range    | Fixed by MEM-011 adaptive chunk size       |
+| Duplicate ticks in Parquet cache        | Pre-v12.8 bug       | Run `scripts/deduplicate_parquet_cache.py` |
 
 ---
 
