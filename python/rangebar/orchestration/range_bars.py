@@ -661,6 +661,11 @@ def get_range_bars(
         bars_df = pd.concat(all_bars, axis=0)
         bars_df = bars_df.sort_index()
 
+    # Issue #76: Explicit memory cleanup after concatenation
+    # pd.concat creates a new DataFrame but source frames remain in list
+    # Without this, memory grows unbounded during long-running cache population
+    del all_bars
+
     # -------------------------------------------------------------------------
     # Add exchange session flags (Issue #8)
     # -------------------------------------------------------------------------

@@ -582,6 +582,11 @@ def populate_cache_resumable(
                     progress_pct=round(i / total_days * 100, 1),
                 )
 
+            # Issue #76: Explicit memory cleanup to prevent unbounded growth
+            # Without this, each day's DataFrame accumulates in memory
+            # causing 10+ GB growth over multi-day runs
+            del df
+
         except (ValueError, RuntimeError, OSError) as exc:
             logger.exception(
                 "Failed to process %s for %s",
