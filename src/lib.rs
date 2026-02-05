@@ -283,10 +283,9 @@ fn dict_to_checkpoint(py: Python, dict: &Bound<PyDict>) -> PyResult<Checkpoint> 
     // Valid range: 1-100,000 dbps (0.0001% to 10%)
     const THRESHOLD_MIN: u32 = 1;
     const THRESHOLD_MAX: u32 = 100_000;
-    if threshold_decimal_bps < THRESHOLD_MIN || threshold_decimal_bps > THRESHOLD_MAX {
+    if !(THRESHOLD_MIN..=THRESHOLD_MAX).contains(&threshold_decimal_bps) {
         return Err(PyValueError::new_err(format!(
-            "Invalid checkpoint threshold: {} dbps. Valid range: {}-{} dbps",
-            threshold_decimal_bps, THRESHOLD_MIN, THRESHOLD_MAX
+            "Invalid checkpoint threshold: {threshold_decimal_bps} dbps. Valid range: {THRESHOLD_MIN}-{THRESHOLD_MAX} dbps"
         )));
     }
 
@@ -531,8 +530,7 @@ fn checkpoint_error_to_pyerr(e: CheckpointError) -> PyErr {
             min_threshold,
             max_threshold,
         } => PyValueError::new_err(format!(
-            "Invalid checkpoint threshold: {} dbps. Valid range: {}-{} dbps",
-            threshold, min_threshold, max_threshold
+            "Invalid checkpoint threshold: {threshold} dbps. Valid range: {min_threshold}-{max_threshold} dbps"
         )),
     }
 }
@@ -1872,31 +1870,31 @@ mod streaming_bindings {
     impl PyStreamingMetrics {
         /// Number of trades processed
         #[getter]
-        fn trades_processed(&self) -> u64 {
+        const fn trades_processed(&self) -> u64 {
             self.summary.trades_processed
         }
 
         /// Number of bars generated
         #[getter]
-        fn bars_generated(&self) -> u64 {
+        const fn bars_generated(&self) -> u64 {
             self.summary.bars_generated
         }
 
         /// Total errors encountered
         #[getter]
-        fn errors_total(&self) -> u64 {
+        const fn errors_total(&self) -> u64 {
             self.summary.errors_total
         }
 
         /// Number of backpressure events
         #[getter]
-        fn backpressure_events(&self) -> u64 {
+        const fn backpressure_events(&self) -> u64 {
             self.summary.backpressure_events
         }
 
         /// Memory usage in bytes
         #[getter]
-        fn memory_usage_bytes(&self) -> u64 {
+        const fn memory_usage_bytes(&self) -> u64 {
             self.summary.memory_usage_bytes
         }
 
@@ -1962,8 +1960,7 @@ mod streaming_bindings {
             // Validate threshold
             if threshold_decimal_bps == 0 || threshold_decimal_bps > 100_000 {
                 return Err(PyValueError::new_err(format!(
-                    "threshold_decimal_bps must be between 1 and 100000, got {}",
-                    threshold_decimal_bps
+                    "threshold_decimal_bps must be between 1 and 100000, got {threshold_decimal_bps}"
                 )));
             }
 
@@ -1995,7 +1992,7 @@ mod streaming_bindings {
                 .worker_threads(2)
                 .enable_all()
                 .build()
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {e}")))?;
 
             let handle = runtime.handle().clone();
 
@@ -2003,7 +2000,7 @@ mod streaming_bindings {
             handle.spawn(async move {
                 match Self::run_stream(symbol, threshold, bars, connected).await {
                     Ok(()) => println!("Stream ended normally"),
-                    Err(e) => println!("Stream error: {:?}", e),
+                    Err(e) => println!("Stream error: {e:?}"),
                 }
             });
 
@@ -2093,7 +2090,7 @@ mod streaming_bindings {
 
         /// Get the threshold in decimal basis points
         #[getter]
-        pub fn threshold_decimal_bps(&self) -> u32 {
+        pub const fn threshold_decimal_bps(&self) -> u32 {
             self.threshold_decimal_bps
         }
 
@@ -2135,12 +2132,11 @@ mod streaming_bindings {
             let mut processor =
                 rangebar_core::processor::ExportRangeBarProcessor::new(threshold_decimal_bps)
                     .map_err(|e| {
-                        WebSocketError::InvalidSymbol(format!("Processor creation failed: {}", e))
+                        WebSocketError::InvalidSymbol(format!("Processor creation failed: {e}"))
                     })?;
 
             println!(
-                "🚀 Started live stream for {} at {} bps",
-                symbol, threshold_decimal_bps
+                "🚀 Started live stream for {symbol} at {threshold_decimal_bps} bps"
             );
 
             // Process trades
@@ -2363,7 +2359,7 @@ mod streaming_bindings {
         ///
         /// Returns:
         ///     StreamingMetrics object
-        pub fn get_metrics(&self) -> PyStreamingMetrics {
+        pub const fn get_metrics(&self) -> PyStreamingMetrics {
             PyStreamingMetrics {
                 summary: MetricsSummary {
                     trades_processed: self.trades_processed,
@@ -2378,19 +2374,19 @@ mod streaming_bindings {
 
         /// Get the threshold in decimal basis points
         #[getter]
-        pub fn threshold_decimal_bps(&self) -> u32 {
+        pub const fn threshold_decimal_bps(&self) -> u32 {
             self.threshold_decimal_bps
         }
 
         /// Get number of trades processed
         #[getter]
-        pub fn trades_processed(&self) -> u64 {
+        pub const fn trades_processed(&self) -> u64 {
             self.trades_processed
         }
 
         /// Get number of bars generated
         #[getter]
-        pub fn bars_generated(&self) -> u64 {
+        pub const fn bars_generated(&self) -> u64 {
             self.bars_generated
         }
 

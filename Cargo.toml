@@ -161,6 +161,9 @@ binance = ["data-providers"]
 [build-dependencies]
 pyo3-build-config = "0.22"
 
+[lints]
+workspace = true
+
 # =============================================================================
 # Benchmarks
 # =============================================================================
@@ -192,14 +195,15 @@ strip = "symbols"      # Minimize wheel size
 overflow-checks = true
 
 # =============================================================================
-# Clippy Lints
+# Clippy Lints (Workspace-level)
 # =============================================================================
 
-[lints.clippy]
+[workspace.lints.clippy]
 # Lint group priority: lower number = lower priority (applied first)
 all = { level = "deny", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
-nursery = { level = "warn", priority = -1 }
+# nursery disabled - many false positives, focus on core correctness
+# nursery = { level = "warn", priority = -1 }
 
 # Allow certain lints that conflict with project style or PyO3 patterns
 module_name_repetitions = "allow"
@@ -218,3 +222,22 @@ wildcard_imports = "allow"        # Module-level use super::* is idiomatic
 use_self = "allow"                # Explicit type names in match arms for clarity
 doc_markdown = "allow"            # Allow plain technical terms in docs
 return_self_not_must_use = "allow"    # Builder pattern returns
+collapsible_if = "allow"              # Nested if for clarity in complex conditions
+manual_clamp = "allow"                # max().min() pattern is clear
+items_after_statements = "allow"      # Local constants near usage
+too_many_lines = "allow"              # PyO3 binding functions are naturally large
+unnecessary_wraps = "allow"           # PyO3 requires PyResult even for infallible ops
+significant_drop_tightening = "allow" # Lock guards need scope control
+doc_link_with_quotes = "allow"        # Python dict syntax in docstrings
+manual_range_contains = "allow"       # Explicit comparison for clarity
+must_use_candidate = "allow"          # Too noisy - getters don't need #[must_use]
+uninlined_format_args = "allow"       # format!("{}", x) is clear
+cast_lossless = "allow"               # Explicit casts for clarity
+map_unwrap_or = "allow"               # map().unwrap_or() pattern is common
+unused_self = "allow"                 # Trait impls require self
+cloned_instead_of_copied = "allow"    # cloned() is more explicit
+if_not_else = "allow"                 # if !x is sometimes clearer
+single_match_else = "allow"           # match with else is explicit
+bool_to_int_with_if = "allow"         # if b { 1 } else { 0 } is clear
+struct_excessive_bools = "allow"      # Config structs need bools
+assigning_clones = "allow"            # clone() in assignment is clear
