@@ -1,3 +1,10 @@
+# [12.6.0](https://github.com/terrylica/rangebar-py/compare/v12.5.2...v12.6.0) (2026-02-05)
+
+
+### Features
+
+* **helpers:** auto-detect symbol listing dates ([#76](https://github.com/terrylica/rangebar-py/issues/76)) ([ae21d51](https://github.com/terrylica/rangebar-py/commit/ae21d51fc58edd65b388f5419ce8009e738cf8e3))
+
 ## [12.5.2](https://github.com/terrylica/rangebar-py/compare/v12.5.1...v12.5.2) (2026-02-04)
 
 
