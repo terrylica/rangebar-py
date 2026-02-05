@@ -1,0 +1,327 @@
+#!/usr/bin/env python3
+"""Full cache population script for BigBlack (resource-aware).
+
+SAFE EXECUTION STRATEGY:
+========================
+The 70 jobs are organized into phases to avoid blowing up server resources.
+
+Phase 1 (Quick wins):     14 jobs @ 1000 dbps  - ~8 hrs  - Run sequentially
+Phase 2 (Day trading):    14 jobs @ 250 dbps   - ~24 hrs - Run 2 parallel max
+Phase 3 (Mid thresholds): 28 jobs @ 500,750    - ~16 hrs - Run 2-3 parallel
+Phase 4 (Scalping):       14 jobs @ 100 dbps   - ~80 hrs - Run ONE at a time
+
+MEMORY USAGE:
+  - Each job: ~2 GB peak (processes day-by-day, memory safe)
+  - 2 parallel: ~4 GB
+  - 3 parallel: ~6 GB
+  - 4 parallel: ~8 GB (risky on 32GB system with GPU workloads)
+
+USAGE:
+======
+# Safe sequential (recommended first run)
+uv run python scripts/populate_full_cache.py --phase 1
+
+# Check progress
+uv run python scripts/populate_full_cache.py --status
+
+# Run specific symbol/threshold
+uv run python scripts/populate_full_cache.py --symbol BTCUSDT --threshold 250
+
+# Parallel execution (only for phases 2-3, with caution)
+uv run python scripts/populate_full_cache.py --phase 2 --parallel 2
+
+RESUME:
+=======
+Jobs automatically resume from checkpoint if interrupted.
+Just run the same command again.
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+from datetime import UTC, datetime
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+SYMBOLS = {
+    # Tier 1: Blue chips
+    "BTCUSDT": "2017-08-17",
+    "ETHUSDT": "2017-08-17",
+    "BNBUSDT": "2017-11-06",
+    "SOLUSDT": "2020-08-11",
+    # Tier 2: Major alts
+    "XRPUSDT": "2018-05-04",
+    "DOGEUSDT": "2019-07-05",
+    "ADAUSDT": "2018-04-17",
+    "AVAXUSDT": "2020-09-22",
+    "DOTUSDT": "2020-08-18",
+    "LINKUSDT": "2019-01-16",
+    # Tier 3: Popular trading pairs
+    "MATICUSDT": "2019-04-26",
+    "LTCUSDT": "2017-12-13",
+    "ATOMUSDT": "2019-04-22",
+    "NEARUSDT": "2020-10-14",
+}
+
+END_DATE = datetime.now(tz=UTC).strftime("%Y-%m-%d")
+
+# Phases organized by resource requirements
+PHASES = {
+    1: {
+        "name": "Quick wins (1000 dbps)",
+        "thresholds": [1000],
+        "max_parallel": 4,
+        "estimated_hours": 8,
+    },
+    2: {
+        "name": "Day trading (250 dbps)",
+        "thresholds": [250],
+        "max_parallel": 2,
+        "estimated_hours": 24,
+    },
+    3: {
+        "name": "Mid thresholds (500, 750 dbps)",
+        "thresholds": [500, 750],
+        "max_parallel": 3,
+        "estimated_hours": 16,
+    },
+    4: {
+        "name": "Scalping (100 dbps) - RESOURCE INTENSIVE",
+        "thresholds": [100],
+        "max_parallel": 1,  # ONE at a time!
+        "estimated_hours": 80,
+    },
+}
+
+
+def populate_job(symbol: str, threshold: int, start_date: str) -> int:
+    """Run a single population job. Returns bar count."""
+    from rangebar import populate_cache_resumable
+
+    logger.info("Starting: %s @ %d dbps from %s", symbol, threshold, start_date)
+    start_time = datetime.now(tz=UTC)
+
+    try:
+        bars = populate_cache_resumable(
+            symbol,
+            start_date,
+            END_DATE,
+            threshold_decimal_bps=threshold,
+            notify=True,
+        )
+        elapsed = (datetime.now(tz=UTC) - start_time).total_seconds() / 60
+        logger.info("Completed: %s @ %d - %d bars in %.1f min", symbol, threshold, bars, elapsed)
+        return bars
+    except Exception:
+        logger.exception("Failed: %s @ %d", symbol, threshold)
+        raise
+
+
+def run_phase(phase_num: int, parallel: int = 1) -> None:
+    """Run a specific phase with optional parallelization."""
+    if phase_num not in PHASES:
+        logger.error("Invalid phase: %d. Use 1-4.", phase_num)
+        sys.exit(1)
+
+    phase = PHASES[phase_num]
+    max_parallel = phase["max_parallel"]
+
+    if parallel > max_parallel:
+        logger.warning(
+            "Phase %d max parallel is %d, reducing from %d",
+            phase_num,
+            max_parallel,
+            parallel,
+        )
+        parallel = max_parallel
+
+    logger.info("=" * 70)
+    logger.info("PHASE %d: %s", phase_num, phase["name"])
+    logger.info("Estimated time: ~%d hours (sequential)", phase["estimated_hours"])
+    logger.info("Running with parallelism: %d", parallel)
+    logger.info("=" * 70)
+
+    jobs = [
+        (symbol, thresh, SYMBOLS[symbol])
+        for symbol in SYMBOLS
+        for thresh in phase["thresholds"]
+    ]
+
+    if parallel == 1:
+        # Sequential execution (safest, recommended)
+        for symbol, threshold, start_date in jobs:
+            populate_job(symbol, threshold, start_date)
+    else:
+        # Bounded parallel execution using subprocess isolation
+        # This avoids ProcessPoolExecutor memory leak issues by running
+        # each job in a completely isolated subprocess
+        import subprocess
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def run_job_subprocess(job_tuple: tuple) -> tuple:
+            """Run a single job in isolated subprocess to prevent memory leaks."""
+            sym, thresh, _start = job_tuple
+            cmd = [
+                sys.executable,
+                __file__,
+                "--symbol",
+                sym,
+                "--threshold",
+                str(thresh),
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            return (sym, thresh, result.returncode, result.stderr)
+
+        # Use ThreadPoolExecutor to manage subprocess spawning (not CPU work)
+        # Each subprocess is fully isolated - no shared memory
+        with ThreadPoolExecutor(max_workers=parallel) as executor:
+            futures = {executor.submit(run_job_subprocess, job): job[:2] for job in jobs}
+
+            for future in as_completed(futures):
+                symbol, threshold = futures[future]
+                try:
+                    _sym, _thresh, returncode, stderr = future.result()
+                    if returncode == 0:
+                        logger.info("Job done: %s @ %d", symbol, threshold)
+                    else:
+                        logger.error(
+                            "Job failed: %s @ %d - %s", symbol, threshold, stderr[:500]
+                        )
+                except (ValueError, RuntimeError, OSError, ConnectionError):
+                    logger.exception("Job failed: %s @ %d", symbol, threshold)
+
+
+def show_status() -> None:
+    """Show current cache status and remaining jobs."""
+    try:
+        from rangebar.clickhouse import RangeBarCache
+
+        with RangeBarCache() as cache:
+            result = cache.client.query("""
+                SELECT symbol, threshold_decimal_bps, count(*) as bars,
+                       formatDateTime(fromUnixTimestamp64Milli(min(timestamp_ms)), '%Y-%m-%d') as earliest,
+                       formatDateTime(fromUnixTimestamp64Milli(max(timestamp_ms)), '%Y-%m-%d') as latest
+                FROM rangebar_cache.range_bars FINAL
+                GROUP BY symbol, threshold_decimal_bps
+                ORDER BY symbol, threshold_decimal_bps
+            """)
+
+            cached = {(row[0], row[1]): (row[2], row[3], row[4]) for row in result.result_rows}
+
+        print("\n" + "=" * 90)
+        print("CACHE STATUS")
+        print("=" * 90)
+        print(f"\n{'Symbol':<12} {'Thresh':<8} {'Status':<12} {'Bars':>12} {'Coverage':<25}")
+        print("-" * 90)
+
+        all_thresholds = [100, 250, 500, 750, 1000]
+        completed = 0
+        remaining = 0
+
+        for symbol in SYMBOLS:
+            for thresh in all_thresholds:
+                if (symbol, thresh) in cached:
+                    bars, earliest, latest = cached[(symbol, thresh)]
+                    status = "Done"
+                    coverage = f"{earliest} to {latest}"
+                    completed += 1
+                else:
+                    bars = 0
+                    status = "Pending"
+                    coverage = "-"
+                    remaining += 1
+
+                print(f"{symbol:<12} {thresh:<8} {status:<12} {bars:>12,} {coverage:<25}")
+
+        print("-" * 90)
+        print(f"Completed: {completed}/70 jobs | Remaining: {remaining}/70 jobs")
+        print()
+
+    except (ImportError, ConnectionError, OSError, RuntimeError):
+        logger.exception("Could not connect to ClickHouse")
+
+
+def show_plan() -> None:
+    """Show the full execution plan."""
+    print("\n" + "=" * 90)
+    print("EXECUTION PLAN (70 jobs total)")
+    print("=" * 90)
+
+    total_hours = 0
+    for phase_num, phase in PHASES.items():
+        n_jobs = len(SYMBOLS) * len(phase["thresholds"])
+        print(f"""
+Phase {phase_num}: {phase['name']}
+  Jobs: {n_jobs}
+  Thresholds: {phase['thresholds']}
+  Max parallel: {phase['max_parallel']}
+  Estimated time: ~{phase['estimated_hours']} hours
+  Command: uv run python scripts/populate_full_cache.py --phase {phase_num}
+""")
+        total_hours += phase["estimated_hours"]
+
+    print("=" * 90)
+    print(f"Total estimated time (sequential): ~{total_hours} hours")
+    print("With parallelization: ~50-60 hours")
+    print()
+    print("RECOMMENDED APPROACH:")
+    print("  1. Run Phase 1 first (quick wins, low resource)")
+    print("  2. Run Phase 2 overnight (most useful data)")
+    print("  3. Run Phase 3 when not using GPU")
+    print("  4. Run Phase 4 over weekend (resource intensive)")
+    print()
+
+
+def main() -> None:
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Populate rangebar cache (resource-aware)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s --plan                    # Show full execution plan
+  %(prog)s --status                  # Show current cache status
+  %(prog)s --phase 1                 # Run Phase 1 (1000 dbps, quick)
+  %(prog)s --phase 2 --parallel 2    # Run Phase 2 with 2 parallel jobs
+  %(prog)s --symbol BTCUSDT --threshold 250  # Run single job
+        """,
+    )
+    parser.add_argument("--phase", type=int, choices=[1, 2, 3, 4], help="Run phase 1-4")
+    parser.add_argument(
+        "--parallel", type=int, default=1, help="Number of parallel jobs (default: 1)"
+    )
+    parser.add_argument("--symbol", type=str, help="Single symbol (requires --threshold)")
+    parser.add_argument("--threshold", type=int, help="Single threshold (requires --symbol)")
+    parser.add_argument("--status", action="store_true", help="Show cache status")
+    parser.add_argument("--plan", action="store_true", help="Show execution plan")
+
+    args = parser.parse_args()
+
+    if args.plan:
+        show_plan()
+    elif args.status:
+        show_status()
+    elif args.symbol and args.threshold:
+        if args.symbol not in SYMBOLS:
+            logger.error("Unknown symbol: %s", args.symbol)
+            sys.exit(1)
+        populate_job(args.symbol, args.threshold, SYMBOLS[args.symbol])
+    elif args.phase:
+        run_phase(args.phase, args.parallel)
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
