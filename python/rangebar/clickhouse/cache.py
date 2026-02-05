@@ -1016,3 +1016,150 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
             # Table already exists or other error - log and continue
             logger.debug("Checkpoints table creation: %s", e)
 
+    # =========================================================================
+    # Table Maintenance (Issue #77: Duplicate row handling)
+    # =========================================================================
+    # ReplacingMergeTree deduplicates rows during background merges, not at
+    # insert time. This means duplicates can accumulate between merges.
+    # Use these methods for maintenance and data quality checks.
+
+    def count_duplicates(
+        self,
+        symbol: str | None = None,
+        threshold_decimal_bps: int | None = None,
+    ) -> list[dict]:
+        """Count duplicate rows by timestamp (same ORDER BY key).
+
+        ReplacingMergeTree deduplicates during background merges, not at insert
+        time. This method identifies rows that will be deduplicated on next merge.
+
+        Parameters
+        ----------
+        symbol : str | None
+            Filter to specific symbol, or None for all symbols
+        threshold_decimal_bps : int | None
+            Filter to specific threshold, or None for all thresholds
+
+        Returns
+        -------
+        list[dict]
+            List of dicts with keys: symbol, threshold_decimal_bps, timestamp_ms,
+            duplicate_count, opens, closes. Empty list if no duplicates found.
+
+        Examples
+        --------
+        >>> with RangeBarCache() as cache:
+        ...     dupes = cache.count_duplicates("BTCUSDT", 1000)
+        ...     print(f"Found {len(dupes)} timestamp(s) with duplicates")
+        """
+        where_clauses = []
+        params = {}
+
+        if symbol is not None:
+            where_clauses.append("symbol = {symbol:String}")
+            params["symbol"] = symbol
+
+        if threshold_decimal_bps is not None:
+            where_clauses.append("threshold_decimal_bps = {threshold:UInt32}")
+            params["threshold"] = threshold_decimal_bps
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        query = f"""
+            SELECT
+                symbol,
+                threshold_decimal_bps,
+                timestamp_ms,
+                count(*) as duplicate_count,
+                groupArray(open) as opens,
+                groupArray(close) as closes
+            FROM rangebar_cache.range_bars
+            {where_sql}
+            GROUP BY symbol, threshold_decimal_bps, timestamp_ms
+            HAVING count(*) > 1
+            ORDER BY symbol, threshold_decimal_bps, timestamp_ms
+        """
+
+        result = self.client.query(query, parameters=params)
+        return [
+            {
+                "symbol": row[0],
+                "threshold_decimal_bps": row[1],
+                "timestamp_ms": row[2],
+                "duplicate_count": row[3],
+                "opens": row[4],
+                "closes": row[5],
+            }
+            for row in result.result_rows
+        ]
+
+    def deduplicate_bars(
+        self,
+        symbol: str | None = None,
+        threshold_decimal_bps: int | None = None,
+    ) -> None:
+        """Force deduplication by running OPTIMIZE TABLE FINAL.
+
+        ReplacingMergeTree only deduplicates during background merges. This
+        method forces an immediate merge to remove duplicate rows (same
+        symbol + threshold + timestamp_ms), keeping the row with the latest
+        computed_at timestamp.
+
+        WARNING: OPTIMIZE TABLE FINAL is a blocking operation that can be
+        slow on large tables. Use during maintenance windows, not in
+        production request paths.
+
+        Parameters
+        ----------
+        symbol : str | None
+            Optimize only partitions for this symbol, or None for all
+        threshold_decimal_bps : int | None
+            Optimize only partitions for this threshold, or None for all
+
+        Examples
+        --------
+        >>> with RangeBarCache() as cache:
+        ...     # Check for duplicates first
+        ...     dupes = cache.count_duplicates("BTCUSDT", 1000)
+        ...     if dupes:
+        ...         print(f"Found {len(dupes)} duplicates, deduplicating...")
+        ...         cache.deduplicate_bars("BTCUSDT", 1000)
+        """
+        if symbol is not None and threshold_decimal_bps is not None:
+            # Optimize specific partitions by symbol and threshold
+            # ReplacingMergeTree partitions by (symbol, threshold, month)
+            # We need to find and optimize all relevant partitions
+            logger.info(
+                "Deduplicating bars for %s @ %d dbps (OPTIMIZE FINAL)",
+                symbol,
+                threshold_decimal_bps,
+            )
+            # Get list of partitions for this symbol/threshold
+            partition_query = """
+                SELECT DISTINCT partition
+                FROM system.parts
+                WHERE database = 'rangebar_cache'
+                  AND table = 'range_bars'
+                  AND active = 1
+                  AND partition LIKE {pattern:String}
+            """
+            pattern = f"('{symbol}',{threshold_decimal_bps},%"
+            result = self.client.query(partition_query, parameters={"pattern": pattern})
+
+            for row in result.result_rows:
+                partition_id = row[0]
+                optimize_sql = (
+                    f"OPTIMIZE TABLE rangebar_cache.range_bars "
+                    f"PARTITION {partition_id} FINAL"
+                )
+                self.client.command(optimize_sql)
+                logger.debug("Optimized partition %s", partition_id)
+        else:
+            # Optimize entire table
+            logger.info("Deduplicating all bars (OPTIMIZE TABLE FINAL)")
+            self.client.command(
+                "OPTIMIZE TABLE rangebar_cache.range_bars FINAL"
+            )
+
+        logger.info("Deduplication complete")
+
