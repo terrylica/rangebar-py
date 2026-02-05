@@ -607,6 +607,23 @@ def populate_cache_resumable(
     if observer is not None:
         observer.close()
 
+    # Issue #77: Deduplicate after population completes
+    # ReplacingMergeTree only deduplicates during background merges,
+    # so we force immediate deduplication to ensure clean data
+    try:
+        from rangebar.clickhouse import RangeBarCache
+
+        with RangeBarCache() as cache:
+            logger.info(
+                "Running post-population deduplication for %s @ %d dbps",
+                symbol,
+                threshold_decimal_bps,
+            )
+            cache.deduplicate_bars(symbol, threshold_decimal_bps)
+            logger.debug("Deduplication complete")
+    except (ImportError, ConnectionError) as e:
+        logger.debug("Post-population deduplication skipped: %s", e)
+
     # Clean up checkpoint on success
     try:
         checkpoint_path.unlink()
