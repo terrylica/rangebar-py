@@ -1,3 +1,10 @@
+## [12.7.2](https://github.com/terrylica/rangebar-py/compare/v12.7.1...v12.7.2) (2026-02-05)
+
+
+### Bug Fixes
+
+* **parquet:** deduplicate ticks on append to prevent accumulation ([#78](https://github.com/terrylica/rangebar-py/issues/78)) ([27275cb](https://github.com/terrylica/rangebar-py/commit/27275cb737fa593d28595a672c4867f456d1c008))
+
 ## [12.7.1](https://github.com/terrylica/rangebar-py/compare/v12.7.0...v12.7.1) (2026-02-05)
 
 
