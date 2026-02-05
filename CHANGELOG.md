@@ -1,3 +1,10 @@
+## [12.6.3](https://github.com/terrylica/rangebar-py/compare/v12.6.2...v12.6.3) (2026-02-05)
+
+
+### Bug Fixes
+
+* **clickhouse:** add duplicate detection and deduplication methods ([#77](https://github.com/terrylica/rangebar-py/issues/77)) ([b62e99a](https://github.com/terrylica/rangebar-py/commit/b62e99a8bb3ceaacade913cb1c2b8b146f3095c8))
+
 ## [12.6.2](https://github.com/terrylica/rangebar-py/compare/v12.6.1...v12.6.2) (2026-02-05)
 
 
