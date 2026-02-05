@@ -1,3 +1,10 @@
+## [12.7.1](https://github.com/terrylica/rangebar-py/compare/v12.7.0...v12.7.1) (2026-02-05)
+
+
+### Bug Fixes
+
+* **clickhouse:** wire inter-bar and intra-bar feature columns ([#78](https://github.com/terrylica/rangebar-py/issues/78)) ([1ceacef](https://github.com/terrylica/rangebar-py/commit/1ceacef2dd0e8782be95f81ac2802aa639c5c6a4))
+
 # [12.7.0](https://github.com/terrylica/rangebar-py/compare/v12.6.3...v12.7.0) (2026-02-05)
 
 
