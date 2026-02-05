@@ -1,3 +1,10 @@
+# [12.7.0](https://github.com/terrylica/rangebar-py/compare/v12.6.3...v12.7.0) (2026-02-05)
+
+
+### Features
+
+* **checkpoint:** auto-deduplicate after population completes ([#77](https://github.com/terrylica/rangebar-py/issues/77)) ([e0de832](https://github.com/terrylica/rangebar-py/commit/e0de832203b2512a3d0cf6f799078aee5c8ffb12))
+
 ## [12.6.3](https://github.com/terrylica/rangebar-py/compare/v12.6.2...v12.6.3) (2026-02-05)
 
 
