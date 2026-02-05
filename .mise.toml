@@ -93,6 +93,7 @@ zig = "0.13"
 "cargo:cargo-outdated" = "latest"
 "cargo:flamegraph" = "0.6"
 "cargo:maturin" = "latest"
+"cargo:cargo-zigbuild" = "latest"
 
 # =============================================================================
 # Task Includes (Hub-and-Spoke)
