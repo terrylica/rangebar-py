@@ -68,32 +68,106 @@ print(f"Fetched {len(df):,} bars")
 
 ### Populating Remote Hosts
 
-Run on the target machine:
+#### Prerequisites: ClickHouse Setup
+
+**Docker-based setup** (recommended for hosts without sudo):
 
 ```bash
-# SSH to host and run in tmux (long-running)
-ssh <host> "tmux new-session -d -s rangebar-fetch 'cd ~/alpha-forge-research && source .venv/bin/activate && python3 << \"PYEOF\"
-from rangebar import get_range_bars
-import time
+# SSH to host
+ssh <host>
 
-print(\"Fetching BTCUSDT threshold 100 data...\")
-start = time.time()
-df = get_range_bars(
-    \"BTCUSDT\",
-    start_date=\"2023-06-01\",
-    end_date=\"2025-12-01\",
-    threshold_decimal_bps=100,
-    use_cache=True,
-    fetch_if_missing=True,
-)
-elapsed = time.time() - start
-print(f\"Fetched {len(df):,} bars in {elapsed:.1f}s\")
-PYEOF
- 2>&1 | tee ~/fetch_rangebar.log'"
+# Create data directory
+mkdir -p ~/clickhouse-data
 
-# Monitor progress
-ssh <host> "tail -f ~/fetch_rangebar.log"
+# Start ClickHouse container with passwordless HTTP access
+# CRITICAL: -e CLICKHOUSE_PASSWORD= (empty) enables passwordless default user
+docker run -d \
+  --name clickhouse-server \
+  -p 8123:8123 -p 9000:9000 \
+  -v ~/clickhouse-data:/var/lib/clickhouse \
+  -e CLICKHOUSE_PASSWORD= \
+  --restart unless-stopped \
+  clickhouse/clickhouse-server:latest
+
+# Verify connection
+curl "http://localhost:8123/?query=SELECT%201"
 ```
+
+**Create schema** (run once after container starts):
+
+```bash
+# Download and execute schema
+curl -s "http://localhost:8123/" --data-binary @- << 'EOF'
+CREATE DATABASE IF NOT EXISTS rangebar_cache
+EOF
+
+# Copy schema.sql content or use setup script
+# See: scripts/setup-littleblack-clickhouse.sh for full schema
+```
+
+#### Install rangebar
+
+**CRITICAL**: Use `uv` instead of `pip` (Python 3.13 externally-managed-environment).
+
+```bash
+# Install uv if not present
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install rangebar (latest version)
+~/.local/bin/uv pip install rangebar
+```
+
+#### Environment Variables
+
+**CRITICAL**: mise SSoT pattern - check `mise.toml` for hardcoded hosts.
+
+```bash
+# Required for remote hosts not in default RANGEBAR_CH_HOSTS
+export RANGEBAR_CH_HOSTS=localhost
+
+# Required for low thresholds (below default minimum)
+export RANGEBAR_CRYPTO_MIN_THRESHOLD=1
+```
+
+**Gotcha**: If `mise.toml` sets `RANGEBAR_CH_HOSTS=bigblack`, remote hosts will fail silently. Override explicitly.
+
+#### Run Population
+
+```bash
+# Start tmux session (long-running, survives SSH disconnect)
+tmux new-session -d -s rangebar-populate
+
+# Attach and run
+tmux attach -t rangebar-populate
+
+# Inside tmux:
+export RANGEBAR_CH_HOSTS=localhost
+export RANGEBAR_CRYPTO_MIN_THRESHOLD=1
+
+~/.local/bin/uv run python3 << 'PYEOF'
+from rangebar import populate_cache_resumable
+
+populate_cache_resumable(
+    "BTCUSDT",
+    start_date="2023-06-01",
+    end_date="2025-12-31",
+    threshold_decimal_bps=100,
+)
+PYEOF
+
+# Detach: Ctrl+B, D
+# Reattach later: tmux attach -t rangebar-populate
+```
+
+#### Troubleshooting Remote Setup
+
+| Error                            | Cause                                       | Fix                                         |
+| -------------------------------- | ------------------------------------------- | ------------------------------------------- |
+| "Authentication failed"          | Container missing `-e CLICKHOUSE_PASSWORD=` | Recreate container with empty password flag |
+| "externally-managed-environment" | pip blocked on Python 3.13                  | Use `uv pip install` instead                |
+| ThresholdError "below minimum"   | Default minimum threshold validation        | Set `RANGEBAR_CRYPTO_MIN_THRESHOLD=1`       |
+| Connection refused               | Wrong host in environment                   | Set `RANGEBAR_CH_HOSTS=localhost`           |
+| "command not found: mise"        | mise not installed on remote                | Use explicit uv/python paths                |
 
 ---
 
@@ -137,16 +211,18 @@ for row in result.result_rows:
 
 ## Host-Specific Cache Status
 
-| Host        | Symbols                                     | Thresholds Cached     | Notes             |
-| ----------- | ------------------------------------------- | --------------------- | ----------------- |
-| bigblack    | BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT (crypto) | 25, 50, 100, 200 dbps | Primary GPU host  |
-| bigblack    | EURUSD (forex)                              | 50, 100, 200 dbps     | Exness Raw_Spread |
-| littleblack | 700                                         | 700 dbps              | Secondary host    |
-| local       | varies                                      | varies                | Development       |
+| Host        | Symbols                                     | Thresholds Cached     | ClickHouse Setup | Notes             |
+| ----------- | ------------------------------------------- | --------------------- | ---------------- | ----------------- |
+| bigblack    | BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT (crypto) | 25, 50, 100, 200 dbps | Native           | Primary GPU host  |
+| bigblack    | EURUSD (forex)                              | 50, 100, 200 dbps     | Native           | Exness Raw_Spread |
+| littleblack | BTCUSDT                                     | 100 dbps              | Docker           | Secondary host    |
+| local       | varies                                      | varies                | Native/Docker    | Development       |
 
 **Total cached**: 260M+ bars (crypto) + 130K bars (forex)
 
 To add a threshold to a host, run the population script above on that host.
+
+**Docker vs Native**: Use Docker when sudo unavailable. Native preferred for production (lower overhead).
 
 ---
 

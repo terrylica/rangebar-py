@@ -292,10 +292,28 @@ df = get_range_bars(
 
 **Host-specific cache status**:
 
-| Host        | Thresholds | Notes            |
-| ----------- | ---------- | ---------------- |
-| bigblack    | 100, 700   | Primary GPU host |
-| littleblack | 700        | Secondary host   |
+| Host        | Thresholds | ClickHouse | Notes            |
+| ----------- | ---------- | ---------- | ---------------- |
+| bigblack    | 100, 700   | Native     | Primary GPU host |
+| littleblack | 100        | Docker     | Secondary host   |
+
+---
+
+## Remote Host Setup (ClickHouse)
+
+**CRITICAL gotchas** when setting up rangebar on remote hosts:
+
+| Issue                   | Root Cause                                | Solution                                           |
+| ----------------------- | ----------------------------------------- | -------------------------------------------------- |
+| Connection refused      | `mise.toml` hardcodes `RANGEBAR_CH_HOSTS` | Override: `export RANGEBAR_CH_HOSTS=localhost`     |
+| ThresholdError          | Default minimum threshold validation      | Override: `export RANGEBAR_CRYPTO_MIN_THRESHOLD=1` |
+| pip install fails       | Python 3.13 externally-managed-env        | Use `uv pip install rangebar` instead              |
+| ClickHouse auth failure | Docker container without password flag    | Add `-e CLICKHOUSE_PASSWORD=` to docker run        |
+| mise not found          | mise not installed on remote              | Use explicit paths: `~/.local/bin/uv run python`   |
+
+**mise SSoT pattern**: Environment variables in `.mise.toml` are the source of truth. Remote hosts without mise must manually export required variables.
+
+**Full setup guide**: [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md#populating-remote-hosts)
 
 ---
 
