@@ -14,6 +14,8 @@ import logging
 import pandas as pd
 
 from ..constants import (
+    INTER_BAR_FEATURE_COLUMNS,
+    INTRA_BAR_FEATURE_COLUMNS,
     MICROSTRUCTURE_COLUMNS,
     MIN_VERSION_FOR_MICROSTRUCTURE,
 )
@@ -100,6 +102,10 @@ class QueryOperationsMixin:
             aggregation_density,
             turnover_imbalance
         """
+            # Issue #78: Add inter-bar lookback features (were missing from queries)
+            base_cols += "," + ",".join(INTER_BAR_FEATURE_COLUMNS)
+            # Issue #78: Add intra-bar features
+            base_cols += "," + ",".join(INTRA_BAR_FEATURE_COLUMNS)
 
         # Determine effective min version for schema evolution filtering
         effective_min_version = min_schema_version
@@ -250,6 +256,10 @@ class QueryOperationsMixin:
             aggregation_density,
             turnover_imbalance
         """
+            # Issue #78: Add inter-bar lookback features (were missing from queries)
+            base_cols += "," + ",".join(INTER_BAR_FEATURE_COLUMNS)
+            # Issue #78: Add intra-bar features
+            base_cols += "," + ",".join(INTRA_BAR_FEATURE_COLUMNS)
 
         # Issue #8: Exchange session flags
         if include_exchange_sessions:

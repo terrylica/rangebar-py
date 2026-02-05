@@ -16,6 +16,8 @@ import pandas as pd
 from .._core import __version__
 from ..constants import (
     EXCHANGE_SESSION_COLUMNS,
+    INTER_BAR_FEATURE_COLUMNS,  # Issue #78: Was missing, causing NULL lookback columns
+    INTRA_BAR_FEATURE_COLUMNS,  # Issue #78: Also add intra-bar features
     MICROSTRUCTURE_COLUMNS,
     TRADE_ID_RANGE_COLUMNS,  # Issue #72
 )
@@ -149,6 +151,16 @@ class BulkStoreMixin:
 
         # Add trade ID range columns if present (Issue #72)
         for col in TRADE_ID_RANGE_COLUMNS:
+            if col in df.columns:
+                columns.append(col)
+
+        # Add inter-bar feature columns if present (Issue #78: was missing)
+        for col in INTER_BAR_FEATURE_COLUMNS:
+            if col in df.columns:
+                columns.append(col)
+
+        # Add intra-bar feature columns if present (Issue #78)
+        for col in INTRA_BAR_FEATURE_COLUMNS:
             if col in df.columns:
                 columns.append(col)
 
@@ -307,6 +319,16 @@ class BulkStoreMixin:
 
         # Add trade ID range columns if present (Issue #72)
         for col in TRADE_ID_RANGE_COLUMNS:
+            if col in df.columns:
+                columns.append(col)
+
+        # Add inter-bar feature columns if present (Issue #78: was missing)
+        for col in INTER_BAR_FEATURE_COLUMNS:
+            if col in df.columns:
+                columns.append(col)
+
+        # Add intra-bar feature columns if present (Issue #78)
+        for col in INTRA_BAR_FEATURE_COLUMNS:
             if col in df.columns:
                 columns.append(col)
 
