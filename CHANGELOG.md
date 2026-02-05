@@ -1,3 +1,10 @@
+## [12.6.1](https://github.com/terrylica/rangebar-py/compare/v12.6.0...v12.6.1) (2026-02-05)
+
+
+### Bug Fixes
+
+* **build:** add cargo-zigbuild for Linux manylinux_2_17 compliance ([07e6097](https://github.com/terrylica/rangebar-py/commit/07e6097a3e22081bc2c994217beb2b60b46adbbb))
+
 # [12.6.0](https://github.com/terrylica/rangebar-py/compare/v12.5.2...v12.6.0) (2026-02-05)
 
 
