@@ -22,6 +22,7 @@ from .helpers import (
     _process_binance_trades,
     _process_exness_ticks,
     _stream_range_bars_binance,
+    detect_earliest_available_date,
 )
 
 if TYPE_CHECKING:
@@ -639,7 +640,16 @@ def get_range_bars(
             all_bars.append(segment_bars)
 
     if not any_data_found:
-        msg = f"No data available for {symbol} from {start_date} to {end_date}"
+        # Issue #76: Auto-detect earliest available date for helpful error message
+        earliest = detect_earliest_available_date(symbol, market)
+        if earliest and earliest > start_date:
+            msg = (
+                f"No data available for {symbol} from {start_date} to {end_date}. "
+                f"Symbol listing date detected: {earliest}. "
+                f"Try: get_range_bars('{symbol}', '{earliest}', '{end_date}')"
+            )
+        else:
+            msg = f"No data available for {symbol} from {start_date} to {end_date}"
         raise RuntimeError(msg)
 
     # Concatenate all segments

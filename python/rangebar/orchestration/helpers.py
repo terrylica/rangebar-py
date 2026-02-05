@@ -212,6 +212,20 @@ def _fetch_binance(
         )
         raise RuntimeError(msg) from e
 
+    except RuntimeError as e:
+        # Issue #76: Enhance "No data available" errors with listing date detection
+        error_msg = str(e)
+        if "No data available" in error_msg:
+            earliest = detect_earliest_available_date(symbol, market)
+            if earliest and earliest > start_date:
+                msg = (
+                    f"{error_msg}. "
+                    f"Symbol listing date detected: {earliest}. "
+                    f"Try using start_date='{earliest}'"
+                )
+                raise RuntimeError(msg) from e
+        raise
+
 
 def _fetch_exness(
     symbol: str,
@@ -515,3 +529,123 @@ def _process_exness_ticks(
             "Rebuild with: maturin develop --features data-providers"
         )
         raise RuntimeError(msg) from e
+
+
+# Issue #76: Auto-detect earliest available date for Binance symbols
+# Known listing dates for common symbols (avoid network probe when possible)
+# Source: https://www.binance.com/en/support/announcement (historical)
+KNOWN_LISTING_DATES: dict[str, str] = {
+    # Spot (data.binance.vision/data/spot/daily/aggTrades/)
+    "BTCUSDT": "2017-08-17",
+    "ETHUSDT": "2017-08-17",
+    "BNBUSDT": "2017-11-06",
+    "XRPUSDT": "2018-05-04",
+    "ADAUSDT": "2018-04-17",
+    "DOGEUSDT": "2019-07-05",
+    "SOLUSDT": "2020-08-11",
+    "DOTUSDT": "2020-08-18",
+    "MATICUSDT": "2019-04-26",
+    "SHIBUSDT": "2021-05-10",
+    "AVAXUSDT": "2020-09-22",
+    "LTCUSDT": "2017-12-13",
+    "LINKUSDT": "2019-01-16",
+    "ATOMUSDT": "2019-04-22",
+    "UNIUSDT": "2020-09-17",
+    "ETCUSDT": "2018-06-12",
+    "XLMUSDT": "2018-05-09",
+    "NEARUSDT": "2020-10-14",
+}
+
+
+def detect_earliest_available_date(
+    symbol: str,
+    market: str = "spot",
+    *,
+    max_probes: int = 10,
+) -> str | None:
+    """Detect the earliest date with available data for a Binance symbol.
+
+    Uses binary search on Binance Vision API to find the first available date.
+    Returns known listing date if available to avoid network overhead.
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol (e.g., "BTCUSDT")
+    market : str
+        Market type: "spot", "um" (USDT-M futures), "cm" (COIN-M futures)
+    max_probes : int
+        Maximum number of HTTP probes for binary search (default: 10)
+
+    Returns
+    -------
+    str | None
+        Earliest available date as "YYYY-MM-DD", or None if detection fails
+
+    Example
+    -------
+    >>> detect_earliest_available_date("SOLUSDT")
+    '2020-08-11'
+    """
+    import urllib.error
+    import urllib.request
+    from datetime import UTC, datetime, timedelta
+
+    http_ok = 200
+
+    # Check known listing dates first (no network needed)
+    if symbol in KNOWN_LISTING_DATES:
+        return KNOWN_LISTING_DATES[symbol]
+
+    # Map market to Vision API path
+    market_path = {
+        "spot": "spot",
+        "um": "futures/um",
+        "cm": "futures/cm",
+    }.get(market, "spot")
+
+    def check_date(date_str: str) -> bool:
+        """Check if data exists for a specific date via HTTP HEAD."""
+        url = (
+            f"https://data.binance.vision/data/{market_path}/daily/"
+            f"aggTrades/{symbol}/{symbol}-aggTrades-{date_str}.zip"
+        )
+        try:
+            req = urllib.request.Request(url, method="HEAD")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return resp.status == http_ok
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
+            # HTTPError: 404/403/etc, URLError: DNS/connection, TimeoutError, OSError: network
+            return False
+
+    # Binary search between 2017-01-01 and today
+    left = datetime(2017, 1, 1, tzinfo=UTC)
+    right = datetime.now(UTC)
+    earliest_found: str | None = None
+
+    for _ in range(max_probes):
+        if left >= right:
+            break
+
+        mid = left + (right - left) // 2
+        mid_str = mid.strftime("%Y-%m-%d")
+
+        if check_date(mid_str):
+            earliest_found = mid_str
+            right = mid - timedelta(days=1)
+        else:
+            left = mid + timedelta(days=1)
+
+    # Verify the found date
+    if earliest_found:
+        return earliest_found
+
+    # Fallback: linear probe from recent history
+    probe_date = datetime.now(UTC) - timedelta(days=365)
+    for _ in range(30):
+        date_str = probe_date.strftime("%Y-%m-%d")
+        if check_date(date_str):
+            return date_str
+        probe_date -= timedelta(days=30)
+
+    return None
