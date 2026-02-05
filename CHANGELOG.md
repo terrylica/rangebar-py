@@ -1,3 +1,10 @@
+## [12.6.2](https://github.com/terrylica/rangebar-py/compare/v12.6.1...v12.6.2) (2026-02-05)
+
+
+### Bug Fixes
+
+* **memory:** add explicit cleanup in populate_cache_resumable and get_range_bars ([06828ab](https://github.com/terrylica/rangebar-py/commit/06828ab5408fb5f6a5e5d6d6f10061a847f445ae)), closes [#76](https://github.com/terrylica/rangebar-py/issues/76)
+
 ## [12.6.1](https://github.com/terrylica/rangebar-py/compare/v12.6.0...v12.6.1) (2026-02-05)
 
 
