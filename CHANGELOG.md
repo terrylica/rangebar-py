@@ -1,3 +1,10 @@
+# [12.8.0](https://github.com/terrylica/rangebar-py/compare/v12.7.2...v12.8.0) (2026-02-06)
+
+
+### Features
+
+* **registry:** add unified symbol registry with mandatory gating ([#79](https://github.com/terrylica/rangebar-py/issues/79)) ([6c05890](https://github.com/terrylica/rangebar-py/commit/6c0589085257075139003a4d474b1146cec25cad))
+
 ## [12.7.2](https://github.com/terrylica/rangebar-py/compare/v12.7.1...v12.7.2) (2026-02-05)
 
 
