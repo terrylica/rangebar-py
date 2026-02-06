@@ -164,6 +164,7 @@ TRADE_ID_RANGE_COLUMNS: tuple[str, ...] = (
 
 # =============================================================================
 # Tier-1 Symbols (high-liquidity, available on all Binance markets)
+# SSoT: symbols.toml (tier=1 entries). Verified by test_symbol_registry.py. (Issue #79)
 # =============================================================================
 
 TIER1_SYMBOLS: tuple[str, ...] = (

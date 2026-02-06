@@ -174,6 +174,37 @@ Production memory optimization infrastructure:
 
 ---
 
+## Symbol Registry (Issue #79)
+
+**Every symbol must be registered before processing.** Unregistered symbols raise `SymbolNotRegisteredError`.
+
+**SSoT**: `symbols.toml` (repo root symlink → `python/rangebar/data/symbols.toml`)
+
+| Field             | Purpose                                |
+| ----------------- | -------------------------------------- |
+| `enabled`         | Gate flag (must be `true` to process)  |
+| `listing_date`    | When symbol listed on exchange         |
+| `effective_start` | Override listing_date for data quality |
+| `tier`            | Liquidity tier (1 = highest)           |
+| `keywords`        | AI discoverability                     |
+
+**Adding new symbols**: Edit `symbols.toml`, run `maturin develop`, then process.
+
+**Override gate** (dev only): `export RANGEBAR_SYMBOL_GATE=off`
+
+**Gate in all entry points**:
+
+| Entry Point                            | Gate     | Clamp |
+| -------------------------------------- | -------- | ----- |
+| `get_range_bars()`                     | Required | Yes   |
+| `get_n_range_bars()`                   | Required | No    |
+| `populate_cache_resumable()`           | Required | Yes   |
+| `precompute_range_bars()`              | Required | Yes   |
+| `process_trades_to_dataframe()`        | Optional | No    |
+| `process_trades_to_dataframe_cached()` | Required | No    |
+
+---
+
 ## Version 7.0 Features (Issue #25)
 
 10 market microstructure features computed in Rust during bar construction:

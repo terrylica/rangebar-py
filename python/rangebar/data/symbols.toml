@@ -1,0 +1,263 @@
+# =============================================================================
+# Unified Symbol Registry (Issue #79)
+# =============================================================================
+# SSoT for all symbol metadata in rangebar-py.
+#
+# MANDATORY: Every symbol must have an entry here before it can be processed.
+# Unregistered symbols raise SymbolNotRegisteredError.
+#
+# Replaces: KNOWN_LISTING_DATES, TIER1_SYMBOLS (scattered across codebase)
+#
+# Keywords for AI discoverability:
+#   symbol registry, mandatory gate, listing dates, data anomaly, effective start,
+#   binance vision, exness, crypto, forex, range bars, data quality
+#
+# Reference: https://github.com/terrylica/rangebar-py/issues/79
+
+[meta]
+schema_version = 1
+
+# =============================================================================
+# Crypto Symbols (Binance)
+# =============================================================================
+
+[symbols.BTCUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2017-08-17
+effective_start = 2018-01-15
+reason = "Skip corrupted 2018-01-14 (malformed CSV with 0,0,-1,-1 at line 16262)"
+keywords = ["bitcoin", "btc", "csv corruption", "binance vision"]
+reference = "https://github.com/terrylica/rangebar-py/issues/79"
+
+[symbols.ETHUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2017-08-17
+effective_start = 2018-01-15
+reason = "Skip corrupted 2018-01-14 (malformed CSV on Binance Vision)"
+keywords = ["ethereum", "eth", "csv corruption"]
+reference = "https://github.com/terrylica/rangebar-py/issues/79"
+
+[symbols.BNBUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2017-11-06
+effective_start = 2018-01-15
+reason = "Skip corrupted 2018-01-14 (malformed CSV on Binance Vision)"
+keywords = ["binance coin", "bnb", "csv corruption"]
+reference = "https://github.com/terrylica/rangebar-py/issues/79"
+
+[symbols.XRPUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2018-05-04
+keywords = ["ripple", "xrp"]
+
+[symbols.ADAUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2018-04-17
+keywords = ["cardano", "ada"]
+
+[symbols.DOGEUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2019-07-05
+keywords = ["dogecoin", "doge"]
+
+[symbols.SOLUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2020-08-11
+keywords = ["solana", "sol"]
+
+[symbols.DOTUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+listing_date = 2020-08-18
+keywords = ["polkadot", "dot"]
+
+[symbols.MATICUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+listing_date = 2019-04-26
+keywords = ["polygon", "matic", "rebrand"]
+reference = "https://github.com/terrylica/rangebar-py/issues/79"
+
+[symbols.SHIBUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+listing_date = 2021-05-10
+keywords = ["shiba inu", "shib"]
+
+[symbols.AVAXUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2020-09-22
+keywords = ["avalanche", "avax"]
+
+[symbols.LTCUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2017-12-13
+keywords = ["litecoin", "ltc"]
+
+[symbols.LINKUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2019-01-16
+keywords = ["chainlink", "link"]
+
+[symbols.ATOMUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+listing_date = 2019-04-22
+effective_start = 2019-04-29
+reason = "Data starts 2019-04-29 (HTTP 404 for 2019-04-22 through 2019-04-28)"
+keywords = ["cosmos", "atom", "missing data", "listing date mismatch"]
+reference = "https://github.com/terrylica/rangebar-py/issues/79"
+
+[symbols.UNIUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2020-09-17
+keywords = ["uniswap", "uni"]
+
+[symbols.ETCUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+listing_date = 2018-06-12
+keywords = ["ethereum classic", "etc"]
+
+[symbols.XLMUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+listing_date = 2018-05-09
+keywords = ["stellar", "xlm"]
+
+[symbols.NEARUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2020-10-14
+keywords = ["near protocol", "near"]
+
+# Additional TIER1 symbols (from constants.py TIER1_SYMBOLS not in KNOWN_LISTING_DATES)
+
+[symbols.AAVEUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2020-10-15
+keywords = ["aave", "defi", "lending"]
+
+[symbols.BCHUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2017-12-20
+keywords = ["bitcoin cash", "bch"]
+
+[symbols.FILUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2020-10-15
+keywords = ["filecoin", "fil"]
+
+[symbols.SUIUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2023-05-03
+keywords = ["sui"]
+
+[symbols.WIFUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2024-03-05
+keywords = ["dogwifhat", "wif", "meme"]
+
+[symbols.WLDUSDT]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "spot"
+tier = 1
+listing_date = 2023-07-24
+keywords = ["worldcoin", "wld"]
+
+# =============================================================================
+# Symbol Transitions (historical record)
+# =============================================================================
+# Gap handling NOT YET IMPLEMENTED -- documents transitions for future work.
+
+[transitions.MATIC_TO_POL]
+old_symbol = "MATICUSDT"
+new_symbol = "POLUSDT"
+last_old_date = 2024-09-10
+first_new_date = 2024-09-13
+gap_days = 2
+reason = "MATIC->POL rebrand with 2-day data gap"
+keywords = ["rebrand", "symbol rename", "data gap", "polygon"]
+reference = "https://github.com/terrylica/rangebar-py/issues/79"
+status = "placeholder"

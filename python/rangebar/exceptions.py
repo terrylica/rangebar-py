@@ -236,6 +236,40 @@ class ParquetCorruptionError(RangeBarError):
         self.reason = reason
 
 
+class SymbolNotRegisteredError(RangeBarError):
+    """Raised when a symbol is not found in the unified registry (Issue #79).
+
+    Every symbol must have an entry in symbols.toml before it can be processed.
+    Unregistered symbols trigger this error to prevent processing symbols whose
+    data quality hasn't been analyzed.
+
+    Attributes
+    ----------
+    symbol : str
+        The unregistered symbol.
+    operation : str
+        Which function triggered the error (e.g., "get_range_bars").
+
+    Examples
+    --------
+    >>> from rangebar import validate_symbol_registered
+    >>> validate_symbol_registered("FAKECOIN")
+    SymbolNotRegisteredError: Symbol 'FAKECOIN' is not registered.
+    Add it to symbols.toml before processing.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        symbol: str,
+        operation: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.symbol = symbol
+        self.operation = operation
+
+
 __all__ = [
     "CacheConnectionError",
     "CacheError",
@@ -245,5 +279,6 @@ __all__ = [
     "ParquetCorruptionError",
     "ProcessingError",
     "RangeBarError",
+    "SymbolNotRegisteredError",
     "ValidationError",
 ]

@@ -68,6 +68,10 @@ python/rangebar/
 ├── clickhouse/          # Tier 2 cache (ClickHouse Cloud)
 │   ├── cache.py         # Range bar cache operations
 │   └── schema.sql       # Table schema (v7.0: 10 microstructure columns)
+├── data/                # Package data files (Issue #79)
+│   ├── __init__.py      # importlib.resources marker
+│   └── symbols.toml     # Unified Symbol Registry (SSoT)
+├── symbol_registry.py   # Registry loader + mandatory gate (Issue #79)
 ├── storage/             # Tier 1 cache (local Parquet)
 │   └── parquet.py       # TickStorage class
 ├── validation/          # Microstructure feature validation (v7.0+)
@@ -111,6 +115,53 @@ Binary built by `maturin develop`. Contains:
 - Data fetching (when providers feature enabled)
 
 **Rebuild after Rust changes**: `maturin develop`
+
+---
+
+## Symbol Registry (Issue #79)
+
+**Every symbol must be registered in `symbols.toml` before processing.** Unregistered symbols raise `SymbolNotRegisteredError`.
+
+### Files
+
+| File                       | Purpose                                      |
+| -------------------------- | -------------------------------------------- |
+| `data/symbols.toml`        | TOML registry (SSoT for all symbol metadata) |
+| `symbol_registry.py`       | Loader module + gate + query functions       |
+| `exceptions.py`            | `SymbolNotRegisteredError` exception         |
+| `symbols.toml` (repo root) | Symlink for developer convenience            |
+
+### Adding New Symbols
+
+1. Edit `python/rangebar/data/symbols.toml`
+2. Run `maturin develop`
+3. Process the symbol
+
+### Gate Integration Points
+
+Gates are inserted at the top of each entry point function, **before** threshold validation:
+
+```python
+from rangebar.symbol_registry import validate_symbol_registered, validate_and_clamp_start_date
+
+validate_symbol_registered(symbol, operation="function_name")
+start_date = validate_and_clamp_start_date(symbol, start_date)  # only if start_date param exists
+```
+
+### Environment Variable
+
+`RANGEBAR_SYMBOL_GATE` controls gate behavior:
+
+- `"strict"` (default): `SymbolNotRegisteredError`
+- `"warn"`: `UserWarning` + continue
+- `"off"`: No gating (dev/testing)
+
+### Telemetry
+
+Gate violations emit:
+
+1. **NDJSON log**: `logs/events.jsonl` with `component="symbol_registry"`
+2. **Pushover alert**: Emergency priority (repeats every 30s until acknowledged)
 
 ---
 

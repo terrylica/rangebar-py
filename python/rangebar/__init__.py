@@ -68,6 +68,9 @@ __all__ = [
     "StreamingError",
     "StreamingMetrics",
     "StreamingRangeBarProcessor",
+    "SymbolEntry",  # Issue #79: symbol registry
+    "SymbolNotRegisteredError",  # Issue #79: mandatory gate
+    "SymbolTransition",  # Issue #79: symbol transitions
     "ThresholdError",  # Issue #62: crypto minimum threshold
     "TierSummary",
     "TierThresholds",
@@ -75,16 +78,21 @@ __all__ = [
     "ValidationPreset",
     "__version__",
     "auto_memory_guard",
+    "clear_symbol_registry_cache",  # Issue #79: runtime registry refresh
     "clear_threshold_cache",  # Issue #62: runtime config changes
     "detect_asset_class",
     "detect_staleness",
     "ensure_memory_limit",
+    "get_effective_start_date",  # Issue #79: symbol effective start
     "get_min_threshold",  # Issue #62: asset-class default
     "get_min_threshold_for_symbol",  # Issue #62: per-symbol lookup
     "get_n_range_bars",
     "get_ouroboros_boundaries",
     "get_range_bars",
     "get_range_bars_pandas",
+    "get_registered_symbols",  # Issue #79: filtered symbol listing
+    "get_symbol_entries",  # Issue #79: all symbol metadata
+    "get_transitions",  # Issue #79: symbol rename history
     "normalize_arrow_dtypes",
     "normalize_temporal_precision",
     "populate_cache_resumable",
@@ -94,8 +102,10 @@ __all__ = [
     "process_trades_to_dataframe",
     "resolve_and_validate_threshold",  # Issue #62: central validation
     "stream_binance_live",
+    "validate_and_clamp_start_date",  # Issue #79: start date clamping
     "validate_continuity",
     "validate_continuity_tiered",
+    "validate_symbol_registered",  # Issue #79: mandatory gate
 ]
 
 # Re-export checkpoint API per plan (#40)
@@ -157,6 +167,8 @@ from .resource_guard import auto_memory_guard, ensure_memory_limit
 auto_memory_guard()
 
 # Streaming API (ADR: docs/adr/2026-01-31-realtime-streaming-api.md)
+# Import symbol registry (Issue #79: Unified Symbol Registry with mandatory gating)
+from .exceptions import SymbolNotRegisteredError
 from .streaming import (
     AsyncStreamingProcessor,
     BinanceLiveStream,
@@ -166,6 +178,17 @@ from .streaming import (
     StreamingMetrics,
     StreamingRangeBarProcessor,
     stream_binance_live,
+)
+from .symbol_registry import (
+    SymbolEntry,
+    SymbolTransition,
+    clear_symbol_registry_cache,
+    get_effective_start_date,
+    get_registered_symbols,
+    get_symbol_entries,
+    get_transitions,
+    validate_and_clamp_start_date,
+    validate_symbol_registered,
 )
 
 # Import threshold validation utilities (Issue #62: crypto minimum threshold)

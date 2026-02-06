@@ -23,11 +23,18 @@ TRADE_ID_RANGE_COLUMNS : Trade ID range columns for data integrity (Issue #72).
 VALIDATION_PRESETS : Named validation presets (research, strict, crypto, etc.).
 THRESHOLD_DECIMAL_MIN : Minimum valid threshold (1 = 0.1bps).
 THRESHOLD_DECIMAL_MAX : Maximum valid threshold (100,000 = 10,000bps).
+SymbolEntry : Registry entry for a trading symbol (Issue #79).
+SymbolTransition : Historical symbol rename/rebrand record (Issue #79).
+SymbolNotRegisteredError : Raised when symbol not in registry (Issue #79).
+validate_symbol_registered : Mandatory gate for unregistered symbols (Issue #79).
+validate_and_clamp_start_date : Gate + clamp start_date to effective_start (Issue #79).
+get_registered_symbols : Filtered listing of registered symbols (Issue #79).
 __version__ : Package version string.
 """
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from datetime import date, datetime
 from enum import Enum, IntEnum
 from typing import Any, Literal, overload
 
@@ -54,6 +61,24 @@ class ContinuityError(Exception):
 
 class ContinuityWarning(UserWarning):
     """Warning issued when range bar discontinuities are detected but not fatal."""
+
+class SymbolNotRegisteredError(Exception):
+    """Raised when a symbol is not found in the unified registry (Issue #79).
+
+    Attributes
+    ----------
+    symbol : str
+        The unregistered symbol.
+    operation : str
+        Which function triggered the error.
+    """
+
+    symbol: str
+    operation: str
+
+    def __init__(
+        self, message: str, *, symbol: str, operation: str = ""
+    ) -> None: ...
 
 # ============================================================================
 # Data Classes
@@ -107,14 +132,70 @@ class PrecomputeResult:
     cache_key: str
     """Cache key for the stored bars."""
 
+@dataclass(frozen=True)
+class SymbolEntry:
+    """Registry entry for a trading symbol (Issue #79).
+
+    Loaded from symbols.toml via get_symbol_entries().
+    """
+
+    symbol: str
+    """Trading symbol (e.g., "BTCUSDT")."""
+    enabled: bool
+    """Whether this symbol can be processed."""
+    asset_class: str
+    """Asset class: "crypto", "forex"."""
+    exchange: str
+    """Exchange: "binance", "exness"."""
+    market: str
+    """Market type: "spot", "futures-um", "futures-cm"."""
+    listing_date: date
+    """When symbol was listed on the exchange."""
+    effective_start: date | None = ...
+    """Override listing_date for data quality (e.g., skip corrupted days)."""
+    reason: str | None = ...
+    """Why effective_start differs from listing_date."""
+    tier: int | None = ...
+    """Liquidity tier (1 = highest)."""
+    keywords: tuple[str, ...] = ...
+    """AI discoverability keywords."""
+    reference: str | None = ...
+    """Issue or URL reference for data anomaly."""
+
+@dataclass(frozen=True)
+class SymbolTransition:
+    """Historical symbol rename/rebrand record (Issue #79).
+
+    Loaded from symbols.toml [transitions] section.
+    """
+
+    name: str
+    """Transition identifier (e.g., "MATIC_TO_POL")."""
+    old_symbol: str
+    """Previous symbol name."""
+    new_symbol: str
+    """New symbol name."""
+    last_old_date: date
+    """Last date with data under old symbol."""
+    first_new_date: date
+    """First date with data under new symbol."""
+    gap_days: int
+    """Number of days with no data during transition."""
+    reason: str | None = ...
+    """Human-readable reason for transition."""
+    keywords: tuple[str, ...] = ...
+    """AI discoverability keywords."""
+    reference: str | None = ...
+    """Issue or URL reference."""
+    status: str = ...
+    """Implementation status: "placeholder", "implemented"."""
+
 __version__: str
 
 # ============================================================================
 # Ouroboros: Cyclical Reset Boundaries for Reproducibility
 # Plan: /Users/terryli/.claude/plans/sparkling-coalescing-dijkstra.md
 # ============================================================================
-
-from datetime import date, datetime
 
 class OuroborosMode(str, Enum):
     """Ouroboros granularity modes for reset boundaries.
@@ -1103,6 +1184,124 @@ def populate_cache_resumable(
     precompute_range_bars : Batch precompute to ClickHouse
     LONG_RANGE_DAYS : Threshold constant (30 days)
     """
+
+# ============================================================================
+# Symbol Registry (Issue #79)
+# ============================================================================
+
+def validate_symbol_registered(
+    symbol: str,
+    *,
+    operation: str = "",
+) -> None:
+    """Mandatory gate: raise SymbolNotRegisteredError if symbol not registered.
+
+    Respects RANGEBAR_SYMBOL_GATE env var:
+    - "strict" (default): Raise SymbolNotRegisteredError
+    - "warn": Emit UserWarning, continue
+    - "off": No gating (development/testing only)
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol to validate (e.g., "BTCUSDT")
+    operation : str, optional
+        Which function triggered the gate (for error messages)
+
+    Raises
+    ------
+    SymbolNotRegisteredError
+        If symbol is not in the registry and gate mode is "strict"
+    """
+
+def validate_and_clamp_start_date(
+    symbol: str,
+    start_date: str,
+) -> str:
+    """Gate + clamp start_date to effective_start if applicable.
+
+    Returns the later of start_date and effective_start.
+    Logs info when clamping occurs.
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol (e.g., "BTCUSDT")
+    start_date : str
+        Start date in YYYY-MM-DD format
+
+    Returns
+    -------
+    str
+        The clamped start date in YYYY-MM-DD format
+
+    Raises
+    ------
+    SymbolNotRegisteredError
+        If symbol is not in the registry
+    """
+
+def get_effective_start_date(symbol: str) -> str | None:
+    """Get effective_start (or listing_date) as ISO string, or None.
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol (e.g., "BTCUSDT")
+
+    Returns
+    -------
+    str or None
+        ISO date string (YYYY-MM-DD) or None if symbol not registered
+    """
+
+def get_registered_symbols(
+    *,
+    asset_class: str | None = None,
+    tier: int | None = None,
+    enabled_only: bool = True,
+) -> tuple[str, ...]:
+    """Get filtered list of registered symbols.
+
+    Parameters
+    ----------
+    asset_class : str, optional
+        Filter by asset class ("crypto", "forex")
+    tier : int, optional
+        Filter by liquidity tier (e.g., 1 for highest)
+    enabled_only : bool, default=True
+        Only return enabled symbols
+
+    Returns
+    -------
+    tuple[str, ...]
+        Sorted tuple of matching symbol names
+    """
+
+def get_symbol_entries() -> dict[str, SymbolEntry]:
+    """Get all registered symbols as frozen dataclasses (cached).
+
+    Returns
+    -------
+    dict[str, SymbolEntry]
+        Mapping of symbol name to SymbolEntry
+    """
+
+def get_transitions() -> tuple[SymbolTransition, ...]:
+    """Get all recorded symbol transitions.
+
+    Returns
+    -------
+    tuple[SymbolTransition, ...]
+        All transitions from symbols.toml
+    """
+
+def clear_symbol_registry_cache() -> None:
+    """Clear all registry caches. Call after editing symbols.toml at runtime."""
+
+# ============================================================================
+# Trade Processing
+# ============================================================================
 
 def process_trades_polars(
     trades: pl.DataFrame | pl.LazyFrame,

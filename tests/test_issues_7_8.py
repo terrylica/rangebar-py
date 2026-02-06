@@ -58,8 +58,10 @@ class TestIssue7FetchIfMissing:
         assert isinstance(df, pd.DataFrame)
         assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
 
-    def test_fetch_if_missing_false_returns_empty_on_miss(self):
+    def test_fetch_if_missing_false_returns_empty_on_miss(self, monkeypatch):
         """With fetch_if_missing=False, cache miss should return empty DataFrame."""
+        # Gate off: TESTUNKNOWNSYMBOL is not in symbol registry (Issue #79)
+        monkeypatch.setenv("RANGEBAR_SYMBOL_GATE", "off")
         # Use a symbol/date that's unlikely to be cached
         df = get_range_bars(
             "TESTUNKNOWNSYMBOL",
