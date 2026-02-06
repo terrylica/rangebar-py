@@ -89,6 +89,12 @@ def process_trades_to_dataframe(
     >>> bt = Backtest(df, MyStrategy, cash=10000)
     >>> stats = bt.run()
     """
+    # Symbol registry gate (Issue #79) -- optional: only if symbol provided
+    if symbol is not None:
+        from rangebar.symbol_registry import validate_symbol_registered
+
+        validate_symbol_registered(symbol, operation="process_trades_to_dataframe")
+
     processor = RangeBarProcessor(threshold_decimal_bps, symbol=symbol)
 
     # Convert DataFrame to list of dicts if needed
@@ -179,6 +185,11 @@ def process_trades_to_dataframe_cached(
     >>> # Second call uses cache (fast)
     >>> df2 = process_trades_to_dataframe_cached(trades, symbol="BTCUSDT")
     """
+    # Symbol registry gate (Issue #79) -- required: symbol is cache key
+    from rangebar.symbol_registry import validate_symbol_registered
+
+    validate_symbol_registered(symbol, operation="process_trades_to_dataframe_cached")
+
     # Import cache components (lazy import)
     from rangebar.clickhouse import CacheKey
     from rangebar.clickhouse import RangeBarCache as _RangeBarCache
@@ -353,29 +364,10 @@ def process_trades_polars(
     """
     import polars as pl
 
+    from rangebar.orchestration.helpers import _select_trade_columns
+
     # MEM-003: Apply column selection BEFORE collecting LazyFrame
-    # This enables predicate pushdown and avoids materializing unused columns
-    # Memory impact: 10-100x reduction depending on filter selectivity
-
-    # Determine volume column name (works for both DataFrame and LazyFrame)
-    if isinstance(trades, pl.LazyFrame):
-        available_cols = trades.collect_schema().names()
-    else:
-        available_cols = trades.columns
-
-    volume_col = "quantity" if "quantity" in available_cols else "volume"
-
-    # Build column list - include is_buyer_maker for microstructure features (Issue #30)
-    columns = [
-        pl.col("timestamp"),
-        pl.col("price"),
-        pl.col(volume_col).alias("quantity"),
-    ]
-    if "is_buyer_maker" in available_cols:
-        columns.append(pl.col("is_buyer_maker"))
-
-    # Apply selection (predicates pushed down for LazyFrame)
-    trades_selected = trades.select(columns)
+    trades_selected = _select_trade_columns(trades)
 
     # Collect AFTER selection (for LazyFrame)
     if isinstance(trades_selected, pl.LazyFrame):

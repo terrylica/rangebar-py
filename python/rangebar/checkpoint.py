@@ -401,6 +401,15 @@ def populate_cache_resumable(
     from rangebar import get_range_bars
     from rangebar.hooks import HookEvent, emit_hook
 
+    # Symbol registry gate + start date clamping (Issue #79)
+    from rangebar.symbol_registry import (
+        validate_and_clamp_start_date,
+        validate_symbol_registered,
+    )
+
+    validate_symbol_registered(symbol, operation="populate_cache_resumable")
+    start_date = validate_and_clamp_start_date(symbol, start_date)
+
     checkpoint_path = _get_checkpoint_path(symbol, start_date, end_date, checkpoint_dir)
 
     # Issue #69: Handle force_refresh - wipe cache and checkpoint
@@ -416,10 +425,15 @@ def populate_cache_resumable(
             from rangebar.clickhouse import RangeBarCache
 
             # Convert dates to timestamps for deletion
+            from rangebar.orchestration.helpers import (
+                _datetime_to_end_ms,
+                _datetime_to_start_ms,
+            )
+
             start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=UTC)
             end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=UTC)
-            start_ts = int(start_dt.timestamp() * 1000)
-            end_ts = int((end_dt.timestamp() + 86399) * 1000)  # End of day
+            start_ts = _datetime_to_start_ms(start_dt)
+            end_ts = _datetime_to_end_ms(end_dt)
 
             with RangeBarCache() as cache:
                 cache.delete_bars(symbol, threshold_decimal_bps, start_ts, end_ts)

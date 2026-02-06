@@ -16,8 +16,42 @@ from rangebar.conversion import _concat_pandas_via_polars
 from rangebar.processors.core import RangeBarProcessor
 from rangebar.validation.continuity import ContinuityError, validate_continuity
 
-from .helpers import _fetch_binance, _fetch_exness
+from .helpers import (
+    MARKET_TYPE_MAP,
+    _datetime_to_end_ms,
+    _datetime_to_start_ms,
+    _fetch_binance,
+    _fetch_exness,
+    _parse_and_validate_dates,
+)
 from .models import PrecomputeProgress, PrecomputeResult
+
+
+def _emit_progress(
+    progress_callback: Callable[[PrecomputeProgress], None] | None,
+    phase: str,
+    month_str: str,
+    months_completed: int,
+    months_total: int,
+    all_bars: list[pd.DataFrame],
+    ticks_processed: int,
+    start_time: float,
+) -> None:
+    """Emit PrecomputeProgress if callback is provided."""
+    if progress_callback:
+        import time
+
+        progress_callback(
+            PrecomputeProgress(
+                phase=phase,
+                current_month=month_str,
+                months_completed=months_completed,
+                months_total=months_total,
+                bars_generated=sum(len(b) for b in all_bars),
+                ticks_processed=ticks_processed,
+                elapsed_seconds=time.time() - start_time,
+            )
+        )
 
 
 def precompute_range_bars(
@@ -139,32 +173,25 @@ def precompute_range_bars(
         msg = f"Invalid validate_on_complete: {validate_on_complete!r}. Must be 'error', 'warn', or 'skip'"
         raise ValueError(msg)
 
+    # Symbol registry gate + start date clamping (Issue #79)
+    from rangebar.symbol_registry import (
+        validate_and_clamp_start_date,
+        validate_symbol_registered,
+    )
+
+    validate_symbol_registered(symbol, operation="precompute_range_bars")
+    start_date = validate_and_clamp_start_date(symbol, start_date)
+
     # Validate threshold with asset-class minimum (Issue #62)
     from rangebar.threshold import resolve_and_validate_threshold
 
     threshold_decimal_bps = resolve_and_validate_threshold(symbol, threshold_decimal_bps)
 
     # Parse dates
-    try:
-        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    except ValueError as e:
-        msg = f"Invalid date format. Use YYYY-MM-DD: {e}"
-        raise ValueError(msg) from e
-
-    if start_dt > end_dt:
-        msg = "start_date must be <= end_date"
-        raise ValueError(msg)
+    start_dt, end_dt = _parse_and_validate_dates(start_date, end_date)
 
     # Normalize market type
-    market_map = {
-        "spot": "spot",
-        "futures-um": "um",
-        "futures-cm": "cm",
-        "um": "um",
-        "cm": "cm",
-    }
-    market_normalized = market_map.get(market.lower(), market.lower())
+    market_normalized = MARKET_TYPE_MAP.get(market.lower(), market.lower())
 
     # Initialize storage and cache
     storage = TickStorage(cache_dir=Path(cache_dir) if cache_dir else None)
@@ -183,8 +210,8 @@ def precompute_range_bars(
             current = current.replace(month=current.month + 1)
 
     # Handle cache invalidation
-    start_ts = int(start_dt.timestamp() * 1000)
-    end_ts = int((end_dt.timestamp() + 86399) * 1000)  # End of day
+    start_ts = _datetime_to_start_ms(start_dt)
+    end_ts = _datetime_to_end_ms(end_dt)
     cache_key = CacheKey(
         symbol=symbol,
         threshold_decimal_bps=threshold_decimal_bps,
@@ -230,18 +257,10 @@ def precompute_range_bars(
         month_str = f"{year}-{month:02d}"
 
         # Report progress - fetching
-        if progress_callback:
-            progress_callback(
-                PrecomputeProgress(
-                    phase="fetching",
-                    current_month=month_str,
-                    months_completed=i,
-                    months_total=len(months),
-                    bars_generated=sum(len(b) for b in all_bars),
-                    ticks_processed=total_ticks,
-                    elapsed_seconds=time.time() - start_time,
-                )
-            )
+        _emit_progress(
+            progress_callback, "fetching", month_str,
+            i, len(months), all_bars, total_ticks, start_time,
+        )
 
         # Calculate month boundaries
         month_start = datetime(year, month, 1)
@@ -295,18 +314,10 @@ def precompute_range_bars(
                 total_ticks += len(tick_chunk)
 
                 # Report progress - processing
-                if progress_callback:
-                    progress_callback(
-                        PrecomputeProgress(
-                            phase="processing",
-                            current_month=month_str,
-                            months_completed=i,
-                            months_total=len(months),
-                            bars_generated=sum(len(b) for b in all_bars),
-                            ticks_processed=total_ticks,
-                            elapsed_seconds=time.time() - start_time,
-                        )
-                    )
+                _emit_progress(
+                    progress_callback, "processing", month_str,
+                    i, len(months), all_bars, total_ticks, start_time,
+                )
 
                 # Stream directly to Rust processor (Issue #16: use streaming mode)
                 chunk = tick_chunk.to_dicts()
@@ -368,18 +379,10 @@ def precompute_range_bars(
                     total_ticks += len(tick_data)
 
                     # Report progress - processing
-                    if progress_callback:
-                        progress_callback(
-                            PrecomputeProgress(
-                                phase="processing",
-                                current_month=month_str,
-                                months_completed=i,
-                                months_total=len(months),
-                                bars_generated=sum(len(b) for b in all_bars),
-                                ticks_processed=total_ticks,
-                                elapsed_seconds=time.time() - start_time,
-                            )
-                        )
+                    _emit_progress(
+                        progress_callback, "processing", month_str,
+                        i, len(months), all_bars, total_ticks, start_time,
+                    )
 
                     # Process with chunking for memory efficiency
                     tick_count = len(tick_data)
@@ -413,18 +416,10 @@ def precompute_range_bars(
             month_df = _concat_pandas_via_polars(month_bars)
 
             # Report progress - caching this month
-            if progress_callback:
-                progress_callback(
-                    PrecomputeProgress(
-                        phase="caching",
-                        current_month=month_str,
-                        months_completed=i + 1,
-                        months_total=len(months),
-                        bars_generated=len(month_df) + sum(len(b) for b in all_bars),
-                        ticks_processed=total_ticks,
-                        elapsed_seconds=time.time() - start_time,
-                    )
-                )
+            _emit_progress(
+                progress_callback, "caching", month_str,
+                i + 1, len(months), [*all_bars, month_df], total_ticks, start_time,
+            )
 
             # Cache immediately (idempotent via ReplacingMergeTree)
             rows_sent = len(month_df)

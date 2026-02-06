@@ -17,12 +17,18 @@ from rangebar.processors.core import RangeBarProcessor
 from rangebar.validation.cache_staleness import detect_staleness
 
 from .helpers import (
+    _datetime_to_end_ms,
+    _datetime_to_start_ms,
+    _empty_ohlcv_dataframe,
     _fetch_binance,
     _fetch_exness,
+    _no_data_error_message,
+    _parse_and_validate_dates,
+    _parse_microstructure_env_vars,
     _process_binance_trades,
     _process_exness_ticks,
     _stream_range_bars_binance,
-    detect_earliest_available_date,
+    _validate_and_normalize_source_market,
 )
 
 if TYPE_CHECKING:
@@ -274,10 +280,20 @@ def get_range_bars(
     TIER1_SYMBOLS : Tuple of high-liquidity symbols
     THRESHOLD_PRESETS : Dictionary of named threshold values
     """
-    from datetime import datetime
     from pathlib import Path
 
     from rangebar.storage.parquet import TickStorage
+
+    # -------------------------------------------------------------------------
+    # Symbol registry gate + start date clamping (Issue #79)
+    # -------------------------------------------------------------------------
+    from rangebar.symbol_registry import (
+        validate_and_clamp_start_date,
+        validate_symbol_registered,
+    )
+
+    validate_symbol_registered(symbol, operation="get_range_bars")
+    start_date = validate_and_clamp_start_date(symbol, start_date)
 
     # -------------------------------------------------------------------------
     # Resolve threshold with asset-class validation (Issue #62)
@@ -296,27 +312,7 @@ def get_range_bars(
     # -------------------------------------------------------------------------
     # Validate source and market
     # -------------------------------------------------------------------------
-    source = source.lower()
-    if source not in ("binance", "exness"):
-        msg = f"Unknown source: {source!r}. Must be 'binance' or 'exness'"
-        raise ValueError(msg)
-
-    # Normalize market type
-    market_map = {
-        "spot": "spot",
-        "futures-um": "um",
-        "futures-cm": "cm",
-        "um": "um",
-        "cm": "cm",
-    }
-    market = market.lower()
-    if source == "binance" and market not in market_map:
-        msg = (
-            f"Unknown market: {market!r}. "
-            "Must be 'spot', 'futures-um'/'um', or 'futures-cm'/'cm'"
-        )
-        raise ValueError(msg)
-    market_normalized = market_map.get(market, market)
+    source, market_normalized = _validate_and_normalize_source_market(source, market)
 
     # Validate Exness validation strictness
     validation = validation.lower()
@@ -330,20 +326,11 @@ def get_range_bars(
     # -------------------------------------------------------------------------
     # Parse and validate dates
     # -------------------------------------------------------------------------
-    try:
-        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    except ValueError as e:
-        msg = f"Invalid date format. Use YYYY-MM-DD: {e}"
-        raise ValueError(msg) from e
-
-    if start_dt > end_dt:
-        msg = "start_date must be <= end_date"
-        raise ValueError(msg)
+    start_dt, end_dt = _parse_and_validate_dates(start_date, end_date)
 
     # Convert to milliseconds for cache lookup
-    start_ts = int(start_dt.timestamp() * 1000)
-    end_ts = int((end_dt.timestamp() + 86399) * 1000)  # End of day
+    start_ts = _datetime_to_start_ms(start_dt)
+    end_ts = _datetime_to_end_ms(end_dt)
 
     # -------------------------------------------------------------------------
     # MEM-013: Force ClickHouse-first for long date ranges (>30 days)
@@ -493,7 +480,7 @@ def get_range_bars(
     has_cached_ticks = use_cache and storage.has_ticks(cache_symbol, start_ts, end_ts)
 
     if not has_cached_ticks and not fetch_if_missing:
-        return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+        return _empty_ohlcv_dataframe()
 
     # For Exness, load all ticks upfront (smaller datasets)
     if source == "exness":
@@ -606,23 +593,9 @@ def get_range_bars(
 
         # Process segment (reuse processor for state continuity within segment)
         # Issue #68: Auto-enable v12 features when include_microstructure=True
-        # SSoT: Defaults from mise.toml env vars (RANGEBAR_INTER_BAR_LOOKBACK_COUNT,
-        #       RANGEBAR_INCLUDE_INTRA_BAR_FEATURES)
-        import os
-
-        effective_lookback = inter_bar_lookback_count
-        if include_microstructure and effective_lookback is None:
-            # Read from env (mise SSoT) with fallback
-            effective_lookback = int(
-                os.environ.get("RANGEBAR_INTER_BAR_LOOKBACK_COUNT", "200")
-            )
-
-        # Intra-bar features: auto-enable if microstructure requested
-        # SSoT from mise.toml, defaults to True when include_microstructure=True
-        enable_intra = False
-        if include_microstructure:
-            intra_env = os.environ.get("RANGEBAR_INCLUDE_INTRA_BAR_FEATURES", "true")
-            enable_intra = intra_env.lower() in ("true", "1", "yes")
+        effective_lookback, enable_intra = _parse_microstructure_env_vars(
+            include_microstructure, inter_bar_lookback_count,
+        )
 
         segment_bars, processor = _process_binance_trades(
             segment_ticks,
@@ -641,20 +614,11 @@ def get_range_bars(
 
     if not any_data_found:
         # Issue #76: Auto-detect earliest available date for helpful error message
-        earliest = detect_earliest_available_date(symbol, market)
-        if earliest and earliest > start_date:
-            msg = (
-                f"No data available for {symbol} from {start_date} to {end_date}. "
-                f"Symbol listing date detected: {earliest}. "
-                f"Try: get_range_bars('{symbol}', '{earliest}', '{end_date}')"
-            )
-        else:
-            msg = f"No data available for {symbol} from {start_date} to {end_date}"
-        raise RuntimeError(msg)
+        raise RuntimeError(_no_data_error_message(symbol, start_date, end_date, market))
 
     # Concatenate all segments
     if not all_bars:
-        bars_df = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+        bars_df = _empty_ohlcv_dataframe()
     elif len(all_bars) == 1:
         bars_df = all_bars[0]
     else:

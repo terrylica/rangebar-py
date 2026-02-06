@@ -8,7 +8,9 @@ and streaming for both Binance and Exness data sources.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -17,6 +19,194 @@ from rangebar.processors.core import RangeBarProcessor
 
 if TYPE_CHECKING:
     import polars as pl
+
+
+# =============================================================================
+# Shared Constants & Utilities (Issue #79 follow-up: code clone cleanup)
+# =============================================================================
+
+MARKET_TYPE_MAP: dict[str, str] = {
+    "spot": "spot",
+    "futures-um": "um",
+    "futures-cm": "cm",
+    "um": "um",
+    "cm": "cm",
+}
+
+_END_OF_DAY_OFFSET_SECONDS = 86399
+
+
+def _validate_and_normalize_source_market(
+    source: str,
+    market: str,
+) -> tuple[str, str]:
+    """Validate source/market and return (source_lower, market_normalized).
+
+    Raises ValueError for unsupported source or invalid Binance market.
+    """
+    source = source.lower()
+    if source not in ("binance", "exness"):
+        msg = f"Unknown source: {source!r}. Must be 'binance' or 'exness'"
+        raise ValueError(msg)
+    market = market.lower()
+    if source == "binance" and market not in MARKET_TYPE_MAP:
+        msg = (
+            f"Unknown market: {market!r}. "
+            "Must be 'spot', 'futures-um'/'um', or 'futures-cm'/'cm'"
+        )
+        raise ValueError(msg)
+    return source, MARKET_TYPE_MAP.get(market, market)
+
+
+def _parse_and_validate_dates(
+    start_date: str,
+    end_date: str,
+) -> tuple[datetime, datetime]:
+    """Parse YYYY-MM-DD strings and validate start <= end.
+
+    Returns (start_dt, end_dt) as datetime objects.
+    Raises ValueError for bad format or start > end.
+    """
+    try:
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    except ValueError as e:
+        msg = f"Invalid date format. Use YYYY-MM-DD: {e}"
+        raise ValueError(msg) from e
+    if start_dt > end_dt:
+        msg = f"start_date must be <= end_date: {start_date} > {end_date}"
+        raise ValueError(msg)
+    return start_dt, end_dt
+
+
+def _datetime_to_start_ms(dt: datetime) -> int:
+    """Convert datetime to start-of-day millisecond timestamp."""
+    return int(dt.timestamp() * 1000)
+
+
+def _datetime_to_end_ms(dt: datetime) -> int:
+    """Convert datetime to end-of-day millisecond timestamp (23:59:59)."""
+    return int((dt.timestamp() + _END_OF_DAY_OFFSET_SECONDS) * 1000)
+
+
+def _parse_microstructure_env_vars(
+    include_microstructure: bool,
+    inter_bar_lookback_count: int | None,
+) -> tuple[int | None, bool]:
+    """Parse RANGEBAR_INTER_BAR_LOOKBACK_COUNT and RANGEBAR_INCLUDE_INTRA_BAR_FEATURES.
+
+    Returns (effective_lookback, enable_intra_bar_features).
+    """
+    effective_lookback = inter_bar_lookback_count
+    if include_microstructure and effective_lookback is None:
+        effective_lookback = int(
+            os.environ.get("RANGEBAR_INTER_BAR_LOOKBACK_COUNT", "200")
+        )
+
+    enable_intra = False
+    if include_microstructure:
+        intra_env = os.environ.get("RANGEBAR_INCLUDE_INTRA_BAR_FEATURES", "true")
+        enable_intra = intra_env.lower() in ("true", "1", "yes")
+
+    return effective_lookback, enable_intra
+
+
+def _create_processor(
+    threshold_decimal_bps: int,
+    include_microstructure: bool,
+    *,
+    symbol: str = "",
+    prevent_same_timestamp_close: bool = True,
+    inter_bar_lookback_count: int | None = None,
+    include_intra_bar_features: bool = False,
+    processor: RangeBarProcessor | None = None,
+) -> RangeBarProcessor:
+    """Create or reuse a RangeBarProcessor with env var defaults.
+
+    If processor is provided, returns it as-is (streaming continuation).
+    Otherwise creates a new one with parsed env vars.
+    """
+    if processor is not None:
+        return processor
+
+    effective_lookback, enable_intra = _parse_microstructure_env_vars(
+        include_microstructure, inter_bar_lookback_count,
+    )
+
+    # Honour explicit include_intra_bar_features=True even when env says false
+    enable_intra = enable_intra or include_intra_bar_features
+
+    return RangeBarProcessor(
+        threshold_decimal_bps,
+        symbol=symbol,
+        prevent_same_timestamp_close=prevent_same_timestamp_close,
+        inter_bar_lookback_count=effective_lookback,
+        include_intra_bar_features=enable_intra,
+    )
+
+
+def _select_trade_columns(
+    trades: pl.LazyFrame | pl.DataFrame,
+) -> pl.LazyFrame | pl.DataFrame:
+    """Select minimal trade columns for range bar processing (MEM-003).
+
+    Handles: timestamp, price, quantity/volume alias, is_buyer_maker,
+    trade ID columns (Issue #75).
+    Works with both LazyFrame (predicate pushdown) and DataFrame.
+    """
+    import polars as pl
+
+    # Determine volume column name (works for both DataFrame and LazyFrame)
+    if isinstance(trades, pl.LazyFrame):
+        available_cols = trades.collect_schema().names()
+    else:
+        available_cols = trades.columns
+
+    volume_col = "quantity" if "quantity" in available_cols else "volume"
+
+    columns = [
+        pl.col("timestamp"),
+        pl.col("price"),
+        pl.col(volume_col).alias("quantity"),
+    ]
+    if "is_buyer_maker" in available_cols:
+        columns.append(pl.col("is_buyer_maker"))
+
+    # Issue #75: Include trade ID columns for data integrity tracking (Issue #72)
+    for trade_id_col in ("agg_trade_id", "first_trade_id", "last_trade_id"):
+        if trade_id_col in available_cols:
+            columns.append(pl.col(trade_id_col))
+
+    return trades.select(columns)
+
+
+def _empty_ohlcv_dataframe() -> pd.DataFrame:
+    """Return an empty OHLCV DataFrame with standard columns."""
+    return pd.DataFrame(
+        columns=["Open", "High", "Low", "Close", "Volume"]
+    ).set_index(pd.DatetimeIndex([]))
+
+
+def _no_data_error_message(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    market: str = "spot",
+) -> str:
+    """Build informative error message when no data is available."""
+    earliest = detect_earliest_available_date(symbol, market)
+    if earliest and earliest > start_date:
+        return (
+            f"No data available for {symbol} from {start_date} to {end_date}. "
+            f"Symbol listing date detected: {earliest}. "
+            f"Try: get_range_bars('{symbol}', '{earliest}', '{end_date}')"
+        )
+    return f"No data available for {symbol} from {start_date} to {end_date}"
+
+
+# =============================================================================
+# Streaming & Processing
+# =============================================================================
 
 
 def _stream_range_bars_binance(
@@ -94,28 +284,13 @@ def _stream_range_bars_binance(
         "cm": MarketType.FuturesCM,
     }[market]
 
-    # Issue #68: Auto-enable v12 features when include_microstructure=True
-    # SSoT: Defaults from mise.toml env vars
-    import os
-
-    effective_lookback = inter_bar_lookback_count
-    if include_microstructure and effective_lookback is None:
-        effective_lookback = int(
-            os.environ.get("RANGEBAR_INTER_BAR_LOOKBACK_COUNT", "200")
-        )
-
-    enable_intra = False
-    if include_microstructure:
-        intra_env = os.environ.get("RANGEBAR_INCLUDE_INTRA_BAR_FEATURES", "true")
-        enable_intra = intra_env.lower() in ("true", "1", "yes")
-
-    # Create processor with symbol for checkpoint support
-    processor = RangeBarProcessor(
+    # Create processor with env var defaults for microstructure features
+    processor = _create_processor(
         threshold_decimal_bps,
+        include_microstructure,
         symbol=symbol,
         prevent_same_timestamp_close=prevent_same_timestamp_close,
-        inter_bar_lookback_count=effective_lookback,
-        include_intra_bar_features=enable_intra,
+        inter_bar_lookback_count=inter_bar_lookback_count,
     )
     bar_buffer: list[dict] = []
 
@@ -216,14 +391,9 @@ def _fetch_binance(
         # Issue #76: Enhance "No data available" errors with listing date detection
         error_msg = str(e)
         if "No data available" in error_msg:
-            earliest = detect_earliest_available_date(symbol, market)
-            if earliest and earliest > start_date:
-                msg = (
-                    f"{error_msg}. "
-                    f"Symbol listing date detected: {earliest}. "
-                    f"Try using start_date='{earliest}'"
-                )
-                raise RuntimeError(msg) from e
+            enhanced = _no_data_error_message(symbol, start_date, end_date, market)
+            if enhanced != error_msg:
+                raise RuntimeError(enhanced) from e
         raise
 
 
@@ -350,34 +520,7 @@ def _process_binance_trades(
     import polars as pl
 
     # MEM-003: Apply column selection BEFORE collecting LazyFrame
-    # This enables predicate pushdown and avoids materializing unused columns
-    # Memory impact: 10-100x reduction depending on filter selectivity
-
-    # Determine volume column name (works for both DataFrame and LazyFrame)
-    if isinstance(trades, pl.LazyFrame):
-        available_cols = trades.collect_schema().names()
-    else:
-        available_cols = trades.columns
-
-    volume_col = "quantity" if "quantity" in available_cols else "volume"
-
-    # Build column list - include is_buyer_maker for microstructure features (Issue #30)
-    columns = [
-        pl.col("timestamp"),
-        pl.col("price"),
-        pl.col(volume_col).alias("quantity"),
-    ]
-    if "is_buyer_maker" in available_cols:
-        columns.append(pl.col("is_buyer_maker"))
-
-    # Issue #75: Include trade ID columns for data integrity tracking (Issue #72)
-    # These are required for first_agg_trade_id and last_agg_trade_id in output bars
-    for trade_id_col in ("agg_trade_id", "first_trade_id", "last_trade_id"):
-        if trade_id_col in available_cols:
-            columns.append(pl.col(trade_id_col))
-
-    # Apply selection (predicates pushed down for LazyFrame)
-    trades_selected = trades.select(columns)
+    trades_selected = _select_trade_columns(trades)
 
     # Collect AFTER selection (for LazyFrame)
     if isinstance(trades_selected, pl.LazyFrame):
@@ -385,30 +528,16 @@ def _process_binance_trades(
     else:
         trades_minimal = trades_selected
 
-    # Use provided processor or create new one
-    if processor is None:
-        # Issue #68: Auto-enable v12 features when include_microstructure=True
-        # This ensures all code paths apply defaults, not just range_bars.py
-        import os
-
-        effective_lookback = inter_bar_lookback_count
-        if include_microstructure and effective_lookback is None:
-            effective_lookback = int(
-                os.environ.get("RANGEBAR_INTER_BAR_LOOKBACK_COUNT", "200")
-            )
-
-        enable_intra = include_intra_bar_features
-        if include_microstructure and not enable_intra:
-            intra_env = os.environ.get("RANGEBAR_INCLUDE_INTRA_BAR_FEATURES", "true")
-            enable_intra = intra_env.lower() in ("true", "1", "yes")
-
-        processor = RangeBarProcessor(
-            threshold_decimal_bps,
-            symbol=symbol,
-            prevent_same_timestamp_close=prevent_same_timestamp_close,
-            inter_bar_lookback_count=effective_lookback,
-            include_intra_bar_features=enable_intra,
-        )
+    # Use provided processor or create new one (with env var defaults)
+    processor = _create_processor(
+        threshold_decimal_bps,
+        include_microstructure,
+        symbol=symbol or "",
+        prevent_same_timestamp_close=prevent_same_timestamp_close,
+        inter_bar_lookback_count=inter_bar_lookback_count,
+        include_intra_bar_features=include_intra_bar_features,
+        processor=processor,
+    )
 
     # MEM-012: Stream bars in batches instead of accumulating all in memory
     # This prevents OOM on large date ranges (2.5+ years) with microstructure
@@ -430,10 +559,7 @@ def _process_binance_trades(
             bar_batches.append(batch_df)
 
     if not bar_batches:
-        empty_df = pd.DataFrame(
-            columns=["Open", "High", "Low", "Close", "Volume"]
-        ).set_index(pd.DatetimeIndex([]))
-        return empty_df, processor
+        return _empty_ohlcv_dataframe(), processor
 
     # MEM-006: Single Polars concat (efficient, no 2x memory spike like pandas)
     result_pl = pl.concat(bar_batches)
@@ -532,29 +658,8 @@ def _process_exness_ticks(
 
 
 # Issue #76: Auto-detect earliest available date for Binance symbols
-# Known listing dates for common symbols (avoid network probe when possible)
-# Source: https://www.binance.com/en/support/announcement (historical)
-KNOWN_LISTING_DATES: dict[str, str] = {
-    # Spot (data.binance.vision/data/spot/daily/aggTrades/)
-    "BTCUSDT": "2017-08-17",
-    "ETHUSDT": "2017-08-17",
-    "BNBUSDT": "2017-11-06",
-    "XRPUSDT": "2018-05-04",
-    "ADAUSDT": "2018-04-17",
-    "DOGEUSDT": "2019-07-05",
-    "SOLUSDT": "2020-08-11",
-    "DOTUSDT": "2020-08-18",
-    "MATICUSDT": "2019-04-26",
-    "SHIBUSDT": "2021-05-10",
-    "AVAXUSDT": "2020-09-22",
-    "LTCUSDT": "2017-12-13",
-    "LINKUSDT": "2019-01-16",
-    "ATOMUSDT": "2019-04-22",
-    "UNIUSDT": "2020-09-17",
-    "ETCUSDT": "2018-06-12",
-    "XLMUSDT": "2018-05-09",
-    "NEARUSDT": "2020-10-14",
-}
+# REMOVED (Issue #79): KNOWN_LISTING_DATES dict migrated to symbols.toml
+# SSoT is now python/rangebar/data/symbols.toml (Unified Symbol Registry)
 
 
 def detect_earliest_available_date(
@@ -593,9 +698,12 @@ def detect_earliest_available_date(
 
     http_ok = 200
 
-    # Check known listing dates first (no network needed)
-    if symbol in KNOWN_LISTING_DATES:
-        return KNOWN_LISTING_DATES[symbol]
+    # Check symbol registry first (no network needed) -- Issue #79
+    from rangebar.symbol_registry import get_effective_start_date
+
+    effective = get_effective_start_date(symbol)
+    if effective is not None:
+        return effective
 
     # Map market to Vision API path
     market_path = {

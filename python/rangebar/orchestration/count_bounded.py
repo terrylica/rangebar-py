@@ -24,9 +24,12 @@ from rangebar.validation.continuity import (
 )
 
 from .helpers import (
+    _datetime_to_end_ms,
+    _empty_ohlcv_dataframe,
     _fetch_exness,
     _process_binance_trades,
     _process_exness_ticks,
+    _validate_and_normalize_source_market,
 )
 from .tick_fetcher import estimate_ticks_per_bar, fetch_ticks_with_backoff
 
@@ -235,40 +238,25 @@ def get_n_range_bars(
         msg = f"n_bars must be > 0, got {n_bars}"
         raise ValueError(msg)
 
+    # Symbol registry gate (Issue #79)
+    from rangebar.symbol_registry import validate_symbol_registered
+
+    validate_symbol_registered(symbol, operation="get_n_range_bars")
+
     # Resolve threshold with asset-class validation (Issue #62)
     from rangebar.threshold import resolve_and_validate_threshold
 
     threshold = resolve_and_validate_threshold(symbol, threshold_decimal_bps)
 
     # Normalize source and market
-    source = source.lower()
-    if source not in ("binance", "exness"):
-        msg = f"Unknown source: {source!r}. Must be 'binance' or 'exness'"
-        raise ValueError(msg)
-
-    market_map = {
-        "spot": "spot",
-        "futures-um": "um",
-        "futures-cm": "cm",
-        "um": "um",
-        "cm": "cm",
-    }
-    market = market.lower()
-    if source == "binance" and market not in market_map:
-        msg = (
-            f"Unknown market: {market!r}. "
-            "Must be 'spot', 'futures-um'/'um', or 'futures-cm'/'cm'"
-        )
-        raise ValueError(msg)
-    market_normalized = market_map.get(market, market)
+    source, market_normalized = _validate_and_normalize_source_market(source, market)
 
     # Parse end_date if provided
     end_ts: int | None = None
     if end_date is not None:
         try:
             end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-            # End of day in milliseconds
-            end_ts = int((end_dt.timestamp() + 86399) * 1000)
+            end_ts = _datetime_to_end_ms(end_dt)
         except ValueError as e:
             msg = f"Invalid date format. Use YYYY-MM-DD: {e}"
             raise ValueError(msg) from e
@@ -352,9 +340,7 @@ def get_n_range_bars(
                         UserWarning,
                         stacklevel=2,
                     )
-                return pd.DataFrame(
-                    columns=["Open", "High", "Low", "Close", "Volume"]
-                ).set_index(pd.DatetimeIndex([]))
+                return _empty_ohlcv_dataframe()
 
         except Exception as e:
             # ClickHouse not available - fall through to compute-only mode
@@ -374,9 +360,7 @@ def get_n_range_bars(
                 UserWarning,
                 stacklevel=2,
             )
-        return pd.DataFrame(
-            columns=["Open", "High", "Low", "Close", "Volume"]
-        ).set_index(pd.DatetimeIndex([]))
+        return _empty_ohlcv_dataframe()
 
     # Fetch and compute without caching
     bars_df = _fetch_and_compute_bars(
@@ -411,9 +395,7 @@ def get_n_range_bars(
             UserWarning,
             stacklevel=2,
         )
-    return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"]).set_index(
-        pd.DatetimeIndex([])
-    )
+    return _empty_ohlcv_dataframe()
 
 
 def _fill_gap_and_cache(
@@ -553,7 +535,7 @@ def _fill_gap_and_cache(
     )
 
 
-def _fill_gap_exness(
+def _exness_fetch_process_loop(
     symbol: str,
     threshold: int,
     n_bars: int,
@@ -561,35 +543,41 @@ def _fill_gap_exness(
     oldest_ts: int | None,
     include_microstructure: bool,
     max_lookback_days: int,
-    cache: RangeBarCache,
     storage: TickStorage,
-    current_bars: pd.DataFrame | None,
     estimated_ticks_per_bar: int,
+    *,
+    initial_bars: list[pd.DataFrame] | None = None,
+    cache_callback: object | None = None,
 ) -> pd.DataFrame | None:
-    """Fill gap for Exness forex data with session-bounded processing.
+    """Shared Exness fetch-process loop for forex data.
 
     Forex markets have natural weekend gaps, so session-bounded processing
     is acceptable (unlike 24/7 crypto markets).
+
+    Parameters
+    ----------
+    initial_bars : list[pd.DataFrame] | None
+        Pre-existing bars to include in the result.
+    cache_callback : callable | None
+        If provided, called as cache_callback(symbol, threshold, new_bars) after
+        each batch. Used by _fill_gap_exness to store bars in ClickHouse.
     """
     from datetime import datetime, timedelta
 
     multiplier = 2.0
     max_attempts = 5
-    bars_needed = n_bars - (len(current_bars) if current_bars is not None else 0)
 
-    all_bars: list[pd.DataFrame] = []
-    if current_bars is not None and len(current_bars) > 0:
-        all_bars.append(current_bars)
+    all_bars: list[pd.DataFrame] = list(initial_bars) if initial_bars else []
+    bars_collected = sum(len(df) for df in all_bars)
 
     cache_symbol = f"exness_spot_{symbol}".upper()
 
     for _attempt in range(max_attempts):
-        # Estimate days to fetch
-        ticks_to_fetch = int(bars_needed * estimated_ticks_per_bar * multiplier)
+        bars_still_needed = n_bars - bars_collected
+        ticks_to_fetch = int(bars_still_needed * estimated_ticks_per_bar * multiplier)
         days_to_fetch = max(1, ticks_to_fetch // 1_000_000)
         days_to_fetch = min(days_to_fetch, max_lookback_days)
 
-        # Calculate fetch range
         if oldest_ts is not None:
             fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=UTC)
         else:
@@ -615,18 +603,18 @@ def _fill_gap_exness(
         if tick_data.is_empty():
             break
 
-        # Process to bars (forex: session-bounded is OK)
         new_bars = _process_exness_ticks(
             tick_data, symbol, threshold, "strict", False, include_microstructure
         )
 
         if not new_bars.empty:
-            cache.store_bars_bulk(symbol, threshold, new_bars)
+            if cache_callback is not None:
+                cache_callback(symbol, threshold, new_bars)
             all_bars.insert(0, new_bars)
+            bars_collected += len(new_bars)
             oldest_ts = int(new_bars.index.min().timestamp() * 1000)
 
-            total_bars = sum(len(df) for df in all_bars)
-            if total_bars >= n_bars:
+            if bars_collected >= n_bars:
                 break
 
         multiplier *= 2
@@ -637,6 +625,39 @@ def _fill_gap_exness(
     # MEM-006: Use Polars for memory-efficient concatenation
     combined = _concat_pandas_via_polars(all_bars)
     return combined[~combined.index.duplicated(keep="last")]
+
+
+def _fill_gap_exness(
+    symbol: str,
+    threshold: int,
+    n_bars: int,
+    end_dt: datetime,
+    oldest_ts: int | None,
+    include_microstructure: bool,
+    max_lookback_days: int,
+    cache: RangeBarCache,
+    storage: TickStorage,
+    current_bars: pd.DataFrame | None,
+    estimated_ticks_per_bar: int,
+) -> pd.DataFrame | None:
+    """Fill gap for Exness forex data with session-bounded processing."""
+    initial_bars: list[pd.DataFrame] = []
+    if current_bars is not None and len(current_bars) > 0:
+        initial_bars.append(current_bars)
+
+    return _exness_fetch_process_loop(
+        symbol=symbol,
+        threshold=threshold,
+        n_bars=n_bars,
+        end_dt=end_dt,
+        oldest_ts=oldest_ts,
+        include_microstructure=include_microstructure,
+        max_lookback_days=max_lookback_days,
+        storage=storage,
+        estimated_ticks_per_bar=estimated_ticks_per_bar,
+        initial_bars=initial_bars,
+        cache_callback=cache.store_bars_bulk,
+    )
 
 
 def _fetch_and_compute_bars(
@@ -719,69 +740,15 @@ def _compute_exness_bars(
     storage: TickStorage,
     estimated_ticks_per_bar: int,
 ) -> pd.DataFrame | None:
-    """Compute Exness forex bars without caching (compute-only mode).
-
-    Forex markets have natural weekend gaps, so session-bounded processing
-    is acceptable.
-    """
-    from datetime import datetime, timedelta
-
-    multiplier = 2.0
-    max_attempts = 5
-    oldest_ts: int | None = None
-    cache_symbol = f"exness_spot_{symbol}".upper()
-
-    all_bars: list[pd.DataFrame] = []
-
-    for _attempt in range(max_attempts):
-        bars_still_needed = n_bars - sum(len(df) for df in all_bars)
-        ticks_to_fetch = int(bars_still_needed * estimated_ticks_per_bar * multiplier)
-        days_to_fetch = max(1, ticks_to_fetch // 1_000_000)
-        days_to_fetch = min(days_to_fetch, max_lookback_days)
-
-        if oldest_ts is not None:
-            fetch_end_dt = datetime.fromtimestamp(oldest_ts / 1000, tz=UTC)
-        else:
-            fetch_end_dt = end_dt
-
-        fetch_start_dt = fetch_end_dt - timedelta(days=days_to_fetch)
-
-        if (end_dt - fetch_start_dt).days > max_lookback_days:
-            break
-
-        start_date = fetch_start_dt.strftime("%Y-%m-%d")
-        end_date_str = fetch_end_dt.strftime("%Y-%m-%d")
-        start_ts_fetch = int(fetch_start_dt.timestamp() * 1000)
-        end_ts_fetch = int(fetch_end_dt.timestamp() * 1000)
-
-        if storage.has_ticks(cache_symbol, start_ts_fetch, end_ts_fetch):
-            tick_data = storage.read_ticks(cache_symbol, start_ts_fetch, end_ts_fetch)
-        else:
-            tick_data = _fetch_exness(symbol, start_date, end_date_str, "strict")
-            if not tick_data.is_empty():
-                storage.write_ticks(cache_symbol, tick_data)
-
-        if tick_data.is_empty():
-            break
-
-        new_bars = _process_exness_ticks(
-            tick_data, symbol, threshold, "strict", False, include_microstructure
-        )
-
-        if not new_bars.empty:
-            all_bars.insert(0, new_bars)
-            oldest_ts = int(new_bars.index.min().timestamp() * 1000)
-
-            total_bars = sum(len(df) for df in all_bars)
-            if total_bars >= n_bars:
-                break
-
-        multiplier *= 2
-
-    if not all_bars:
-        return None
-
-    # MEM-006: Use Polars for memory-efficient concatenation
-    combined = _concat_pandas_via_polars(all_bars)
-    # Remove duplicates (by index) and return
-    return combined[~combined.index.duplicated(keep="last")]
+    """Compute Exness forex bars without caching (compute-only mode)."""
+    return _exness_fetch_process_loop(
+        symbol=symbol,
+        threshold=threshold,
+        n_bars=n_bars,
+        end_dt=end_dt,
+        oldest_ts=None,
+        include_microstructure=include_microstructure,
+        max_lookback_days=max_lookback_days,
+        storage=storage,
+        estimated_ticks_per_bar=estimated_ticks_per_bar,
+    )
