@@ -32,6 +32,28 @@
 | ---------------------------------------------------------------------------------------------------- | -------------------- |
 | [external/time-to-convergence-stationarity-gap.md](external/time-to-convergence-stationarity-gap.md) | MRH framework theory |
 
+### External: rangebar-patterns Research (transferred 2026-02-07)
+
+Source: [terrylica/rangebar-patterns](https://github.com/terrylica/rangebar-patterns) — barrier framework + brute-force pattern discovery
+
+| Document                                                                                                                                       | Purpose                                                                                     | Source               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------- |
+| [external/rangebar-patterns/2026-02-05-microstructure-deep-research.md](external/rangebar-patterns/2026-02-05-microstructure-deep-research.md) | **Gemini 3 Pro**: VPIN, Kyle lambda, burstiness, entropy, HMM regime detection              | Gemini Deep Research |
+| [external/rangebar-patterns/2026-02-05-microstructure-analysis.md](external/rangebar-patterns/2026-02-05-microstructure-analysis.md)           | Implementation priorities: OFI, exhaustion detection, IC-weighted features                  | Claude Artifact      |
+| [external/rangebar-patterns/2026-02-02-ood-deep-research.md](external/rangebar-patterns/2026-02-02-ood-deep-research.md)                       | **Gemini 3 Pro**: OOD robustness, Deep Gamblers, conformal prediction, selective abstention | Gemini Deep Research |
+| [external/rangebar-patterns/2026-02-02-artifact-synthesis.md](external/rangebar-patterns/2026-02-02-artifact-synthesis.md)                     | NN feature engineering from brute-force results (exp082 design basis)                       | Claude Artifact      |
+| [external/rangebar-patterns/2026-02-02-brute-force-synthesis.md](external/rangebar-patterns/2026-02-02-brute-force-synthesis.md)               | Pattern analysis across Gen01-Gen110, champion discovery                                    | Claude Artifact      |
+| [external/rangebar-patterns/2026-02-05-production-readiness-audit.md](external/rangebar-patterns/2026-02-05-production-readiness-audit.md)     | CONDITIONAL GO verdict, lagInFrame fix, DSR=1.000, cross-asset validation                   | Audit                |
+| [external/rangebar-patterns/2026-02-01-parameter-free-methods.md](external/rangebar-patterns/2026-02-01-parameter-free-methods.md)             | E-values, ADWIN, TDA for parameter-free evaluation                                          | Research             |
+
+### External: trading-fitness Research (transferred 2026-02-07)
+
+Source: [terrylica/cc-skills](https://github.com/terrylica/cc-skills) trading-fitness plugin
+
+| Document                                                                                                                                                         | Purpose                                                                               | Source               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------- |
+| [external/trading-fitness/2026-02-02-feature-selection-ood-robustness-gemini.md](external/trading-fitness/2026-02-02-feature-selection-ood-robustness-gemini.md) | **Gemini 3 Pro**: TSKI, PCMCI+, HSIC Lasso for high-autocorrelation feature selection | Gemini Deep Research |
+
 ---
 
 ## Reading Order
