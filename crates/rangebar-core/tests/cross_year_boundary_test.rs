@@ -69,7 +69,6 @@ fn cross_year_data_path(filename: &str) -> PathBuf {
 }
 
 #[test]
-#[ignore] // Requires cross-year data files - run with: cargo test --ignored
 fn test_cross_year_2023_2024_boundary() {
     println!("\n=== Cross-Year Boundary Test: 2023→2024 ===\n");
 
@@ -194,7 +193,6 @@ fn test_cross_year_2023_2024_boundary() {
 }
 
 #[test]
-#[ignore]
 fn test_cross_year_2024_2025_boundary() {
     println!("\n=== Cross-Year Boundary Test: 2024→2025 ===\n");
 
@@ -271,7 +269,6 @@ fn test_cross_year_2024_2025_boundary() {
 }
 
 #[test]
-#[ignore]
 fn test_multi_day_sequential_processing() {
     println!("\n=== Multi-Day Sequential Processing Test ===\n");
 

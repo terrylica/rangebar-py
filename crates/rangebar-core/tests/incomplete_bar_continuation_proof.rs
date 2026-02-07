@@ -61,7 +61,6 @@ fn cross_year_data_path(filename: &str) -> PathBuf {
 }
 
 #[test]
-#[ignore]
 fn test_incomplete_bar_continues_across_year_boundary() {
     println!("\n");
     println!("╔══════════════════════════════════════════════════════════════════╗");
@@ -268,7 +267,6 @@ fn test_incomplete_bar_continues_across_year_boundary() {
 }
 
 #[test]
-#[ignore]
 fn test_bar_content_identical_across_boundary() {
     println!("\n=== Bar Content Identity Test ===\n");
 

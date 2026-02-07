@@ -60,7 +60,6 @@ fn load_full_day_btcusdt() -> Result<Vec<AggTrade>, Box<dyn std::error::Error>> 
 }
 
 #[test]
-#[ignore] // Requires large data file - run with: cargo test --ignored
 fn test_cross_date_continuation_large_scale() {
     let trades = match load_full_day_btcusdt() {
         Ok(t) => t,
@@ -157,7 +156,6 @@ fn test_cross_date_continuation_large_scale() {
 }
 
 #[test]
-#[ignore] // Requires large data file
 fn test_agg_trade_id_continuity() {
     let trades = match load_full_day_btcusdt() {
         Ok(t) => t,
