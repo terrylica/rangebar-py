@@ -9,10 +9,27 @@ from __future__ import annotations
 import pytest
 
 
+def _is_clickhouse_available() -> bool:
+    """Check if ClickHouse server is running and accessible."""
+    try:
+        from rangebar.clickhouse import RangeBarCache
+
+        with RangeBarCache() as cache:
+            cache.count_bars("BTCUSDT", 250)
+    except (ImportError, OSError, ConnectionError, RuntimeError):
+        return False
+    else:
+        return True
+
+
 class TestDuplicateDetection:
     """Test duplicate detection methods."""
 
-    @pytest.mark.skip(reason="Requires ClickHouse connection")
+    @pytest.fixture(autouse=True)
+    def _require_clickhouse(self) -> None:
+        if not _is_clickhouse_available():
+            pytest.skip("ClickHouse not available")
+
     def test_count_duplicates_returns_list(self) -> None:
         """count_duplicates returns a list (possibly empty)."""
         from rangebar import RangeBarCache
@@ -21,7 +38,6 @@ class TestDuplicateDetection:
             result = cache.count_duplicates("BTCUSDT", 1000)
             assert isinstance(result, list)
 
-    @pytest.mark.skip(reason="Requires ClickHouse connection")
     def test_count_duplicates_all_symbols(self) -> None:
         """count_duplicates works without symbol filter."""
         from rangebar import RangeBarCache
@@ -30,7 +46,6 @@ class TestDuplicateDetection:
             result = cache.count_duplicates()
             assert isinstance(result, list)
 
-    @pytest.mark.skip(reason="Requires ClickHouse connection")
     def test_deduplicate_bars_runs_without_error(self) -> None:
         """deduplicate_bars completes without error."""
         from rangebar import RangeBarCache

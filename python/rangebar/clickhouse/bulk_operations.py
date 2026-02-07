@@ -154,14 +154,12 @@ class BulkStoreMixin:
             if col in df.columns:
                 columns.append(col)
 
-        # Add inter-bar feature columns if present (Issue #78: was missing)
-        for col in INTER_BAR_FEATURE_COLUMNS:
+        # Add inter-bar and intra-bar feature columns if present (Issue #78)
+        # These are Nullable in ClickHouse; clickhouse-connect's insert_df
+        # requires NaN (not Python None) for Nullable numeric columns.
+        for col in (*INTER_BAR_FEATURE_COLUMNS, *INTRA_BAR_FEATURE_COLUMNS):
             if col in df.columns:
-                columns.append(col)
-
-        # Add intra-bar feature columns if present (Issue #78)
-        for col in INTRA_BAR_FEATURE_COLUMNS:
-            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
                 columns.append(col)
 
         # Filter to existing columns

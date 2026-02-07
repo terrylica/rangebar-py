@@ -247,6 +247,18 @@ listing_date = 2023-07-24
 keywords = ["worldcoin", "wld"]
 
 # =============================================================================
+# Crypto Symbols (Binance Futures COIN-M)
+# =============================================================================
+
+[symbols.BTCUSD_PERP]
+enabled = true
+asset_class = "crypto"
+exchange = "binance"
+market = "futures-cm"
+listing_date = 2019-09-25
+keywords = ["bitcoin", "btc", "coin-margined", "perpetual", "futures"]
+
+# =============================================================================
 # Symbol Transitions (historical record)
 # =============================================================================
 # Gap handling NOT YET IMPLEMENTED -- documents transitions for future work.

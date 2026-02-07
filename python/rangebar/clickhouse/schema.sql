@@ -98,6 +98,37 @@
 -- Note: New installations do not need this migration.
 
 -- ============================================================================
+-- Migration for v12.8.x (Issue #78: Intra-bar features)
+-- ============================================================================
+-- Run this ONCE if upgrading from rangebar-py v12.7.x with existing cache:
+--
+-- ALTER TABLE rangebar_cache.range_bars
+--     ADD COLUMN IF NOT EXISTS intra_bull_epoch_density Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_bear_epoch_density Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_bull_excess_gain Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_bear_excess_gain Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_bull_cv Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_bear_cv Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_max_drawdown Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_max_runup Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_trade_count Nullable(UInt32) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_ofi Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_duration_us Nullable(Int64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_intensity Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_vwap_position Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_count_imbalance Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_kyle_lambda Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_burstiness Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_volume_skew Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_volume_kurt Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_kaufman_er Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_garman_klass_vol Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_hurst Nullable(Float64) DEFAULT NULL,
+--     ADD COLUMN IF NOT EXISTS intra_permutation_entropy Nullable(Float64) DEFAULT NULL;
+--
+-- Note: New installations do not need this migration.
+
+-- ============================================================================
 -- Computed Range Bars Cache (Tier 2)
 -- ============================================================================
 -- Stores computed range bars with all parameters as cache key
@@ -164,6 +195,33 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
     lookback_garman_klass_vol Nullable(Float64) DEFAULT NULL,
     lookback_hurst Nullable(Float64) DEFAULT NULL,
     lookback_permutation_entropy Nullable(Float64) DEFAULT NULL,
+
+    -- Intra-bar features (Issue #78: computed within bar from trade-level data)
+    -- ITH features (8 features)
+    intra_bull_epoch_density Nullable(Float64) DEFAULT NULL,
+    intra_bear_epoch_density Nullable(Float64) DEFAULT NULL,
+    intra_bull_excess_gain Nullable(Float64) DEFAULT NULL,
+    intra_bear_excess_gain Nullable(Float64) DEFAULT NULL,
+    intra_bull_cv Nullable(Float64) DEFAULT NULL,
+    intra_bear_cv Nullable(Float64) DEFAULT NULL,
+    intra_max_drawdown Nullable(Float64) DEFAULT NULL,
+    intra_max_runup Nullable(Float64) DEFAULT NULL,
+    -- Statistical features (12 features)
+    intra_trade_count Nullable(UInt32) DEFAULT NULL,
+    intra_ofi Nullable(Float64) DEFAULT NULL,
+    intra_duration_us Nullable(Int64) DEFAULT NULL,
+    intra_intensity Nullable(Float64) DEFAULT NULL,
+    intra_vwap_position Nullable(Float64) DEFAULT NULL,
+    intra_count_imbalance Nullable(Float64) DEFAULT NULL,
+    intra_kyle_lambda Nullable(Float64) DEFAULT NULL,
+    intra_burstiness Nullable(Float64) DEFAULT NULL,
+    intra_volume_skew Nullable(Float64) DEFAULT NULL,
+    intra_volume_kurt Nullable(Float64) DEFAULT NULL,
+    intra_kaufman_er Nullable(Float64) DEFAULT NULL,
+    intra_garman_klass_vol Nullable(Float64) DEFAULT NULL,
+    -- Complexity features (2 features)
+    intra_hurst Nullable(Float64) DEFAULT NULL,
+    intra_permutation_entropy Nullable(Float64) DEFAULT NULL,
 
     -- Trade ID range (Issue #72: data integrity verification)
     first_agg_trade_id Int64 DEFAULT 0,

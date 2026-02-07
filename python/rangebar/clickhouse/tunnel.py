@@ -6,6 +6,7 @@ on remote GPU workstations when direct network access is not available.
 
 from __future__ import annotations
 
+import contextlib
 import socket
 import subprocess
 import time
@@ -202,6 +203,14 @@ class SSHTunnel:
                 except (subprocess.TimeoutExpired, OSError):
                     pass
             finally:
+                for stream in (
+                    self._process.stdin,
+                    self._process.stdout,
+                    self._process.stderr,
+                ):
+                    if stream is not None:
+                        with contextlib.suppress(OSError):
+                            stream.close()
                 self._process = None
 
     def __enter__(self) -> int:

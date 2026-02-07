@@ -231,8 +231,10 @@ class TestRangeBarsIntegration:
 class TestCachedProcessingIntegration:
     """Integration tests for end-to-end cached processing."""
 
-    def test_process_trades_cached_first_run(self, cache: RangeBarCache) -> None:
+    def test_process_trades_cached_first_run(self, cache: RangeBarCache, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test cached processing on first run (cache miss)."""
+        # Gate off for synthetic test symbols (Issue #79)
+        monkeypatch.setenv("RANGEBAR_SYMBOL_GATE", "off")
         # Generate unique symbol for this test
         import time
 
@@ -257,8 +259,10 @@ class TestCachedProcessingIntegration:
         assert isinstance(df1.index, pd.DatetimeIndex)
         assert list(df1.columns) == ["Open", "High", "Low", "Close", "Volume"]
 
-    def test_process_trades_cached_second_run(self, cache: RangeBarCache) -> None:
+    def test_process_trades_cached_second_run(self, cache: RangeBarCache, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test cached processing on second run (cache hit)."""
+        # Gate off for synthetic test symbols (Issue #79)
+        monkeypatch.setenv("RANGEBAR_SYMBOL_GATE", "off")
         import time
 
         from rangebar import process_trades_to_dataframe_cached

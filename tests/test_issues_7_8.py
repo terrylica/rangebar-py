@@ -28,7 +28,7 @@ def _is_clickhouse_available() -> bool:
 
         with RangeBarCache() as cache:
             cache.count_bars("BTCUSDT", 250)
-    except Exception:
+    except (ImportError, OSError, ConnectionError, RuntimeError):
         return False
     else:
         return True
@@ -103,14 +103,19 @@ class TestIssue8PrecomputeFunction:
 
     def test_precompute_returns_result_dataclass(self):
         """precompute_range_bars() should return PrecomputeResult."""
-        # This test may be slow - use minimal date range
-        pytest.skip("Requires ClickHouse and network access - run manually")
-        result = precompute_range_bars(
-            "BTCUSDT",
-            "2024-01-01",
-            "2024-01-07",
-            threshold_decimal_bps=250,
-        )
+        if not _is_clickhouse_available():
+            pytest.skip("ClickHouse not available")
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            result = precompute_range_bars(
+                "BTCUSDT",
+                "2024-01-01",
+                "2024-01-07",
+                threshold_decimal_bps=250,
+                validate_on_complete="warn",
+            )
         assert isinstance(result, PrecomputeResult)
         assert result.symbol == "BTCUSDT"
         assert result.threshold_decimal_bps == 250
@@ -136,18 +141,24 @@ class TestIssue8PrecomputeFunction:
 
     def test_precompute_progress_callback(self):
         """Progress callback should receive PrecomputeProgress updates."""
-        pytest.skip("Requires ClickHouse and network access - run manually")
+        if not _is_clickhouse_available():
+            pytest.skip("ClickHouse not available")
+        import warnings
+
         progress_updates = []
 
         def on_progress(p: PrecomputeProgress) -> None:
             progress_updates.append(p)
 
-        precompute_range_bars(
-            "BTCUSDT",
-            "2024-01-01",
-            "2024-01-31",
-            progress_callback=on_progress,
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            precompute_range_bars(
+                "BTCUSDT",
+                "2024-01-01",
+                "2024-01-31",
+                progress_callback=on_progress,
+                validate_on_complete="warn",
+            )
 
         assert len(progress_updates) > 0
         assert all(isinstance(p, PrecomputeProgress) for p in progress_updates)
@@ -303,8 +314,8 @@ class TestValidateOnReturn:
             except TypeError as e:
                 if "continuity_action" in str(e):
                     pytest.fail(f"continuity_action='{action}' not accepted")
-            except Exception:
-                pass  # Other errors are fine
+            except (ValueError, RuntimeError, ConnectionError, OSError):
+                pass  # Non-TypeError errors are expected (no data, no cache, etc.)
 
 
 # ============================================================================

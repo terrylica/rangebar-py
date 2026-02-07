@@ -389,15 +389,17 @@ class TestGetAvailableClickhouseHost:
 
     @patch("rangebar.clickhouse.preflight._is_port_open")
     @patch("rangebar.clickhouse.preflight._is_direct_available")
+    @patch("rangebar.clickhouse.preflight._verify_clickhouse")
     @patch.dict(
         "os.environ",
         {"RANGEBAR_CH_HOSTS": "gpu1,gpu2", "RANGEBAR_CH_PRIMARY": "gpu2"},
     )
     def test_primary_host_preferred(
-        self, mock_direct: MagicMock, mock_port: MagicMock
+        self, mock_verify: MagicMock, mock_direct: MagicMock, mock_port: MagicMock
     ) -> None:
         """Test that primary host is tried first."""
         mock_port.return_value = False
+        mock_verify.return_value = False  # Prevent localhost from short-circuiting
         # Track which hosts are checked
         checked_hosts: list[str] = []
 
