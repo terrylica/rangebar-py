@@ -45,6 +45,10 @@ class RangeBarProcessor:
         computation (Issue #59). If set, enables 16 inter-bar features
         computed from trades BEFORE each bar opens. Recommended: 100-500.
         If None (default), inter-bar features are disabled.
+    inter_bar_lookback_bars : int, optional
+        Bar-relative lookback (Issue #81). Number of completed bars whose
+        trades to use as the lookback window. Self-adapts to bar size.
+        Takes precedence over inter_bar_lookback_count.
 
     Raises
     ------
@@ -101,6 +105,7 @@ class RangeBarProcessor:
         prevent_same_timestamp_close: bool = True,
         inter_bar_lookback_count: int | None = None,
         include_intra_bar_features: bool = False,
+        inter_bar_lookback_bars: int | None = None,
     ) -> None:
         """Initialize processor with given threshold.
 
@@ -118,6 +123,9 @@ class RangeBarProcessor:
         include_intra_bar_features : bool, default=False
             Enable intra-bar features (Issue #59). When True, computes 22 intra_*
             features from trades WITHIN each bar, including ITH metrics.
+        inter_bar_lookback_bars : int, optional
+            Bar-relative lookback (Issue #81). Number of completed bars to use
+            as lookback window. Takes precedence over inter_bar_lookback_count.
 
         Raises
         ------
@@ -140,12 +148,14 @@ class RangeBarProcessor:
             prevent_same_timestamp_close,
             inter_bar_lookback_count,
             include_intra_bar_features,
+            inter_bar_lookback_bars,
         )
         self.threshold_decimal_bps = threshold_decimal_bps
         self.symbol = symbol
         self.prevent_same_timestamp_close = prevent_same_timestamp_close
         self.inter_bar_lookback_count = inter_bar_lookback_count
         self.include_intra_bar_features = include_intra_bar_features
+        self.inter_bar_lookback_bars = inter_bar_lookback_bars
 
     @classmethod
     def from_checkpoint(cls, checkpoint: dict) -> RangeBarProcessor:

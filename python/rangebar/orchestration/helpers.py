@@ -92,23 +92,35 @@ def _datetime_to_end_ms(dt: datetime) -> int:
 def _parse_microstructure_env_vars(
     include_microstructure: bool,
     inter_bar_lookback_count: int | None,
-) -> tuple[int | None, bool]:
-    """Parse RANGEBAR_INTER_BAR_LOOKBACK_COUNT and RANGEBAR_INCLUDE_INTRA_BAR_FEATURES.
+    inter_bar_lookback_bars: int | None = None,
+) -> tuple[int | None, int | None, bool]:
+    """Parse lookback env vars and RANGEBAR_INCLUDE_INTRA_BAR_FEATURES.
 
-    Returns (effective_lookback, enable_intra_bar_features).
+    Returns (effective_lookback_count, effective_lookback_bars, enable_intra_bar_features).
+
+    Priority: inter_bar_lookback_bars > inter_bar_lookback_count > env vars.
+    Env var RANGEBAR_INTER_BAR_LOOKBACK_BARS takes precedence over
+    RANGEBAR_INTER_BAR_LOOKBACK_COUNT.
     """
-    effective_lookback = inter_bar_lookback_count
-    if include_microstructure and effective_lookback is None:
-        effective_lookback = int(
-            os.environ.get("RANGEBAR_INTER_BAR_LOOKBACK_COUNT", "200")
-        )
+    effective_count = inter_bar_lookback_count
+    effective_bars = inter_bar_lookback_bars
+
+    if include_microstructure and effective_count is None and effective_bars is None:
+        # Check env vars: RANGEBAR_INTER_BAR_LOOKBACK_BARS takes precedence
+        bars_env = os.environ.get("RANGEBAR_INTER_BAR_LOOKBACK_BARS")
+        if bars_env is not None:
+            effective_bars = int(bars_env)
+        else:
+            effective_count = int(
+                os.environ.get("RANGEBAR_INTER_BAR_LOOKBACK_COUNT", "200")
+            )
 
     enable_intra = False
     if include_microstructure:
         intra_env = os.environ.get("RANGEBAR_INCLUDE_INTRA_BAR_FEATURES", "true")
         enable_intra = intra_env.lower() in ("true", "1", "yes")
 
-    return effective_lookback, enable_intra
+    return effective_count, effective_bars, enable_intra
 
 
 def _create_processor(
@@ -118,6 +130,7 @@ def _create_processor(
     symbol: str = "",
     prevent_same_timestamp_close: bool = True,
     inter_bar_lookback_count: int | None = None,
+    inter_bar_lookback_bars: int | None = None,
     include_intra_bar_features: bool = False,
     processor: RangeBarProcessor | None = None,
 ) -> RangeBarProcessor:
@@ -129,8 +142,8 @@ def _create_processor(
     if processor is not None:
         return processor
 
-    effective_lookback, enable_intra = _parse_microstructure_env_vars(
-        include_microstructure, inter_bar_lookback_count,
+    effective_count, effective_bars, enable_intra = _parse_microstructure_env_vars(
+        include_microstructure, inter_bar_lookback_count, inter_bar_lookback_bars,
     )
 
     # Honour explicit include_intra_bar_features=True even when env says false
@@ -140,8 +153,9 @@ def _create_processor(
         threshold_decimal_bps,
         symbol=symbol,
         prevent_same_timestamp_close=prevent_same_timestamp_close,
-        inter_bar_lookback_count=effective_lookback,
+        inter_bar_lookback_count=effective_count,
         include_intra_bar_features=enable_intra,
+        inter_bar_lookback_bars=effective_bars,
     )
 
 
@@ -486,6 +500,7 @@ def _process_binance_trades(
     prevent_same_timestamp_close: bool = True,
     inter_bar_lookback_count: int | None = None,
     include_intra_bar_features: bool = False,
+    inter_bar_lookback_bars: int | None = None,
 ) -> tuple[pd.DataFrame, RangeBarProcessor]:
     """Process Binance trades to range bars (internal).
 
@@ -536,6 +551,7 @@ def _process_binance_trades(
         prevent_same_timestamp_close=prevent_same_timestamp_close,
         inter_bar_lookback_count=inter_bar_lookback_count,
         include_intra_bar_features=include_intra_bar_features,
+        inter_bar_lookback_bars=inter_bar_lookback_bars,
         processor=processor,
     )
 

@@ -619,25 +619,36 @@ impl PyRangeBarProcessor {
     ///     `include_intra_bar_features`: If True, enables intra-bar features computed from
     ///         trades WITHIN each bar. Adds 22 features including ITH (Investment Time
     ///         Horizon), statistical, and complexity metrics. Default: False (Issue #59)
+    ///     `inter_bar_lookback_bars`: If set, enables inter-bar features with bar-relative
+    ///         lookback mode. The lookback window = all trades from the last N completed
+    ///         bars, self-adapting to bar size. Takes precedence over
+    ///         `inter_bar_lookback_count`. Recommended: 3. (Issue #81)
     ///
     /// Raises:
     ///     `ValueError`: If threshold is out of range [1, `100_000`]
     #[new]
-    #[pyo3(signature = (threshold_decimal_bps, symbol = None, prevent_same_timestamp_close = true, inter_bar_lookback_count = None, include_intra_bar_features = false))]
+    #[pyo3(signature = (threshold_decimal_bps, symbol = None, prevent_same_timestamp_close = true, inter_bar_lookback_count = None, include_intra_bar_features = false, inter_bar_lookback_bars = None))]
     fn new(
         threshold_decimal_bps: u32,
         symbol: Option<String>,
         prevent_same_timestamp_close: bool,
         inter_bar_lookback_count: Option<usize>,
         include_intra_bar_features: bool,
+        inter_bar_lookback_bars: Option<usize>,
     ) -> PyResult<Self> {
         // Issue #59: Build processor with optional inter-bar feature config
         let mut processor =
             RangeBarProcessor::with_options(threshold_decimal_bps, prevent_same_timestamp_close)
                 .map_err(|e| PyValueError::new_err(format!("Failed to create processor: {e}")))?;
 
-        // Issue #59: Enable inter-bar features if lookback count is specified
-        if let Some(count) = inter_bar_lookback_count {
+        // Issue #81: inter_bar_lookback_bars takes precedence over inter_bar_lookback_count
+        if let Some(n_bars) = inter_bar_lookback_bars {
+            let config = InterBarConfig {
+                lookback_mode: LookbackMode::BarRelative(n_bars),
+                ..Default::default()
+            };
+            processor = processor.with_inter_bar_config(config);
+        } else if let Some(count) = inter_bar_lookback_count {
             let config = InterBarConfig {
                 lookback_mode: LookbackMode::FixedCount(count),
                 ..Default::default()
@@ -2414,17 +2425,17 @@ mod tests {
 
     #[test]
     fn test_processor_creation() {
-        let processor = PyRangeBarProcessor::new(250, None, true, None);
+        let processor = PyRangeBarProcessor::new(250, None, true, None, false, None);
         assert!(processor.is_ok());
         assert_eq!(processor.unwrap().threshold_decimal_bps, 250);
     }
 
     #[test]
     fn test_invalid_threshold() {
-        let processor = PyRangeBarProcessor::new(0, None, true, None);
+        let processor = PyRangeBarProcessor::new(0, None, true, None, false, None);
         assert!(processor.is_err());
 
-        let processor = PyRangeBarProcessor::new(200_000, None, true, None);
+        let processor = PyRangeBarProcessor::new(200_000, None, true, None, false, None);
         assert!(processor.is_err());
     }
 
@@ -2456,18 +2467,18 @@ mod tests {
     #[test]
     fn test_processor_boundary_thresholds() {
         // Test minimum valid threshold (1 = 0.1 basis points)
-        let processor_min = PyRangeBarProcessor::new(1, None, true, None);
+        let processor_min = PyRangeBarProcessor::new(1, None, true, None, false, None);
         assert!(processor_min.is_ok());
         assert_eq!(processor_min.unwrap().threshold_decimal_bps, 1);
 
         // Test maximum valid threshold (100_000 = 10,000 basis points = 100%)
-        let processor_max = PyRangeBarProcessor::new(100_000, None, true, None);
+        let processor_max = PyRangeBarProcessor::new(100_000, None, true, None, false, None);
         assert!(processor_max.is_ok());
         assert_eq!(processor_max.unwrap().threshold_decimal_bps, 100_000);
 
         // Test common valid thresholds
         for threshold in [10, 100, 250, 500, 1000, 10_000] {
-            let processor = PyRangeBarProcessor::new(threshold, None, true, None);
+            let processor = PyRangeBarProcessor::new(threshold, None, true, None, false, None);
             assert!(processor.is_ok(), "Threshold {} should be valid", threshold);
         }
     }

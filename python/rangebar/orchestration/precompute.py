@@ -70,6 +70,7 @@ def precompute_range_bars(
     continuity_tolerance_pct: float = 0.001,
     cache_dir: str | None = None,
     max_memory_gb: float | None = None,
+    inter_bar_lookback_bars: int | None = None,
 ) -> PrecomputeResult:
     """Precompute continuous range bars for a date range (single-pass, guaranteed continuity).
 
@@ -244,7 +245,11 @@ def precompute_range_bars(
             )
 
     # Initialize processor (single instance for continuity)
-    processor = RangeBarProcessor(threshold_decimal_bps, symbol=symbol)
+    # Issue #81: Bar-relative lookback mode
+    processor = RangeBarProcessor(
+        threshold_decimal_bps, symbol=symbol,
+        inter_bar_lookback_bars=inter_bar_lookback_bars,
+    )
 
     all_bars: list[pd.DataFrame] = []
     month_bars: list[pd.DataFrame] = (

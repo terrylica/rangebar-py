@@ -68,6 +68,8 @@ def get_range_bars(
     max_memory_mb: int | None = None,
     # Inter-bar features (Issue #59)
     inter_bar_lookback_count: int | None = None,
+    # Bar-relative lookback (Issue #81)
+    inter_bar_lookback_bars: int | None = None,
 ) -> pd.DataFrame | Iterator[pl.DataFrame]:
     """Get range bars for a symbol with automatic data fetching and caching.
 
@@ -625,8 +627,9 @@ def get_range_bars(
 
         # Process segment (reuse processor for state continuity within segment)
         # Issue #68: Auto-enable v12 features when include_microstructure=True
-        effective_lookback, enable_intra = _parse_microstructure_env_vars(
-            include_microstructure, inter_bar_lookback_count,
+        # Issue #81: Bar-relative lookback threading
+        effective_lookback, effective_bars, enable_intra = _parse_microstructure_env_vars(
+            include_microstructure, inter_bar_lookback_count, inter_bar_lookback_bars,
         )
 
         segment_bars, processor = _process_binance_trades(
@@ -639,6 +642,7 @@ def get_range_bars(
             prevent_same_timestamp_close=prevent_same_timestamp_close,
             inter_bar_lookback_count=effective_lookback,
             include_intra_bar_features=enable_intra,
+            inter_bar_lookback_bars=effective_bars,
         )
 
         if segment_bars is not None and not segment_bars.empty:

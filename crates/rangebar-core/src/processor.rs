@@ -801,6 +801,11 @@ impl RangeBarProcessor {
         self.last_timestamp_us = 0;
         self.resumed_from_checkpoint = false;
         self.defer_open = false;
+        // Issue #81: Clear bar boundary tracking at ouroboros reset.
+        // Trades are preserved — still valid lookback for first bar of new segment.
+        if let Some(ref mut history) = self.trade_history {
+            history.reset_bar_boundaries();
+        }
         orphaned
     }
 }

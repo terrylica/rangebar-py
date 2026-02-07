@@ -340,6 +340,7 @@ def populate_cache_resumable(
     checkpoint_dir: Path | None = None,
     notify: bool = True,
     verbose: bool = True,
+    inter_bar_lookback_bars: int | None = None,
 ) -> int:
     """Populate cache for a date range with automatic checkpointing.
 
@@ -540,6 +541,7 @@ def populate_cache_resumable(
                 ouroboros=ouroboros,
                 use_cache=True,
                 fetch_if_missing=True,
+                inter_bar_lookback_bars=inter_bar_lookback_bars,
             )
 
             bars_today = len(df) if df is not None else 0

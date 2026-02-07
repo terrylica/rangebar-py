@@ -64,6 +64,8 @@ def get_n_range_bars(
     continuity_tolerance_pct: float | None = None,
     chunk_size: int = 100_000,
     cache_dir: str | None = None,
+    # Bar-relative lookback (Issue #81)
+    inter_bar_lookback_bars: int | None = None,
 ) -> pd.DataFrame:
     """Get exactly N range bars ending at or before a given date.
 
@@ -327,6 +329,7 @@ def get_n_range_bars(
                         current_count=available_count,
                         chunk_size=chunk_size,
                         prevent_same_timestamp_close=prevent_same_timestamp_close,
+                        inter_bar_lookback_bars=inter_bar_lookback_bars,
                     )
 
                     if bars_df is not None and len(bars_df) >= n_bars:
@@ -384,6 +387,7 @@ def get_n_range_bars(
         include_microstructure=include_microstructure,
         max_lookback_days=max_lookback_days,
         cache_dir=Path(cache_dir) if cache_dir else None,
+        inter_bar_lookback_bars=inter_bar_lookback_bars,
     )
 
     if bars_df is not None and len(bars_df) >= n_bars:
@@ -424,6 +428,7 @@ def _fill_gap_and_cache(
     current_count: int,
     chunk_size: int = 100_000,
     prevent_same_timestamp_close: bool = True,
+    inter_bar_lookback_bars: int | None = None,
 ) -> pd.DataFrame | None:
     """Fill gap in cache by fetching and processing additional data.
 
@@ -498,6 +503,7 @@ def _fill_gap_and_cache(
             include_microstructure,
             symbol=symbol,
             prevent_same_timestamp_close=prevent_same_timestamp_close,
+            inter_bar_lookback_bars=inter_bar_lookback_bars,
         )
 
         # Phase 3: Store with unified cache key
@@ -681,6 +687,7 @@ def _fetch_and_compute_bars(
     include_microstructure: bool,
     max_lookback_days: int,
     cache_dir: Path | None,
+    inter_bar_lookback_bars: int | None = None,
 ) -> pd.DataFrame | None:
     """Fetch and compute bars without caching (compute-only mode).
 
@@ -722,7 +729,8 @@ def _fetch_and_compute_bars(
             return None
 
         bars_df, _ = _process_binance_trades(
-            fetch_result.ticks, threshold, False, include_microstructure, symbol=symbol
+            fetch_result.ticks, threshold, False, include_microstructure, symbol=symbol,
+            inter_bar_lookback_bars=inter_bar_lookback_bars,
         )
         return bars_df if not bars_df.empty else None
 

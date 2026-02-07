@@ -626,6 +626,7 @@ def get_range_bars(
     cache_dir: str | None = ...,
     max_memory_mb: int | None = ...,  # Issue #49
     inter_bar_lookback_count: int | None = ...,  # Issue #59
+    inter_bar_lookback_bars: int | None = ...,  # Issue #81
 ) -> pd.DataFrame: ...
 @overload
 def get_range_bars(
@@ -653,6 +654,7 @@ def get_range_bars(
     cache_dir: str | None = ...,
     max_memory_mb: int | None = ...,  # Issue #49
     inter_bar_lookback_count: int | None = ...,  # Issue #59
+    inter_bar_lookback_bars: int | None = ...,  # Issue #81
 ) -> Iterator[pl.DataFrame]: ...
 def get_range_bars(
     symbol: str,
@@ -688,6 +690,8 @@ def get_range_bars(
     max_memory_mb: int | None = None,
     # Inter-bar features (Issue #59)
     inter_bar_lookback_count: int | None = None,
+    # Bar-relative lookback (Issue #81)
+    inter_bar_lookback_bars: int | None = None,
 ) -> pd.DataFrame | Iterator[pl.DataFrame]:
     """Get range bars for a symbol with automatic data fetching and caching.
 
@@ -773,6 +777,10 @@ def get_range_bars(
         computation (Issue #59). If set, enables 16 inter-bar features
         computed from trades BEFORE each bar opens. Recommended: 100-500.
         If None (default), inter-bar features are disabled.
+    inter_bar_lookback_bars : int or None, default=None
+        Bar-relative lookback mode (Issue #81). If set, the lookback window
+        = all trades from the last N completed bars, self-adapting to bar size.
+        Takes precedence over inter_bar_lookback_count. Recommended: 3.
 
     Returns
     -------
@@ -904,6 +912,7 @@ def get_n_range_bars(
     continuity_tolerance_pct: float | None = None,
     chunk_size: int = 100_000,
     cache_dir: str | None = None,
+    inter_bar_lookback_bars: int | None = None,
 ) -> pd.DataFrame:
     """Get exactly N range bars ending at or before a given date.
 
@@ -1029,6 +1038,7 @@ def precompute_range_bars(
     validate_on_complete: Literal["error", "warn", "skip"] = "error",
     continuity_tolerance_pct: float = 0.001,
     cache_dir: str | None = None,
+    inter_bar_lookback_bars: int | None = None,
 ) -> PrecomputeResult:
     """Precompute continuous range bars for a date range (single-pass, guaranteed continuity).
 
@@ -1121,6 +1131,7 @@ def populate_cache_resumable(
     checkpoint_dir: str | None = None,
     notify: bool = True,
     verbose: bool = True,
+    inter_bar_lookback_bars: int | None = None,
 ) -> int:
     """Populate ClickHouse cache incrementally with resumable checkpoints.
 
