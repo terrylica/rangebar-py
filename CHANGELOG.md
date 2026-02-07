@@ -1,3 +1,10 @@
+## [12.8.1](https://github.com/terrylica/rangebar-py/compare/v12.8.0...v12.8.1) (2026-02-07)
+
+
+### Bug Fixes
+
+* **clickhouse:** add intra-bar schema columns and resolve test suite issues ([6ee8bb3](https://github.com/terrylica/rangebar-py/commit/6ee8bb3e5fe34d1fb234bf9be74684f3b985b1de)), closes [#78](https://github.com/terrylica/rangebar-py/issues/78)
+
 # [12.8.0](https://github.com/terrylica/rangebar-py/compare/v12.7.2...v12.8.0) (2026-02-06)
 
 
