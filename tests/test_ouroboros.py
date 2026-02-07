@@ -714,10 +714,6 @@ class TestOuroborosIntegrationWithRealData:
         ouroboros_param = sig.parameters["ouroboros"]
         assert ouroboros_param.default == "year"
 
-    @pytest.mark.skipif(
-        'os.environ.get("CI") != "true"',
-        reason="Integration test - requires real data (set CI=true to run)",
-    )
     def test_reproducibility_same_ouroboros(self, real_data_available):
         """Test that same ouroboros mode produces identical results."""
         if not real_data_available:
@@ -746,10 +742,6 @@ class TestOuroborosIntegrationWithRealData:
         assert len(df1) == len(df2)
         assert df1.equals(df2), "Same ouroboros mode should produce identical results"
 
-    @pytest.mark.skipif(
-        'os.environ.get("CI") != "true"',
-        reason="Integration test - requires real data (set CI=true to run)",
-    )
     def test_different_ouroboros_modes_produce_different_bar_counts(
         self, real_data_available
     ):
@@ -801,10 +793,6 @@ class TestOuroborosIntegrationWithRealData:
         assert len(df_month) > 100
         assert len(df_week) > 100
 
-    @pytest.mark.skipif(
-        'os.environ.get("CI") != "true"',
-        reason="Integration test - requires real data (set CI=true to run)",
-    )
     def test_year_boundary_resets_processor(self, real_data_available):
         """Test that year boundary causes processor reset.
 

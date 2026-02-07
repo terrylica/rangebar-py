@@ -92,24 +92,4 @@ def setup_threshold_env_vars():
 
 
 def pytest_collection_modifyitems(config, items):
-    """Modify test collection to skip heavy tests when not in CI.
-
-    Heavy E2E tests that use real market data are only run in CI to avoid
-    excessive memory/network usage during local development.
-    """
-    if os.environ.get("CI") == "true":
-        # In CI: run all tests
-        return
-
-    # Locally: skip tests marked as "e2e" or in e2e test files
-    skip_heavy = pytest.mark.skip(
-        reason="Heavy E2E tests only run in CI (set CI=true to run locally)"
-    )
-
-    for item in items:
-        # Skip tests in e2e test files
-        if (
-            "test_e2e" in item.fspath.basename
-            or "test_get_range_bars_e2e" in item.fspath.basename
-        ) or "e2e" in [marker.name for marker in item.iter_markers()]:
-            item.add_marker(skip_heavy)
+    """Hook for future test collection modifications (no-op)."""
