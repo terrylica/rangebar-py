@@ -20,6 +20,12 @@
 | [price-action-patterns.md](price-action-patterns.md)                     | 313   | Direction patterns (U/D)           | INVALIDATED |
 | [labeling-for-ml.md](labeling-for-ml.md)                                 | 773   | ML labeling methodology            | REFERENCE   |
 
+### Cross-Repository Findings
+
+| Document                                                                                             | Purpose                                           | Status |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------ |
+| [2026-02-07-rangebar-patterns-barrier-findings.md](2026-02-07-rangebar-patterns-barrier-findings.md) | Barrier framework: PF>1.0 with composite features | ACTIVE |
+
 ### External References
 
 | Document                                                                                             | Purpose              |
