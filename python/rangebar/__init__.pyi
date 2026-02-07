@@ -901,6 +901,7 @@ def get_n_range_bars(
     warn_if_fewer: bool = True,
     validate_on_return: bool = False,
     continuity_action: Literal["warn", "raise", "log"] = "warn",
+    continuity_tolerance_pct: float | None = None,
     chunk_size: int = 100_000,
     cache_dir: str | None = None,
 ) -> pd.DataFrame:
@@ -948,6 +949,10 @@ def get_n_range_bars(
         - "warn": Log warning but return data
         - "raise": Raise ContinuityError
         - "log": Silent logging only
+    continuity_tolerance_pct : float or None, default=None
+        Maximum relative price gap for continuity validation (Issue #18).
+        If None, uses ``CONTINUITY_TOLERANCE_PCT`` from constants
+        (default 0.001 = 0.1%, overridable via RANGEBAR_CONTINUITY_TOLERANCE).
     chunk_size : int, default=100_000
         Number of ticks per processing chunk for memory efficiency.
         Larger values = faster processing, more memory.

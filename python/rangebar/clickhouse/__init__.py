@@ -1,4 +1,4 @@
-"""ClickHouse cache layer for computed range bars.
+"""ClickHouse cache layer for computed range bars (Issue #78).
 
 This module provides caching for computed range bars (Tier 2) using ClickHouse.
 Raw tick data (Tier 1) is stored locally via `rangebar.storage.TickStorage`.
@@ -48,6 +48,7 @@ from .client import (
     get_client,
 )
 from .config import ClickHouseConfig, ConnectionMode, get_connection_mode
+from .migrations import check_exchange_session_coverage, migrate_exchange_sessions
 from .mixin import ClickHouseClientMixin
 from .preflight import (
     ClickHouseNotConfiguredError,
@@ -73,10 +74,12 @@ __all__ = [
     "PreflightResult",
     "RangeBarCache",
     "SSHTunnel",
+    "check_exchange_session_coverage",
     "detect_clickhouse_state",
     "get_available_clickhouse_host",
     "get_client",
     "get_connection_mode",
+    "migrate_exchange_sessions",
 ]
 
 
@@ -91,7 +94,7 @@ def _emit_import_warning() -> None:
                 UserWarning,
                 stacklevel=3,
             )
-    except Exception:
+    except (ImportError, OSError, RuntimeError, ConnectionError):
         pass  # Don't fail import on preflight errors
 
 

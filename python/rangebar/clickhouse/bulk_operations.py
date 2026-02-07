@@ -22,6 +22,7 @@ from ..constants import (
     TRADE_ID_RANGE_COLUMNS,  # Issue #72
 )
 from ..exceptions import CacheWriteError
+from ..hooks import HookEvent, emit_hook
 
 if TYPE_CHECKING:
     import polars as pl
@@ -76,11 +77,14 @@ class BulkStoreMixin:
             logger.debug("Skipping bulk cache write for %s: empty DataFrame", symbol)
             return 0
 
+        # Issue #48: Emit CACHE_WRITE_START hook
+        emit_hook(
+            HookEvent.CACHE_WRITE_START, symbol=symbol,
+            bars_count=len(bars), threshold_decimal_bps=threshold_decimal_bps,
+        )
         logger.debug(
             "Bulk writing %d bars to cache for %s @ %d dbps",
-            len(bars),
-            symbol,
-            threshold_decimal_bps,
+            len(bars), symbol, threshold_decimal_bps,
         )
 
         df = bars.copy()
@@ -137,21 +141,15 @@ class BulkStoreMixin:
             "source_end_ts",
         ]
 
-        # Add optional microstructure columns if present (from constants.py SSoT)
-        for col in MICROSTRUCTURE_COLUMNS:
+        # Add optional columns if present (from constants.py SSoT)
+        for col in (*MICROSTRUCTURE_COLUMNS, *TRADE_ID_RANGE_COLUMNS):
             if col in df.columns:
                 columns.append(col)
 
-        # Add optional exchange session columns if present (Issue #8)
-        # Cast numpy.bool_ to int for ClickHouse Nullable(UInt8) (Issue #50)
+        # Add exchange session columns; cast bool_ to int (Issue #8, #50)
         for col in EXCHANGE_SESSION_COLUMNS:
             if col in df.columns:
                 df[col] = df[col].astype(int)
-                columns.append(col)
-
-        # Add trade ID range columns if present (Issue #72)
-        for col in TRADE_ID_RANGE_COLUMNS:
-            if col in df.columns:
                 columns.append(col)
 
         # Add inter-bar and intra-bar feature columns if present (Issue #78)
@@ -173,16 +171,21 @@ class BulkStoreMixin:
             written = summary.written_rows
             logger.info(
                 "Bulk cached %d bars for %s @ %d dbps",
-                written,
-                symbol,
-                threshold_decimal_bps,
+                written, symbol, threshold_decimal_bps,
+            )
+            emit_hook(
+                HookEvent.CACHE_WRITE_COMPLETE, symbol=symbol,
+                bars_written=written, threshold_decimal_bps=threshold_decimal_bps,
             )
             return written
         except (OSError, RuntimeError) as e:
             logger.exception(
                 "Bulk cache write failed for %s @ %d dbps",
-                symbol,
-                threshold_decimal_bps,
+                symbol, threshold_decimal_bps,
+            )
+            emit_hook(
+                HookEvent.CACHE_WRITE_FAILED, symbol=symbol,
+                error=str(e), threshold_decimal_bps=threshold_decimal_bps,
             )
             msg = f"Failed to bulk write bars for {symbol}: {e}"
             raise CacheWriteError(

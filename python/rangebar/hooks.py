@@ -30,14 +30,12 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable
-
-if TYPE_CHECKING:
-    pass
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +71,11 @@ class HookEvent(Enum):
     CHECKPOINT_SAVED = "checkpoint_saved"
     POPULATION_COMPLETE = "population_complete"
     POPULATION_FAILED = "population_failed"
+    # Issue #48: Diagnostic tracing events
+    DOWNLOAD_START = "download_start"
+    DOWNLOAD_COMPLETE = "download_complete"
+    TICK_FETCH_PROGRESS = "tick_fetch_progress"
+    MIGRATION_PROGRESS = "migration_progress"
 
 
 @dataclass
@@ -98,6 +101,7 @@ class HookPayload:
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     details: dict[str, Any] = field(default_factory=dict)
     is_failure: bool = False
+    trace_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert payload to dictionary for serialization."""
@@ -183,6 +187,8 @@ def clear_hooks(event: HookEvent | None = None) -> None:
 def emit_hook(
     event: HookEvent,
     symbol: str,
+    *,
+    trace_id: str | None = None,
     **details: Any,
 ) -> None:
     """Emit an event to all registered callbacks.
@@ -217,7 +223,7 @@ def emit_hook(
         mem = get_memory_info()
         details["memory_rss_mb"] = mem.process_rss_mb
         details["memory_pct"] = round(mem.usage_pct, 3)
-    except Exception:
+    except (ImportError, OSError, AttributeError):
         logger.debug("Memory snapshot unavailable for hook payload", exc_info=True)
 
     is_failure = "FAILED" in event.name
@@ -227,6 +233,7 @@ def emit_hook(
         timestamp=datetime.now(UTC),
         details=details,
         is_failure=is_failure,
+        trace_id=trace_id,
     )
 
     callbacks = _hooks.get(event, [])
@@ -299,11 +306,30 @@ def register_for_all(
         register_hook(event, callback)
 
 
+def generate_trace_id() -> str:
+    """Generate a short unique trace ID for correlating hook events.
+
+    Returns
+    -------
+    str
+        8-character hex string (e.g., "a1b2c3d4").
+
+    Examples
+    --------
+    >>> tid = generate_trace_id()
+    >>> emit_hook(HookEvent.DOWNLOAD_START, "BTCUSDT", trace_id=tid)
+    >>> # ... later ...
+    >>> emit_hook(HookEvent.DOWNLOAD_COMPLETE, "BTCUSDT", trace_id=tid)
+    """
+    return uuid.uuid4().hex[:8]
+
+
 __all__ = [
     "HookEvent",
     "HookPayload",
     "clear_hooks",
     "emit_hook",
+    "generate_trace_id",
     "register_for_all",
     "register_for_failures",
     "register_hook",

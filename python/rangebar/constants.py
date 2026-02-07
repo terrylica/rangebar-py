@@ -21,6 +21,8 @@ Environment Variable SSoT (from .mise.toml):
 
 from __future__ import annotations
 
+import os as _os
+
 # =============================================================================
 # Schema Version Constants (Cache Evolution)
 # =============================================================================
@@ -266,8 +268,12 @@ _FOREX_CURRENCIES: frozenset[str] = frozenset(
 # Continuity Validation Constants
 # =============================================================================
 
-# Default tolerance for junction continuity validation (0.01% = 0.0001)
-CONTINUITY_TOLERANCE_PCT: float = 0.0001
+# Default tolerance for continuity validation (0.1% = 0.001).
+# Matches precompute_range_bars() default. Override via env var:
+#   export RANGEBAR_CONTINUITY_TOLERANCE=0.005
+CONTINUITY_TOLERANCE_PCT: float = float(
+    _os.environ.get("RANGEBAR_CONTINUITY_TOLERANCE", "0.001")
+)
 
 # =============================================================================
 # Exchange Session Column Names (Ouroboros feature)

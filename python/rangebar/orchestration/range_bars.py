@@ -504,16 +504,32 @@ def get_range_bars(
         )
 
     # -------------------------------------------------------------------------
-    # MEM-010: Pre-flight memory estimation (Issue #49)
-    # Check if cached tick data would fit in memory before loading.
+    # MEM-010: Pre-flight memory estimation (Issue #49, #53)
+    # Estimate memory for the LARGEST ouroboros segment, not the full range.
+    # Data is loaded per-segment in the loop below, so the peak memory usage
+    # is bounded by the largest single segment.
     # -------------------------------------------------------------------------
     if has_cached_ticks and max_memory_mb != 0:
         import warnings
 
+        from rangebar.ouroboros import iter_ouroboros_segments
         from rangebar.resource_guard import estimate_tick_memory
 
+        # Find the largest segment by time span
+        segments = list(
+            iter_ouroboros_segments(start_dt.date(), end_dt.date(), ouroboros)
+        )
+        if segments:
+            largest = max(
+                segments, key=lambda s: (s[1] - s[0]).total_seconds()
+            )
+            est_start = _datetime_to_start_ms(largest[0])
+            est_end = _datetime_to_end_ms(largest[1])
+        else:
+            est_start, est_end = start_ts, end_ts
+
         estimate = estimate_tick_memory(
-            storage, cache_symbol, start_ts, end_ts
+            storage, cache_symbol, est_start, est_end
         )
         if estimate.recommendation == "will_oom":
             msg = (
@@ -571,6 +587,15 @@ def get_range_bars(
         segment_start_ms = int(segment_start.timestamp() * 1_000)
         segment_end_ms = int(segment_end.timestamp() * 1_000)
 
+        # Issue #48: Emit DOWNLOAD_START hook for tick fetch tracing
+        from rangebar.hooks import HookEvent, emit_hook
+
+        emit_hook(
+            HookEvent.DOWNLOAD_START, symbol=symbol,
+            segment_start=str(segment_start), segment_end=str(segment_end),
+            source="cache" if has_cached_ticks else "network",
+        )
+
         if has_cached_ticks:
             segment_ticks = storage.read_ticks(
                 cache_symbol, segment_start_ms, segment_end_ms
@@ -585,6 +610,13 @@ def get_range_bars(
             # Cache segment ticks
             if use_cache and not segment_ticks.is_empty():
                 storage.write_ticks(cache_symbol, segment_ticks)
+
+        # Issue #48: Emit DOWNLOAD_COMPLETE hook with tick count
+        emit_hook(
+            HookEvent.DOWNLOAD_COMPLETE, symbol=symbol,
+            segment_start=str(segment_start), segment_end=str(segment_end),
+            tick_count=len(segment_ticks),
+        )
 
         if segment_ticks.is_empty():
             continue
