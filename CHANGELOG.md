@@ -1,3 +1,10 @@
+# [12.9.0](https://github.com/terrylica/rangebar-py/compare/v12.8.1...v12.9.0) (2026-02-07)
+
+
+### Features
+
+* implement 5-issue batch — exchange sessions, continuity tolerance, memory guards, JSONL tracing, backfill infra ([#78](https://github.com/terrylica/rangebar-py/issues/78), [#18](https://github.com/terrylica/rangebar-py/issues/18), [#53](https://github.com/terrylica/rangebar-py/issues/53), [#48](https://github.com/terrylica/rangebar-py/issues/48), [#80](https://github.com/terrylica/rangebar-py/issues/80)) ([b27540e](https://github.com/terrylica/rangebar-py/commit/b27540ee638166e8d423c41d57410546a797d486))
+
 ## [12.8.1](https://github.com/terrylica/rangebar-py/compare/v12.8.0...v12.8.1) (2026-02-07)
 
 
