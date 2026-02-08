@@ -1,3 +1,10 @@
+## [12.10.4](https://github.com/terrylica/rangebar-py/compare/v12.10.3...v12.10.4) (2026-02-08)
+
+
+### Bug Fixes
+
+* **helpers:** resolve Polars schema inference crash on AVAXUSDT and use yesterday as END_DATE ([ce3fd18](https://github.com/terrylica/rangebar-py/commit/ce3fd186517b4b00d3eca9f29fc7526d96a4f038)), closes [#84](https://github.com/terrylica/rangebar-py/issues/84)
+
 ## [12.10.3](https://github.com/terrylica/rangebar-py/compare/v12.10.2...v12.10.3) (2026-02-08)
 
 
