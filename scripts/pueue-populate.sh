@@ -98,8 +98,9 @@ add_job() {
     # Add job to pueue with label for easy identification
     # --force-refresh: wipe existing cache (Issue #84 full repopulation)
     # --include-microstructure: all 38 features (Issue #83 gap fix)
-    pueue add --group "$group" --label "$label" -- \
-        bash -c "cd $PROJECT_DIR && uv run python scripts/populate_full_cache.py --symbol $symbol --threshold $threshold --force-refresh --include-microstructure"
+    # NOTE: Use direct invocation (not bash -c) to avoid pueue quoting issues
+    pueue add --group "$group" --label "$label" --working-directory "$PROJECT_DIR" -- \
+        uv run python scripts/populate_full_cache.py --symbol "$symbol" --threshold "$threshold" --force-refresh --include-microstructure
 
     echo "  Added: $label -> group $group"
 }
