@@ -571,7 +571,7 @@ def _process_binance_trades(
         if bar_batch:
             # Convert batch to Polars DataFrame immediately
             # This allows garbage collection of dict batch
-            batch_df = pl.DataFrame(bar_batch)
+            batch_df = pl.DataFrame(bar_batch, infer_schema_length=None)
             bar_batches.append(batch_df)
 
     if not bar_batches:

@@ -47,7 +47,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 logging.basicConfig(
     level=logging.INFO,
@@ -101,7 +101,9 @@ def _get_symbols() -> dict[str, str]:
 
 SYMBOLS = _get_symbols()
 
-END_DATE = datetime.now(tz=UTC).strftime("%Y-%m-%d")
+# Use yesterday's date: Binance Vision aggTrade archives aren't available for the current UTC day.
+# Using today causes "No data available" RuntimeError on the final day of every job.
+END_DATE = (datetime.now(tz=UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
 
 # Phases organized by resource requirements
 PHASES = {
