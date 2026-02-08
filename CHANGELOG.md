@@ -1,3 +1,10 @@
+# [12.11.0](https://github.com/terrylica/rangebar-py/compare/v12.10.5...v12.11.0) (2026-02-08)
+
+
+### Features
+
+* **cache:** wire pueue population into mise task DAG ([#84](https://github.com/terrylica/rangebar-py/issues/84)) ([9b88a70](https://github.com/terrylica/rangebar-py/commit/9b88a707180d5551f58a3698fb78f5c1fc11e208))
+
 ## [12.10.5](https://github.com/terrylica/rangebar-py/compare/v12.10.4...v12.10.5) (2026-02-08)
 
 
