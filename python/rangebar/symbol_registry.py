@@ -81,6 +81,12 @@ class SymbolEntry:
         AI-discoverable keywords for this symbol.
     reference : str | None
         GitHub issue or documentation URL.
+    first_clean_date : date | None
+        First date with verified clean data (no corruption, no gaps).
+    data_anomalies : tuple[str, ...]
+        Known data quality issues (e.g., corrupted CSVs, missing dates).
+    processing_notes : str | None
+        Operational notes from production processing experience.
     """
 
     symbol: str
@@ -94,6 +100,9 @@ class SymbolEntry:
     tier: int | None = None
     keywords: tuple[str, ...] = ()
     reference: str | None = None
+    first_clean_date: date | None = None
+    data_anomalies: tuple[str, ...] = ()
+    processing_notes: str | None = None
 
 
 @dataclass(frozen=True)
@@ -172,6 +181,9 @@ def get_symbol_entries() -> types.MappingProxyType[str, SymbolEntry]:
             tier=data.get("tier"),
             keywords=_parse_keywords(data),
             reference=data.get("reference"),
+            first_clean_date=data.get("first_clean_date"),
+            data_anomalies=tuple(data.get("data_anomalies", [])),
+            processing_notes=data.get("processing_notes"),
         )
 
     return types.MappingProxyType(entries)

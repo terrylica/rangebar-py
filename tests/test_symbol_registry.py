@@ -112,6 +112,30 @@ class TestSymbolEntryLoading:
         assert isinstance(entry.keywords, tuple)
         assert len(entry.keywords) > 0
 
+    def test_btcusdt_has_anomaly_fields(self):
+        """BTCUSDT should have oracle-verified data anomaly metadata (schema v2)."""
+        entry = get_symbol_entries()["BTCUSDT"]
+        assert entry.first_clean_date == date(2018, 1, 16)
+        assert isinstance(entry.data_anomalies, tuple)
+        assert len(entry.data_anomalies) == 2
+        assert "2018-01-14" in entry.data_anomalies[0]
+        assert "ghost trades" in entry.data_anomalies[0]
+        assert "first_trade_id=-1" in entry.data_anomalies[0]
+        assert entry.processing_notes is not None
+        assert "ghost trade" in entry.processing_notes.lower()
+
+    def test_symbol_without_anomalies_has_empty_tuple(self):
+        """Symbols without data_anomalies should have empty tuple."""
+        entry = get_symbol_entries()["XRPUSDT"]
+        assert entry.data_anomalies == ()
+        assert entry.first_clean_date is None
+        assert entry.processing_notes is None
+
+    def test_maticusdt_removed(self):
+        """MATICUSDT should not be in registry (delisted)."""
+        entries = get_symbol_entries()
+        assert "MATICUSDT" not in entries
+
     def test_symbol_without_effective_start(self):
         """Symbols without effective_start should have None."""
         entry = get_symbol_entries()["XRPUSDT"]
@@ -332,7 +356,14 @@ class TestTransitions:
         assert matic.gap_days == 2
         assert matic.last_old_date == date(2024, 9, 10)
         assert matic.first_new_date == date(2024, 9, 13)
-        assert matic.status == "placeholder"
+        assert matic.status == "archived"
+
+    def test_matic_transition_old_symbol_not_registered(self):
+        """MATIC_TO_POL old_symbol should not be in registry (delisted)."""
+        transitions = get_transitions()
+        matic = next(t for t in transitions if t.name == "MATIC_TO_POL")
+        entries = get_symbol_entries()
+        assert matic.old_symbol not in entries
 
     def test_transition_is_frozen(self):
         """SymbolTransition should be frozen."""

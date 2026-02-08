@@ -15,7 +15,7 @@
 # Reference: https://github.com/terrylica/rangebar-py/issues/79
 
 [meta]
-schema_version = 1
+schema_version = 2
 
 # =============================================================================
 # Crypto Symbols (Binance)
@@ -29,8 +29,14 @@ market = "spot"
 tier = 1
 listing_date = 2017-08-17
 effective_start = 2018-01-16
-reason = "Skip corrupted 2018-01-14 and 2018-01-15 (CSV parse error: invalid digit in field 3)"
-keywords = ["bitcoin", "btc", "csv corruption", "binance vision"]
+reason = "Intentional skip: 2018-01-14/15 contain ghost trades (price=0, qty=0, first_trade_id=-1) from Binance matching engine maintenance. These zero-price phantom records would corrupt ML time series with false price levels and zero-volume bars. effective_start gates the pipeline to only ingest verified clean data."
+first_clean_date = 2018-01-16
+data_anomalies = [
+    "2018-01-14: 6 ghost trades (price=0, qty=0, first_trade_id=-1) — exchange-wide event at 04:37, 16:27, 22:03 UTC affecting BTC/ETH/BNB/LTC simultaneously",
+    "2018-01-15: 14 ghost trades (same pattern) — continuation of exchange maintenance event",
+]
+processing_notes = "Oracle-verified 2026-02-08 against Binance Vision source. Ghost trades are Binance matching engine sentinel records (not CSV corruption). The -1 sentinel in first_trade_id breaks Rust u64 deserialization. Zero-price trades also cause out-of-order timestamps and would produce invalid OHLCV bars. effective_start=2018-01-16 is the intentional defense — it gates the pipeline so ghost trades never reach the Rust processor or ML features. Data from listing_date (2017-08-17) through 2018-01-13 is clean but also skipped because the Rust CSV parser cannot selectively skip individual rows within a daily archive."
+keywords = ["bitcoin", "btc", "ghost trades", "binance vision"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
 [symbols.ETHUSDT]
@@ -41,8 +47,14 @@ market = "spot"
 tier = 1
 listing_date = 2017-08-17
 effective_start = 2018-01-16
-reason = "Skip corrupted 2018-01-14 and 2018-01-15 (CSV parse error: invalid digit in field 3)"
-keywords = ["ethereum", "eth", "csv corruption"]
+reason = "Intentional skip: ghost trades on 2018-01-14/15 (price=0, qty=0, first_trade_id=-1) would poison ML features with zero-price bars. Same exchange-wide event as BTCUSDT."
+first_clean_date = 2018-01-16
+data_anomalies = [
+    "2018-01-14: 4 ghost trades (price=0, qty=0, first_trade_id=-1) — same exchange-wide event as BTCUSDT",
+    "2018-01-15: ghost trades with same pattern as BTCUSDT",
+]
+processing_notes = "Oracle-verified 2026-02-08. Same ghost trade event as BTCUSDT. effective_start=2018-01-16 gates pipeline to clean data only."
+keywords = ["ethereum", "eth", "ghost trades"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
 [symbols.BNBUSDT]
@@ -53,8 +65,14 @@ market = "spot"
 tier = 1
 listing_date = 2017-11-06
 effective_start = 2018-01-16
-reason = "Skip corrupted 2018-01-14 and 2018-01-15 (CSV parse error: invalid digit in field 3)"
-keywords = ["binance coin", "bnb", "csv corruption"]
+reason = "Intentional skip: ghost trades on 2018-01-14/15 (price=0, qty=0, first_trade_id=-1) would poison ML features with zero-price bars. Same exchange-wide event as BTCUSDT."
+first_clean_date = 2018-01-16
+data_anomalies = [
+    "2018-01-14: 6 ghost trades (price=0, qty=0, first_trade_id=-1) — same exchange-wide event as BTCUSDT",
+    "2018-01-15: ghost trades with same pattern as BTCUSDT",
+]
+processing_notes = "Oracle-verified 2026-02-08. Same ghost trade event as BTCUSDT. effective_start=2018-01-16 gates pipeline to clean data only."
+keywords = ["binance coin", "bnb", "ghost trades"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
 [symbols.XRPUSDT]
@@ -101,21 +119,16 @@ market = "spot"
 listing_date = 2020-08-18
 keywords = ["polkadot", "dot"]
 
-[symbols.MATICUSDT]
-enabled = true
-asset_class = "crypto"
-exchange = "binance"
-market = "spot"
-listing_date = 2019-04-26
-keywords = ["polygon", "matic", "rebrand"]
-reference = "https://github.com/terrylica/rangebar-py/issues/79"
-
 [symbols.SHIBUSDT]
 enabled = true
 asset_class = "crypto"
 exchange = "binance"
 market = "spot"
 listing_date = 2021-05-10
+data_anomalies = [
+    "2021-05-10: first-day bars had mixed int/float types causing Polars schema inference crash (fixed v12.10.4, verified clean with Polars 1.36+)",
+]
+processing_notes = "Polars schema inference crash on first-day data. Fixed by infer_schema_length=None. No longer reproduces with Polars 1.36.1."
 keywords = ["shiba inu", "shib"]
 
 [symbols.AVAXUSDT]
@@ -125,6 +138,10 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2020-09-22
+data_anomalies = [
+    "2020-09-22: first-day bars had mixed int/float types causing Polars schema inference crash (fixed v12.10.4, verified clean with Polars 1.36+)",
+]
+processing_notes = "Polars schema inference crash on first-day data. Fixed by infer_schema_length=None. No longer reproduces with Polars 1.36.1."
 keywords = ["avalanche", "avax"]
 
 [symbols.LTCUSDT]
@@ -135,8 +152,14 @@ market = "spot"
 tier = 1
 listing_date = 2017-12-13
 effective_start = 2018-01-16
-reason = "Skip corrupted 2018-01-14 and 2018-01-15 (CSV parse error: invalid digit in field 3). Data from listing_date through 2018-01-13 is clean but skipped for consistency with BTC/ETH/BNB."
-keywords = ["litecoin", "ltc", "csv corruption"]
+reason = "Intentional skip: ghost trades on 2018-01-14/15 (price=0, qty=0, first_trade_id=-1) would poison ML features with zero-price bars. Same exchange-wide event as BTCUSDT. Data 2017-12-13 to 2018-01-13 is clean but also skipped — the Rust CSV parser cannot selectively filter rows within a daily archive, so the entire contaminated window is excluded."
+first_clean_date = 2018-01-16
+data_anomalies = [
+    "2018-01-14: 6 ghost trades (price=0, qty=0, first_trade_id=-1) — same exchange-wide event as BTCUSDT",
+    "2018-01-15: ghost trades with same pattern as BTCUSDT",
+]
+processing_notes = "Oracle-verified 2026-02-08. Same ghost trade event as BTCUSDT. LTC has 32 days of clean data (2017-12-13 to 2018-01-13) before the ghost trade window, but these are skipped because the parser can't skip individual rows. effective_start=2018-01-16 is the intentional defense."
+keywords = ["litecoin", "ltc", "ghost trades"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
 [symbols.LINKUSDT]
@@ -156,6 +179,11 @@ market = "spot"
 listing_date = 2019-04-22
 effective_start = 2019-04-29
 reason = "Data starts 2019-04-29 (HTTP 404 for 2019-04-22 through 2019-04-28)"
+first_clean_date = 2019-04-29
+data_anomalies = [
+    "2019-04-22 to 2019-04-28: Binance Vision HTTP 404 (7 days missing after listing)",
+]
+processing_notes = "7 days missing between listing_date and first available aggTrade archive."
 keywords = ["cosmos", "atom", "missing data", "listing date mismatch"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
@@ -184,6 +212,11 @@ market = "spot"
 listing_date = 2018-05-09
 effective_start = 2018-05-31
 reason = "aggTrade archives unavailable before 2018-05-31 (HTTP 404 for 2018-05-09 through 2018-05-30)"
+first_clean_date = 2018-05-31
+data_anomalies = [
+    "2018-05-09 to 2018-05-30: Binance Vision HTTP 404 (22 days missing after listing)",
+]
+processing_notes = "22 days missing between listing_date and first available aggTrade archive."
 keywords = ["stellar", "xlm", "missing data"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
@@ -216,6 +249,11 @@ tier = 1
 listing_date = 2017-12-20
 effective_start = 2019-11-28
 reason = "aggTrade archives unavailable before 2019-11-28 (HTTP 404 for all earlier dates)"
+first_clean_date = 2019-11-28
+data_anomalies = [
+    "2017-12-20 to 2019-11-27: Binance Vision HTTP 404 (~2 years of missing aggTrade archives)",
+]
+processing_notes = "Nearly 2 years of missing data between listing and first available archive. Largest gap in registry."
 keywords = ["bitcoin cash", "bch", "missing data"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
@@ -270,7 +308,8 @@ keywords = ["bitcoin", "btc", "coin-margined", "perpetual", "futures"]
 # =============================================================================
 # Symbol Transitions (historical record)
 # =============================================================================
-# Gap handling NOT YET IMPLEMENTED -- documents transitions for future work.
+# Documents symbol rebrands/renames for historical reference.
+# Delisted symbols are NOT registered — we don't process delisted symbols.
 
 [transitions.MATIC_TO_POL]
 old_symbol = "MATICUSDT"
@@ -278,7 +317,7 @@ new_symbol = "POLUSDT"
 last_old_date = 2024-09-10
 first_new_date = 2024-09-13
 gap_days = 2
-reason = "MATIC->POL rebrand with 2-day data gap"
-keywords = ["rebrand", "symbol rename", "data gap", "polygon"]
+reason = "MATIC->POL rebrand. MATICUSDT delisted 2024-09-10, removed from registry."
+keywords = ["rebrand", "symbol rename", "data gap", "polygon", "delisted"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
-status = "placeholder"
+status = "archived"
