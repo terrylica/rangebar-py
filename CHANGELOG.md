@@ -1,3 +1,10 @@
+## [12.10.5](https://github.com/terrylica/rangebar-py/compare/v12.10.4...v12.10.5) (2026-02-08)
+
+
+### Bug Fixes
+
+* **registry:** oracle-verified ghost trade anomalies, schema v2 with data quality fields ([#79](https://github.com/terrylica/rangebar-py/issues/79)) ([3acdcd8](https://github.com/terrylica/rangebar-py/commit/3acdcd816f3481fb26db0c072f077ae70ebd2f1b))
+
 ## [12.10.4](https://github.com/terrylica/rangebar-py/compare/v12.10.3...v12.10.4) (2026-02-08)
 
 
