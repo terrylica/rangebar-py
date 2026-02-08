@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Full cache population script for BigBlack (resource-aware).
 
+Issue #84: Full ClickHouse repopulation with all 38 microstructure features.
+
 SAFE EXECUTION STRATEGY:
 ========================
-The 70 jobs are organized into phases to avoid blowing up server resources.
+The 75 jobs are organized into phases to avoid blowing up server resources.
 
-Phase 1 (Quick wins):     14 jobs @ 1000 dbps  - ~8 hrs  - Run sequentially
-Phase 2 (Day trading):    14 jobs @ 250 dbps   - ~24 hrs - Run 2 parallel max
-Phase 3 (Mid thresholds): 28 jobs @ 500,750    - ~16 hrs - Run 2-3 parallel
-Phase 4 (Scalping):       14 jobs @ 100 dbps   - ~80 hrs - Run ONE at a time
+Phase 1 (Quick wins):     15 jobs @ 1000 dbps  - ~8 hrs  - Run 4 parallel
+Phase 2 (Day trading):    15 jobs @ 250 dbps   - ~24 hrs - Run 2 parallel max
+Phase 3 (Mid thresholds): 30 jobs @ 500,750    - ~16 hrs - Run 2-3 parallel
+Phase 4 (Scalping):       15 jobs @ 100 dbps   - ~80 hrs - Run ONE at a time
 
 MEMORY USAGE:
   - Each job: ~2 GB peak (processes day-by-day, memory safe)
@@ -20,6 +22,10 @@ USAGE:
 ======
 # Safe sequential (recommended first run)
 uv run python scripts/populate_full_cache.py --phase 1
+
+# Full repopulation with all features (Issue #84)
+uv run python scripts/populate_full_cache.py --symbol BTCUSDT --threshold 250 \
+    --force-refresh --include-microstructure
 
 # Check progress
 uv run python scripts/populate_full_cache.py --status
@@ -33,7 +39,7 @@ uv run python scripts/populate_full_cache.py --phase 2 --parallel 2
 RESUME:
 =======
 Jobs automatically resume from checkpoint if interrupted.
-Just run the same command again.
+Just run the same command again. Use --force-refresh to wipe and restart.
 """
 
 from __future__ import annotations
@@ -54,25 +60,46 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 # =============================================================================
 
-SYMBOLS = {
-    # Tier 1: Blue chips
-    "BTCUSDT": "2017-08-17",
-    "ETHUSDT": "2017-08-17",
-    "BNBUSDT": "2017-11-06",
+# Symbol list with start dates from the unified symbol registry (Issue #79).
+# Falls back to hardcoded dates if registry is unavailable.
+# MATICUSDT removed: delisted 2024-09-10 (MATIC->POL rebrand).
+# SHIBUSDT, UNIUSDT added: in symbols.toml but missing from bigblack.
+
+FALLBACK_SYMBOLS = {
+    "BTCUSDT": "2018-01-15",
+    "ETHUSDT": "2018-01-15",
+    "BNBUSDT": "2018-01-15",
     "SOLUSDT": "2020-08-11",
-    # Tier 2: Major alts
     "XRPUSDT": "2018-05-04",
     "DOGEUSDT": "2019-07-05",
     "ADAUSDT": "2018-04-17",
     "AVAXUSDT": "2020-09-22",
     "DOTUSDT": "2020-08-18",
     "LINKUSDT": "2019-01-16",
-    # Tier 3: Popular trading pairs
-    "MATICUSDT": "2019-04-26",
     "LTCUSDT": "2017-12-13",
-    "ATOMUSDT": "2019-04-22",
+    "ATOMUSDT": "2019-04-29",
     "NEARUSDT": "2020-10-14",
+    "SHIBUSDT": "2021-05-10",
+    "UNIUSDT": "2020-09-17",
 }
+
+
+def _get_symbols() -> dict[str, str]:
+    """Get symbol -> start_date mapping, preferring registry."""
+    try:
+        from rangebar.symbol_registry import get_effective_start_date
+
+        symbols = {}
+        for symbol, fallback_date in FALLBACK_SYMBOLS.items():
+            registry_date = get_effective_start_date(symbol)
+            symbols[symbol] = registry_date or fallback_date
+        return symbols
+    except ImportError:
+        logger.warning("Symbol registry unavailable, using fallback dates")
+        return dict(FALLBACK_SYMBOLS)
+
+
+SYMBOLS = _get_symbols()
 
 END_DATE = datetime.now(tz=UTC).strftime("%Y-%m-%d")
 
@@ -105,11 +132,21 @@ PHASES = {
 }
 
 
-def populate_job(symbol: str, threshold: int, start_date: str) -> int:
+def populate_job(
+    symbol: str,
+    threshold: int,
+    start_date: str,
+    *,
+    force_refresh: bool = False,
+    include_microstructure: bool = True,
+) -> int:
     """Run a single population job. Returns bar count."""
     from rangebar import populate_cache_resumable
 
-    logger.info("Starting: %s @ %d dbps from %s", symbol, threshold, start_date)
+    logger.info(
+        "Starting: %s @ %d dbps from %s (force_refresh=%s, microstructure=%s)",
+        symbol, threshold, start_date, force_refresh, include_microstructure,
+    )
     start_time = datetime.now(tz=UTC)
 
     try:
@@ -118,17 +155,28 @@ def populate_job(symbol: str, threshold: int, start_date: str) -> int:
             start_date,
             END_DATE,
             threshold_decimal_bps=threshold,
+            include_microstructure=include_microstructure,
+            force_refresh=force_refresh,
             notify=True,
         )
         elapsed = (datetime.now(tz=UTC) - start_time).total_seconds() / 60
-        logger.info("Completed: %s @ %d - %d bars in %.1f min", symbol, threshold, bars, elapsed)
+        logger.info(
+            "Completed: %s @ %d - %d bars in %.1f min",
+            symbol, threshold, bars, elapsed,
+        )
         return bars
     except Exception:
         logger.exception("Failed: %s @ %d", symbol, threshold)
         raise
 
 
-def run_phase(phase_num: int, parallel: int = 1) -> None:
+def run_phase(
+    phase_num: int,
+    parallel: int = 1,
+    *,
+    force_refresh: bool = False,
+    include_microstructure: bool = True,
+) -> None:
     """Run a specific phase with optional parallelization."""
     if phase_num not in PHASES:
         logger.error("Invalid phase: %d. Use 1-4.", phase_num)
@@ -150,6 +198,10 @@ def run_phase(phase_num: int, parallel: int = 1) -> None:
     logger.info("PHASE %d: %s", phase_num, phase["name"])
     logger.info("Estimated time: ~%d hours (sequential)", phase["estimated_hours"])
     logger.info("Running with parallelism: %d", parallel)
+    logger.info(
+        "force_refresh=%s, include_microstructure=%s",
+        force_refresh, include_microstructure,
+    )
     logger.info("=" * 70)
 
     jobs = [
@@ -161,7 +213,11 @@ def run_phase(phase_num: int, parallel: int = 1) -> None:
     if parallel == 1:
         # Sequential execution (safest, recommended)
         for symbol, threshold, start_date in jobs:
-            populate_job(symbol, threshold, start_date)
+            populate_job(
+                symbol, threshold, start_date,
+                force_refresh=force_refresh,
+                include_microstructure=include_microstructure,
+            )
     else:
         # Bounded parallel execution using subprocess isolation
         # This avoids ProcessPoolExecutor memory leak issues by running
@@ -180,6 +236,10 @@ def run_phase(phase_num: int, parallel: int = 1) -> None:
                 "--threshold",
                 str(thresh),
             ]
+            if force_refresh:
+                cmd.append("--force-refresh")
+            if not include_microstructure:
+                cmd.append("--no-microstructure")
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             return (sym, thresh, result.returncode, result.stderr)
 
@@ -244,8 +304,9 @@ def show_status() -> None:
 
                 print(f"{symbol:<12} {thresh:<8} {status:<12} {bars:>12,} {coverage:<25}")
 
+        total = completed + remaining
         print("-" * 90)
-        print(f"Completed: {completed}/70 jobs | Remaining: {remaining}/70 jobs")
+        print(f"Completed: {completed}/{total} jobs | Remaining: {remaining}/{total} jobs")
         print()
 
     except (ImportError, ConnectionError, OSError, RuntimeError):
@@ -254,8 +315,11 @@ def show_status() -> None:
 
 def show_plan() -> None:
     """Show the full execution plan."""
+    total_jobs = len(SYMBOLS) * sum(
+        len(p["thresholds"]) for p in PHASES.values()
+    )
     print("\n" + "=" * 90)
-    print("EXECUTION PLAN (70 jobs total)")
+    print(f"EXECUTION PLAN ({total_jobs} jobs total)")
     print("=" * 90)
 
     total_hours = 0
@@ -305,8 +369,23 @@ Examples:
     parser.add_argument("--threshold", type=int, help="Single threshold (requires --symbol)")
     parser.add_argument("--status", action="store_true", help="Show cache status")
     parser.add_argument("--plan", action="store_true", help="Show execution plan")
+    parser.add_argument(
+        "--force-refresh", action="store_true",
+        help="Wipe existing cache and checkpoint, start fresh",
+    )
+    parser.add_argument(
+        "--include-microstructure", action="store_true", default=True,
+        help="Include all 38 microstructure features (default: True)",
+    )
+    parser.add_argument(
+        "--no-microstructure", action="store_true",
+        help="Disable microstructure features",
+    )
 
     args = parser.parse_args()
+
+    # Resolve microstructure flag (--no-microstructure overrides default)
+    include_micro = args.include_microstructure and not args.no_microstructure
 
     if args.plan:
         show_plan()
@@ -316,9 +395,17 @@ Examples:
         if args.symbol not in SYMBOLS:
             logger.error("Unknown symbol: %s", args.symbol)
             sys.exit(1)
-        populate_job(args.symbol, args.threshold, SYMBOLS[args.symbol])
+        populate_job(
+            args.symbol, args.threshold, SYMBOLS[args.symbol],
+            force_refresh=args.force_refresh,
+            include_microstructure=include_micro,
+        )
     elif args.phase:
-        run_phase(args.phase, args.parallel)
+        run_phase(
+            args.phase, args.parallel,
+            force_refresh=args.force_refresh,
+            include_microstructure=include_micro,
+        )
     else:
         parser.print_help()
 

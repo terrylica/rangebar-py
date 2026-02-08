@@ -24,7 +24,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Symbols - simple list (listing dates handled by Python script)
+# Symbols - from symbols.toml registry (Issue #79, #84)
+# MATICUSDT removed: delisted 2024-09-10 (MATIC->POL rebrand)
+# SHIBUSDT, UNIUSDT added: in symbols.toml but missing from bigblack
 SYMBOLS=(
     BTCUSDT
     ETHUSDT
@@ -36,10 +38,11 @@ SYMBOLS=(
     AVAXUSDT
     DOTUSDT
     LINKUSDT
-    MATICUSDT
     LTCUSDT
     ATOMUSDT
     NEARUSDT
+    SHIBUSDT
+    UNIUSDT
 )
 
 # Phase configuration: threshold -> (group_name, parallel_limit)
@@ -93,28 +96,30 @@ add_job() {
     local label="${symbol}@${threshold}"
 
     # Add job to pueue with label for easy identification
+    # --force-refresh: wipe existing cache (Issue #84 full repopulation)
+    # --include-microstructure: all 38 features (Issue #83 gap fix)
     pueue add --group "$group" --label "$label" -- \
-        bash -c "cd $PROJECT_DIR && uv run python scripts/populate_full_cache.py --symbol $symbol --threshold $threshold"
+        bash -c "cd $PROJECT_DIR && uv run python scripts/populate_full_cache.py --symbol $symbol --threshold $threshold --force-refresh --include-microstructure"
 
     echo "  Added: $label -> group $group"
 }
 
 queue_phase1() {
-    echo "Queueing Phase 1: 1000 dbps (14 jobs, 4 parallel)"
+    echo "Queueing Phase 1: 1000 dbps (15 jobs, 4 parallel)"
     for symbol in "${SYMBOLS[@]}"; do
         add_job "$symbol" 1000 p1
     done
 }
 
 queue_phase2() {
-    echo "Queueing Phase 2: 250 dbps (14 jobs, 2 parallel)"
+    echo "Queueing Phase 2: 250 dbps (15 jobs, 2 parallel)"
     for symbol in "${SYMBOLS[@]}"; do
         add_job "$symbol" 250 p2
     done
 }
 
 queue_phase3() {
-    echo "Queueing Phase 3: 500, 750 dbps (28 jobs, 3 parallel)"
+    echo "Queueing Phase 3: 500, 750 dbps (30 jobs, 3 parallel)"
     for symbol in "${SYMBOLS[@]}"; do
         add_job "$symbol" 500 p3
         add_job "$symbol" 750 p3
@@ -122,7 +127,7 @@ queue_phase3() {
 }
 
 queue_phase4() {
-    echo "Queueing Phase 4: 100 dbps (14 jobs, SEQUENTIAL)"
+    echo "Queueing Phase 4: 100 dbps (15 jobs, SEQUENTIAL)"
     echo "⚠️  This phase runs ONE job at a time to prevent resource exhaustion"
     for symbol in "${SYMBOLS[@]}"; do
         add_job "$symbol" 100 p4
@@ -135,7 +140,7 @@ queue_all() {
     queue_phase3
     queue_phase4
     echo ""
-    echo "✅ All 70 jobs queued!"
+    echo "✅ All 75 jobs queued!"
     echo ""
     echo "Monitor progress:"
     echo "  pueue status              # Overview"
@@ -191,7 +196,7 @@ USAGE:
   $0 phase2     Queue Phase 2 jobs (250 dbps, 2 parallel)
   $0 phase3     Queue Phase 3 jobs (500,750 dbps, 3 parallel)
   $0 phase4     Queue Phase 4 jobs (100 dbps, SEQUENTIAL)
-  $0 all        Queue all 70 jobs across all phases
+  $0 all        Queue all 75 jobs across all phases
   $0 status     Show progress
   $0 restart    Restart all failed jobs
   $0 clean      Remove completed jobs from queue
