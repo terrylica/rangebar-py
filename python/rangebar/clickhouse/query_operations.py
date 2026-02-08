@@ -117,7 +117,11 @@ class QueryOperationsMixin:
         if effective_min_version:
             version_filter = """
               AND rangebar_version != ''
-              AND rangebar_version >= {min_version:String}"""
+              AND toUInt32OrZero(
+                splitByChar('.', rangebar_version)[1]
+              ) >= toUInt32OrZero(
+                splitByChar('.', {min_version:String})[1]
+              )"""
 
         if before_ts is not None:
             # Split path: with end_ts filter
@@ -284,7 +288,11 @@ class QueryOperationsMixin:
         if effective_min_version:
             version_filter = """
               AND rangebar_version != ''
-              AND rangebar_version >= {min_version:String}"""
+              AND toUInt32OrZero(
+                splitByChar('.', rangebar_version)[1]
+              ) >= toUInt32OrZero(
+                splitByChar('.', {min_version:String})[1]
+              )"""
 
         query = f"""
             SELECT {base_cols}

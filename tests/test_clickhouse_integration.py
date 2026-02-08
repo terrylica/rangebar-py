@@ -730,3 +730,253 @@ class TestIssue32MicrostructureRangesRegression:
                 f"aggression_ratio = {aggression_ratio}, should be capped at 100. "
                 f"REGRESSION: Issue #32 - Cap may have been removed."
             )
+
+
+# =============================================================================
+# ROUNDTRIP TESTS - Issue #78 / Issue #80
+# =============================================================================
+# These tests verify that inter-bar and intra-bar microstructure columns
+# survive the full ClickHouse roundtrip: compute → store_bars_bulk → read back.
+# Motivation: Issue #78 Part 2 showed features computed in Rust but silently
+# dropped during cache write/read.
+
+
+def _generate_synthetic_trades(n_trades: int = 600, base_price: float = 50000.0) -> list[dict]:
+    """Generate synthetic trades that produce bar closures at 250 dbps."""
+    rng = np.random.default_rng(42)
+    base_ts = 1704067200000  # 2024-01-01 00:00:00 UTC
+
+    trades = []
+    price = base_price
+    for i in range(n_trades):
+        price *= 1 + rng.normal(0, 0.0008)
+        trades.append({
+            "agg_trade_id": i + 1,
+            "price": round(price, 2),
+            "quantity": round(abs(rng.exponential(0.5)) + 0.01, 4),
+            "first_trade_id": i * 3 + 1,
+            "last_trade_id": i * 3 + 3,
+            "timestamp": base_ts + i * 500,
+            "is_buyer_maker": bool(rng.integers(0, 2)),
+        })
+    return trades
+
+
+def _compute_bars_with_all_features(trades: list[dict]) -> pd.DataFrame | None:
+    """Compute bars with inter-bar + intra-bar features enabled."""
+    from rangebar._core import PyRangeBarProcessor
+
+    processor = PyRangeBarProcessor(
+        threshold_decimal_bps=250,
+        inter_bar_lookback_count=200,
+        include_intra_bar_features=True,
+    )
+    bars = processor.process_trades(trades)
+    if not bars:
+        return None
+
+    df = pd.DataFrame(bars)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601")
+    df = df.set_index("timestamp")
+    df = df.rename(columns={
+        "open": "Open", "high": "High", "low": "Low",
+        "close": "Close", "volume": "Volume",
+    })
+    return df
+
+
+class TestMicrostructureRoundtrip:
+    """Verify inter-bar and intra-bar columns survive ClickHouse roundtrip.
+
+    Issue #78: Features were computed in Rust but silently dropped during
+    cache write/read because columns weren't wired through bulk_operations.py
+    and query_operations.py.
+
+    Issue #80: SOL backfill depends on these columns being correctly stored.
+    """
+
+    def test_inter_bar_columns_roundtrip(
+        self, cache: RangeBarCache, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Store bars with lookback features, read back, verify non-null."""
+        import time
+
+        from rangebar.constants import INTER_BAR_FEATURE_COLUMNS
+
+        monkeypatch.setenv("RANGEBAR_SYMBOL_GATE", "off")
+        test_symbol = f"TEST_INTERBAR_RT_{int(time.time())}"
+
+        trades = _generate_synthetic_trades()
+        bars_df = _compute_bars_with_all_features(trades)
+        assert bars_df is not None, "bars_df should not be None"
+        assert len(bars_df) >= 3, "Need >= 3 bars"
+
+        # Verify inter-bar columns exist in computed output
+        inter_cols_present = [
+            c for c in INTER_BAR_FEATURE_COLUMNS if c in bars_df.columns
+        ]
+        assert len(inter_cols_present) > 0, "Rust processor produced no inter-bar columns"
+
+        # Store via bulk path (same as populate_cache_resumable)
+        written = cache.store_bars_bulk(
+            symbol=test_symbol, threshold_decimal_bps=250, bars=bars_df,
+        )
+        assert written == len(bars_df)
+        time.sleep(0.5)
+
+        # Read back with microstructure
+        bars_reset = bars_df.reset_index()
+        start_ts = int(bars_reset["timestamp"].min().timestamp() * 1000)
+        end_ts = int(bars_reset["timestamp"].max().timestamp() * 1000)
+
+        retrieved = cache.get_bars_by_timestamp_range(
+            symbol=test_symbol, threshold_decimal_bps=250,
+            start_ts=start_ts, end_ts=end_ts,
+            include_microstructure=True, ouroboros_mode="year",
+        )
+        assert retrieved is not None, "No data retrieved from ClickHouse"
+        assert not retrieved.empty, "Retrieved DataFrame is empty"
+
+        # Verify all 16 inter-bar columns present
+        for col in INTER_BAR_FEATURE_COLUMNS:
+            assert col in retrieved.columns, (
+                f"MISSING inter-bar column after roundtrip: {col}. "
+                f"Issue #78 regression: check bulk_operations.py and query_operations.py"
+            )
+
+        # Post-warmup bars must have non-null lookback values
+        post_warmup = retrieved.iloc[2:]
+        for col in INTER_BAR_FEATURE_COLUMNS:
+            assert post_warmup[col].notna().any(), (
+                f"ALL NULL after warmup for {col}. Issue #78 regression."
+            )
+
+        # Cleanup
+        cache.client.command(
+            f"ALTER TABLE rangebar_cache.range_bars DELETE "
+            f"WHERE symbol = '{test_symbol}'"
+        )
+
+    def test_intra_bar_columns_roundtrip(
+        self, cache: RangeBarCache, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Store bars with intra-bar features, read back, verify non-null."""
+        import time
+
+        from rangebar.constants import INTRA_BAR_FEATURE_COLUMNS
+
+        monkeypatch.setenv("RANGEBAR_SYMBOL_GATE", "off")
+        test_symbol = f"TEST_INTRABAR_RT_{int(time.time())}"
+
+        trades = _generate_synthetic_trades()
+        bars_df = _compute_bars_with_all_features(trades)
+        assert bars_df is not None, "bars_df should not be None"
+        assert len(bars_df) >= 3, "Need >= 3 bars"
+
+        intra_cols_present = [
+            c for c in INTRA_BAR_FEATURE_COLUMNS if c in bars_df.columns
+        ]
+        assert len(intra_cols_present) > 0, "Rust processor produced no intra-bar columns"
+
+        written = cache.store_bars_bulk(
+            symbol=test_symbol, threshold_decimal_bps=250, bars=bars_df,
+        )
+        assert written == len(bars_df)
+        time.sleep(0.5)
+
+        bars_reset = bars_df.reset_index()
+        start_ts = int(bars_reset["timestamp"].min().timestamp() * 1000)
+        end_ts = int(bars_reset["timestamp"].max().timestamp() * 1000)
+
+        retrieved = cache.get_bars_by_timestamp_range(
+            symbol=test_symbol, threshold_decimal_bps=250,
+            start_ts=start_ts, end_ts=end_ts,
+            include_microstructure=True, ouroboros_mode="year",
+        )
+        assert retrieved is not None, "No data retrieved from ClickHouse"
+        assert not retrieved.empty, "Retrieved DataFrame is empty"
+
+        for col in INTRA_BAR_FEATURE_COLUMNS:
+            assert col in retrieved.columns, (
+                f"MISSING intra-bar column after roundtrip: {col}. "
+                f"Issue #78 regression: check bulk_operations.py and query_operations.py"
+            )
+
+        # Intra-bar features should be non-null for all bars (no warmup needed).
+        # Exception: hurst and permutation_entropy need many trades per bar;
+        # synthetic data (~14 trades/bar) is insufficient for these complexity features.
+        complexity_cols = {"intra_hurst", "intra_permutation_entropy"}
+        for col in INTRA_BAR_FEATURE_COLUMNS:
+            if col in complexity_cols:
+                continue
+            assert retrieved[col].notna().any(), (
+                f"ALL NULL for intra-bar column {col}. Issue #78 regression."
+            )
+
+        cache.client.command(
+            f"ALTER TABLE rangebar_cache.range_bars DELETE "
+            f"WHERE symbol = '{test_symbol}'"
+        )
+
+    def test_all_features_combined_roundtrip(
+        self, cache: RangeBarCache, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Full 38-column roundtrip: inter-bar + intra-bar together.
+
+        This is the most important test — it mirrors exactly what
+        populate_cache_resumable() does for the SOL backfill (Issue #80).
+        """
+        import time
+
+        from rangebar.constants import (
+            INTER_BAR_FEATURE_COLUMNS,
+            INTRA_BAR_FEATURE_COLUMNS,
+        )
+
+        monkeypatch.setenv("RANGEBAR_SYMBOL_GATE", "off")
+        test_symbol = f"TEST_FULLRT_{int(time.time())}"
+
+        trades = _generate_synthetic_trades()
+        bars_df = _compute_bars_with_all_features(trades)
+        assert bars_df is not None, "bars_df should not be None"
+        assert len(bars_df) >= 3, "Need >= 3 bars"
+
+        written = cache.store_bars_bulk(
+            symbol=test_symbol, threshold_decimal_bps=250, bars=bars_df,
+        )
+        assert written == len(bars_df)
+        time.sleep(0.5)
+
+        bars_reset = bars_df.reset_index()
+        start_ts = int(bars_reset["timestamp"].min().timestamp() * 1000)
+        end_ts = int(bars_reset["timestamp"].max().timestamp() * 1000)
+
+        retrieved = cache.get_bars_by_timestamp_range(
+            symbol=test_symbol, threshold_decimal_bps=250,
+            start_ts=start_ts, end_ts=end_ts,
+            include_microstructure=True, ouroboros_mode="year",
+        )
+        assert retrieved is not None, "No data retrieved from ClickHouse"
+        assert not retrieved.empty, "Retrieved DataFrame is empty"
+        assert len(retrieved) == len(bars_df), (
+            f"Row count mismatch: wrote {len(bars_df)}, read {len(retrieved)}"
+        )
+
+        # Count verified columns
+        all_feature_cols = (
+            *INTER_BAR_FEATURE_COLUMNS, *INTRA_BAR_FEATURE_COLUMNS,
+        )
+        missing = [c for c in all_feature_cols if c not in retrieved.columns]
+        assert not missing, (
+            f"Missing {len(missing)} feature columns after roundtrip: {missing}"
+        )
+
+        # Verify OHLCV integrity
+        for col in ("Open", "High", "Low", "Close", "Volume"):
+            assert col in retrieved.columns
+            assert retrieved[col].notna().all(), f"NULL values in {col}"
+
+        cache.client.command(
+            f"ALTER TABLE rangebar_cache.range_bars DELETE "
+            f"WHERE symbol = '{test_symbol}'"
+        )
