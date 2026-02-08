@@ -1,3 +1,10 @@
+## [12.10.3](https://github.com/terrylica/rangebar-py/compare/v12.10.2...v12.10.3) (2026-02-08)
+
+
+### Bug Fixes
+
+* **registry:** correct effective_start dates for corrupted Binance aggTrade CSVs ([c1950ff](https://github.com/terrylica/rangebar-py/commit/c1950ffafcbae98213b2a96366fcc45ccb56a7a7))
+
 ## [12.10.2](https://github.com/terrylica/rangebar-py/compare/v12.10.1...v12.10.2) (2026-02-08)
 
 
