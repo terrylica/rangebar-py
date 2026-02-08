@@ -1,3 +1,10 @@
+## [12.10.2](https://github.com/terrylica/rangebar-py/compare/v12.10.1...v12.10.2) (2026-02-08)
+
+
+### Bug Fixes
+
+* **wheel:** include symbol registry data package in PyPI wheels ([#86](https://github.com/terrylica/rangebar-py/issues/86)) ([a762022](https://github.com/terrylica/rangebar-py/commit/a7620228804739f20299631c543ec45cf77f965f))
+
 ## [12.10.1](https://github.com/terrylica/rangebar-py/compare/v12.10.0...v12.10.1) (2026-02-08)
 
 
