@@ -28,8 +28,8 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2017-08-17
-effective_start = 2018-01-15
-reason = "Skip corrupted 2018-01-14 (malformed CSV with 0,0,-1,-1 at line 16262)"
+effective_start = 2018-01-16
+reason = "Skip corrupted 2018-01-14 and 2018-01-15 (CSV parse error: invalid digit in field 3)"
 keywords = ["bitcoin", "btc", "csv corruption", "binance vision"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
@@ -40,8 +40,8 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2017-08-17
-effective_start = 2018-01-15
-reason = "Skip corrupted 2018-01-14 (malformed CSV on Binance Vision)"
+effective_start = 2018-01-16
+reason = "Skip corrupted 2018-01-14 and 2018-01-15 (CSV parse error: invalid digit in field 3)"
 keywords = ["ethereum", "eth", "csv corruption"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
@@ -52,8 +52,8 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2017-11-06
-effective_start = 2018-01-15
-reason = "Skip corrupted 2018-01-14 (malformed CSV on Binance Vision)"
+effective_start = 2018-01-16
+reason = "Skip corrupted 2018-01-14 and 2018-01-15 (CSV parse error: invalid digit in field 3)"
 keywords = ["binance coin", "bnb", "csv corruption"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
@@ -134,7 +134,10 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2017-12-13
-keywords = ["litecoin", "ltc"]
+effective_start = 2018-01-16
+reason = "Skip corrupted 2018-01-14 and 2018-01-15 (CSV parse error: invalid digit in field 3). Data from listing_date through 2018-01-13 is clean but skipped for consistency with BTC/ETH/BNB."
+keywords = ["litecoin", "ltc", "csv corruption"]
+reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
 [symbols.LINKUSDT]
 enabled = true
@@ -179,7 +182,10 @@ asset_class = "crypto"
 exchange = "binance"
 market = "spot"
 listing_date = 2018-05-09
-keywords = ["stellar", "xlm"]
+effective_start = 2018-05-31
+reason = "aggTrade archives unavailable before 2018-05-31 (HTTP 404 for 2018-05-09 through 2018-05-30)"
+keywords = ["stellar", "xlm", "missing data"]
+reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
 [symbols.NEARUSDT]
 enabled = true
@@ -208,7 +214,10 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2017-12-20
-keywords = ["bitcoin cash", "bch"]
+effective_start = 2019-11-28
+reason = "aggTrade archives unavailable before 2019-11-28 (HTTP 404 for all earlier dates)"
+keywords = ["bitcoin cash", "bch", "missing data"]
+reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
 [symbols.FILUSDT]
 enabled = true

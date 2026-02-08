@@ -107,7 +107,7 @@ class TestSymbolEntryLoading:
         assert entry.exchange == "binance"
         assert entry.market == "spot"
         assert entry.listing_date == date(2017, 8, 17)
-        assert entry.effective_start == date(2018, 1, 15)
+        assert entry.effective_start == date(2018, 1, 16)
         assert entry.tier == 1
         assert isinstance(entry.keywords, tuple)
         assert len(entry.keywords) > 0
@@ -203,7 +203,7 @@ class TestStartDateClamping:
         """start_date before effective_start should be clamped forward."""
         with _with_gate_mode("strict"):
             result = validate_and_clamp_start_date("BTCUSDT", "2017-08-17")
-            assert result == "2018-01-15"
+            assert result == "2018-01-16"
 
     def test_no_clamp_after_effective_start(self):
         """start_date after effective_start should be unchanged."""
@@ -214,8 +214,8 @@ class TestStartDateClamping:
     def test_no_clamp_on_effective_start(self):
         """start_date equal to effective_start should be unchanged."""
         with _with_gate_mode("strict"):
-            result = validate_and_clamp_start_date("BTCUSDT", "2018-01-15")
-            assert result == "2018-01-15"
+            result = validate_and_clamp_start_date("BTCUSDT", "2018-01-16")
+            assert result == "2018-01-16"
 
     def test_symbol_without_effective_start_no_clamp(self):
         """Symbol without effective_start should return start_date unchanged."""
@@ -247,7 +247,7 @@ class TestGetEffectiveStartDate:
     def test_btcusdt_returns_effective_start(self):
         """BTCUSDT should return effective_start."""
         result = get_effective_start_date("BTCUSDT")
-        assert result == "2018-01-15"
+        assert result == "2018-01-16"
 
     def test_xrpusdt_returns_listing_date(self):
         """XRPUSDT (no effective_start) should return listing_date."""

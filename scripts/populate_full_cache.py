@@ -66,9 +66,9 @@ logger = logging.getLogger(__name__)
 # SHIBUSDT, UNIUSDT added: in symbols.toml but missing from bigblack.
 
 FALLBACK_SYMBOLS = {
-    "BTCUSDT": "2018-01-15",
-    "ETHUSDT": "2018-01-15",
-    "BNBUSDT": "2018-01-15",
+    "BTCUSDT": "2018-01-16",
+    "ETHUSDT": "2018-01-16",
+    "BNBUSDT": "2018-01-16",
     "SOLUSDT": "2020-08-11",
     "XRPUSDT": "2018-05-04",
     "DOGEUSDT": "2019-07-05",
@@ -76,7 +76,7 @@ FALLBACK_SYMBOLS = {
     "AVAXUSDT": "2020-09-22",
     "DOTUSDT": "2020-08-18",
     "LINKUSDT": "2019-01-16",
-    "LTCUSDT": "2017-12-13",
+    "LTCUSDT": "2018-01-16",
     "ATOMUSDT": "2019-04-29",
     "NEARUSDT": "2020-10-14",
     "SHIBUSDT": "2021-05-10",
