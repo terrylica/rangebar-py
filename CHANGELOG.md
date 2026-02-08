@@ -1,3 +1,10 @@
+## [12.11.1](https://github.com/terrylica/rangebar-py/compare/v12.11.0...v12.11.1) (2026-02-08)
+
+
+### Bug Fixes
+
+* **checkpoint:** include threshold in filename to prevent concurrent job collisions ([#84](https://github.com/terrylica/rangebar-py/issues/84)) ([128b33a](https://github.com/terrylica/rangebar-py/commit/128b33a705e15f7c07d0f0ae9e819dc85b740b51))
+
 # [12.11.0](https://github.com/terrylica/rangebar-py/compare/v12.10.5...v12.11.0) (2026-02-08)
 
 
