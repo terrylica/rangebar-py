@@ -1,3 +1,17 @@
+# [12.10.0](https://github.com/terrylica/rangebar-py/compare/v12.9.0...v12.10.0) (2026-02-08)
+
+
+### Bug Fixes
+
+* **clickhouse:** numeric version comparison for microstructure queries ([#82](https://github.com/terrylica/rangebar-py/issues/82)) ([19b4f1c](https://github.com/terrylica/rangebar-py/commit/19b4f1c1515cec5021047f0b1744db7befcec9d4))
+* **scripts:** fix pueue job invocation quoting issue ([9364e8d](https://github.com/terrylica/rangebar-py/commit/9364e8d26c7d11a765cd9c8f1367b7c4832d5b78))
+
+
+### Features
+
+* **interbar:** add BarRelative lookback mode for inter-bar features ([#81](https://github.com/terrylica/rangebar-py/issues/81)) ([9ae8a57](https://github.com/terrylica/rangebar-py/commit/9ae8a5744b6465deeab835625015e4ff68fa7151))
+* **scripts:** add force-refresh + microstructure params for full repopulation ([#84](https://github.com/terrylica/rangebar-py/issues/84)) ([73e998e](https://github.com/terrylica/rangebar-py/commit/73e998ee8982092c5ae73de1d687daa1da445188)), closes [#79](https://github.com/terrylica/rangebar-py/issues/79)
+
 # [12.9.0](https://github.com/terrylica/rangebar-py/compare/v12.8.1...v12.9.0) (2026-02-07)
 
 
