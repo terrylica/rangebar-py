@@ -1,3 +1,10 @@
+## [12.10.1](https://github.com/terrylica/rangebar-py/compare/v12.10.0...v12.10.1) (2026-02-08)
+
+
+### Bug Fixes
+
+* **clickhouse:** use resolution-agnostic timestamp conversion for pandas 3.0 ([#85](https://github.com/terrylica/rangebar-py/issues/85)) ([2b6e509](https://github.com/terrylica/rangebar-py/commit/2b6e50964b8e9e867111acbb847f549a72502ce8))
+
 # [12.10.0](https://github.com/terrylica/rangebar-py/compare/v12.9.0...v12.10.0) (2026-02-08)
 
 
