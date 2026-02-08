@@ -178,6 +178,7 @@ class PopulationCheckpoint:
 
 def _get_checkpoint_path(
     symbol: str,
+    threshold_decimal_bps: int,
     start_date: str,
     end_date: str,
     checkpoint_dir: Path | None = None,
@@ -188,6 +189,9 @@ def _get_checkpoint_path(
     ----------
     symbol : str
         Trading symbol.
+    threshold_decimal_bps : int
+        Threshold in decimal basis points. Included in filename to prevent
+        collisions when multiple thresholds run concurrently (Issue #84).
     start_date : str
         Start date (YYYY-MM-DD).
     end_date : str
@@ -203,8 +207,8 @@ def _get_checkpoint_path(
     if checkpoint_dir is None:
         checkpoint_dir = _CHECKPOINT_DIR
 
-    # Create unique filename from job parameters
-    filename = f"{symbol}_{start_date}_{end_date}.json"
+    # Threshold in filename prevents concurrent job collisions
+    filename = f"{symbol}_{threshold_decimal_bps}_{start_date}_{end_date}.json"
     return checkpoint_dir / filename
 
 
@@ -411,15 +415,16 @@ def populate_cache_resumable(
     validate_symbol_registered(symbol, operation="populate_cache_resumable")
     start_date = validate_and_clamp_start_date(symbol, start_date)
 
-    checkpoint_path = _get_checkpoint_path(symbol, start_date, end_date, checkpoint_dir)
+    checkpoint_path = _get_checkpoint_path(
+        symbol, threshold_decimal_bps, start_date, end_date, checkpoint_dir
+    )
 
     # Issue #69: Handle force_refresh - wipe cache and checkpoint
     if force_refresh:
         logger.info("Force refresh: clearing cache and checkpoint for %s", symbol)
-        # Delete local checkpoint
-        if checkpoint_path.exists():
-            checkpoint_path.unlink()
-            logger.debug("Deleted local checkpoint: %s", checkpoint_path)
+        # Delete local checkpoint (missing_ok=True prevents race with concurrent jobs)
+        checkpoint_path.unlink(missing_ok=True)
+        logger.debug("Deleted local checkpoint: %s", checkpoint_path)
 
         # Delete cached bars and ClickHouse checkpoint
         try:
@@ -640,12 +645,9 @@ def populate_cache_resumable(
     except (ImportError, ConnectionError) as e:
         logger.debug("Post-population deduplication skipped: %s", e)
 
-    # Clean up checkpoint on success
-    try:
-        checkpoint_path.unlink()
-        logger.debug("Removed checkpoint file after successful completion")
-    except OSError:
-        pass
+    # Clean up checkpoint on success (missing_ok for concurrent jobs)
+    checkpoint_path.unlink(missing_ok=True)
+    logger.debug("Removed checkpoint file after successful completion")
 
     logger.info(
         "Population complete for %s: %d bars from %s to %s",
@@ -699,6 +701,7 @@ def list_checkpoints(
 
 def clear_checkpoint(
     symbol: str,
+    threshold_decimal_bps: int,
     start_date: str,
     end_date: str,
     checkpoint_dir: Path | None = None,
@@ -709,6 +712,8 @@ def clear_checkpoint(
     ----------
     symbol : str
         Trading symbol.
+    threshold_decimal_bps : int
+        Threshold in decimal basis points.
     start_date : str
         Start date (YYYY-MM-DD).
     end_date : str
@@ -721,10 +726,12 @@ def clear_checkpoint(
     bool
         True if checkpoint was found and removed.
     """
-    checkpoint_path = _get_checkpoint_path(symbol, start_date, end_date, checkpoint_dir)
+    checkpoint_path = _get_checkpoint_path(
+        symbol, threshold_decimal_bps, start_date, end_date, checkpoint_dir
+    )
 
     if checkpoint_path.exists():
-        checkpoint_path.unlink()
+        checkpoint_path.unlink(missing_ok=True)
         logger.info("Cleared checkpoint: %s", checkpoint_path)
         return True
 
