@@ -1,5 +1,10 @@
-# ClickHouse Cache Tasks
+# ClickHouse Cache Tasks (Issue #84)
 # Usage: mise run cache:status
+#        mise run cache:populate-all
+
+# =============================================================================
+# Cache Query Tasks
+# =============================================================================
 
 ["cache:status"]
 description = "Show ClickHouse cache statistics"
@@ -8,3 +13,52 @@ run = "python scripts/cache_status.py"
 ["cache:clear"]
 description = "Clear ClickHouse cache for a symbol (interactive)"
 run = "python scripts/cache_clear.py"
+
+# =============================================================================
+# Pueue-Managed Cache Population (Issue #84)
+# =============================================================================
+# Long-running jobs managed by pueue daemon (survives SSH disconnects).
+# Each job overrides RANGEBAR_CRYPTO_MIN_THRESHOLD=250 to allow
+# sub-1000 dbps thresholds while preserving the 1000 safety guard
+# in .mise.toml for local dev.
+#
+# Phases (4 thresholds: 250, 500, 750, 1000):
+#   p1: 1000 dbps (15 jobs, 4 parallel)  — ~8 hrs
+#   p2: 250 dbps  (15 jobs, 2 parallel)  — ~24 hrs
+#   p3: 500+750   (30 jobs, 3 parallel)  — ~16 hrs
+
+["cache:populate-setup"]
+description = "Configure pueue groups for cache population (one-time, idempotent)"
+run = "./scripts/pueue-populate.sh setup"
+
+["cache:populate-all"]
+description = "Queue all 60 jobs (15 symbols x 4 thresholds) via pueue"
+depends = ["cache:populate-setup"]
+run = "./scripts/pueue-populate.sh all"
+
+["cache:populate-p1"]
+description = "Queue Phase 1: 1000 dbps (15 jobs, 4 parallel)"
+depends = ["cache:populate-setup"]
+run = "./scripts/pueue-populate.sh phase1"
+
+["cache:populate-p2"]
+description = "Queue Phase 2: 250 dbps (15 jobs, 2 parallel)"
+depends = ["cache:populate-setup"]
+run = "./scripts/pueue-populate.sh phase2"
+
+["cache:populate-p3"]
+description = "Queue Phase 3: 500+750 dbps (30 jobs, 3 parallel)"
+depends = ["cache:populate-setup"]
+run = "./scripts/pueue-populate.sh phase3"
+
+["cache:populate-status"]
+description = "Show pueue population progress across all phases"
+run = "./scripts/pueue-populate.sh status"
+
+["cache:populate-restart"]
+description = "Restart all failed population jobs"
+run = "./scripts/pueue-populate.sh restart"
+
+["cache:populate-clean"]
+description = "Remove completed jobs from pueue queue"
+run = "./scripts/pueue-populate.sh clean"
