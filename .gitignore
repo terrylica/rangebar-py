@@ -102,6 +102,8 @@ bun.lock
 
 # ClickHouse server runtime data (created when running `clickhouse server` locally)
 data/
+# Issue #79: Un-ignore package data for symbol registry (maturin wheel inclusion)
+!python/rangebar/data/
 metadata/
 store/
 preprocessed_configs/

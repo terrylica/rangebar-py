@@ -59,6 +59,8 @@ Documentation = "https://github.com/terrylica/rangebar-py#readme"
 [tool.maturin]
 python-source = "python"
 module-name = "rangebar._core"
+# Include package data files (Issue #79: symbols.toml for symbol registry)
+include = [{ path = "python/rangebar/data/**", format = "wheel" }]
 # Include data-providers for full API (get_range_bars with automatic data fetching)
 # This is now default in Cargo.toml, but explicit here for documentation
 features = ["pyo3/extension-module", "data-providers"]
