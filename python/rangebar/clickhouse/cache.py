@@ -250,10 +250,10 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
         if isinstance(df.index, pd.DatetimeIndex):
             df = df.reset_index()
             if "timestamp" in df.columns:
-                df["timestamp_ms"] = df["timestamp"].astype("int64") // 10**6
+                df["timestamp_ms"] = df["timestamp"].dt.as_unit("ms").astype("int64")
                 df = df.drop(columns=["timestamp"])
             elif "index" in df.columns:
-                df["timestamp_ms"] = df["index"].astype("int64") // 10**6
+                df["timestamp_ms"] = df["index"].dt.as_unit("ms").astype("int64")
                 df = df.drop(columns=["index"])
 
         # Normalize column names (lowercase)

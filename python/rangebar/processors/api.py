@@ -115,7 +115,9 @@ def process_trades_to_dataframe(
         trades_copy = trades.copy()
         if pd.api.types.is_datetime64_any_dtype(trades_copy["timestamp"]):
             # Convert datetime to milliseconds since epoch
-            trades_copy["timestamp"] = trades_copy["timestamp"].astype("int64") // 10**6
+            trades_copy["timestamp"] = (
+                trades_copy["timestamp"].dt.as_unit("ms").astype("int64")
+            )
 
         # Normalize column name to 'quantity'
         if volume_col == "volume":
