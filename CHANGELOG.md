@@ -1,3 +1,16 @@
+# [12.12.0](https://github.com/terrylica/rangebar-py/compare/v12.11.1...v12.12.0) (2026-02-09)
+
+
+### Bug Fixes
+
+* **clickhouse:** add timestamp_ms scale guard and oracle verification report ([#87](https://github.com/terrylica/rangebar-py/issues/87)) ([b79b39d](https://github.com/terrylica/rangebar-py/commit/b79b39dfe1fa51b3c02cd64718fa0575c14cd9bc)), closes [#85](https://github.com/terrylica/rangebar-py/issues/85)
+
+
+### Features
+
+* **binance-vision:** add end-date availability probe and lower crypto threshold to 250 dbps ([#84](https://github.com/terrylica/rangebar-py/issues/84)) ([faf576a](https://github.com/terrylica/rangebar-py/commit/faf576a22e90a8a15aaf7afc93051e1bfd4f5b69))
+* **cache:** add systemd-run resource guards and autoscaler ([#84](https://github.com/terrylica/rangebar-py/issues/84)) ([9e945de](https://github.com/terrylica/rangebar-py/commit/9e945de57ca60ebd5e713563ccfa9b7e3b0749f6))
+
 ## [12.11.1](https://github.com/terrylica/rangebar-py/compare/v12.11.0...v12.11.1) (2026-02-08)
 
 
