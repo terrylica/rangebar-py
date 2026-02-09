@@ -22,7 +22,7 @@
 # SSoT: Minimum Thresholds by Asset Class (Issue #62)
 # =============================================================================
 # Values are in decimal basis points (dbps): 1000 dbps = 1%
-RANGEBAR_CRYPTO_MIN_THRESHOLD = "1000"
+RANGEBAR_CRYPTO_MIN_THRESHOLD = "250"
 RANGEBAR_FOREX_MIN_THRESHOLD = "50"
 RANGEBAR_EQUITIES_MIN_THRESHOLD = "100"
 RANGEBAR_UNKNOWN_MIN_THRESHOLD = "1"

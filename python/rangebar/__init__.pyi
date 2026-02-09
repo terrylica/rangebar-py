@@ -29,6 +29,8 @@ SymbolNotRegisteredError : Raised when symbol not in registry (Issue #79).
 validate_symbol_registered : Mandatory gate for unregistered symbols (Issue #79).
 validate_and_clamp_start_date : Gate + clamp start_date to effective_start (Issue #79).
 get_registered_symbols : Filtered listing of registered symbols (Issue #79).
+probe_latest_available_date : Probe Binance Vision for latest available archive date.
+BINANCE_VISION_AGGTRADES_URL : URL pattern for Binance Vision aggTrade archives.
 __version__ : Package version string.
 """
 
@@ -1408,3 +1410,16 @@ def process_trades_to_dataframe(
     process_trades_polars : Faster alternative for Polars inputs
     get_range_bars : Full pipeline with data fetching and caching
     """
+
+# ============================================================================
+# Binance Vision Availability Probe
+# ============================================================================
+
+BINANCE_VISION_AGGTRADES_URL: str
+
+def probe_latest_available_date(
+    symbol: str = "BTCUSDT",
+    max_lookback: int = 10,
+    *,
+    timeout: int = 10,
+) -> str: ...

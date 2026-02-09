@@ -31,6 +31,7 @@ __all__ = [
     # Sorted alphabetically for RUF022 compliance
     "ALL_OPTIONAL_COLUMNS",
     "ASSET_CLASS_MULTIPLIERS",
+    "BINANCE_VISION_AGGTRADES_URL",  # Issue #88: Binance Vision probe
     "EXCHANGE_SESSION_COLUMNS",
     "INTER_BAR_FEATURE_COLUMNS",  # Issue #59 (lookback window BEFORE bar)
     "INTRA_BAR_FEATURE_COLUMNS",  # Issue #59 (trades WITHIN bar)
@@ -97,6 +98,7 @@ __all__ = [
     "normalize_temporal_precision",
     "populate_cache_resumable",
     "precompute_range_bars",
+    "probe_latest_available_date",  # Issue #88: Binance Vision probe
     "process_trades_chunked",
     "process_trades_polars",
     "process_trades_to_dataframe",
@@ -107,6 +109,9 @@ __all__ = [
     "validate_continuity_tiered",
     "validate_symbol_registered",  # Issue #79: mandatory gate
 ]
+
+# Binance Vision availability probe (Issue #88)
+from .binance_vision import BINANCE_VISION_AGGTRADES_URL, probe_latest_available_date
 
 # Re-export checkpoint API per plan (#40)
 from .checkpoint import populate_cache_resumable

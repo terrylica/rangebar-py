@@ -50,19 +50,19 @@ stats = bt.run()
 
 ## Minimum Threshold Enforcement (v12.0+)
 
-**Breaking change in v12.0**: Crypto symbols now enforce a minimum threshold of 1000 dbps (1%) by default. Thresholds below this cannot overcome trading costs sufficiently for crypto assets.
+Crypto symbols enforce a minimum threshold of 250 dbps (0.25%) by default. Thresholds below this are too fine-grained for profitable crypto trading.
 
 ```python
 from rangebar import get_range_bars, ThresholdError
 
-# This raises ThresholdError for crypto (below 1000 dbps minimum)
+# This raises ThresholdError for crypto (below 250 dbps minimum)
 try:
-    df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_decimal_bps=250)
+    df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_decimal_bps=50)
 except ThresholdError as e:
-    print(e)  # Threshold 250 dbps below minimum 1000 dbps for crypto symbol 'BTCUSDT'
+    print(e)  # Threshold 50 dbps below minimum 250 dbps for crypto symbol 'BTCUSDT'
 
-# Use valid threshold for crypto (>= 1000 dbps)
-df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_decimal_bps=1000)
+# Valid thresholds for crypto (>= 250 dbps)
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_decimal_bps=250)
 
 # Forex allows lower thresholds (minimum 50 dbps)
 df = get_range_bars("EURUSD", "2024-01-01", "2024-01-31", threshold_decimal_bps=50, source="exness")
@@ -75,17 +75,17 @@ df = get_range_bars("EURUSD", "2024-01-01", "2024-01-31", threshold_decimal_bps=
 RANGEBAR_CRYPTO_MIN_THRESHOLD=100 python my_research_script.py
 
 # Override specific symbol
-RANGEBAR_MIN_THRESHOLD_BTCUSDT=250 python btc_analysis.py
+RANGEBAR_MIN_THRESHOLD_BTCUSDT=50 python btc_analysis.py
 ```
 
 **Default minimums by asset class**:
 
-| Asset Class | Minimum   | Env Var                           |
-| ----------- | --------- | --------------------------------- |
-| Crypto      | 1000 dbps | `RANGEBAR_CRYPTO_MIN_THRESHOLD`   |
-| Forex       | 50 dbps   | `RANGEBAR_FOREX_MIN_THRESHOLD`    |
-| Equities    | 100 dbps  | `RANGEBAR_EQUITIES_MIN_THRESHOLD` |
-| Unknown     | 1 dbps    | `RANGEBAR_UNKNOWN_MIN_THRESHOLD`  |
+| Asset Class | Minimum  | Env Var                           |
+| ----------- | -------- | --------------------------------- |
+| Crypto      | 250 dbps | `RANGEBAR_CRYPTO_MIN_THRESHOLD`   |
+| Forex       | 50 dbps  | `RANGEBAR_FOREX_MIN_THRESHOLD`    |
+| Equities    | 100 dbps | `RANGEBAR_EQUITIES_MIN_THRESHOLD` |
+| Unknown     | 1 dbps   | `RANGEBAR_UNKNOWN_MIN_THRESHOLD`  |
 
 ## API Reference
 
@@ -96,17 +96,17 @@ The entry point for date-bounded range bar generation with automatic data fetchi
 ```python
 from rangebar import get_range_bars
 
-# Basic usage - Binance spot (crypto requires threshold >= 1000 dbps)
-df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30", threshold_decimal_bps=1000)
+# Basic usage - Binance spot (crypto requires threshold >= 250 dbps)
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30", threshold_decimal_bps=250)
 
-# Using threshold presets (only "macro" and "wide" valid for crypto)
-df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", threshold_decimal_bps="macro")
+# Using threshold presets ("medium", "wide", "macro" valid for crypto)
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", threshold_decimal_bps="medium")
 
 # Binance USD-M Futures
-df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", market="futures-um", threshold_decimal_bps=1000)
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-03-31", market="futures-um", threshold_decimal_bps=500)
 
 # With microstructure features (62 total columns)
-df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_decimal_bps=1000, include_microstructure=True)
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_decimal_bps=250, include_microstructure=True)
 ```
 
 **Parameters**:
@@ -383,24 +383,18 @@ pytest tests/
 
 **Breaking changes**:
 
-1. **ThresholdError** raised for crypto symbols with threshold < 1000 dbps
-2. Presets "micro", "tight", "standard", "medium" will error for crypto symbols
+1. **ThresholdError** raised for crypto symbols with threshold < 250 dbps
+2. Presets "micro" and "tight" will error for crypto symbols
 3. Checkpoints with low thresholds fail to restore
 
 **Migration options**:
 
 ```python
-# Option 1: Use valid threshold for crypto
-df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_decimal_bps=1000)
+# Option 1: Use valid threshold for crypto (>= 250 dbps)
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_decimal_bps=250)
 
-# Option 2: Override minimum via environment variable
-import os
-os.environ["RANGEBAR_CRYPTO_MIN_THRESHOLD"] = "250"
-from rangebar import clear_threshold_cache
-clear_threshold_cache()
-
-# Option 3: Use "macro" preset (1000 dbps)
-df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_decimal_bps="macro")
+# Option 2: Use "medium" preset (250 dbps)
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-31", threshold_decimal_bps="medium")
 ```
 
 ## Documentation

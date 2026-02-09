@@ -211,12 +211,14 @@ for row in result.result_rows:
 
 ## Host-Specific Cache Status
 
-| Host        | Symbols                                     | Thresholds Cached     | ClickHouse Setup | Notes             |
-| ----------- | ------------------------------------------- | --------------------- | ---------------- | ----------------- |
-| bigblack    | BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT (crypto) | 25, 50, 100, 200 dbps | Native           | Primary GPU host  |
-| bigblack    | EURUSD (forex)                              | 50, 100, 200 dbps     | Native           | Exness Raw_Spread |
-| littleblack | BTCUSDT                                     | 100 dbps              | Docker           | Secondary host    |
-| local       | varies                                      | varies                | Native/Docker    | Development       |
+| Host        | Symbols                  | Thresholds Cached (dbps) | ClickHouse Setup | Notes             |
+| ----------- | ------------------------ | ------------------------ | ---------------- | ----------------- |
+| bigblack    | 15 Tier 1 crypto symbols | 250, 500, 750, 1000      | Native           | Primary GPU host  |
+| bigblack    | EURUSD (forex)           | 50, 100, 200             | Native           | Exness Raw_Spread |
+| littleblack | BTCUSDT                  | 100                      | Docker           | Secondary host    |
+| local       | varies                   | varies                   | Native/Docker    | Development       |
+
+**Minimum crypto threshold**: 250 dbps (enforced by `RANGEBAR_CRYPTO_MIN_THRESHOLD` in `.mise.toml`)
 
 **Total cached**: 260M+ bars (crypto) + 130K bars (forex)
 

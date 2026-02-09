@@ -45,7 +45,7 @@ __all__ = [
 # Values are in decimal basis points (dbps): 1000 dbps = 1%
 
 _FALLBACK_DEFAULTS: dict[AssetClass, int] = {
-    AssetClass.CRYPTO: 1000,  # 1% - cannot overcome trading costs below this
+    AssetClass.CRYPTO: 250,  # 0.25% - minimum viable crypto threshold
     AssetClass.FOREX: 50,  # 0.05% - tighter spreads allow lower
     AssetClass.EQUITIES: 100,  # 0.1% - standard equities minimum
     AssetClass.UNKNOWN: 1,  # No enforcement for unknown assets

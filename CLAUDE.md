@@ -324,10 +324,10 @@ df = get_range_bars(
 
 **Host-specific cache status**:
 
-| Host        | Thresholds | ClickHouse | Notes            |
-| ----------- | ---------- | ---------- | ---------------- |
-| bigblack    | 100, 700   | Native     | Primary GPU host |
-| littleblack | 100        | Docker     | Secondary host   |
+| Host        | Thresholds (dbps)   | ClickHouse | Notes            |
+| ----------- | ------------------- | ---------- | ---------------- |
+| bigblack    | 250, 500, 750, 1000 | Native     | Primary GPU host |
+| littleblack | 100                 | Docker     | Secondary host   |
 
 ---
 

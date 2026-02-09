@@ -31,7 +31,6 @@ MEMORY_LIMIT_250="8G"    # Peak ~5 GB (most trades per bar, heaviest)
 MEMORY_LIMIT_500="4G"    # Peak ~1.5 GB
 MEMORY_LIMIT_750="4G"    # Peak ~1.5 GB
 MEMORY_LIMIT_1000="2G"   # Peak ~1 GB (fewest trades per bar, lightest)
-MEMORY_LIMIT_100="10G"   # Peak unknown (conservative)
 
 # Detect if systemd-run is available (Linux only, not macOS)
 HAS_SYSTEMD_RUN=false
@@ -50,7 +49,6 @@ fi
 get_memory_limit() {
     local threshold=$1
     case "$threshold" in
-        100)  echo "$MEMORY_LIMIT_100" ;;
         250)  echo "$MEMORY_LIMIT_250" ;;
         500)  echo "$MEMORY_LIMIT_500" ;;
         750)  echo "$MEMORY_LIMIT_750" ;;
@@ -142,9 +140,9 @@ add_job() {
     # systemd-run provides per-job memory caps (OOM-killed cleanly instead of swapping)
     local cmd
     if [[ "$HAS_SYSTEMD_RUN" == "true" ]]; then
-        cmd="systemd-run --user --scope -p MemoryMax=${mem_limit} -p MemorySwapMax=0 env RANGEBAR_CRYPTO_MIN_THRESHOLD=250 uv run python scripts/populate_full_cache.py --symbol ${symbol} --threshold ${threshold} --force-refresh --include-microstructure"
+        cmd="systemd-run --user --scope -p MemoryMax=${mem_limit} -p MemorySwapMax=0 uv run python scripts/populate_full_cache.py --symbol ${symbol} --threshold ${threshold} --force-refresh --include-microstructure"
     else
-        cmd="env RANGEBAR_CRYPTO_MIN_THRESHOLD=250 uv run python scripts/populate_full_cache.py --symbol ${symbol} --threshold ${threshold} --force-refresh --include-microstructure"
+        cmd="uv run python scripts/populate_full_cache.py --symbol ${symbol} --threshold ${threshold} --force-refresh --include-microstructure"
     fi
 
     # Add job to pueue with label for easy identification
@@ -234,7 +232,6 @@ show_guard_status() {
     if [[ "$HAS_SYSTEMD_RUN" == "true" ]]; then
         echo "systemd-run:  ACTIVE (cgroups v2)"
         echo "Memory limits:"
-        echo "   100 dbps:  ${MEMORY_LIMIT_100}"
         echo "   250 dbps:  ${MEMORY_LIMIT_250}"
         echo "   500 dbps:  ${MEMORY_LIMIT_500}"
         echo "   750 dbps:  ${MEMORY_LIMIT_750}"

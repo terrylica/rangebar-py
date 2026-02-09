@@ -18,9 +18,8 @@ run = "python scripts/cache_clear.py"
 # Pueue-Managed Cache Population (Issue #84)
 # =============================================================================
 # Long-running jobs managed by pueue daemon (survives SSH disconnects).
-# Each job overrides RANGEBAR_CRYPTO_MIN_THRESHOLD=250 to allow
-# sub-1000 dbps thresholds while preserving the 1000 safety guard
-# in .mise.toml for local dev.
+# Minimum crypto threshold is 250 dbps (enforced by .mise.toml SSoT).
+# No per-job env var overrides — mise is the single source of truth.
 #
 # Phases (4 thresholds: 250, 500, 750, 1000):
 #   p1: 1000 dbps (15 jobs, 4 parallel)  — ~8 hrs

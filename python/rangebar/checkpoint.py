@@ -609,6 +609,18 @@ def populate_cache_resumable(
             del df
 
         except (ValueError, RuntimeError, OSError) as exc:
+            # Defense-in-depth: if the final day has no data (archive not yet
+            # published on Binance Vision), complete gracefully instead of
+            # crashing the entire multi-day job at 99.96% completion.
+            if "No data available" in str(exc) and date == dates[-1]:
+                logger.warning(
+                    "No data for final day %s (archive not yet published?) "
+                    "— completing gracefully with %d bars",
+                    date,
+                    total_bars,
+                )
+                break
+
             logger.exception(
                 "Failed to process %s for %s",
                 symbol,
