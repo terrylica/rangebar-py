@@ -62,3 +62,26 @@ run = "./scripts/pueue-populate.sh restart"
 ["cache:populate-clean"]
 description = "Remove completed jobs from pueue queue"
 run = "./scripts/pueue-populate.sh clean"
+
+["cache:populate-guard-status"]
+description = "Show resource guard (systemd-run cgroup) status"
+run = "./scripts/pueue-populate.sh guard-status"
+
+# =============================================================================
+# Autoscaler (dynamic parallelism tuning)
+# =============================================================================
+# Monitors CPU load + memory, adjusts pueue parallelism per group.
+# Complements pueue (which has no resource awareness) with incremental
+# scaling protocol from distributed-job-safety skill.
+
+["cache:autoscale"]
+description = "Run autoscaler once (dry-run, shows what would change)"
+run = "./scripts/pueue-autoscaler.sh"
+
+["cache:autoscale-apply"]
+description = "Run autoscaler once and apply parallelism changes"
+run = "./scripts/pueue-autoscaler.sh --apply"
+
+["cache:autoscale-loop"]
+description = "Start continuous autoscaler (60s interval, Ctrl+C to stop)"
+run = "./scripts/pueue-autoscaler.sh --loop"

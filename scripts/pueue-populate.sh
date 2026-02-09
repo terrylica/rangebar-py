@@ -24,6 +24,41 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# --- Resource Guard Configuration ---
+# Memory limits per threshold tier (empirically measured on bigblack)
+# Values include ~60% headroom above observed peak usage
+MEMORY_LIMIT_250="8G"    # Peak ~5 GB (most trades per bar, heaviest)
+MEMORY_LIMIT_500="4G"    # Peak ~1.5 GB
+MEMORY_LIMIT_750="4G"    # Peak ~1.5 GB
+MEMORY_LIMIT_1000="2G"   # Peak ~1 GB (fewest trades per bar, lightest)
+MEMORY_LIMIT_100="10G"   # Peak unknown (conservative)
+
+# Detect if systemd-run is available (Linux only, not macOS)
+HAS_SYSTEMD_RUN=false
+if command -v systemd-run &> /dev/null && [[ "$(uname)" == "Linux" ]]; then
+    # Verify user slice works (cgroups v2 required)
+    if systemd-run --user --scope -p MemoryMax=1G true 2>/dev/null; then
+        HAS_SYSTEMD_RUN=true
+    fi
+fi
+
+# Override: RANGEBAR_NO_CGROUP=1 to bypass systemd-run
+if [[ "${RANGEBAR_NO_CGROUP:-}" == "1" ]]; then
+    HAS_SYSTEMD_RUN=false
+fi
+
+get_memory_limit() {
+    local threshold=$1
+    case "$threshold" in
+        100)  echo "$MEMORY_LIMIT_100" ;;
+        250)  echo "$MEMORY_LIMIT_250" ;;
+        500)  echo "$MEMORY_LIMIT_500" ;;
+        750)  echo "$MEMORY_LIMIT_750" ;;
+        1000) echo "$MEMORY_LIMIT_1000" ;;
+        *)    echo "4G" ;;  # Conservative default
+    esac
+}
+
 # Symbols - from symbols.toml registry (Issue #79, #84)
 # MATICUSDT removed: delisted 2024-09-10 (MATIC->POL rebrand)
 # SHIBUSDT, UNIUSDT added: in symbols.toml but missing from bigblack
@@ -75,10 +110,23 @@ setup_groups() {
     pueue parallel 2 --group p2   # Phase 2: 250 dbps (moderate)
     pueue parallel 3 --group p3   # Phase 3: 500,750 dbps
 
-    echo "✅ Groups configured:"
+    echo "Groups configured:"
     echo "   p1 (1000 dbps): 4 parallel jobs"
     echo "   p2 (250 dbps):  2 parallel jobs"
     echo "   p3 (500,750):   3 parallel jobs"
+
+    # Report resource guard status
+    if [[ "$HAS_SYSTEMD_RUN" == "true" ]]; then
+        echo ""
+        echo "Resource guard: systemd-run cgroups ACTIVE"
+        echo "   250 dbps:  ${MEMORY_LIMIT_250} per job"
+        echo "   500 dbps:  ${MEMORY_LIMIT_500} per job"
+        echo "   750 dbps:  ${MEMORY_LIMIT_750} per job"
+        echo "   1000 dbps: ${MEMORY_LIMIT_1000} per job"
+    else
+        echo ""
+        echo "Resource guard: INACTIVE (no systemd-run or macOS)"
+    fi
 }
 
 add_job() {
@@ -87,16 +135,29 @@ add_job() {
     local group=$3
 
     local label="${symbol}@${threshold}"
+    local mem_limit
+    mem_limit=$(get_memory_limit "$threshold")
+
+    # Build command with optional systemd-run cgroup wrapper
+    # systemd-run provides per-job memory caps (OOM-killed cleanly instead of swapping)
+    local cmd
+    if [[ "$HAS_SYSTEMD_RUN" == "true" ]]; then
+        cmd="systemd-run --user --scope -p MemoryMax=${mem_limit} -p MemorySwapMax=0 env RANGEBAR_CRYPTO_MIN_THRESHOLD=250 uv run python scripts/populate_full_cache.py --symbol ${symbol} --threshold ${threshold} --force-refresh --include-microstructure"
+    else
+        cmd="env RANGEBAR_CRYPTO_MIN_THRESHOLD=250 uv run python scripts/populate_full_cache.py --symbol ${symbol} --threshold ${threshold} --force-refresh --include-microstructure"
+    fi
 
     # Add job to pueue with label for easy identification
     # --force-refresh: wipe existing cache (Issue #84 full repopulation)
     # --include-microstructure: all 38 features (Issue #83 gap fix)
-    # NOTE: env override needed because .mise.toml default is 1000 dbps (local dev safety guard)
-    #       but production population needs thresholds down to 250 dbps
-    pueue add --group "$group" --label "$label" --working-directory "$PROJECT_DIR" -- \
-        env RANGEBAR_CRYPTO_MIN_THRESHOLD=250 uv run python scripts/populate_full_cache.py --symbol "$symbol" --threshold "$threshold" --force-refresh --include-microstructure
+    # shellcheck disable=SC2086
+    pueue add --group "$group" --label "$label" --working-directory "$PROJECT_DIR" -- $cmd
 
-    echo "  Added: $label -> group $group"
+    local guard_info=""
+    if [[ "$HAS_SYSTEMD_RUN" == "true" ]]; then
+        guard_info=" [cgroup: ${mem_limit}]"
+    fi
+    echo "  Added: $label -> group $group${guard_info}"
 }
 
 queue_phase1() {
@@ -168,9 +229,40 @@ clean_done() {
     echo "✅ Done"
 }
 
+show_guard_status() {
+    echo "=== RESOURCE GUARD STATUS ==="
+    if [[ "$HAS_SYSTEMD_RUN" == "true" ]]; then
+        echo "systemd-run:  ACTIVE (cgroups v2)"
+        echo "Memory limits:"
+        echo "   100 dbps:  ${MEMORY_LIMIT_100}"
+        echo "   250 dbps:  ${MEMORY_LIMIT_250}"
+        echo "   500 dbps:  ${MEMORY_LIMIT_500}"
+        echo "   750 dbps:  ${MEMORY_LIMIT_750}"
+        echo "   1000 dbps: ${MEMORY_LIMIT_1000}"
+    else
+        echo "systemd-run:  INACTIVE"
+        if [[ "$(uname)" == "Darwin" ]]; then
+            echo "  Reason: macOS (systemd not available)"
+        elif [[ "${RANGEBAR_NO_CGROUP:-}" == "1" ]]; then
+            echo "  Reason: RANGEBAR_NO_CGROUP=1 set"
+        else
+            echo "  Reason: systemd-run not found or cgroups v2 not available"
+        fi
+    fi
+    echo ""
+    echo "=== HOST RESOURCES ==="
+    if command -v free &> /dev/null; then
+        free -h | head -2
+    else
+        echo "  (free not available — likely macOS)"
+    fi
+    echo ""
+    uptime
+}
+
 usage() {
     cat << EOF
-Pueue-based rangebar cache population
+Pueue-based rangebar cache population with resource guards
 
 SETUP (one-time):
   brew install pueue      # Install pueue
@@ -178,20 +270,21 @@ SETUP (one-time):
   $0 setup                # Configure groups with parallelism limits
 
 USAGE:
-  $0 phase1     Queue Phase 1 jobs (1000 dbps, 4 parallel)
-  $0 phase2     Queue Phase 2 jobs (250 dbps, 2 parallel)
-  $0 phase3     Queue Phase 3 jobs (500,750 dbps, 3 parallel)
-  $0 all        Queue all 60 jobs across all phases
-  $0 status     Show progress
-  $0 restart    Restart all failed jobs
-  $0 clean      Remove completed jobs from queue
+  $0 phase1       Queue Phase 1 jobs (1000 dbps, 4 parallel)
+  $0 phase2       Queue Phase 2 jobs (250 dbps, 2 parallel)
+  $0 phase3       Queue Phase 3 jobs (500,750 dbps, 3 parallel)
+  $0 all          Queue all 60 jobs across all phases
+  $0 status       Show progress
+  $0 guard-status Show resource guard (systemd-run) status
+  $0 restart      Restart all failed jobs
+  $0 clean        Remove completed jobs from queue
 
-WHY PUEUE:
-  ✅ Daemon survives SSH disconnect, crashes, reboots
-  ✅ Queue persisted to disk - auto-resumes
-  ✅ Per-group parallelism limits
-  ✅ Easy restart of failed jobs
-  ✅ No Redis, no database, just works
+RESOURCE GUARDS:
+  On Linux with systemd, each job runs inside a cgroup with per-threshold
+  memory limits via systemd-run. Jobs that exceed their limit are OOM-killed
+  cleanly instead of swapping the host to death.
+
+  Bypass: RANGEBAR_NO_CGROUP=1 $0 all
 
 EOF
 }
@@ -217,6 +310,9 @@ case "${1:-}" in
         ;;
     status)
         show_status
+        ;;
+    guard-status)
+        show_guard_status
         ;;
     restart)
         restart_failed
