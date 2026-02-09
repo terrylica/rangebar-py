@@ -30,6 +30,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _guard_timestamp_ms_scale(df: object, column: str = "timestamp_ms") -> None:
+    """Raise if timestamp_ms contains seconds instead of milliseconds (#85)."""
+    if column in (df.columns if hasattr(df, "columns") else []):
+        min_ts = df[column].min()
+        if min_ts < 1_000_000_000_000:
+            msg = (
+                f"timestamp_ms in seconds, not ms (min={min_ts}). "
+                f"See Issue #85."
+            )
+            raise ValueError(msg)
+
+
 class BulkStoreMixin:
     """Mixin providing bulk store operations for RangeBarCache.
 
@@ -74,7 +86,6 @@ class BulkStoreMixin:
             If the insert operation fails.
         """
         if bars.empty:
-            logger.debug("Skipping bulk cache write for %s: empty DataFrame", symbol)
             return 0
 
         # Issue #48: Emit CACHE_WRITE_START hook
@@ -98,6 +109,8 @@ class BulkStoreMixin:
             elif "index" in df.columns:
                 df["timestamp_ms"] = df["index"].dt.as_unit("ms").astype("int64")
                 df = df.drop(columns=["index"])
+
+        _guard_timestamp_ms_scale(df)
 
         # Normalize column names (lowercase)
         df.columns = df.columns.str.lower()
@@ -259,6 +272,8 @@ class BulkStoreMixin:
                     .cast(pl.Int64)
                     .alias("timestamp_ms")
                 ).drop("timestamp")
+
+        _guard_timestamp_ms_scale(df)
 
         # Add cache metadata (ouroboros_mode defaults to "year" for batch storage)
         # Schema evolution: use __version__ if version not specified
