@@ -281,11 +281,11 @@ def _stream_range_bars_binance(
     import polars as pl
 
     try:
-        from rangebar._core import MarketType, stream_binance_trades
+        from rangebar._core import MarketType, stream_binance_trades_arrow
     except ImportError as e:
         msg = (
-            "Streaming requires the 'data-providers' feature. "
-            "Rebuild with: maturin develop --features data-providers"
+            "Streaming requires the 'data-providers' and 'arrow-export' features. "
+            "Rebuild with: maturin develop --features data-providers,arrow-export"
         )
         raise RuntimeError(msg) from e
 
@@ -308,9 +308,10 @@ def _stream_range_bars_binance(
     bar_frames: list[pl.DataFrame] = []
     total_buffered = 0
 
-    # Stream trades in 6-hour chunks
-    # NOTE: Trade input stays dict-based here (stream_binance_trades yields dicts — Phase 5 scope)
-    for trade_batch in stream_binance_trades(
+    # Phase 3: Stream trades as Arrow RecordBatches (zero-copy, no Python dicts)
+    # Trade data: Rust Vec<AggTrade> → Arrow RecordBatch (μs timestamps)
+    # Processing: process_trades_arrow_native() (μs→μs, no conversion)
+    for trade_arrow in stream_binance_trades_arrow(
         symbol,
         start_date,
         end_date,
@@ -318,8 +319,8 @@ def _stream_range_bars_binance(
         market_type=market_enum,
         verify_checksum=verify_checksum,
     ):
-        # Process to bars via Arrow output (trade input still dict-based)
-        arrow_batch = processor.process_trades_streaming_arrow(trade_batch)
+        # Process Arrow→Arrow (timestamps stay in μs, never converted to dicts)
+        arrow_batch = processor.process_trades_arrow_native(trade_arrow)
         bars_df = pl.from_arrow(arrow_batch)
 
         if not bars_df.is_empty():

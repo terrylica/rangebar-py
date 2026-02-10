@@ -713,12 +713,15 @@ def get_range_bars(
             from rangebar.exceptions import CacheError
 
             with RangeBarCache() as cache:
-                # Use store_bars_bulk for bars computed without exact CacheKey
-                # Ouroboros mode determines cache key (Plan: sparkling-coalescing-dijkstra.md)
-                written = cache.store_bars_bulk(
+                # Phase 3+4: Route through store_bars_batch (Arrow path, 2-3 copies)
+                # instead of store_bars_bulk (pandas path, 5-7 copies)
+                import polars as pl
+
+                bars_pl = pl.from_pandas(bars_df.reset_index())
+                written = cache.store_bars_batch(
                     symbol=symbol,
                     threshold_decimal_bps=threshold_decimal_bps,
-                    bars=bars_df,
+                    bars=bars_pl,
                     version="",  # Version tracked elsewhere
                     ouroboros_mode=ouroboros,
                 )

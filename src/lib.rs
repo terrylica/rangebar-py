@@ -878,7 +878,51 @@ impl PyRangeBarProcessor {
         }
 
         // Convert Arrow RecordBatch to AggTrades (zero Python interaction)
-        let agg_trades = record_batch_to_aggtrades(record_batch).map_err(|e| {
+        // timestamp_is_microseconds=false: Python API passes millisecond timestamps
+        let agg_trades = record_batch_to_aggtrades(record_batch, false).map_err(|e| {
+            PyValueError::new_err(format!("Arrow import failed: {e}"))
+        })?;
+
+        // Process each trade individually to maintain streaming state
+        let mut bars = Vec::with_capacity(agg_trades.len() / 100);
+        for trade in agg_trades {
+            match self.processor.process_single_trade(trade) {
+                Ok(Some(bar)) => bars.push(bar),
+                Ok(None) => {}
+                Err(e) => return Err(PyRuntimeError::new_err(format!("Processing failed: {e}"))),
+            }
+        }
+
+        let batch = rangebar_vec_to_record_batch(&bars);
+        Ok(PyRecordBatch::new(batch))
+    }
+
+    /// Process trades from Arrow RecordBatch with microsecond timestamps (internal path).
+    ///
+    /// Unlike `process_trades_arrow()` which expects millisecond timestamps from Python,
+    /// this method expects microsecond timestamps as produced by `stream_binance_trades_arrow()`.
+    /// This is the Phase 3 zero-copy pipeline: data never leaves Rust's internal format.
+    ///
+    /// Args:
+    ///     batch: Arrow RecordBatch with microsecond timestamps (from `stream_binance_trades_arrow()`)
+    ///
+    /// Returns:
+    ///     Arrow RecordBatch containing completed range bars
+    ///
+    /// Raises:
+    ///     `ValueError`: If required columns are missing or have wrong types
+    ///     `RuntimeError`: If trade processing fails
+    #[cfg(feature = "arrow-export")]
+    fn process_trades_arrow_native(&mut self, batch: PyRecordBatch) -> PyResult<PyRecordBatch> {
+        let record_batch = batch.as_ref();
+
+        if record_batch.num_rows() == 0 {
+            let empty_batch = rangebar_vec_to_record_batch(&[]);
+            return Ok(PyRecordBatch::new(empty_batch));
+        }
+
+        // timestamp_is_microseconds=true: internal path, timestamps already in μs
+        let agg_trades = record_batch_to_aggtrades(record_batch, true).map_err(|e| {
             PyValueError::new_err(format!("Arrow import failed: {e}"))
         })?;
 
@@ -1557,6 +1601,16 @@ fn _core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
             binance_bindings::stream_binance_trades,
             m
         )?)?;
+
+        // Phase 3: Arrow-native stream (requires both data-providers and arrow-export)
+        #[cfg(feature = "arrow-export")]
+        {
+            m.add_class::<binance_bindings::PyBinanceTradeStreamArrow>()?;
+            m.add_function(wrap_pyfunction!(
+                binance_bindings::stream_binance_trades_arrow,
+                m
+            )?)?;
+        }
     }
 
     // Add streaming classes if feature enabled
@@ -1896,6 +1950,153 @@ mod binance_bindings {
         verify_checksum: bool,
     ) -> PyResult<PyBinanceTradeStream> {
         PyBinanceTradeStream::new(
+            symbol,
+            start_date,
+            end_date,
+            chunk_hours,
+            market_type,
+            verify_checksum,
+        )
+    }
+
+    // ========================================================================
+    // Phase 3: Arrow-native stream (eliminates Rust→Python→Rust round-trip)
+    // Requires both data-providers and arrow-export features
+    // ========================================================================
+
+    /// Stream Binance trades as Arrow RecordBatches (zero-copy, no Python dicts).
+    ///
+    /// Unlike `BinanceTradeStream` which yields `List[Dict]` (7 PyDict.set_item
+    /// calls per trade through GIL), this yields `PyRecordBatch` directly from
+    /// Rust `Vec<AggTrade>`. Timestamps are in **microseconds** (internal format).
+    ///
+    /// Example:
+    ///     ```python
+    ///     from rangebar._core import stream_binance_trades_arrow
+    ///
+    ///     processor = PyRangeBarProcessor(250, symbol="BTCUSDT")
+    ///     for trade_batch in stream_binance_trades_arrow("BTCUSDT", "2024-01-01", "2024-01-07"):
+    ///         # trade_batch is a PyRecordBatch with μs timestamps
+    ///         bars = processor.process_trades_arrow_native(trade_batch)
+    ///     ```
+    #[cfg(feature = "arrow-export")]
+    #[pyclass(name = "BinanceTradeStreamArrow")]
+    pub struct PyBinanceTradeStreamArrow {
+        inner: IntraDayChunkIterator,
+        symbol: String,
+    }
+
+    #[cfg(feature = "arrow-export")]
+    #[pymethods]
+    impl PyBinanceTradeStreamArrow {
+        #[new]
+        #[pyo3(signature = (symbol, start_date, end_date, chunk_hours = 6, market_type = PyMarketType::Spot, verify_checksum = true))]
+        fn new(
+            symbol: &str,
+            start_date: &str,
+            end_date: &str,
+            chunk_hours: u32,
+            market_type: PyMarketType,
+            verify_checksum: bool,
+        ) -> PyResult<Self> {
+            let start = NaiveDate::parse_from_str(start_date, "%Y-%m-%d")
+                .map_err(|e| PyValueError::new_err(format!("Invalid start_date format: {e}")))?;
+            let end = NaiveDate::parse_from_str(end_date, "%Y-%m-%d")
+                .map_err(|e| PyValueError::new_err(format!("Invalid end_date format: {e}")))?;
+
+            if start > end {
+                return Err(PyValueError::new_err("start_date must be <= end_date"));
+            }
+
+            if chunk_hours == 0 || chunk_hours > 24 {
+                return Err(PyValueError::new_err("chunk_hours must be 1-24"));
+            }
+
+            let loader = HistoricalDataLoader::new_with_market(symbol, market_type.to_market_str());
+            let inner = IntraDayChunkIterator::with_checksum(
+                loader,
+                start,
+                end,
+                chunk_hours,
+                verify_checksum,
+            );
+
+            Ok(Self {
+                inner,
+                symbol: symbol.to_uppercase(),
+            })
+        }
+
+        #[getter]
+        fn symbol(&self) -> &str {
+            &self.symbol
+        }
+
+        #[getter]
+        fn current_date(&self) -> String {
+            self.inner.current_date().format("%Y-%m-%d").to_string()
+        }
+
+        #[getter]
+        fn current_hour(&self) -> u32 {
+            self.inner.current_hour()
+        }
+
+        #[allow(clippy::missing_const_for_fn)]
+        fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+            slf
+        }
+
+        /// Get next chunk of trades as an Arrow RecordBatch.
+        ///
+        /// Returns:
+        ///     PyRecordBatch with microsecond timestamps, or None if exhausted.
+        ///
+        /// Raises:
+        ///     RuntimeError: If data fetching fails.
+        fn __next__(&mut self) -> PyResult<Option<PyRecordBatch>> {
+            match self.inner.next() {
+                Some(Ok(trades)) => {
+                    // Convert Vec<AggTrade> directly to Arrow RecordBatch
+                    // Timestamps are ALREADY in microseconds (normalized during CSV parse)
+                    let batch = aggtrades_to_record_batch(&trades);
+                    Ok(Some(PyRecordBatch::new(batch)))
+                }
+                Some(Err(e)) => Err(PyRuntimeError::new_err(format!("Data fetch error: {e}"))),
+                None => Ok(None),
+            }
+        }
+    }
+
+    /// Stream Binance aggTrades as Arrow RecordBatches (Phase 3: zero-copy).
+    ///
+    /// This is the Arrow-native counterpart of `stream_binance_trades()`.
+    /// Instead of yielding `List[Dict]`, yields `PyRecordBatch` with microsecond
+    /// timestamps. Use with `process_trades_arrow_native()` for the full
+    /// zero-copy pipeline.
+    ///
+    /// Args:
+    ///     symbol: Trading pair (e.g., "BTCUSDT")
+    ///     start_date: Start date as "YYYY-MM-DD"
+    ///     end_date: End date as "YYYY-MM-DD"
+    ///     chunk_hours: Hours per chunk (1, 6, 12, or 24). Default: 6.
+    ///     market_type: Market type (Spot, FuturesUM, FuturesCM). Default: Spot.
+    ///     verify_checksum: Verify SHA-256 checksum. Default: True.
+    ///
+    /// Returns:
+    ///     Iterator yielding Arrow RecordBatches.
+    #[cfg(feature = "arrow-export")]
+    #[pyfunction]
+    #[pyo3(signature = (symbol, start_date, end_date, chunk_hours = 6, market_type = PyMarketType::Spot, verify_checksum = true))]
+    pub fn stream_binance_trades_arrow(
+        symbol: &str,
+        start_date: &str,
+        end_date: &str,
+        chunk_hours: u32,
+        market_type: PyMarketType,
+        verify_checksum: bool,
+    ) -> PyResult<PyBinanceTradeStreamArrow> {
+        PyBinanceTradeStreamArrow::new(
             symbol,
             start_date,
             end_date,

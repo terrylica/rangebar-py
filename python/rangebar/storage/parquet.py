@@ -654,7 +654,7 @@ class TickStorage:
                     yield combined
                 del combined
 
-    def has_ticks(
+    def has_ticks(  # noqa: PLR0911
         self,
         symbol: str,
         start_ts: int,
@@ -664,6 +664,9 @@ class TickStorage:
         timestamp_col: str = "timestamp",
     ) -> bool:
         """Check if tick data exists for the specified time range.
+
+        Uses lazy Parquet scan (reads only metadata + timestamp column)
+        instead of materializing all tick data into memory.
 
         Parameters
         ----------
@@ -683,16 +686,54 @@ class TickStorage:
         bool
             True if sufficient data exists
         """
-        tick_data = self.read_ticks(
-            symbol, start_ts, end_ts, timestamp_col=timestamp_col
-        )
-
-        if tick_data.is_empty():
+        symbol_dir = self._get_symbol_dir(symbol)
+        if not symbol_dir.exists():
             return False
 
-        actual_start = tick_data[timestamp_col].min()
-        actual_end = tick_data[timestamp_col].max()
+        parquet_files = sorted(symbol_dir.glob("*.parquet"))
+        if not parquet_files:
+            return False
 
+        # Filter files by month range
+        start_month = self._timestamp_to_year_month(start_ts)
+        end_month = self._timestamp_to_year_month(end_ts)
+        parquet_files = [
+            f for f in parquet_files if start_month <= f.stem <= end_month
+        ]
+
+        if not parquet_files:
+            return False
+
+        # Issue #73: Validate files before reading
+        valid_files = [
+            f
+            for f in parquet_files
+            if _validate_and_recover_parquet(f, auto_delete=True)
+        ]
+        if not valid_files:
+            return False
+
+        # Lazy scan: reads only timestamp column metadata, never materializes full data
+        lazy = pl.scan_parquet(valid_files)
+
+        # Apply time range filter (predicate pushdown)
+        lazy = lazy.filter(
+            (pl.col(timestamp_col) >= start_ts)
+            & (pl.col(timestamp_col) <= end_ts)
+        )
+
+        # Aggregate: only reads min/max of timestamp column
+        stats = lazy.select(
+            pl.col(timestamp_col).min().alias("min_ts"),
+            pl.col(timestamp_col).max().alias("max_ts"),
+            pl.col(timestamp_col).count().alias("count"),
+        ).collect()
+
+        if stats["count"][0] == 0:
+            return False
+
+        actual_start = stats["min_ts"][0]
+        actual_end = stats["max_ts"][0]
         if actual_start is None or actual_end is None:
             return False
 
@@ -700,7 +741,7 @@ class TickStorage:
         requested_range = end_ts - start_ts
 
         if requested_range == 0:
-            return len(tick_data) > 0
+            return stats["count"][0] > 0
 
         coverage = actual_range / requested_range
         return coverage >= min_coverage

@@ -213,6 +213,7 @@ class BulkStoreMixin:
         threshold_decimal_bps: int,
         bars: pl.DataFrame,
         version: str | None = None,
+        ouroboros_mode: str = "year",
     ) -> int:
         """Store a batch of bars using Arrow for efficient streaming writes.
 
@@ -230,6 +231,8 @@ class BulkStoreMixin:
         version : str | None
             rangebar-core version for cache invalidation. If None (default),
             uses current package version for schema evolution tracking.
+        ouroboros_mode : str
+            Ouroboros reset mode: "year", "month", or "week" (default: "year")
 
         Returns
         -------
@@ -275,13 +278,13 @@ class BulkStoreMixin:
 
         _guard_timestamp_ms_scale(df)
 
-        # Add cache metadata (ouroboros_mode defaults to "year" for batch storage)
+        # Add cache metadata
         # Schema evolution: use __version__ if version not specified
         effective_version = version if version is not None else __version__
         df = df.with_columns(
             pl.lit(symbol).alias("symbol"),
             pl.lit(threshold_decimal_bps).alias("threshold_decimal_bps"),
-            pl.lit("year").alias("ouroboros_mode"),  # Default for batch storage
+            pl.lit(ouroboros_mode).alias("ouroboros_mode"),
             pl.lit(effective_version).alias("rangebar_version"),
         )
 
@@ -289,7 +292,10 @@ class BulkStoreMixin:
         if "timestamp_ms" in df.columns and len(df) > 0:
             start_ts = df["timestamp_ms"].min()
             end_ts = df["timestamp_ms"].max()
-            key_str = f"{symbol}_{threshold_decimal_bps}_{start_ts}_{end_ts}_year"
+            key_str = (
+                f"{symbol}_{threshold_decimal_bps}"
+                f"_{start_ts}_{end_ts}_{ouroboros_mode}"
+            )
             cache_key = hashlib.md5(key_str.encode()).hexdigest()
 
             df = df.with_columns(

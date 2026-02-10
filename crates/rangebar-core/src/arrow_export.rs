@@ -14,11 +14,12 @@
 //! let batch = rangebar_vec_to_record_batch(&bars);
 //!
 //! // Import: Arrow → Rust
-//! let trades = record_batch_to_aggtrades(&input_batch).unwrap();
+//! let trades = record_batch_to_aggtrades(&input_batch, false).unwrap();
 //! ```
 
 use arrow_array::{
-    Array, BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray, UInt32Array,
+    builder::{Float64Builder, Int64Builder, StringBuilder, UInt32Builder},
+    Array, BooleanArray, Float64Array, Int64Array, RecordBatch,
 };
 use arrow_schema::{DataType, Field, Schema};
 use std::sync::Arc;
@@ -63,10 +64,20 @@ pub enum ArrowImportError {
 ///
 /// # Timestamp convention
 ///
-/// Input timestamps are in **milliseconds** (Binance format).
-/// Output timestamps are in **microseconds** (rangebar-core internal format).
-/// Conversion: `timestamp_us = timestamp_ms * 1000`
-pub fn record_batch_to_aggtrades(batch: &RecordBatch) -> Result<Vec<AggTrade>, ArrowImportError> {
+/// When `timestamp_is_microseconds` is `false` (default for Python API):
+/// - Input timestamps are in **milliseconds** (Binance format)
+/// - Output timestamps are in **microseconds** (rangebar-core internal format)
+/// - Conversion: `timestamp_us = timestamp_ms * 1000`
+///
+/// When `timestamp_is_microseconds` is `true` (internal stream path):
+/// - Input timestamps are already in **microseconds** (from `aggtrades_to_record_batch()`)
+/// - No conversion applied: `timestamp_us = timestamp_raw`
+/// - Used by Phase 3 `stream_binance_trades_arrow()` → `process_trades_arrow_native()`
+///   where data never leaves Rust, so timestamps stay in internal microsecond format
+pub fn record_batch_to_aggtrades(
+    batch: &RecordBatch,
+    timestamp_is_microseconds: bool,
+) -> Result<Vec<AggTrade>, ArrowImportError> {
     let num_rows = batch.num_rows();
     if num_rows == 0 {
         return Ok(Vec::new());
@@ -139,8 +150,14 @@ pub fn record_batch_to_aggtrades(batch: &RecordBatch) -> Result<Vec<AggTrade>, A
             }
         });
 
-        // Convert timestamp from milliseconds to microseconds
-        let timestamp_us = timestamp_ms * 1000;
+        // Convert timestamp to microseconds (rangebar-core internal format)
+        let timestamp_us = if timestamp_is_microseconds {
+            // Internal path: timestamps already in microseconds (from aggtrades_to_record_batch)
+            timestamp_ms // variable name is legacy; value is actually microseconds
+        } else {
+            // Python API path: timestamps in milliseconds (Binance format)
+            timestamp_ms * 1000
+        };
 
         trades.push(AggTrade {
             agg_trade_id,
@@ -288,95 +305,117 @@ pub fn rangebar_schema() -> Schema {
 /// Panics if schema/array construction fails (should not happen with valid data)
 pub fn rangebar_vec_to_record_batch(bars: &[RangeBar]) -> RecordBatch {
     let schema = Arc::new(rangebar_schema());
+    let n = bars.len();
 
-    // Extract columns (vectorized iteration, no per-element allocation)
-    let open_time: Int64Array = bars.iter().map(|b| b.open_time).collect();
-    let close_time: Int64Array = bars.iter().map(|b| b.close_time).collect();
-    let open: Float64Array = bars.iter().map(|b| b.open.to_f64()).collect();
-    let high: Float64Array = bars.iter().map(|b| b.high.to_f64()).collect();
-    let low: Float64Array = bars.iter().map(|b| b.low.to_f64()).collect();
-    let close: Float64Array = bars.iter().map(|b| b.close.to_f64()).collect();
-    let volume: Float64Array = bars.iter().map(|b| b.volume.to_f64()).collect();
-    // Convert i128 turnover to f64 (safe for typical trading volumes)
-    let turnover: Float64Array = bars.iter().map(|b| b.turnover as f64).collect();
+    // Pre-allocate all builders (single pass over bars for better cache locality)
+    let mut open_time = Int64Builder::with_capacity(n);
+    let mut close_time = Int64Builder::with_capacity(n);
+    let mut open = Float64Builder::with_capacity(n);
+    let mut high = Float64Builder::with_capacity(n);
+    let mut low = Float64Builder::with_capacity(n);
+    let mut close = Float64Builder::with_capacity(n);
+    let mut volume = Float64Builder::with_capacity(n);
+    let mut turnover = Float64Builder::with_capacity(n);
+    let mut individual_trade_count = UInt32Builder::with_capacity(n);
+    let mut agg_record_count = UInt32Builder::with_capacity(n);
+    let mut first_trade_id = Int64Builder::with_capacity(n);
+    let mut last_trade_id = Int64Builder::with_capacity(n);
+    let mut first_agg_trade_id = Int64Builder::with_capacity(n);
+    let mut last_agg_trade_id = Int64Builder::with_capacity(n);
+    let mut data_source = StringBuilder::with_capacity(n, n * 16);
+    let mut buy_volume = Float64Builder::with_capacity(n);
+    let mut sell_volume = Float64Builder::with_capacity(n);
+    let mut buy_trade_count = UInt32Builder::with_capacity(n);
+    let mut sell_trade_count = UInt32Builder::with_capacity(n);
+    let mut vwap = Float64Builder::with_capacity(n);
+    let mut buy_turnover = Float64Builder::with_capacity(n);
+    let mut sell_turnover = Float64Builder::with_capacity(n);
+    let mut duration_us = Int64Builder::with_capacity(n);
+    let mut ofi = Float64Builder::with_capacity(n);
+    let mut vwap_close_deviation = Float64Builder::with_capacity(n);
+    let mut price_impact = Float64Builder::with_capacity(n);
+    let mut kyle_lambda_proxy = Float64Builder::with_capacity(n);
+    let mut trade_intensity = Float64Builder::with_capacity(n);
+    let mut volume_per_trade = Float64Builder::with_capacity(n);
+    let mut aggression_ratio = Float64Builder::with_capacity(n);
+    let mut aggregation_density_f64 = Float64Builder::with_capacity(n);
+    let mut turnover_imbalance = Float64Builder::with_capacity(n);
 
-    let individual_trade_count: UInt32Array =
-        bars.iter().map(|b| b.individual_trade_count).collect();
-    let agg_record_count: UInt32Array = bars.iter().map(|b| b.agg_record_count).collect();
-    let first_trade_id: Int64Array = bars.iter().map(|b| b.first_trade_id).collect();
-    let last_trade_id: Int64Array = bars.iter().map(|b| b.last_trade_id).collect();
-    // Issue #72: Aggregate trade ID range for data integrity verification
-    let first_agg_trade_id: Int64Array = bars.iter().map(|b| b.first_agg_trade_id).collect();
-    let last_agg_trade_id: Int64Array = bars.iter().map(|b| b.last_agg_trade_id).collect();
-    // StringArray requires Option<&str> for FromIterator
-    let data_source: StringArray = bars
-        .iter()
-        .map(|b| {
-            Some(match b.data_source {
-                DataSource::BinanceSpot => "BinanceSpot",
-                DataSource::BinanceFuturesUM => "BinanceFuturesUM",
-                DataSource::BinanceFuturesCM => "BinanceFuturesCM",
-            })
-        })
-        .collect();
-
-    let buy_volume: Float64Array = bars.iter().map(|b| b.buy_volume.to_f64()).collect();
-    let sell_volume: Float64Array = bars.iter().map(|b| b.sell_volume.to_f64()).collect();
-    let buy_trade_count: UInt32Array = bars.iter().map(|b| b.buy_trade_count).collect();
-    let sell_trade_count: UInt32Array = bars.iter().map(|b| b.sell_trade_count).collect();
-    let vwap: Float64Array = bars.iter().map(|b| b.vwap.to_f64()).collect();
-    // Convert i128 turnover to f64
-    let buy_turnover: Float64Array = bars.iter().map(|b| b.buy_turnover as f64).collect();
-    let sell_turnover: Float64Array = bars.iter().map(|b| b.sell_turnover as f64).collect();
-
-    // Microstructure features
-    let duration_us: Int64Array = bars.iter().map(|b| b.duration_us).collect();
-    let ofi: Float64Array = bars.iter().map(|b| b.ofi).collect();
-    let vwap_close_deviation: Float64Array = bars.iter().map(|b| b.vwap_close_deviation).collect();
-    let price_impact: Float64Array = bars.iter().map(|b| b.price_impact).collect();
-    let kyle_lambda_proxy: Float64Array = bars.iter().map(|b| b.kyle_lambda_proxy).collect();
-    let trade_intensity: Float64Array = bars.iter().map(|b| b.trade_intensity).collect();
-    let volume_per_trade: Float64Array = bars.iter().map(|b| b.volume_per_trade).collect();
-    let aggression_ratio: Float64Array = bars.iter().map(|b| b.aggression_ratio).collect();
-    let aggregation_density_f64: Float64Array =
-        bars.iter().map(|b| b.aggregation_density_f64).collect();
-    let turnover_imbalance: Float64Array = bars.iter().map(|b| b.turnover_imbalance).collect();
+    // Single pass: extract all fields per bar (better L1 cache utilization)
+    for bar in bars {
+        open_time.append_value(bar.open_time);
+        close_time.append_value(bar.close_time);
+        open.append_value(bar.open.to_f64());
+        high.append_value(bar.high.to_f64());
+        low.append_value(bar.low.to_f64());
+        close.append_value(bar.close.to_f64());
+        volume.append_value(bar.volume.to_f64());
+        turnover.append_value(bar.turnover as f64);
+        individual_trade_count.append_value(bar.individual_trade_count);
+        agg_record_count.append_value(bar.agg_record_count);
+        first_trade_id.append_value(bar.first_trade_id);
+        last_trade_id.append_value(bar.last_trade_id);
+        first_agg_trade_id.append_value(bar.first_agg_trade_id);
+        last_agg_trade_id.append_value(bar.last_agg_trade_id);
+        data_source.append_value(match bar.data_source {
+            DataSource::BinanceSpot => "BinanceSpot",
+            DataSource::BinanceFuturesUM => "BinanceFuturesUM",
+            DataSource::BinanceFuturesCM => "BinanceFuturesCM",
+        });
+        buy_volume.append_value(bar.buy_volume.to_f64());
+        sell_volume.append_value(bar.sell_volume.to_f64());
+        buy_trade_count.append_value(bar.buy_trade_count);
+        sell_trade_count.append_value(bar.sell_trade_count);
+        vwap.append_value(bar.vwap.to_f64());
+        buy_turnover.append_value(bar.buy_turnover as f64);
+        sell_turnover.append_value(bar.sell_turnover as f64);
+        duration_us.append_value(bar.duration_us);
+        ofi.append_value(bar.ofi);
+        vwap_close_deviation.append_value(bar.vwap_close_deviation);
+        price_impact.append_value(bar.price_impact);
+        kyle_lambda_proxy.append_value(bar.kyle_lambda_proxy);
+        trade_intensity.append_value(bar.trade_intensity);
+        volume_per_trade.append_value(bar.volume_per_trade);
+        aggression_ratio.append_value(bar.aggression_ratio);
+        aggregation_density_f64.append_value(bar.aggregation_density_f64);
+        turnover_imbalance.append_value(bar.turnover_imbalance);
+    }
 
     RecordBatch::try_new(
         schema,
         vec![
-            Arc::new(open_time),
-            Arc::new(close_time),
-            Arc::new(open),
-            Arc::new(high),
-            Arc::new(low),
-            Arc::new(close),
-            Arc::new(volume),
-            Arc::new(turnover),
-            Arc::new(individual_trade_count),
-            Arc::new(agg_record_count),
-            Arc::new(first_trade_id),
-            Arc::new(last_trade_id),
-            Arc::new(first_agg_trade_id),
-            Arc::new(last_agg_trade_id),
-            Arc::new(data_source),
-            Arc::new(buy_volume),
-            Arc::new(sell_volume),
-            Arc::new(buy_trade_count),
-            Arc::new(sell_trade_count),
-            Arc::new(vwap),
-            Arc::new(buy_turnover),
-            Arc::new(sell_turnover),
-            Arc::new(duration_us),
-            Arc::new(ofi),
-            Arc::new(vwap_close_deviation),
-            Arc::new(price_impact),
-            Arc::new(kyle_lambda_proxy),
-            Arc::new(trade_intensity),
-            Arc::new(volume_per_trade),
-            Arc::new(aggression_ratio),
-            Arc::new(aggregation_density_f64),
-            Arc::new(turnover_imbalance),
+            Arc::new(open_time.finish()),
+            Arc::new(close_time.finish()),
+            Arc::new(open.finish()),
+            Arc::new(high.finish()),
+            Arc::new(low.finish()),
+            Arc::new(close.finish()),
+            Arc::new(volume.finish()),
+            Arc::new(turnover.finish()),
+            Arc::new(individual_trade_count.finish()),
+            Arc::new(agg_record_count.finish()),
+            Arc::new(first_trade_id.finish()),
+            Arc::new(last_trade_id.finish()),
+            Arc::new(first_agg_trade_id.finish()),
+            Arc::new(last_agg_trade_id.finish()),
+            Arc::new(data_source.finish()),
+            Arc::new(buy_volume.finish()),
+            Arc::new(sell_volume.finish()),
+            Arc::new(buy_trade_count.finish()),
+            Arc::new(sell_trade_count.finish()),
+            Arc::new(vwap.finish()),
+            Arc::new(buy_turnover.finish()),
+            Arc::new(sell_turnover.finish()),
+            Arc::new(duration_us.finish()),
+            Arc::new(ofi.finish()),
+            Arc::new(vwap_close_deviation.finish()),
+            Arc::new(price_impact.finish()),
+            Arc::new(kyle_lambda_proxy.finish()),
+            Arc::new(trade_intensity.finish()),
+            Arc::new(volume_per_trade.finish()),
+            Arc::new(aggression_ratio.finish()),
+            Arc::new(aggregation_density_f64.finish()),
+            Arc::new(turnover_imbalance.finish()),
         ],
     )
     .expect("Failed to create RecordBatch from RangeBars")
@@ -440,6 +479,7 @@ pub fn aggtrades_to_record_batch(trades: &[AggTrade]) -> RecordBatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arrow_array::StringArray;
     use crate::fixed_point::FixedPoint;
 
     fn create_test_bar() -> RangeBar {
@@ -596,7 +636,7 @@ mod tests {
         // Export → Import roundtrip: fields must be bit-exact
         let original = vec![create_test_trade()];
         let batch = aggtrades_to_record_batch(&original);
-        let imported = record_batch_to_aggtrades(&batch).unwrap();
+        let imported = record_batch_to_aggtrades(&batch, false).unwrap();
 
         assert_eq!(imported.len(), 1);
         let t = &imported[0];
@@ -611,11 +651,10 @@ mod tests {
         assert_eq!(t.first_trade_id, o.first_trade_id);
         assert_eq!(t.last_trade_id, o.last_trade_id);
         // aggtrades_to_record_batch exports timestamp in microseconds,
-        // record_batch_to_aggtrades expects milliseconds and converts via * 1000.
-        // So the roundtrip changes the value: exported μs → imported as ms → * 1000 = μs * 1000.
-        // This is by design: the import function is for EXTERNAL data (ms timestamps).
-        // For a true roundtrip test, we need to adjust: export the ms value.
-        // Instead, verify the import function independently (see timestamp test below).
+        // record_batch_to_aggtrades(false) expects milliseconds and converts via * 1000.
+        // So the roundtrip with false changes the value: exported μs → imported as ms → * 1000 = μs * 1000.
+        // For a true roundtrip, use timestamp_is_microseconds=true — see
+        // test_record_batch_to_aggtrades_export_import_roundtrip_microseconds below.
         assert_eq!(t.is_buyer_maker, o.is_buyer_maker);
         assert_eq!(t.is_best_match, o.is_best_match);
     }
@@ -623,7 +662,7 @@ mod tests {
     #[test]
     fn test_record_batch_to_aggtrades_empty() {
         let batch = aggtrades_to_record_batch(&[]);
-        let result = record_batch_to_aggtrades(&batch).unwrap();
+        let result = record_batch_to_aggtrades(&batch, false).unwrap();
         assert!(result.is_empty());
     }
 
@@ -649,7 +688,7 @@ mod tests {
         )
         .unwrap();
 
-        let trades = record_batch_to_aggtrades(&batch).unwrap();
+        let trades = record_batch_to_aggtrades(&batch, false).unwrap();
         assert_eq!(trades[0].timestamp, expected_us);
 
         // Also test edge cases: 0 and 1
@@ -667,7 +706,7 @@ mod tests {
         )
         .unwrap();
 
-        let trades_edge = record_batch_to_aggtrades(&batch_edge).unwrap();
+        let trades_edge = record_batch_to_aggtrades(&batch_edge, false).unwrap();
         assert_eq!(trades_edge[0].timestamp, 0); // 0 ms → 0 μs
         assert_eq!(trades_edge[1].timestamp, 1000); // 1 ms → 1000 μs
     }
@@ -695,7 +734,7 @@ mod tests {
         )
         .unwrap();
 
-        let trades = record_batch_to_aggtrades(&batch).unwrap();
+        let trades = record_batch_to_aggtrades(&batch, false).unwrap();
         assert_eq!(trades[0].price.0, expected_fixed);
         // Verify roundtrip: FixedPoint → f64 → FixedPoint
         assert_eq!(trades[0].price.to_f64(), price);
@@ -720,7 +759,7 @@ mod tests {
         )
         .unwrap();
 
-        let zero_trades = record_batch_to_aggtrades(&zero_batch).unwrap();
+        let zero_trades = record_batch_to_aggtrades(&zero_batch, false).unwrap();
         assert_eq!(zero_trades[0].price.0, 0);
         assert_eq!(zero_trades[0].volume.0, 0);
     }
@@ -742,7 +781,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = record_batch_to_aggtrades(&batch);
+        let result = record_batch_to_aggtrades(&batch, false);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -765,7 +804,7 @@ mod tests {
         )
         .unwrap();
 
-        let result2 = record_batch_to_aggtrades(&batch2);
+        let result2 = record_batch_to_aggtrades(&batch2, false);
         assert!(result2.is_err());
         assert!(
             matches!(
@@ -795,7 +834,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = record_batch_to_aggtrades(&batch);
+        let result = record_batch_to_aggtrades(&batch, false);
         assert!(result.is_err());
         match result.unwrap_err() {
             ArrowImportError::TypeMismatch {
@@ -826,7 +865,7 @@ mod tests {
         )
         .unwrap();
 
-        let trades = record_batch_to_aggtrades(&batch).unwrap();
+        let trades = record_batch_to_aggtrades(&batch, false).unwrap();
         assert_eq!(trades.len(), 1);
         // 2.5 * 100_000_000 = 250_000_000
         assert_eq!(trades[0].volume.0, 250_000_000);
@@ -851,7 +890,7 @@ mod tests {
         )
         .unwrap();
 
-        let trades = record_batch_to_aggtrades(&batch).unwrap();
+        let trades = record_batch_to_aggtrades(&batch, false).unwrap();
         assert_eq!(trades.len(), 2);
 
         // agg_trade_id defaults to row index
@@ -871,5 +910,173 @@ mod tests {
         // is_best_match defaults to None
         assert_eq!(trades[0].is_best_match, None);
         assert_eq!(trades[1].is_best_match, None);
+    }
+
+    // Phase 3: timestamp_is_microseconds tests
+
+    #[test]
+    fn test_record_batch_to_aggtrades_microseconds() {
+        // timestamp_is_microseconds=true: input is already microseconds, no *1000
+        let timestamp_us: i64 = 1704067200000000; // 2024-01-01 00:00:00 UTC in μs
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("timestamp", DataType::Int64, false),
+            Field::new("price", DataType::Float64, false),
+            Field::new("volume", DataType::Float64, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int64Array::from(vec![timestamp_us])),
+                Arc::new(Float64Array::from(vec![50000.0])),
+                Arc::new(Float64Array::from(vec![1.0])),
+            ],
+        )
+        .unwrap();
+
+        let trades = record_batch_to_aggtrades(&batch, true).unwrap();
+        assert_eq!(trades.len(), 1);
+        // With timestamp_is_microseconds=true, the value passes through unchanged
+        assert_eq!(trades[0].timestamp, timestamp_us);
+        // Verify it's NOT multiplied by 1000 (which would be year ~52000)
+        assert!(trades[0].timestamp < 2_051_222_400_000_000, // 2035 in μs
+            "timestamp {} exceeds 2035 — multiplication applied when it shouldn't be",
+            trades[0].timestamp
+        );
+    }
+
+    #[test]
+    fn test_record_batch_to_aggtrades_milliseconds_unchanged() {
+        // Regression gate: timestamp_is_microseconds=false preserves existing ms→μs behavior
+        let timestamp_ms: i64 = 1704067200000; // 2024-01-01 00:00:00 UTC in ms
+        let expected_us: i64 = 1704067200000000; // same instant in μs
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("timestamp", DataType::Int64, false),
+            Field::new("price", DataType::Float64, false),
+            Field::new("volume", DataType::Float64, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int64Array::from(vec![timestamp_ms])),
+                Arc::new(Float64Array::from(vec![50000.0])),
+                Arc::new(Float64Array::from(vec![1.0])),
+            ],
+        )
+        .unwrap();
+
+        let trades = record_batch_to_aggtrades(&batch, false).unwrap();
+        assert_eq!(trades[0].timestamp, expected_us);
+    }
+
+    #[test]
+    fn test_record_batch_to_aggtrades_export_import_roundtrip_microseconds() {
+        // Full roundtrip: Vec<AggTrade> → aggtrades_to_record_batch → record_batch_to_aggtrades(true)
+        // This is the Phase 3 internal path where timestamps never leave microsecond format
+        let original = vec![
+            AggTrade {
+                agg_trade_id: 1,
+                price: FixedPoint::from_str("42000.50").unwrap(),
+                volume: FixedPoint::from_str("3.75").unwrap(),
+                first_trade_id: 100,
+                last_trade_id: 105,
+                timestamp: 1704067200123456, // μs with sub-ms precision
+                is_buyer_maker: true,
+                is_best_match: Some(false),
+            },
+            AggTrade {
+                agg_trade_id: 2,
+                price: FixedPoint::from_str("42001.12345678").unwrap(),
+                volume: FixedPoint::from_str("0.00000001").unwrap(), // minimum precision
+                first_trade_id: 106,
+                last_trade_id: 106,
+                timestamp: 1704067200999999, // μs near second boundary
+                is_buyer_maker: false,
+                is_best_match: None,
+            },
+        ];
+
+        let batch = aggtrades_to_record_batch(&original);
+        // timestamp_is_microseconds=true because aggtrades_to_record_batch exports μs
+        let imported = record_batch_to_aggtrades(&batch, true).unwrap();
+
+        assert_eq!(imported.len(), 2);
+
+        // Bit-exact field-by-field verification
+        for (i, (imp, orig)) in imported.iter().zip(original.iter()).enumerate() {
+            assert_eq!(imp.agg_trade_id, orig.agg_trade_id, "trade {i}: agg_trade_id");
+            assert_eq!(imp.price.0, orig.price.0, "trade {i}: price");
+            assert_eq!(imp.volume.0, orig.volume.0, "trade {i}: volume");
+            assert_eq!(imp.first_trade_id, orig.first_trade_id, "trade {i}: first_trade_id");
+            assert_eq!(imp.last_trade_id, orig.last_trade_id, "trade {i}: last_trade_id");
+            assert_eq!(imp.timestamp, orig.timestamp, "trade {i}: timestamp");
+            assert_eq!(imp.is_buyer_maker, orig.is_buyer_maker, "trade {i}: is_buyer_maker");
+            assert_eq!(imp.is_best_match, orig.is_best_match, "trade {i}: is_best_match");
+        }
+    }
+
+    #[test]
+    fn test_timestamp_cross_year_sweep() {
+        // Verify both paths produce valid timestamps across multiple years
+        let test_cases = vec![
+            (1514764800000_i64, "2018-01-01"),   // ms, 13 digits
+            (1577836800000_i64, "2020-01-01"),   // ms, 13 digits
+            (1704067200000_i64, "2024-01-01"),   // ms, 13 digits
+            (1735689600000_i64, "2025-01-01"),   // ms, 13 digits
+        ];
+
+        for (timestamp_ms, label) in &test_cases {
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("timestamp", DataType::Int64, false),
+                Field::new("price", DataType::Float64, false),
+                Field::new("volume", DataType::Float64, false),
+            ]));
+
+            // Test ms path (timestamp_is_microseconds=false)
+            let batch_ms = RecordBatch::try_new(
+                schema.clone(),
+                vec![
+                    Arc::new(Int64Array::from(vec![*timestamp_ms])),
+                    Arc::new(Float64Array::from(vec![50000.0])),
+                    Arc::new(Float64Array::from(vec![1.0])),
+                ],
+            )
+            .unwrap();
+
+            let trades_ms = record_batch_to_aggtrades(&batch_ms, false).unwrap();
+            let ts_us_from_ms = trades_ms[0].timestamp;
+            assert_eq!(ts_us_from_ms, timestamp_ms * 1000,
+                "{label}: ms path should multiply by 1000");
+
+            // Test μs path (timestamp_is_microseconds=true)
+            let timestamp_us = timestamp_ms * 1000;
+            let batch_us = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(Int64Array::from(vec![timestamp_us])),
+                    Arc::new(Float64Array::from(vec![50000.0])),
+                    Arc::new(Float64Array::from(vec![1.0])),
+                ],
+            )
+            .unwrap();
+
+            let trades_us = record_batch_to_aggtrades(&batch_us, true).unwrap();
+            let ts_us_from_us = trades_us[0].timestamp;
+            assert_eq!(ts_us_from_us, timestamp_us,
+                "{label}: μs path should pass through unchanged");
+
+            // Both paths should produce identical output for equivalent timestamps
+            assert_eq!(ts_us_from_ms, ts_us_from_us,
+                "{label}: both paths must converge to same μs value");
+
+            // Sanity: all timestamps in valid range [2000, 2035]
+            let year_2000_us: i64 = 946684800000000;
+            let year_2035_us: i64 = 2051222400000000;
+            assert!(ts_us_from_ms >= year_2000_us && ts_us_from_ms <= year_2035_us,
+                "{label}: timestamp {ts_us_from_ms} outside valid range");
+        }
     }
 }

@@ -507,8 +507,12 @@ def _fill_gap_and_cache(
         )
 
         # Phase 3: Store with unified cache key
+        # Phase 3+4: Route through store_bars_batch (Arrow path, 2-3 copies)
         if not new_bars.empty:
-            cache.store_bars_bulk(symbol, threshold, new_bars)
+            import polars as pl
+
+            new_bars_pl = pl.from_pandas(new_bars.reset_index())
+            cache.store_bars_batch(symbol, threshold, new_bars_pl)
 
         # Combine with existing bars
         if current_bars is not None and len(current_bars) > 0:
@@ -662,6 +666,8 @@ def _fill_gap_exness(
     if current_bars is not None and len(current_bars) > 0:
         initial_bars.append(current_bars)
 
+    import polars as pl
+
     return _exness_fetch_process_loop(
         symbol=symbol,
         threshold=threshold,
@@ -673,7 +679,9 @@ def _fill_gap_exness(
         storage=storage,
         estimated_ticks_per_bar=estimated_ticks_per_bar,
         initial_bars=initial_bars,
-        cache_callback=cache.store_bars_bulk,
+        cache_callback=lambda sym, thr, bars: cache.store_bars_batch(
+            sym, thr, pl.from_pandas(bars.reset_index())
+        ),
     )
 
 

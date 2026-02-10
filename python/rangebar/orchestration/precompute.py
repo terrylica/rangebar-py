@@ -437,9 +437,12 @@ def precompute_range_bars(
             )
 
             # Cache immediately (idempotent via ReplacingMergeTree)
+            # Phase 3+4: Route through store_bars_batch (Arrow path, 2-3 copies)
+            # instead of store_bars_bulk (pandas path, 5-7 copies)
             rows_sent = len(month_df)
-            rows_inserted = cache.store_bars_bulk(
-                symbol, threshold_decimal_bps, month_df
+            month_pl = pl.from_pandas(month_df.reset_index())
+            rows_inserted = cache.store_bars_batch(
+                symbol, threshold_decimal_bps, month_pl
             )
 
             # Post-cache validation: FAIL LOUDLY if ClickHouse didn't receive all bars
