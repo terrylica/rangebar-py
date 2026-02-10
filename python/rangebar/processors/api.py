@@ -351,6 +351,7 @@ def process_trades_polars(
     threshold_decimal_bps: int = 250,
     *,
     symbol: str | None = None,
+    include_microstructure: bool = False,
 ) -> pd.DataFrame:
     """Process trades from Polars DataFrame (optimized pipeline).
 
@@ -369,6 +370,9 @@ def process_trades_polars(
     symbol : str, optional
         Trading symbol (e.g., "BTCUSDT"). When provided, enables
         asset-class minimum threshold validation (Issue #62).
+    include_microstructure : bool, default=False
+        If True, include all microstructure feature columns in output.
+        If False (default), return only OHLCV columns for backtesting.py.
 
     Returns
     -------
@@ -376,6 +380,7 @@ def process_trades_polars(
         OHLCV DataFrame ready for backtesting.py, with:
         - DatetimeIndex (timestamp)
         - Capitalized columns: Open, High, Low, Close, Volume
+        - If include_microstructure=True: all microstructure columns
 
     Examples
     --------
@@ -395,6 +400,10 @@ def process_trades_polars(
 
     >>> df = pl.read_parquet("trades.parquet")
     >>> bars = process_trades_polars(df)
+
+    With microstructure features:
+
+    >>> bars = process_trades_polars(df, include_microstructure=True)
 
     Notes
     -----
@@ -435,4 +444,6 @@ def process_trades_polars(
 
     # Convert Arrow-format Polars bars to backtesting.py-compatible pandas
     result_pl = pl.concat(bar_frames)
-    return _arrow_bars_to_pandas(result_pl)
+    return _arrow_bars_to_pandas(
+        result_pl, include_microstructure=include_microstructure
+    )

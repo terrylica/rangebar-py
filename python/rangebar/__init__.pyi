@@ -1330,6 +1330,9 @@ def clear_symbol_registry_cache() -> None:
 def process_trades_polars(
     trades: pl.DataFrame | pl.LazyFrame,
     threshold_decimal_bps: int = 250,
+    *,
+    symbol: str | None = None,
+    include_microstructure: bool = False,
 ) -> pd.DataFrame:
     """Process trades from Polars DataFrame (optimized pipeline).
 
