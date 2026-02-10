@@ -102,5 +102,5 @@ description = "Run OPTIMIZE TABLE FINAL on range_bars (Issue #88 post-fix)"
 run = "./scripts/pueue-populate.sh optimize"
 
 ["cache:postprocess-all"]
-description = "Full Issue #88 post-fix pipeline: repopulate + optimize + detect"
+description = "Full Issue #88 post-fix pipeline via pueue: 4 SHIB jobs → optimize → detect (auto-chained)"
 run = "./scripts/pueue-populate.sh postprocess-all"

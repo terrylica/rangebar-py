@@ -269,6 +269,9 @@ postprocess_shib() {
     pueue group add postfix 2>/dev/null || true
     pueue parallel 2 --group postfix  # 2 parallel (moderate resource usage)
 
+    # Collect job IDs for dependency chaining
+    SHIB_JOB_IDS=()
+
     for threshold in 250 500 750 1000; do
         local label="SHIB-postfix@${threshold}"
         local mem_limit
@@ -281,16 +284,16 @@ postprocess_shib() {
             cmd="uv run python scripts/populate_full_cache.py --symbol SHIBUSDT --threshold ${threshold} --force-refresh --include-microstructure"
         fi
 
+        # Capture job ID for --after dependency chaining
+        local job_id
         # shellcheck disable=SC2086
-        pueue add --group postfix --label "$label" --working-directory "$PROJECT_DIR" -- $cmd
-        echo "  Added: $label -> group postfix"
+        job_id=$(pueue add --print-task-id --group postfix --label "$label" --working-directory "$PROJECT_DIR" -- $cmd)
+        SHIB_JOB_IDS+=("$job_id")
+        echo "  Added: $label -> group postfix (job $job_id)"
     done
 
     echo ""
-    echo "✅ 4 SHIBUSDT repopulation jobs queued in 'postfix' group"
-    echo ""
-    echo "Monitor: pueue status --group postfix"
-    echo "After completion, run: $0 optimize"
+    echo "✅ 4 SHIBUSDT repopulation jobs queued: ${SHIB_JOB_IDS[*]}"
 }
 
 optimize_table() {
@@ -316,15 +319,42 @@ detect_overflow() {
 postprocess_all() {
     echo "=== Issue #88: Full Post-Fix Pipeline ==="
     echo ""
+
+    # Step 1: Queue SHIBUSDT repopulation (captures SHIB_JOB_IDS)
     echo "Step 1/3: Queue SHIBUSDT repopulation"
     postprocess_shib
+
+    # Step 2: Chain OPTIMIZE TABLE --after all SHIB jobs
     echo ""
-    echo "⏳ Waiting for postfix jobs to complete..."
-    echo "   Run 'pueue wait --group postfix' then:"
-    echo "   $0 optimize"
-    echo "   $0 detect-overflow"
+    echo "Step 2/3: Chain OPTIMIZE TABLE (runs after SHIB jobs complete)"
+    local optimize_id
+    optimize_id=$(pueue add --print-task-id --group postfix \
+        --label "optimize-table" \
+        --after "${SHIB_JOB_IDS[@]}" \
+        --working-directory "$PROJECT_DIR" \
+        -- clickhouse-client --query "OPTIMIZE TABLE rangebar_cache.range_bars FINAL")
+    echo "  Added: optimize-table -> job $optimize_id (depends on: ${SHIB_JOB_IDS[*]})"
+
+    # Step 3: Chain detect-overflow --after optimize
     echo ""
-    echo "Or monitor with: pueue status --group postfix"
+    echo "Step 3/3: Chain overflow detection (runs after OPTIMIZE)"
+    local detect_id
+    detect_id=$(pueue add --print-task-id --group postfix \
+        --label "detect-overflow" \
+        --after "$optimize_id" \
+        --working-directory "$PROJECT_DIR" \
+        -- uv run python scripts/detect_volume_overflow.py)
+    echo "  Added: detect-overflow -> job $detect_id (depends on: $optimize_id)"
+
+    echo ""
+    echo "✅ Full pipeline queued: 4 SHIB jobs → optimize → detect"
+    echo ""
+    echo "Dependency chain:"
+    echo "  SHIB@250,500,750,1000 (${SHIB_JOB_IDS[*]})"
+    echo "    └─→ optimize-table ($optimize_id)"
+    echo "          └─→ detect-overflow ($detect_id)"
+    echo ""
+    echo "Monitor: pueue status --group postfix"
 }
 
 usage() {
