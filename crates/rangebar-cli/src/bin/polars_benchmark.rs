@@ -136,7 +136,8 @@ fn load_range_bars(file_path: &str) -> Result<Vec<RangeBar>, Box<dyn std::error:
                 high: FixedPoint::from_str(&record[3])?,
                 low: FixedPoint::from_str(&record[4])?,
                 close: FixedPoint::from_str(&record[5])?,
-                volume: FixedPoint::from_str(&record[6])?,
+                // Issue #88: i128 volume accumulators
+                volume: FixedPoint::from_str(&record[6])?.0 as i128,
                 turnover: record[7].parse::<f64>()? as i128,
 
                 // Enhanced fields
@@ -144,10 +145,12 @@ fn load_range_bars(file_path: &str) -> Result<Vec<RangeBar>, Box<dyn std::error:
                 agg_record_count: 1, // Assume 1 for legacy data
                 first_trade_id: parsed_first_id,
                 last_trade_id: parsed_last_id,
+                first_agg_trade_id: 0, // Issue #72
+                last_agg_trade_id: 0,  // Issue #72
                 data_source: rangebar_core::types::DataSource::default(),
 
-                buy_volume: FixedPoint::from_str(&record[11])?,
-                sell_volume: FixedPoint::from_str(&record[12])?,
+                buy_volume: FixedPoint::from_str(&record[11])?.0 as i128,
+                sell_volume: FixedPoint::from_str(&record[12])?.0 as i128,
                 buy_trade_count: record[13].parse()?,
                 sell_trade_count: record[14].parse()?,
                 vwap: FixedPoint::from_str(&record[15])?,
@@ -182,6 +185,29 @@ fn load_range_bars(file_path: &str) -> Result<Vec<RangeBar>, Box<dyn std::error:
                 lookback_garman_klass_vol: None,
                 lookback_hurst: None,
                 lookback_permutation_entropy: None,
+                // Intra-bar features (Issue #59) - defaults for legacy CSV
+                intra_bull_epoch_density: None,
+                intra_bear_epoch_density: None,
+                intra_bull_excess_gain: None,
+                intra_bear_excess_gain: None,
+                intra_bull_cv: None,
+                intra_bear_cv: None,
+                intra_max_drawdown: None,
+                intra_max_runup: None,
+                intra_trade_count: None,
+                intra_ofi: None,
+                intra_duration_us: None,
+                intra_intensity: None,
+                intra_vwap_position: None,
+                intra_count_imbalance: None,
+                intra_kyle_lambda: None,
+                intra_burstiness: None,
+                intra_volume_skew: None,
+                intra_volume_kurt: None,
+                intra_kaufman_er: None,
+                intra_garman_klass_vol: None,
+                intra_hurst: None,
+                intra_permutation_entropy: None,
             };
             range_bars.push(range_bar);
         }

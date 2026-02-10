@@ -1545,7 +1545,9 @@ struct InternalRangeBar {
     high: FixedPoint,
     low: FixedPoint,
     close: FixedPoint,
-    volume: FixedPoint,
+    // Issue #88: i128 volume accumulators to prevent FixedPoint(i64) overflow
+    // on high-token-count symbols like SHIBUSDT
+    volume: i128,
     turnover: i128,
     individual_trade_count: i64,
     agg_record_count: u32,
@@ -1556,9 +1558,11 @@ struct InternalRangeBar {
     /// Last aggregate trade ID in this range bar (Issue #72)
     last_agg_trade_id: i64,
     /// Volume from buy-side trades (is_buyer_maker = false)
-    buy_volume: FixedPoint,
+    // Issue #88: i128 to prevent overflow
+    buy_volume: i128,
     /// Volume from sell-side trades (is_buyer_maker = true)
-    sell_volume: FixedPoint,
+    // Issue #88: i128 to prevent overflow
+    sell_volume: i128,
     /// Number of buy-side trades
     buy_trade_count: i64,
     /// Number of sell-side trades
@@ -1662,7 +1666,8 @@ impl ExportRangeBarProcessor {
                 high: trade.price,
                 low: trade.price,
                 close: trade.price,
-                volume: trade.volume,
+                // Issue #88: i128 volume accumulators
+                volume: trade.volume.0 as i128,
                 turnover: trade_turnover,
                 individual_trade_count: 1,
                 agg_record_count: 1,
@@ -1671,16 +1676,16 @@ impl ExportRangeBarProcessor {
                 // Issue #72: Track aggregate trade IDs
                 first_agg_trade_id: trade.agg_trade_id,
                 last_agg_trade_id: trade.agg_trade_id,
-                // Market microstructure fields
+                // Market microstructure fields (Issue #88: i128)
                 buy_volume: if trade.is_buyer_maker {
-                    FixedPoint(0)
+                    0i128
                 } else {
-                    trade.volume
+                    trade.volume.0 as i128
                 },
                 sell_volume: if trade.is_buyer_maker {
-                    trade.volume
+                    trade.volume.0 as i128
                 } else {
-                    FixedPoint(0)
+                    0i128
                 },
                 buy_trade_count: if trade.is_buyer_maker { 0 } else { 1 },
                 sell_trade_count: if trade.is_buyer_maker { 1 } else { 0 },
@@ -1715,7 +1720,7 @@ impl ExportRangeBarProcessor {
         // Update bar with new trade
         bar.close_time = trade.timestamp;
         bar.close = trade.price;
-        bar.volume.0 += trade.volume.0;
+        bar.volume += trade.volume.0 as i128; // Issue #88: i128 accumulator
         bar.turnover += trade_turnover;
         bar.individual_trade_count += 1;
         bar.agg_record_count += 1;
@@ -1732,11 +1737,11 @@ impl ExportRangeBarProcessor {
 
         // Update market microstructure
         if trade.is_buyer_maker {
-            bar.sell_volume.0 += trade.volume.0;
+            bar.sell_volume += trade.volume.0 as i128; // Issue #88: i128 accumulator
             bar.sell_turnover += trade_turnover;
             bar.sell_trade_count += 1;
         } else {
-            bar.buy_volume.0 += trade.volume.0;
+            bar.buy_volume += trade.volume.0 as i128; // Issue #88: i128 accumulator
             bar.buy_turnover += trade_turnover;
             bar.buy_trade_count += 1;
         }

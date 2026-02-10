@@ -318,7 +318,7 @@ fn test_bar_content_identical_across_boundary() {
             || full.high.0 != split.high.0
             || full.low.0 != split.low.0
             || full.close.0 != split.close.0
-            || full.volume.0 != split.volume.0
+            || full.volume != split.volume // Issue #88: i128 volume
             || full.agg_record_count != split.agg_record_count
         {
             println!("Bar {} MISMATCH:", i);

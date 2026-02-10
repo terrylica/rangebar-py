@@ -84,3 +84,23 @@ run = "./scripts/pueue-autoscaler.sh --apply"
 ["cache:autoscale-loop"]
 description = "Start continuous autoscaler (60s interval, Ctrl+C to stop)"
 run = "./scripts/pueue-autoscaler.sh --loop"
+
+# =============================================================================
+# Issue #88: Volume Overflow Detection & Post-Fix
+# =============================================================================
+
+["cache:detect-overflow"]
+description = "Detect volume overflow (negative volumes) in ClickHouse cache (Issue #88)"
+run = "python scripts/detect_volume_overflow.py"
+
+["cache:postprocess-shib"]
+description = "Queue SHIBUSDT force-refresh at all thresholds via pueue (Issue #88 post-fix)"
+run = "./scripts/pueue-populate.sh postprocess-shib"
+
+["cache:optimize"]
+description = "Run OPTIMIZE TABLE FINAL on range_bars (Issue #88 post-fix)"
+run = "./scripts/pueue-populate.sh optimize"
+
+["cache:postprocess-all"]
+description = "Full Issue #88 post-fix pipeline: repopulate + optimize + detect"
+run = "./scripts/pueue-populate.sh postprocess-all"

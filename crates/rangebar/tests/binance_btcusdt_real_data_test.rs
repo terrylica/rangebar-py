@@ -196,7 +196,7 @@ fn validate_ohlcv_integrity(range_bars: &[RangeBar]) {
             bar.close
         );
         assert!(
-            bar.volume > FixedPoint(0),
+            bar.volume > 0, // Issue #88: i128 volume
             "Bar {}: Volume should be positive",
             i
         );

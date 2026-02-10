@@ -88,7 +88,8 @@ pub fn create_test_range_bar(
         high: FixedPoint::from_str(high).unwrap(),
         low: FixedPoint::from_str(low).unwrap(),
         close: FixedPoint::from_str(close).unwrap(),
-        volume: FixedPoint::from_str(volume).unwrap(),
+        // Issue #88: volume fields are i128
+        volume: FixedPoint::from_str(volume).unwrap().0 as i128,
         turnover: 0,
         individual_trade_count,
         agg_record_count: 1,
@@ -97,9 +98,9 @@ pub fn create_test_range_bar(
         first_agg_trade_id: 1, // Issue #72
         last_agg_trade_id: 1,  // Issue #72
         data_source: DataSource::BinanceFuturesUM,
-        buy_volume: FixedPoint::from_str("0.0").unwrap(),
+        buy_volume: 0i128,
         buy_turnover: 0,
-        sell_volume: FixedPoint::from_str("0.0").unwrap(),
+        sell_volume: 0i128,
         sell_turnover: 0,
         buy_trade_count: 0,
         sell_trade_count: 0,

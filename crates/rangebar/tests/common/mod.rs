@@ -275,12 +275,13 @@ pub fn validate_bar_integrity(bars: &[ExnessRangeBar], report: &mut ValidationRe
         }
 
         // Exness has no volume data
-        if b.volume.0 != 0 {
+        // Issue #88: volume is i128, not FixedPoint
+        if b.volume != 0 {
             report.add_gate(ValidationGate::fail(
                 "Volume Semantics",
                 format!("Bar {} has non-zero volume", i),
                 "0",
-                &format!("{}", b.volume.0),
+                &format!("{}", b.volume),
             ));
             return;
         }

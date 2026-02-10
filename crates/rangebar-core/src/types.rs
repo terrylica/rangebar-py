@@ -1,6 +1,7 @@
 //! Type definitions for range bar processing
 
-use crate::fixed_point::FixedPoint;
+// Issue #88: SCALE imported for i128 volume→f64 conversion
+use crate::fixed_point::{FixedPoint, SCALE};
 use serde::{Deserialize, Serialize};
 
 /// Data source for market data (future-proofing for multi-exchange support)
@@ -88,8 +89,8 @@ pub struct RangeBar {
     /// Closing price (breach trade price)
     pub close: FixedPoint,
 
-    /// Total volume
-    pub volume: FixedPoint,
+    /// Total volume (i128 accumulator to prevent overflow, Issue #88)
+    pub volume: i128,
 
     /// Total turnover (sum of price * volume)
     pub turnover: i128,
@@ -121,12 +122,12 @@ pub struct RangeBar {
 
     // === MARKET MICROSTRUCTURE ENHANCEMENTS ===
     /// Volume from buy-side trades (is_buyer_maker = false)
-    /// Represents aggressive buying pressure
-    pub buy_volume: FixedPoint,
+    /// Represents aggressive buying pressure (i128 accumulator, Issue #88)
+    pub buy_volume: i128,
 
     /// Volume from sell-side trades (is_buyer_maker = true)
-    /// Represents aggressive selling pressure
-    pub sell_volume: FixedPoint,
+    /// Represents aggressive selling pressure (i128 accumulator, Issue #88)
+    pub sell_volume: i128,
 
     /// Number of individual buy-side trades (aggressive buying)
     pub buy_trade_count: u32,
@@ -370,11 +371,11 @@ impl RangeBar {
         let trade_turnover = trade.turnover();
         let individual_trades = trade.individual_trade_count() as u32;
 
-        // Segregate order flow based on is_buyer_maker
+        // Segregate order flow based on is_buyer_maker (Issue #88: i128 accumulators)
         let (buy_volume, sell_volume) = if trade.is_buyer_maker {
-            (FixedPoint(0), trade.volume) // Seller aggressive = sell pressure
+            (0i128, trade.volume.0 as i128) // Seller aggressive = sell pressure
         } else {
-            (trade.volume, FixedPoint(0)) // Buyer aggressive = buy pressure
+            (trade.volume.0 as i128, 0i128) // Buyer aggressive = buy pressure
         };
 
         let (buy_trade_count, sell_trade_count) = if trade.is_buyer_maker {
@@ -396,7 +397,7 @@ impl RangeBar {
             high: trade.price,
             low: trade.price,
             close: trade.price,
-            volume: trade.volume,
+            volume: trade.volume.0 as i128,
             turnover: trade_turnover,
 
             // NEW: Enhanced counting
@@ -506,8 +507,8 @@ impl RangeBar {
         let trade_turnover = trade.turnover();
         let individual_trades = trade.individual_trade_count() as u32;
 
-        // Update totals
-        self.volume = FixedPoint(self.volume.0 + trade.volume.0);
+        // Update totals (Issue #88: i128 prevents overflow for high-volume tokens)
+        self.volume += trade.volume.0 as i128;
         self.turnover += trade_turnover;
 
         // Enhanced counting
@@ -516,27 +517,24 @@ impl RangeBar {
 
         // === MARKET MICROSTRUCTURE INCREMENTAL UPDATES ===
 
-        // Update order flow segregation
+        // Update order flow segregation (Issue #88: i128 accumulators)
         if trade.is_buyer_maker {
             // Seller aggressive = sell pressure
-            self.sell_volume = FixedPoint(self.sell_volume.0 + trade.volume.0);
+            self.sell_volume += trade.volume.0 as i128;
             self.sell_trade_count += individual_trades;
             self.sell_turnover += trade_turnover;
         } else {
             // Buyer aggressive = buy pressure
-            self.buy_volume = FixedPoint(self.buy_volume.0 + trade.volume.0);
+            self.buy_volume += trade.volume.0 as i128;
             self.buy_trade_count += individual_trades;
             self.buy_turnover += trade_turnover;
         }
 
         // Update VWAP incrementally: VWAP = total_turnover / total_volume
-        // Using integer arithmetic to maintain precision
-        if self.volume.0 > 0 {
-            // Calculate VWAP: turnover / volume, but maintain FixedPoint precision
-            // turnover is in (price * volume) units, volume is in volume units
-            // VWAP should be in price units
-            let vwap_raw = self.turnover / (self.volume.0 as i128);
-            self.vwap = FixedPoint(vwap_raw as i64);
+        // Issue #88: both turnover and volume are i128, no cast needed
+        if self.volume > 0 {
+            let vwap_raw = self.turnover / self.volume;
+            self.vwap = FixedPoint(vwap_raw as i64); // Safe: VWAP is a price, fits i64
         }
     }
 
@@ -560,11 +558,11 @@ impl RangeBar {
     /// | aggregation_density_f64 | trade_count / agg_count | (proxy) |
     /// | turnover_imbalance | (buy_turn - sell_turn) / total_turn | (proxy) |
     pub fn compute_microstructure_features(&mut self) {
-        // Extract values for computation
-        let buy_vol = self.buy_volume.to_f64();
-        let sell_vol = self.sell_volume.to_f64();
+        // Extract values for computation (Issue #88: i128→f64 via SCALE)
+        let buy_vol = self.buy_volume as f64 / SCALE as f64;
+        let sell_vol = self.sell_volume as f64 / SCALE as f64;
         let total_vol = buy_vol + sell_vol;
-        let volume = self.volume.to_f64();
+        let volume = self.volume as f64 / SCALE as f64;
         let open = self.open.to_f64();
         let close = self.close.to_f64();
         let high = self.high.to_f64();
@@ -816,7 +814,8 @@ mod tests {
         assert_eq!(bar.high.to_string(), "50100.00000000");
         assert_eq!(bar.low.to_string(), "50000.00000000");
         assert_eq!(bar.close.to_string(), "50100.00000000");
-        assert_eq!(bar.volume.to_string(), "3.00000000");
+        // Issue #88: volume is i128 raw (3.0 * SCALE = 300_000_000)
+        assert_eq!(bar.volume, 300_000_000i128);
         assert_eq!(bar.individual_trade_count, 2);
     }
 
@@ -849,13 +848,14 @@ mod tests {
         bar.update_with_trade(&sell_trade);
 
         // Verify order flow segregation
-        assert_eq!(bar.buy_volume.to_string(), "1.50000000"); // Only first trade
-        assert_eq!(bar.sell_volume.to_string(), "2.50000000"); // Only second trade
+        // Issue #88: volume fields are i128 raw (value * SCALE)
+        assert_eq!(bar.buy_volume, 150_000_000i128); // 1.5 * SCALE
+        assert_eq!(bar.sell_volume, 250_000_000i128); // 2.5 * SCALE
         assert_eq!(bar.buy_trade_count, 1); // First trade count
         assert_eq!(bar.sell_trade_count, 2); // Second trade count (3 - 2 + 1 = 2)
 
         // Verify totals
-        assert_eq!(bar.volume.to_string(), "4.00000000"); // 1.5 + 2.5
+        assert_eq!(bar.volume, 400_000_000i128); // (1.5 + 2.5) * SCALE
         assert_eq!(bar.individual_trade_count, 3); // 1 + 2
 
         // Verify VWAP calculation
@@ -1245,6 +1245,245 @@ mod tests {
             (bar.volume_per_trade - 5.0).abs() < 0.01,
             "Volume per trade should be 5.0, got {}",
             bar.volume_per_trade
+        );
+    }
+
+    // =========================================================================
+    // Issue #88: i64→i128 Volume Overflow Tests
+    //
+    // SHIB-like tokens with volumes of 50 billion tokens per trade produce
+    // FixedPoint raw values of 5_000_000_000_000_000_000 (5e18). Two such
+    // trades summed (10e18) exceed i64::MAX (9.22e18), causing silent
+    // wraparound to negative values with the old i64 accumulator.
+    // i128 handles this correctly.
+    // =========================================================================
+
+    #[test]
+    fn test_volume_no_overflow_with_large_trades() {
+        // Issue #88: 50 billion tokens per trade.
+        // FixedPoint raw = 50_000_000_000 * SCALE(100_000_000) = 5_000_000_000_000_000_000 (5e18)
+        // Two trades summed = 10e18 > i64::MAX (9.22e18) — would overflow i64.
+        let trade1 = test_utils::create_test_agg_trade_with_range(
+            1,
+            "0.00003000", // SHIB-like price
+            "50000000000.0", // 50 billion tokens
+            1640995200000000,
+            1,
+            1,
+            false, // Buy
+        );
+
+        let mut bar = RangeBar::new(&trade1);
+
+        let trade2 = test_utils::create_test_agg_trade_with_range(
+            2,
+            "0.00003100",
+            "50000000000.0", // Another 50 billion tokens
+            1640995201000000,
+            2,
+            2,
+            true, // Sell
+        );
+
+        bar.update_with_trade(&trade2);
+
+        // Verify volume is positive (old i64 would wrap to negative)
+        assert!(
+            bar.volume > 0,
+            "Volume should be positive with i128, got {} (i64 would have overflowed)",
+            bar.volume
+        );
+
+        // Verify exact value: 2 * 50_000_000_000 * 100_000_000 = 10_000_000_000_000_000_000
+        let expected_volume: i128 = 10_000_000_000_000_000_000;
+        assert_eq!(
+            bar.volume, expected_volume,
+            "Volume should be exactly 10e18, got {}",
+            bar.volume
+        );
+
+        // Prove this would have overflowed i64
+        assert!(
+            expected_volume > i64::MAX as i128,
+            "Expected volume {} should exceed i64::MAX {} to prove overflow prevention",
+            expected_volume,
+            i64::MAX
+        );
+    }
+
+    #[test]
+    fn test_vwap_correct_with_large_volume() {
+        // Issue #88: VWAP must be computed correctly even with i128 volumes.
+        // Two trades at different prices with large SHIB-like volumes.
+        let trade1 = test_utils::create_test_agg_trade_with_range(
+            1,
+            "0.00003000",
+            "50000000000.0", // 50B tokens
+            1640995200000000,
+            1,
+            1,
+            false, // Buy
+        );
+
+        let mut bar = RangeBar::new(&trade1);
+
+        let trade2 = test_utils::create_test_agg_trade_with_range(
+            2,
+            "0.00004000",
+            "50000000000.0", // 50B tokens
+            1640995201000000,
+            2,
+            2,
+            true, // Sell
+        );
+
+        bar.update_with_trade(&trade2);
+
+        // VWAP = (0.00003 * 50B + 0.00004 * 50B) / 100B = 0.000035
+        let vwap_f64 = bar.vwap.to_f64();
+        assert!(
+            vwap_f64 > 0.0,
+            "VWAP should be positive, got {}",
+            vwap_f64
+        );
+        assert!(
+            !vwap_f64.is_nan(),
+            "VWAP should not be NaN"
+        );
+        assert!(
+            vwap_f64 >= 0.00003 && vwap_f64 <= 0.00004,
+            "VWAP should be between the two prices (0.00003..0.00004), got {}",
+            vwap_f64
+        );
+        // Check it's close to the expected midpoint 0.000035
+        assert!(
+            (vwap_f64 - 0.000035).abs() < 0.000001,
+            "VWAP should be ~0.000035 (equal-weight midpoint), got {}",
+            vwap_f64
+        );
+    }
+
+    #[test]
+    fn test_microstructure_features_with_i128_volume() {
+        // Issue #88: Microstructure features must compute correctly from i128 volumes.
+        // SHIB-like token with large volumes.
+        let trade1 = test_utils::create_test_agg_trade_with_range(
+            1,
+            "0.00003000",
+            "50000000000.0", // 50B tokens — buy
+            1640995200000000,
+            1,
+            1,
+            false, // Buy pressure
+        );
+
+        let mut bar = RangeBar::new(&trade1);
+
+        let trade2 = test_utils::create_test_agg_trade_with_range(
+            2,
+            "0.00003100",
+            "30000000000.0", // 30B tokens — sell
+            1640995201000000,
+            2,
+            2,
+            true, // Sell pressure
+        );
+
+        bar.update_with_trade(&trade2);
+        bar.compute_microstructure_features();
+
+        // OFI = (buy_vol - sell_vol) / total = (50B - 30B) / 80B = 0.25
+        assert!(
+            bar.ofi >= -1.0 && bar.ofi <= 1.0,
+            "OFI should be in [-1, 1], got {}",
+            bar.ofi
+        );
+        assert!(
+            (bar.ofi - 0.25).abs() < 0.01,
+            "OFI should be ~0.25 (50B buy vs 30B sell), got {}",
+            bar.ofi
+        );
+
+        // Price impact must be non-negative
+        assert!(
+            bar.price_impact >= 0.0,
+            "Price impact should be >= 0, got {}",
+            bar.price_impact
+        );
+
+        // Volume per trade must be positive
+        assert!(
+            bar.volume_per_trade > 0.0,
+            "Volume per trade should be > 0, got {}",
+            bar.volume_per_trade
+        );
+
+        // Turnover imbalance should be in [-1, 1]
+        assert!(
+            bar.turnover_imbalance >= -1.0 && bar.turnover_imbalance <= 1.0,
+            "Turnover imbalance should be in [-1, 1], got {}",
+            bar.turnover_imbalance
+        );
+    }
+
+    #[test]
+    fn test_volume_conservation_with_i128() {
+        // Issue #88: buy_volume + sell_volume must equal total volume (no precision loss).
+        // Use 50B + 50B = 100B tokens so total (10e18) exceeds i64::MAX (9.22e18).
+        let buy_trade = test_utils::create_test_agg_trade_with_range(
+            1,
+            "0.00003000",
+            "50000000000.0", // 50B tokens — buy
+            1640995200000000,
+            1,
+            1,
+            false, // Buy pressure
+        );
+
+        let mut bar = RangeBar::new(&buy_trade);
+
+        let sell_trade = test_utils::create_test_agg_trade_with_range(
+            2,
+            "0.00003100",
+            "50000000000.0", // 50B tokens — sell (same size for symmetry)
+            1640995201000000,
+            2,
+            2,
+            true, // Sell pressure
+        );
+
+        bar.update_with_trade(&sell_trade);
+
+        // Volume conservation: buy_volume + sell_volume == total volume (exact, no rounding)
+        assert_eq!(
+            bar.buy_volume + bar.sell_volume,
+            bar.volume,
+            "buy_volume ({}) + sell_volume ({}) should equal volume ({})",
+            bar.buy_volume,
+            bar.sell_volume,
+            bar.volume
+        );
+
+        // Verify individual components
+        let expected_each: i128 = 50_000_000_000 * SCALE as i128;
+        assert_eq!(
+            bar.buy_volume, expected_each,
+            "Buy volume should be 50B * SCALE = {}, got {}",
+            expected_each, bar.buy_volume
+        );
+        assert_eq!(
+            bar.sell_volume, expected_each,
+            "Sell volume should be 50B * SCALE = {}, got {}",
+            expected_each, bar.sell_volume
+        );
+
+        // Prove the total would have overflowed i64
+        let total = bar.buy_volume + bar.sell_volume;
+        assert!(
+            total > i64::MAX as i128,
+            "Total volume {} should exceed i64::MAX {} to prove overflow prevention",
+            total,
+            i64::MAX
         );
     }
 }

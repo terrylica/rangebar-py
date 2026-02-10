@@ -7,7 +7,6 @@ use crate::exness::conversion::tick_to_synthetic_trade;
 use crate::exness::types::{
     ExnessError, ExnessInstrument, ExnessRangeBar, ExnessTick, SpreadStats, ValidationStrictness,
 };
-use rangebar_core::fixed_point::FixedPoint;
 use rangebar_core::processor::RangeBarProcessor;
 
 /// Streaming range bar builder for Exness tick data
@@ -163,8 +162,8 @@ impl ExnessRangeBarBuilder {
         if let Some(mut base) = maybe_bar {
             // Zero out buy/sell volume (Exness has no volume data)
             // Synthetic trades use mid-price, but direction is unknown
-            base.buy_volume = FixedPoint(0);
-            base.sell_volume = FixedPoint(0);
+            base.buy_volume = 0i128; // Issue #88: i128 volume
+            base.sell_volume = 0i128; // Issue #88: i128 volume
             base.buy_trade_count = 0;
             base.sell_trade_count = 0;
             base.buy_turnover = 0;
@@ -197,8 +196,8 @@ impl ExnessRangeBarBuilder {
     pub fn get_incomplete_bar(&self) -> Option<ExnessRangeBar> {
         self.processor.get_incomplete_bar().map(|mut base| {
             // Zero out buy/sell volume (Exness has no volume data)
-            base.buy_volume = FixedPoint(0);
-            base.sell_volume = FixedPoint(0);
+            base.buy_volume = 0i128; // Issue #88: i128 volume
+            base.sell_volume = 0i128; // Issue #88: i128 volume
             base.buy_trade_count = 0;
             base.sell_trade_count = 0;
             base.buy_turnover = 0;
@@ -327,8 +326,9 @@ mod tests {
         let bar = builder.process_tick(&tick2).unwrap().unwrap();
 
         // Exness has no volume data
-        assert_eq!(bar.base.volume.0, 0);
-        assert_eq!(bar.base.buy_volume.0, 0);
-        assert_eq!(bar.base.sell_volume.0, 0);
+        // Issue #88: volume is i128, not FixedPoint
+        assert_eq!(bar.base.volume, 0i128);
+        assert_eq!(bar.base.buy_volume, 0i128);
+        assert_eq!(bar.base.sell_volume, 0i128);
     }
 }

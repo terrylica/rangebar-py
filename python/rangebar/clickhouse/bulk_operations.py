@@ -42,6 +42,30 @@ def _guard_timestamp_ms_scale(df: object, column: str = "timestamp_ms") -> None:
             raise ValueError(msg)
 
 
+_VOLUME_COLUMNS = ("volume", "buy_volume", "sell_volume")
+
+
+def _guard_volume_non_negative(
+    df: object,
+    columns: tuple[str, ...] = _VOLUME_COLUMNS,
+) -> None:
+    """Reject writes with negative volumes (overflow indicator). Issue #88."""
+    cols = df.columns if hasattr(df, "columns") else []
+    for col in columns:
+        if col in cols and df[col].min() < 0:
+            msg = (
+                f"Issue #88: {col} has negative values "
+                f"(min={df[col].min()}). Overflow detected."
+            )
+            raise ValueError(msg)
+
+
+def _run_write_guards(df: object) -> None:
+    """Run all pre-write data integrity guards."""
+    _guard_timestamp_ms_scale(df)
+    _guard_volume_non_negative(df)
+
+
 class BulkStoreMixin:
     """Mixin providing bulk store operations for RangeBarCache.
 
@@ -110,7 +134,7 @@ class BulkStoreMixin:
                 df["timestamp_ms"] = df["index"].dt.as_unit("ms").astype("int64")
                 df = df.drop(columns=["index"])
 
-        _guard_timestamp_ms_scale(df)
+        _run_write_guards(df)
 
         # Normalize column names (lowercase)
         df.columns = df.columns.str.lower()
@@ -276,7 +300,7 @@ class BulkStoreMixin:
                     .alias("timestamp_ms")
                 ).drop("timestamp")
 
-        _guard_timestamp_ms_scale(df)
+        _run_write_guards(df)
 
         # Add cache metadata
         # Schema evolution: use __version__ if version not specified

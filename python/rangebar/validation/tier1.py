@@ -81,6 +81,37 @@ def _check_correlation(df: pd.DataFrame, results: dict) -> None:
         results["ofi_corr_sane"] = None
 
 
+def _check_volume_overflow(df: pd.DataFrame) -> list[dict]:
+    """Check for negative volumes indicating FixedPoint i64 overflow. Issue #88."""
+    checks: list[dict] = []
+
+    # volume (always present in OHLCV bars)
+    if "volume" in df.columns:
+        checks.append({
+            "name": "volume_non_negative",
+            "passed": bool((df["volume"] >= 0).all()),
+            "description": "All volume >= 0 (negative indicates i64 overflow)",
+        })
+
+    # buy_volume (microstructure column, optional)
+    if "buy_volume" in df.columns:
+        checks.append({
+            "name": "buy_volume_non_negative",
+            "passed": bool((df["buy_volume"] >= 0).all()),
+            "description": "All buy_volume >= 0 (negative indicates i64 overflow)",
+        })
+
+    # sell_volume (microstructure column, optional)
+    if "sell_volume" in df.columns:
+        checks.append({
+            "name": "sell_volume_non_negative",
+            "passed": bool((df["sell_volume"] >= 0).all()),
+            "description": "All sell_volume >= 0 (negative indicates i64 overflow)",
+        })
+
+    return checks
+
+
 def _check_distributions(df: pd.DataFrame, results: dict) -> None:
     """Check basic distribution properties."""
     if "ofi" in df.columns:
@@ -162,7 +193,12 @@ def validate_tier1(df: pd.DataFrame) -> dict:
     # 4. Distribution checks
     _check_distributions(df, results)
 
-    # 5. Overall pass/fail
+    # 5. Volume overflow checks (Issue #88)
+    volume_checks = _check_volume_overflow(df)
+    for check in volume_checks:
+        results[check["name"]] = check["passed"]
+
+    # 6. Overall pass/fail
     critical_checks = [
         results["no_nan"],
         results["no_inf"],
@@ -170,6 +206,9 @@ def validate_tier1(df: pd.DataFrame) -> dict:
         results["ofi_bounded"],
         results["turnover_imbalance_bounded"],
     ]
+    # Add volume overflow checks to critical checks (Issue #88)
+    for check in volume_checks:
+        critical_checks.append(check["passed"])
     results["tier1_passed"] = all(critical_checks)
 
     return results

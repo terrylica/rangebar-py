@@ -114,12 +114,13 @@ fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject> {
     dict.set_item("high", bar.high.to_f64())?;
     dict.set_item("low", bar.low.to_f64())?;
     dict.set_item("close", bar.close.to_f64())?;
-    dict.set_item("volume", bar.volume.to_f64())?;
+    // Issue #88: i128 volume → f64 (FixedPoint scale)
+    dict.set_item("volume", bar.volume as f64 / 100_000_000.0)?;
 
     // Optional: Include market microstructure data
     dict.set_item("vwap", bar.vwap.to_f64())?;
-    dict.set_item("buy_volume", bar.buy_volume.to_f64())?;
-    dict.set_item("sell_volume", bar.sell_volume.to_f64())?;
+    dict.set_item("buy_volume", bar.buy_volume as f64 / 100_000_000.0)?;
+    dict.set_item("sell_volume", bar.sell_volume as f64 / 100_000_000.0)?;
     dict.set_item("individual_trade_count", bar.individual_trade_count)?;
     dict.set_item("agg_record_count", bar.agg_record_count)?;
 
@@ -212,7 +213,7 @@ fn checkpoint_to_dict(py: Python, checkpoint: &Checkpoint) -> PyResult<PyObject>
         bar_dict.set_item("high", bar.high.to_f64())?;
         bar_dict.set_item("low", bar.low.to_f64())?;
         bar_dict.set_item("close", bar.close.to_f64())?;
-        bar_dict.set_item("volume", bar.volume.to_f64())?;
+        bar_dict.set_item("volume", bar.volume as f64 / 100_000_000.0)?; // Issue #88: i128
         bar_dict.set_item("open_time", bar.open_time)?;
         bar_dict.set_item("close_time", bar.close_time)?;
         bar_dict.set_item("agg_record_count", bar.agg_record_count)?;
@@ -430,7 +431,8 @@ fn dict_to_rangebar(_py: Python, dict: &Bound<PyDict>) -> PyResult<RangeBar> {
         high: f64_to_fixed_point(high),
         low: f64_to_fixed_point(low),
         close: f64_to_fixed_point(close),
-        volume: f64_to_fixed_point(volume),
+        // Issue #88: volume fields are i128, not FixedPoint
+        volume: (volume * 100_000_000.0).round() as i128,
         turnover: 0,
         individual_trade_count: 0,
         agg_record_count,
@@ -439,8 +441,8 @@ fn dict_to_rangebar(_py: Python, dict: &Bound<PyDict>) -> PyResult<RangeBar> {
         first_agg_trade_id: 0, // Issue #72 - default 0 for backward compatibility
         last_agg_trade_id: 0,  // Issue #72 - default 0 for backward compatibility
         data_source: rangebar_core::DataSource::BinanceSpot,
-        buy_volume: FixedPoint(0),
-        sell_volume: FixedPoint(0),
+        buy_volume: 0i128,
+        sell_volume: 0i128,
         buy_trade_count: 0,
         sell_trade_count: 0,
         vwap: FixedPoint(0),
@@ -1201,7 +1203,7 @@ mod exness_bindings {
         dict.set_item("high", bar.base.high.to_f64())?;
         dict.set_item("low", bar.base.low.to_f64())?;
         dict.set_item("close", bar.base.close.to_f64())?;
-        dict.set_item("volume", bar.base.volume.to_f64())?; // Always 0 for Exness
+        dict.set_item("volume", bar.base.volume as f64 / 100_000_000.0)?; // Issue #88: i128; Always 0 for Exness
 
         // Spread statistics
         dict.set_item("spread_stats", spread_stats_to_dict(py, &bar.spread_stats)?)?;
@@ -1501,7 +1503,8 @@ mod arrow_bindings {
             high: f64_to_fixed_point(high),
             low: f64_to_fixed_point(low),
             close: f64_to_fixed_point(close),
-            volume: f64_to_fixed_point(volume),
+            // Issue #88: volume fields are i128, not FixedPoint
+            volume: (volume * 100_000_000.0).round() as i128,
             turnover: 0, // Not typically stored in dict
             individual_trade_count,
             agg_record_count,
@@ -1510,8 +1513,8 @@ mod arrow_bindings {
             first_agg_trade_id, // Issue #72
             last_agg_trade_id,  // Issue #72
             data_source: rangebar_core::DataSource::BinanceFuturesUM,
-            buy_volume: f64_to_fixed_point(buy_volume),
-            sell_volume: f64_to_fixed_point(sell_volume),
+            buy_volume: (buy_volume * 100_000_000.0).round() as i128,
+            sell_volume: (sell_volume * 100_000_000.0).round() as i128,
             buy_trade_count,
             sell_trade_count,
             vwap: f64_to_fixed_point(vwap),

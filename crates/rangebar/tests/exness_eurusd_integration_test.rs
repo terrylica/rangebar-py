@@ -278,13 +278,14 @@ fn validate_bar_integrity(bars: &[rangebar::providers::exness::ExnessRangeBar]) 
         );
 
         // Volume should be 0 (Exness has no volume data)
+        // Issue #88: volume is i128, not FixedPoint
         assert_eq!(
-            b.volume.0, 0,
+            b.volume, 0i128,
             "Bar {}: expected volume=0, got {}",
-            i, b.volume.0
+            i, b.volume
         );
-        assert_eq!(b.buy_volume.0, 0);
-        assert_eq!(b.sell_volume.0, 0);
+        assert_eq!(b.buy_volume, 0i128);
+        assert_eq!(b.sell_volume, 0i128);
 
         // Spread stats should have data
         assert!(

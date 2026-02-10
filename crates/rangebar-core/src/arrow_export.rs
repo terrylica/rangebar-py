@@ -349,7 +349,7 @@ pub fn rangebar_vec_to_record_batch(bars: &[RangeBar]) -> RecordBatch {
         high.append_value(bar.high.to_f64());
         low.append_value(bar.low.to_f64());
         close.append_value(bar.close.to_f64());
-        volume.append_value(bar.volume.to_f64());
+        volume.append_value(bar.volume as f64 / SCALE as f64); // Issue #88: i128 volume
         turnover.append_value(bar.turnover as f64);
         individual_trade_count.append_value(bar.individual_trade_count);
         agg_record_count.append_value(bar.agg_record_count);
@@ -362,8 +362,8 @@ pub fn rangebar_vec_to_record_batch(bars: &[RangeBar]) -> RecordBatch {
             DataSource::BinanceFuturesUM => "BinanceFuturesUM",
             DataSource::BinanceFuturesCM => "BinanceFuturesCM",
         });
-        buy_volume.append_value(bar.buy_volume.to_f64());
-        sell_volume.append_value(bar.sell_volume.to_f64());
+        buy_volume.append_value(bar.buy_volume as f64 / SCALE as f64); // Issue #88: i128 volume
+        sell_volume.append_value(bar.sell_volume as f64 / SCALE as f64); // Issue #88: i128 volume
         buy_trade_count.append_value(bar.buy_trade_count);
         sell_trade_count.append_value(bar.sell_trade_count);
         vwap.append_value(bar.vwap.to_f64());

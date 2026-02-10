@@ -66,7 +66,7 @@ fn test_range_bar_processing_integration() {
             bar.close
         );
         assert!(
-            bar.volume > FixedPoint(0),
+            bar.volume > 0, // Issue #88: i128 volume
             "Bar {}: Volume should be positive",
             i
         );
@@ -306,7 +306,7 @@ fn test_cross_mode_algorithm_consistency() {
         assert!(bar.high >= bar.close, "Bar {} high < close", i);
         assert!(bar.low <= bar.open, "Bar {} low > open", i);
         assert!(bar.low <= bar.close, "Bar {} low > close", i);
-        assert!(bar.volume > FixedPoint(0), "Bar {} zero volume", i);
+        assert!(bar.volume > 0, "Bar {} zero volume", i); // Issue #88: i128 volume
         assert!(bar.open_time <= bar.close_time, "Bar {} time inversion", i);
     }
 }
@@ -362,8 +362,9 @@ fn validate_algorithm_invariants(range_bars: &[RangeBar], test_trades: &[AggTrad
         .process_agg_trade_records_with_incomplete(test_trades)
         .expect("Failed to process trades with incomplete for volume check");
 
-    let total_bar_volume: i64 = all_bars.iter().map(|bar| bar.volume.0).sum();
-    let total_trade_volume: i64 = test_trades.iter().map(|trade| trade.volume.0).sum();
+    // Issue #88: i128 volume; sum as i128 then compare
+    let total_bar_volume: i128 = all_bars.iter().map(|bar| bar.volume).sum();
+    let total_trade_volume: i128 = test_trades.iter().map(|trade| trade.volume.0 as i128).sum();
 
     assert_eq!(
         total_bar_volume,

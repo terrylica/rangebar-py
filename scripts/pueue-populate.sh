@@ -257,6 +257,76 @@ show_guard_status() {
     uptime
 }
 
+# =============================================================================
+# Issue #88: Volume Overflow Post-Fix
+# =============================================================================
+
+postprocess_shib() {
+    echo "=== Issue #88: SHIBUSDT Volume Overflow Post-Fix ==="
+    echo "Queueing SHIBUSDT force-refresh at all 4 thresholds..."
+
+    # Create dedicated group for postprocessing (idempotent)
+    pueue group add postfix 2>/dev/null || true
+    pueue parallel 2 --group postfix  # 2 parallel (moderate resource usage)
+
+    for threshold in 250 500 750 1000; do
+        local label="SHIB-postfix@${threshold}"
+        local mem_limit
+        mem_limit=$(get_memory_limit "$threshold")
+
+        local cmd
+        if [[ "$HAS_SYSTEMD_RUN" == "true" ]]; then
+            cmd="systemd-run --user --scope -p MemoryMax=${mem_limit} -p MemorySwapMax=0 uv run python scripts/populate_full_cache.py --symbol SHIBUSDT --threshold ${threshold} --force-refresh --include-microstructure"
+        else
+            cmd="uv run python scripts/populate_full_cache.py --symbol SHIBUSDT --threshold ${threshold} --force-refresh --include-microstructure"
+        fi
+
+        # shellcheck disable=SC2086
+        pueue add --group postfix --label "$label" --working-directory "$PROJECT_DIR" -- $cmd
+        echo "  Added: $label -> group postfix"
+    done
+
+    echo ""
+    echo "✅ 4 SHIBUSDT repopulation jobs queued in 'postfix' group"
+    echo ""
+    echo "Monitor: pueue status --group postfix"
+    echo "After completion, run: $0 optimize"
+}
+
+optimize_table() {
+    echo "=== OPTIMIZE TABLE rangebar_cache.range_bars FINAL ==="
+    echo "This merges data parts and deduplicates (ReplacingMergeTree)."
+    echo ""
+
+    if command -v clickhouse-client &> /dev/null; then
+        clickhouse-client --query "OPTIMIZE TABLE rangebar_cache.range_bars FINAL"
+        echo "✅ OPTIMIZE TABLE completed"
+    else
+        echo "❌ clickhouse-client not found. Run manually:"
+        echo "   clickhouse-client --query 'OPTIMIZE TABLE rangebar_cache.range_bars FINAL'"
+        exit 1
+    fi
+}
+
+detect_overflow() {
+    echo "=== Detecting Volume Overflow (Issue #88) ==="
+    uv run python "$SCRIPT_DIR/detect_volume_overflow.py"
+}
+
+postprocess_all() {
+    echo "=== Issue #88: Full Post-Fix Pipeline ==="
+    echo ""
+    echo "Step 1/3: Queue SHIBUSDT repopulation"
+    postprocess_shib
+    echo ""
+    echo "⏳ Waiting for postfix jobs to complete..."
+    echo "   Run 'pueue wait --group postfix' then:"
+    echo "   $0 optimize"
+    echo "   $0 detect-overflow"
+    echo ""
+    echo "Or monitor with: pueue status --group postfix"
+}
+
 usage() {
     cat << EOF
 Pueue-based rangebar cache population with resource guards
@@ -266,15 +336,23 @@ SETUP (one-time):
   pueued -d               # Start daemon (survives SSH disconnect!)
   $0 setup                # Configure groups with parallelism limits
 
-USAGE:
+POPULATION:
   $0 phase1       Queue Phase 1 jobs (1000 dbps, 4 parallel)
   $0 phase2       Queue Phase 2 jobs (250 dbps, 2 parallel)
   $0 phase3       Queue Phase 3 jobs (500,750 dbps, 3 parallel)
   $0 all          Queue all 60 jobs across all phases
+
+MONITORING:
   $0 status       Show progress
   $0 guard-status Show resource guard (systemd-run) status
   $0 restart      Restart all failed jobs
   $0 clean        Remove completed jobs from queue
+
+ISSUE #88 POST-FIX (volume overflow):
+  $0 postprocess-shib   Queue SHIBUSDT force-refresh at 250/500/750/1000
+  $0 optimize           Run OPTIMIZE TABLE FINAL on range_bars
+  $0 detect-overflow    Check for negative volumes in cache
+  $0 postprocess-all    Full pipeline: queue + instructions for optimize + detect
 
 RESOURCE GUARDS:
   On Linux with systemd, each job runs inside a cgroup with per-threshold
@@ -316,6 +394,18 @@ case "${1:-}" in
         ;;
     clean)
         clean_done
+        ;;
+    postprocess-shib)
+        postprocess_shib
+        ;;
+    optimize)
+        optimize_table
+        ;;
+    detect-overflow)
+        detect_overflow
+        ;;
+    postprocess-all)
+        postprocess_all
         ;;
     *)
         usage

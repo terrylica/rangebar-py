@@ -411,9 +411,10 @@ impl TradeHistory {
         });
 
         // VWAP
-        let total_volume_fp: i64 = lookback.iter().map(|t| t.volume.0).sum();
+        // Issue #88: i128 sum to prevent overflow on high-token-count symbols
+        let total_volume_fp: i128 = lookback.iter().map(|t| t.volume.0 as i128).sum();
         features.lookback_vwap = Some(if total_volume_fp > 0 {
-            let vwap_raw = total_turnover / (total_volume_fp as i128);
+            let vwap_raw = total_turnover / total_volume_fp;
             FixedPoint(vwap_raw as i64)
         } else {
             FixedPoint(0)

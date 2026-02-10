@@ -87,7 +87,8 @@ impl DataFrameConverter<Vec<RangeBar>> for Vec<RangeBar> {
         let highs: Vec<i64> = self.iter().map(|bar| bar.high.0).collect();
         let lows: Vec<i64> = self.iter().map(|bar| bar.low.0).collect();
         let closes: Vec<i64> = self.iter().map(|bar| bar.close.0).collect();
-        let volumes: Vec<i64> = self.iter().map(|bar| bar.volume.0).collect();
+        // Issue #88: i128 volume → i64 for CSV (lossy but CSV is legacy format)
+        let volumes: Vec<i64> = self.iter().map(|bar| bar.volume as i64).collect();
         let turnovers: Vec<i64> = self.iter().map(|bar| bar.turnover as i64).collect();
         let trade_counts: Vec<i64> = self
             .iter()
@@ -95,8 +96,9 @@ impl DataFrameConverter<Vec<RangeBar>> for Vec<RangeBar> {
             .collect();
         let first_ids: Vec<i64> = self.iter().map(|bar| bar.first_trade_id).collect();
         let last_ids: Vec<i64> = self.iter().map(|bar| bar.last_trade_id).collect();
-        let buy_volumes: Vec<i64> = self.iter().map(|bar| bar.buy_volume.0).collect();
-        let sell_volumes: Vec<i64> = self.iter().map(|bar| bar.sell_volume.0).collect();
+        // Issue #88: i128 volume → i64 for CSV (lossy but CSV is legacy format)
+        let buy_volumes: Vec<i64> = self.iter().map(|bar| bar.buy_volume as i64).collect();
+        let sell_volumes: Vec<i64> = self.iter().map(|bar| bar.sell_volume as i64).collect();
         let buy_trade_counts: Vec<i64> =
             self.iter().map(|bar| bar.buy_trade_count as i64).collect();
         let sell_trade_counts: Vec<i64> =
@@ -183,15 +185,18 @@ impl DataFrameConverter<Vec<RangeBar>> for Vec<RangeBar> {
                 high: FixedPoint(highs[i]),
                 low: FixedPoint(lows[i]),
                 close: FixedPoint(closes[i]),
-                volume: FixedPoint(volumes[i]),
+                volume: volumes[i] as i128, // Issue #88: i128 volume
                 turnover: turnovers[i] as i128,
                 individual_trade_count: trade_counts[i] as u32,
                 agg_record_count: agg_record_counts[i] as u32,
                 first_trade_id: first_ids[i],
                 last_trade_id: last_ids[i],
+                // Issue #72: Trade ID tracking (defaults for import)
+                first_agg_trade_id: 0,
+                last_agg_trade_id: 0,
                 data_source: rangebar_core::DataSource::default(),
-                buy_volume: FixedPoint(buy_volumes[i]),
-                sell_volume: FixedPoint(sell_volumes[i]),
+                buy_volume: buy_volumes[i] as i128, // Issue #88: i128 volume
+                sell_volume: sell_volumes[i] as i128, // Issue #88: i128 volume
                 buy_trade_count: buy_trade_counts[i] as u32,
                 sell_trade_count: sell_trade_counts[i] as u32,
                 vwap: FixedPoint(vwaps[i]),
@@ -225,6 +230,29 @@ impl DataFrameConverter<Vec<RangeBar>> for Vec<RangeBar> {
                 lookback_garman_klass_vol: None,
                 lookback_hurst: None,
                 lookback_permutation_entropy: None,
+                // Intra-bar features (Issue #59) - defaults for import
+                intra_bull_epoch_density: None,
+                intra_bear_epoch_density: None,
+                intra_bull_excess_gain: None,
+                intra_bear_excess_gain: None,
+                intra_bull_cv: None,
+                intra_bear_cv: None,
+                intra_max_drawdown: None,
+                intra_max_runup: None,
+                intra_trade_count: None,
+                intra_ofi: None,
+                intra_duration_us: None,
+                intra_intensity: None,
+                intra_vwap_position: None,
+                intra_count_imbalance: None,
+                intra_kyle_lambda: None,
+                intra_burstiness: None,
+                intra_volume_skew: None,
+                intra_volume_kurt: None,
+                intra_kaufman_er: None,
+                intra_garman_klass_vol: None,
+                intra_hurst: None,
+                intra_permutation_entropy: None,
             };
 
             // Validate range bar data integrity
@@ -401,7 +429,7 @@ fn validate_range_bar(bar: &RangeBar) -> Result<(), ConversionError> {
     }
 
     // Volume validation
-    if bar.volume.0 <= 0 {
+    if bar.volume <= 0 { // Issue #88: i128 volume
         return Err(ConversionError::ValidationFailed {
             message: "Volume must be positive".to_string(),
         });
@@ -470,15 +498,17 @@ mod tests {
             high: FixedPoint(110000000),    // 1.1
             low: FixedPoint(90000000),      // 0.9
             close: FixedPoint(105000000),   // 1.05
-            volume: FixedPoint(1000000000), // 10.0
+            volume: 1000000000_i128, // 10.0 — Issue #88
             turnover: 1050000000,
             individual_trade_count: 5,
             agg_record_count: 1,
             first_trade_id: 1,
             last_trade_id: 5,
             data_source: DataSource::BinanceFuturesUM,
-            buy_volume: FixedPoint(600000000),
-            sell_volume: FixedPoint(400000000),
+            first_agg_trade_id: 0, // Issue #72
+            last_agg_trade_id: 0,  // Issue #72
+            buy_volume: 600000000_i128, // Issue #88
+            sell_volume: 400000000_i128, // Issue #88
             buy_trade_count: 3,
             sell_trade_count: 2,
             vwap: FixedPoint(105000000),
@@ -512,6 +542,29 @@ mod tests {
             lookback_garman_klass_vol: None,
             lookback_hurst: None,
             lookback_permutation_entropy: None,
+            // Intra-bar features (Issue #59)
+            intra_bull_epoch_density: None,
+            intra_bear_epoch_density: None,
+            intra_bull_excess_gain: None,
+            intra_bear_excess_gain: None,
+            intra_bull_cv: None,
+            intra_bear_cv: None,
+            intra_max_drawdown: None,
+            intra_max_runup: None,
+            intra_trade_count: None,
+            intra_ofi: None,
+            intra_duration_us: None,
+            intra_intensity: None,
+            intra_vwap_position: None,
+            intra_count_imbalance: None,
+            intra_kyle_lambda: None,
+            intra_burstiness: None,
+            intra_volume_skew: None,
+            intra_volume_kurt: None,
+            intra_kaufman_er: None,
+            intra_garman_klass_vol: None,
+            intra_hurst: None,
+            intra_permutation_entropy: None,
         }
     }
 
