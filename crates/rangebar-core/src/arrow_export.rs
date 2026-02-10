@@ -1,23 +1,220 @@
-//! Arrow export utilities for streaming architecture
+//! Arrow export/import utilities for streaming architecture
+//! Issue #88: Arrow-native input path for 3x pipeline speedup
 //!
-//! Converts rangebar types to Arrow RecordBatch for zero-copy Python interop.
+//! Converts rangebar types to/from Arrow RecordBatch for zero-copy Python interop.
 //! Requires the `arrow` feature flag.
 //!
 //! # Usage
 //!
 //! ```rust,ignore
-//! use rangebar_core::arrow_export::rangebar_vec_to_record_batch;
+//! use rangebar_core::arrow_export::{rangebar_vec_to_record_batch, record_batch_to_aggtrades};
 //!
+//! // Export: Rust → Arrow
 //! let bars: Vec<RangeBar> = processor.process_trades(&trades);
 //! let batch = rangebar_vec_to_record_batch(&bars);
-//! // batch can now be passed to Python via pyo3-arrow
+//!
+//! // Import: Arrow → Rust
+//! let trades = record_batch_to_aggtrades(&input_batch).unwrap();
 //! ```
 
-use arrow_array::{BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray, UInt32Array};
+use arrow_array::{
+    Array, BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray, UInt32Array,
+};
 use arrow_schema::{DataType, Field, Schema};
 use std::sync::Arc;
 
+use crate::fixed_point::SCALE;
 use crate::types::{AggTrade, DataSource, RangeBar};
+
+/// Error type for Arrow → AggTrade conversion failures
+#[derive(Debug, thiserror::Error)]
+pub enum ArrowImportError {
+    /// A required column is missing from the RecordBatch
+    #[error("Missing required column '{column}'")]
+    MissingColumn { column: &'static str },
+
+    /// A column has an unexpected Arrow data type
+    #[error("Column '{column}': expected {expected}, got {actual}")]
+    TypeMismatch {
+        column: &'static str,
+        expected: &'static str,
+        actual: String,
+    },
+}
+
+/// Convert an Arrow RecordBatch to a Vec of AggTrades
+///
+/// This is the inverse of `aggtrades_to_record_batch()`. Extracts columnar data
+/// from an Arrow RecordBatch and constructs AggTrade structs for processing.
+///
+/// # Required columns
+///
+/// - `timestamp` (Int64): Timestamp in milliseconds (converted to microseconds)
+/// - `price` (Float64): Trade price
+/// - `volume` or `quantity` (Float64): Trade volume (tries "volume" first, then "quantity")
+///
+/// # Optional columns
+///
+/// - `agg_trade_id` (Int64): Aggregate trade ID (defaults to row index)
+/// - `first_trade_id` (Int64): First individual trade ID (defaults to agg_trade_id)
+/// - `last_trade_id` (Int64): Last individual trade ID (defaults to agg_trade_id)
+/// - `is_buyer_maker` (Boolean): Whether buyer is market maker (defaults to false)
+/// - `is_best_match` (Boolean, nullable): Whether trade was best price match (defaults to None)
+///
+/// # Timestamp convention
+///
+/// Input timestamps are in **milliseconds** (Binance format).
+/// Output timestamps are in **microseconds** (rangebar-core internal format).
+/// Conversion: `timestamp_us = timestamp_ms * 1000`
+pub fn record_batch_to_aggtrades(batch: &RecordBatch) -> Result<Vec<AggTrade>, ArrowImportError> {
+    let num_rows = batch.num_rows();
+    if num_rows == 0 {
+        return Ok(Vec::new());
+    }
+
+    // Required: timestamp (Int64)
+    let timestamp_col = get_int64_column(batch, "timestamp")?;
+
+    // Required: price (Float64)
+    let price_col = get_float64_column(batch, "price")?;
+
+    // Required: volume or quantity (Float64) — try "volume" first, then "quantity"
+    let volume_col = match batch.column_by_name("volume") {
+        Some(col) => col.as_any().downcast_ref::<Float64Array>().ok_or_else(|| {
+            ArrowImportError::TypeMismatch {
+                column: "volume",
+                expected: "Float64",
+                actual: format!("{:?}", col.data_type()),
+            }
+        })?,
+        None => match batch.column_by_name("quantity") {
+            Some(col) => {
+                col.as_any()
+                    .downcast_ref::<Float64Array>()
+                    .ok_or_else(|| ArrowImportError::TypeMismatch {
+                        column: "quantity",
+                        expected: "Float64",
+                        actual: format!("{:?}", col.data_type()),
+                    })?
+            }
+            None => return Err(ArrowImportError::MissingColumn { column: "volume" }),
+        },
+    };
+
+    // Optional columns
+    let agg_trade_id_col = get_optional_int64_column(batch, "agg_trade_id");
+    let first_trade_id_col = get_optional_int64_column(batch, "first_trade_id");
+    let last_trade_id_col = get_optional_int64_column(batch, "last_trade_id");
+    let is_buyer_maker_col = get_optional_boolean_column(batch, "is_buyer_maker");
+    let is_best_match_col = get_optional_boolean_column(batch, "is_best_match");
+
+    let mut trades = Vec::with_capacity(num_rows);
+
+    for i in 0..num_rows {
+        let timestamp_ms = timestamp_col.value(i);
+        let price = price_col.value(i);
+        let volume = volume_col.value(i);
+
+        let agg_trade_id = agg_trade_id_col
+            .map(|col| col.value(i))
+            .unwrap_or(i as i64);
+
+        let first_trade_id = first_trade_id_col
+            .map(|col| col.value(i))
+            .unwrap_or(agg_trade_id);
+
+        let last_trade_id = last_trade_id_col
+            .map(|col| col.value(i))
+            .unwrap_or(agg_trade_id);
+
+        let is_buyer_maker = is_buyer_maker_col
+            .map(|col| col.value(i))
+            .unwrap_or(false);
+
+        let is_best_match = is_best_match_col.and_then(|col| {
+            if col.is_null(i) {
+                None
+            } else {
+                Some(col.value(i))
+            }
+        });
+
+        // Convert timestamp from milliseconds to microseconds
+        let timestamp_us = timestamp_ms * 1000;
+
+        trades.push(AggTrade {
+            agg_trade_id,
+            price: f64_to_fixed_point(price),
+            volume: f64_to_fixed_point(volume),
+            first_trade_id,
+            last_trade_id,
+            timestamp: timestamp_us,
+            is_buyer_maker,
+            is_best_match,
+        });
+    }
+
+    Ok(trades)
+}
+
+/// Convert f64 to FixedPoint (8 decimal precision)
+///
+/// Same conversion as `f64_to_fixed_point()` in `src/lib.rs:25-29`.
+#[inline]
+fn f64_to_fixed_point(value: f64) -> crate::fixed_point::FixedPoint {
+    crate::fixed_point::FixedPoint((value * SCALE as f64).round() as i64)
+}
+
+/// Get a required Int64 column by name
+fn get_int64_column<'a>(
+    batch: &'a RecordBatch,
+    name: &'static str,
+) -> Result<&'a Int64Array, ArrowImportError> {
+    let col = batch
+        .column_by_name(name)
+        .ok_or(ArrowImportError::MissingColumn { column: name })?;
+    col.as_any()
+        .downcast_ref::<Int64Array>()
+        .ok_or_else(|| ArrowImportError::TypeMismatch {
+            column: name,
+            expected: "Int64",
+            actual: format!("{:?}", col.data_type()),
+        })
+}
+
+/// Get a required Float64 column by name
+fn get_float64_column<'a>(
+    batch: &'a RecordBatch,
+    name: &'static str,
+) -> Result<&'a Float64Array, ArrowImportError> {
+    let col = batch
+        .column_by_name(name)
+        .ok_or(ArrowImportError::MissingColumn { column: name })?;
+    col.as_any()
+        .downcast_ref::<Float64Array>()
+        .ok_or_else(|| ArrowImportError::TypeMismatch {
+            column: name,
+            expected: "Float64",
+            actual: format!("{:?}", col.data_type()),
+        })
+}
+
+/// Get an optional Int64 column by name (returns None if missing)
+fn get_optional_int64_column<'a>(batch: &'a RecordBatch, name: &str) -> Option<&'a Int64Array> {
+    batch
+        .column_by_name(name)
+        .and_then(|col| col.as_any().downcast_ref::<Int64Array>())
+}
+
+/// Get an optional Boolean column by name (returns None if missing)
+fn get_optional_boolean_column<'a>(
+    batch: &'a RecordBatch,
+    name: &str,
+) -> Option<&'a BooleanArray> {
+    batch
+        .column_by_name(name)
+        .and_then(|col| col.as_any().downcast_ref::<BooleanArray>())
+}
 
 /// Schema for RangeBar Arrow export
 ///
@@ -383,11 +580,296 @@ mod tests {
         bar.data_source = DataSource::BinanceSpot;
         let batch = rangebar_vec_to_record_batch(&[bar]);
 
+        // data_source is at index 14 (after Issue #72 added first/last_agg_trade_id at 12/13)
         let data_source_col = batch
-            .column(12)
+            .column(14)
             .as_any()
             .downcast_ref::<StringArray>()
             .unwrap();
         assert_eq!(data_source_col.value(0), "BinanceSpot");
+    }
+
+    // Issue #88: Arrow import tests
+
+    #[test]
+    fn test_record_batch_to_aggtrades_roundtrip() {
+        // Export → Import roundtrip: fields must be bit-exact
+        let original = vec![create_test_trade()];
+        let batch = aggtrades_to_record_batch(&original);
+        let imported = record_batch_to_aggtrades(&batch).unwrap();
+
+        assert_eq!(imported.len(), 1);
+        let t = &imported[0];
+        let o = &original[0];
+
+        assert_eq!(t.agg_trade_id, o.agg_trade_id);
+        // aggtrades_to_record_batch exports price as f64 via to_f64(),
+        // record_batch_to_aggtrades imports via (f64 * SCALE).round() as i64.
+        // Roundtrip preserves exact value for 8-decimal prices.
+        assert_eq!(t.price.0, o.price.0);
+        assert_eq!(t.volume.0, o.volume.0);
+        assert_eq!(t.first_trade_id, o.first_trade_id);
+        assert_eq!(t.last_trade_id, o.last_trade_id);
+        // aggtrades_to_record_batch exports timestamp in microseconds,
+        // record_batch_to_aggtrades expects milliseconds and converts via * 1000.
+        // So the roundtrip changes the value: exported μs → imported as ms → * 1000 = μs * 1000.
+        // This is by design: the import function is for EXTERNAL data (ms timestamps).
+        // For a true roundtrip test, we need to adjust: export the ms value.
+        // Instead, verify the import function independently (see timestamp test below).
+        assert_eq!(t.is_buyer_maker, o.is_buyer_maker);
+        assert_eq!(t.is_best_match, o.is_best_match);
+    }
+
+    #[test]
+    fn test_record_batch_to_aggtrades_empty() {
+        let batch = aggtrades_to_record_batch(&[]);
+        let result = record_batch_to_aggtrades(&batch).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_record_batch_to_aggtrades_timestamp_conversion() {
+        // Verify ms → μs conversion: 1704067200000 ms → 1704067200000000 μs
+        let timestamp_ms: i64 = 1704067200000; // 2024-01-01 00:00:00 UTC
+        let expected_us: i64 = 1704067200000000;
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("timestamp", DataType::Int64, false),
+            Field::new("price", DataType::Float64, false),
+            Field::new("volume", DataType::Float64, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int64Array::from(vec![timestamp_ms])),
+                Arc::new(Float64Array::from(vec![50000.0])),
+                Arc::new(Float64Array::from(vec![1.0])),
+            ],
+        )
+        .unwrap();
+
+        let trades = record_batch_to_aggtrades(&batch).unwrap();
+        assert_eq!(trades[0].timestamp, expected_us);
+
+        // Also test edge cases: 0 and 1
+        let batch_edge = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("timestamp", DataType::Int64, false),
+                Field::new("price", DataType::Float64, false),
+                Field::new("volume", DataType::Float64, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(vec![0_i64, 1_i64])),
+                Arc::new(Float64Array::from(vec![100.0, 100.0])),
+                Arc::new(Float64Array::from(vec![1.0, 1.0])),
+            ],
+        )
+        .unwrap();
+
+        let trades_edge = record_batch_to_aggtrades(&batch_edge).unwrap();
+        assert_eq!(trades_edge[0].timestamp, 0); // 0 ms → 0 μs
+        assert_eq!(trades_edge[1].timestamp, 1000); // 1 ms → 1000 μs
+    }
+
+    #[test]
+    fn test_record_batch_to_aggtrades_fixed_point_precision() {
+        // Hand-computed: 50000.12345678 * 100_000_000 = 5000012345678
+        let price = 50000.12345678_f64;
+        let expected_fixed = (price * SCALE as f64).round() as i64;
+        assert_eq!(expected_fixed, 5_000_012_345_678_i64);
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("timestamp", DataType::Int64, false),
+            Field::new("price", DataType::Float64, false),
+            Field::new("volume", DataType::Float64, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int64Array::from(vec![1704067200000_i64])),
+                Arc::new(Float64Array::from(vec![price])),
+                Arc::new(Float64Array::from(vec![1.5])),
+            ],
+        )
+        .unwrap();
+
+        let trades = record_batch_to_aggtrades(&batch).unwrap();
+        assert_eq!(trades[0].price.0, expected_fixed);
+        // Verify roundtrip: FixedPoint → f64 → FixedPoint
+        assert_eq!(trades[0].price.to_f64(), price);
+
+        // Edge case: very small price
+        let small_price = 0.00000001_f64;
+        let expected_small = (small_price * SCALE as f64).round() as i64;
+        assert_eq!(expected_small, 1);
+
+        // Edge case: zero
+        let zero_batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("timestamp", DataType::Int64, false),
+                Field::new("price", DataType::Float64, false),
+                Field::new("volume", DataType::Float64, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(vec![1000_i64])),
+                Arc::new(Float64Array::from(vec![0.0])),
+                Arc::new(Float64Array::from(vec![0.0])),
+            ],
+        )
+        .unwrap();
+
+        let zero_trades = record_batch_to_aggtrades(&zero_batch).unwrap();
+        assert_eq!(zero_trades[0].price.0, 0);
+        assert_eq!(zero_trades[0].volume.0, 0);
+    }
+
+    #[test]
+    fn test_record_batch_to_aggtrades_missing_column() {
+        // Missing "price" → ArrowImportError::MissingColumn
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("timestamp", DataType::Int64, false),
+            Field::new("volume", DataType::Float64, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int64Array::from(vec![1000_i64])),
+                Arc::new(Float64Array::from(vec![1.0])),
+            ],
+        )
+        .unwrap();
+
+        let result = record_batch_to_aggtrades(&batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, ArrowImportError::MissingColumn { column: "price" }),
+            "Expected MissingColumn for 'price', got: {err:?}"
+        );
+
+        // Missing both "volume" and "quantity" → error
+        let schema2 = Arc::new(Schema::new(vec![
+            Field::new("timestamp", DataType::Int64, false),
+            Field::new("price", DataType::Float64, false),
+        ]));
+
+        let batch2 = RecordBatch::try_new(
+            schema2,
+            vec![
+                Arc::new(Int64Array::from(vec![1000_i64])),
+                Arc::new(Float64Array::from(vec![50000.0])),
+            ],
+        )
+        .unwrap();
+
+        let result2 = record_batch_to_aggtrades(&batch2);
+        assert!(result2.is_err());
+        assert!(
+            matches!(
+                result2.unwrap_err(),
+                ArrowImportError::MissingColumn { column: "volume" }
+            ),
+            "Expected MissingColumn for 'volume'"
+        );
+    }
+
+    #[test]
+    fn test_record_batch_to_aggtrades_type_mismatch() {
+        // String column where Int64 expected for timestamp
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("timestamp", DataType::Utf8, false),
+            Field::new("price", DataType::Float64, false),
+            Field::new("volume", DataType::Float64, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(StringArray::from(vec!["not_a_number"])),
+                Arc::new(Float64Array::from(vec![50000.0])),
+                Arc::new(Float64Array::from(vec![1.0])),
+            ],
+        )
+        .unwrap();
+
+        let result = record_batch_to_aggtrades(&batch);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ArrowImportError::TypeMismatch {
+                column: "timestamp",
+                expected: "Int64",
+                ..
+            } => {} // expected
+            other => panic!("Expected TypeMismatch for 'timestamp', got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_record_batch_to_aggtrades_volume_quantity_fallback() {
+        // Test that "quantity" column name works as fallback for "volume"
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("timestamp", DataType::Int64, false),
+            Field::new("price", DataType::Float64, false),
+            Field::new("quantity", DataType::Float64, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int64Array::from(vec![1704067200000_i64])),
+                Arc::new(Float64Array::from(vec![50000.0])),
+                Arc::new(Float64Array::from(vec![2.5])),
+            ],
+        )
+        .unwrap();
+
+        let trades = record_batch_to_aggtrades(&batch).unwrap();
+        assert_eq!(trades.len(), 1);
+        // 2.5 * 100_000_000 = 250_000_000
+        assert_eq!(trades[0].volume.0, 250_000_000);
+    }
+
+    #[test]
+    fn test_record_batch_to_aggtrades_optional_defaults() {
+        // Only required columns — verify defaults for optional fields
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("timestamp", DataType::Int64, false),
+            Field::new("price", DataType::Float64, false),
+            Field::new("volume", DataType::Float64, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int64Array::from(vec![1000_i64, 2000_i64])),
+                Arc::new(Float64Array::from(vec![100.0, 200.0])),
+                Arc::new(Float64Array::from(vec![1.0, 2.0])),
+            ],
+        )
+        .unwrap();
+
+        let trades = record_batch_to_aggtrades(&batch).unwrap();
+        assert_eq!(trades.len(), 2);
+
+        // agg_trade_id defaults to row index
+        assert_eq!(trades[0].agg_trade_id, 0);
+        assert_eq!(trades[1].agg_trade_id, 1);
+
+        // first_trade_id and last_trade_id default to agg_trade_id
+        assert_eq!(trades[0].first_trade_id, 0);
+        assert_eq!(trades[0].last_trade_id, 0);
+        assert_eq!(trades[1].first_trade_id, 1);
+        assert_eq!(trades[1].last_trade_id, 1);
+
+        // is_buyer_maker defaults to false
+        assert!(!trades[0].is_buyer_maker);
+        assert!(!trades[1].is_buyer_maker);
+
+        // is_best_match defaults to None
+        assert_eq!(trades[0].is_best_match, None);
+        assert_eq!(trades[1].is_best_match, None);
     }
 }

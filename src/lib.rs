@@ -9,8 +9,11 @@ use rangebar_core::{
 // Arrow export support (feature-gated)
 #[cfg(feature = "arrow-export")]
 use pyo3_arrow::PyRecordBatch;
+// Issue #88: Arrow-native input path
 #[cfg(feature = "arrow-export")]
-use rangebar_core::{aggtrades_to_record_batch, rangebar_vec_to_record_batch};
+use rangebar_core::{
+    aggtrades_to_record_batch, record_batch_to_aggtrades, rangebar_vec_to_record_batch,
+};
 
 #[cfg(feature = "data-providers")]
 use rangebar_providers::exness::{
@@ -842,6 +845,53 @@ impl PyRangeBarProcessor {
         }
 
         // Convert to Arrow RecordBatch
+        let batch = rangebar_vec_to_record_batch(&bars);
+        Ok(PyRecordBatch::new(batch))
+    }
+
+    /// Process trades from Arrow RecordBatch input, return Arrow RecordBatch output
+    ///
+    /// Issue #88: Arrow-native input path — eliminates .to_dicts() bottleneck.
+    /// Accepts an Arrow RecordBatch with trade data and returns completed range bars
+    /// as an Arrow RecordBatch. This bypasses Python dict creation entirely,
+    /// providing ~3x speedup over the dict-based process_trades_streaming().
+    ///
+    /// Required columns: timestamp (Int64, ms), price (Float64), volume/quantity (Float64)
+    /// Optional columns: agg_trade_id, first_trade_id, last_trade_id, is_buyer_maker, is_best_match
+    ///
+    /// Args:
+    ///     batch: Arrow RecordBatch containing trade data
+    ///
+    /// Returns:
+    ///     Arrow RecordBatch containing completed range bars
+    ///
+    /// Raises:
+    ///     `ValueError`: If required columns are missing or have wrong types
+    ///     `RuntimeError`: If trade processing fails
+    #[cfg(feature = "arrow-export")]
+    fn process_trades_arrow(&mut self, batch: PyRecordBatch) -> PyResult<PyRecordBatch> {
+        let record_batch = batch.as_ref();
+
+        if record_batch.num_rows() == 0 {
+            let empty_batch = rangebar_vec_to_record_batch(&[]);
+            return Ok(PyRecordBatch::new(empty_batch));
+        }
+
+        // Convert Arrow RecordBatch to AggTrades (zero Python interaction)
+        let agg_trades = record_batch_to_aggtrades(record_batch).map_err(|e| {
+            PyValueError::new_err(format!("Arrow import failed: {e}"))
+        })?;
+
+        // Process each trade individually to maintain streaming state
+        let mut bars = Vec::with_capacity(agg_trades.len() / 100);
+        for trade in agg_trades {
+            match self.processor.process_single_trade(trade) {
+                Ok(Some(bar)) => bars.push(bar),
+                Ok(None) => {}
+                Err(e) => return Err(PyRuntimeError::new_err(format!("Processing failed: {e}"))),
+            }
+        }
+
         let batch = rangebar_vec_to_record_batch(&bars);
         Ok(PyRecordBatch::new(batch))
     }

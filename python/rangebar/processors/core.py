@@ -534,6 +534,42 @@ class RangeBarProcessor:
 
         return self._processor.process_trades_streaming_arrow(trades)
 
+    def process_trades_arrow(self, batch: PyRecordBatch) -> PyRecordBatch:
+        """Process trades from Arrow RecordBatch (Issue #88: Arrow-native input).
+
+        Zero-copy input path: accepts Arrow RecordBatch or Table directly,
+        avoiding the .to_dicts() bottleneck that consumed 65% of pipeline time.
+
+        Parameters
+        ----------
+        batch : PyRecordBatch or pyarrow.Table or pyarrow.RecordBatch
+            Arrow data with columns: timestamp (int64 ms),
+            price (float64), volume/quantity (float64).
+            Optional: agg_trade_id, first_trade_id, last_trade_id,
+            is_buyer_maker, is_best_match.
+
+        Returns
+        -------
+        PyRecordBatch
+            Arrow RecordBatch of completed range bars.
+        """
+        # Polars .to_arrow() returns pyarrow.Table, not RecordBatch.
+        # Convert Table → single RecordBatch for the Rust binding.
+        if hasattr(batch, "combine_chunks"):
+            batch = batch.combine_chunks().to_batches()
+            if not batch:
+                from rangebar._core import bars_to_arrow
+
+                return bars_to_arrow([])
+            batch = batch[0]
+
+        if batch.num_rows == 0:
+            from rangebar._core import bars_to_arrow
+
+            return bars_to_arrow([])
+
+        return self._processor.process_trades_arrow(batch)
+
     def reset_at_ouroboros(self) -> dict | None:
         """Reset processor state at an ouroboros boundary.
 

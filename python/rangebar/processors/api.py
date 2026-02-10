@@ -21,6 +21,45 @@ if TYPE_CHECKING:
     from rangebar.clickhouse import RangeBarCache
 
 
+def _arrow_bars_to_pandas(
+    bars_pl: pl.DataFrame,
+    include_microstructure: bool = False,
+) -> pd.DataFrame:
+    """Convert Arrow-format Polars bars to backtesting.py-compatible pandas.
+
+    Arrow output has open_time/close_time as i64 microseconds.
+    to_dataframe() expects dict bars with timestamp as RFC3339 string.
+    This function converts directly without the dict roundtrip.
+    """
+    if bars_pl.is_empty():
+        return pd.DataFrame(
+            columns=["Open", "High", "Low", "Close", "Volume"]
+        ).set_index(pd.DatetimeIndex([]))
+
+    result = bars_pl.to_pandas()
+
+    # Arrow schema uses open_time (microseconds) as the timestamp
+    result["timestamp"] = pd.to_datetime(result["open_time"], unit="us")
+    result = result.set_index("timestamp")
+
+    # Drop time columns (not needed for backtesting.py)
+    result = result.drop(columns=["open_time", "close_time"], errors="ignore")
+
+    # Rename to backtesting.py format
+    result = result.rename(columns={
+        "open": "Open",
+        "high": "High",
+        "low": "Low",
+        "close": "Close",
+        "volume": "Volume",
+    })
+
+    if include_microstructure:
+        return result
+
+    return result[["Open", "High", "Low", "Close", "Volume"]]
+
+
 def process_trades_to_dataframe(
     trades: list[dict[str, int | float]] | pd.DataFrame,
     threshold_decimal_bps: int = 250,
@@ -377,16 +416,23 @@ def process_trades_polars(
     else:
         trades_minimal = trades_selected
 
-    # MEM-002: Process in chunks to bound memory (2.5 GB → ~50 MB per chunk)
-    # Chunked .to_dicts() avoids materializing 1M+ trade dicts at once
+    # Issue #88: Arrow-native input — .to_arrow() is zero-copy
+    # MEM-002: Process in chunks to bound memory
     chunk_size = 100_000
     processor = RangeBarProcessor(threshold_decimal_bps, symbol=symbol)
-    all_bars: list[dict] = []
+    bar_frames: list[pl.DataFrame] = []
 
     n_rows = len(trades_minimal)
     for start in range(0, n_rows, chunk_size):
-        chunk = trades_minimal.slice(start, chunk_size).to_dicts()
-        bars = processor.process_trades_streaming(chunk)
-        all_bars.extend(bars)
+        chunk_arrow = trades_minimal.slice(start, chunk_size).to_arrow()
+        bars_arrow = processor.process_trades_arrow(chunk_arrow)
+        bars_df = pl.from_arrow(bars_arrow)
+        if not bars_df.is_empty():
+            bar_frames.append(bars_df)
 
-    return processor.to_dataframe(all_bars)
+    if not bar_frames:
+        return processor.to_dataframe([])
+
+    # Convert Arrow-format Polars bars to backtesting.py-compatible pandas
+    result_pl = pl.concat(bar_frames)
+    return _arrow_bars_to_pandas(result_pl)

@@ -324,15 +324,22 @@ def precompute_range_bars(
                     i, len(months), all_bars, total_ticks, start_time,
                 )
 
-                # Stream directly to Rust processor (Issue #16: use streaming mode)
-                chunk = tick_chunk.to_dicts()
-                bars = processor.process_trades_streaming(chunk)
-                if bars:
+                # Issue #88: Arrow-native input — eliminates .to_dicts() bottleneck
+                import polars as pl
+
+                from rangebar.processors.api import _arrow_bars_to_pandas
+
+                chunk_arrow = tick_chunk.to_arrow()
+                bars_arrow = processor.process_trades_arrow(chunk_arrow)
+                bars_pl = pl.from_arrow(bars_arrow)
+                if not bars_pl.is_empty():
                     # Issue #30: Always include microstructure for ClickHouse cache
-                    bars_df = processor.to_dataframe(bars, include_microstructure=True)
+                    bars_df = _arrow_bars_to_pandas(
+                        bars_pl, include_microstructure=True
+                    )
                     month_bars.append(bars_df)  # Issue #27: Track per-month bars
 
-                del chunk, tick_chunk
+                del tick_chunk
 
             gc.collect()
 
@@ -389,25 +396,28 @@ def precompute_range_bars(
                         i, len(months), all_bars, total_ticks, start_time,
                     )
 
-                    # Process with chunking for memory efficiency
+                    # Issue #88: Arrow-native input — eliminates .to_dicts() bottleneck
+                    import polars as pl
+
+                    from rangebar.processors.api import _arrow_bars_to_pandas
+
                     tick_count = len(tick_data)
                     for chunk_start in range(0, tick_count, chunk_size):
                         chunk_end = min(chunk_start + chunk_size, tick_count)
                         chunk_df = tick_data.slice(chunk_start, chunk_end - chunk_start)
-                        chunk = chunk_df.to_dicts()
+                        chunk_arrow = chunk_df.to_arrow()
 
-                        # Stream to Rust processor (Issue #16: use streaming mode)
-                        bars = processor.process_trades_streaming(chunk)
-                        if bars:
+                        # Stream to Rust processor via Arrow input
+                        bars_arrow = processor.process_trades_arrow(chunk_arrow)
+                        bars_pl = pl.from_arrow(bars_arrow)
+                        if not bars_pl.is_empty():
                             # Issue #30: Always include microstructure for ClickHouse cache
-                            bars_df = processor.to_dataframe(
-                                bars, include_microstructure=True
+                            bars_df = _arrow_bars_to_pandas(
+                                bars_pl, include_microstructure=True
                             )
-                            month_bars.append(
-                                bars_df
-                            )  # Issue #27: Track per-month bars
+                            month_bars.append(bars_df)
 
-                        del chunk, chunk_df
+                        del chunk_df
 
                     del tick_data
                     gc.collect()

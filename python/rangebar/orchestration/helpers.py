@@ -280,8 +280,6 @@ def _stream_range_bars_binance(
     """
     import polars as pl
 
-    from rangebar.conversion import _bars_list_to_polars
-
     try:
         from rangebar._core import MarketType, stream_binance_trades
     except ImportError as e:
@@ -306,9 +304,12 @@ def _stream_range_bars_binance(
         prevent_same_timestamp_close=prevent_same_timestamp_close,
         inter_bar_lookback_count=inter_bar_lookback_count,
     )
-    bar_buffer: list[dict] = []
+    # Issue #88: Buffer Polars DataFrames directly (no bars_df.to_dicts() roundtrip)
+    bar_frames: list[pl.DataFrame] = []
+    total_buffered = 0
 
     # Stream trades in 6-hour chunks
+    # NOTE: Trade input stays dict-based here (stream_binance_trades yields dicts — Phase 5 scope)
     for trade_batch in stream_binance_trades(
         symbol,
         start_date,
@@ -317,29 +318,33 @@ def _stream_range_bars_binance(
         market_type=market_enum,
         verify_checksum=verify_checksum,
     ):
-        # Process to bars via Arrow (zero-copy to Polars)
+        # Process to bars via Arrow output (trade input still dict-based)
         arrow_batch = processor.process_trades_streaming_arrow(trade_batch)
         bars_df = pl.from_arrow(arrow_batch)
 
         if not bars_df.is_empty():
-            # Add to buffer
-            bar_buffer.extend(bars_df.to_dicts())
+            bar_frames.append(bars_df)
+            total_buffered += len(bars_df)
 
         # Yield when buffer reaches batch_size
-        while len(bar_buffer) >= batch_size:
-            batch = bar_buffer[:batch_size]
-            bar_buffer = bar_buffer[batch_size:]
-            yield _bars_list_to_polars(batch, include_microstructure)
+        while total_buffered >= batch_size:
+            combined = pl.concat(bar_frames)
+            yield combined.head(batch_size)
+            remainder = combined.slice(batch_size)
+            bar_frames = [remainder] if not remainder.is_empty() else []
+            total_buffered = len(remainder) if not remainder.is_empty() else 0
 
     # Handle incomplete bar at end
     if include_incomplete:
         incomplete = processor.get_incomplete_bar()
         if incomplete:
-            bar_buffer.append(incomplete)
+            incomplete_df = pl.DataFrame([incomplete], infer_schema_length=None)
+            bar_frames.append(incomplete_df)
+            total_buffered += 1
 
     # Yield remaining bars
-    if bar_buffer:
-        yield _bars_list_to_polars(bar_buffer, include_microstructure)
+    if bar_frames:
+        yield pl.concat(bar_frames)
 
 
 def _fetch_binance(
@@ -437,12 +442,11 @@ def _stream_bars_from_trades(
     include_microstructure: bool,
     processor: RangeBarProcessor,
     bar_batch_size: int = 10_000,
-) -> Iterator[list[dict]]:
+) -> Iterator[pl.DataFrame]:
     """Stream range bars in batches from trades (MEM-012).
 
-    This generator yields bars in bounded batches instead of accumulating
-    all bars in memory. Critical for large date ranges (2.5+ years) with
-    microstructure features enabled.
+    Issue #88: Uses Arrow-native input path — eliminates .to_dicts() bottleneck.
+    Yields Polars DataFrames instead of list[dict] for zero-copy downstream.
 
     Parameters
     ----------
@@ -459,34 +463,47 @@ def _stream_bars_from_trades(
 
     Yields
     ------
-    list[dict]
-        Batches of bar dictionaries (bounded memory)
+    pl.DataFrame
+        Batches of bar DataFrames (bounded memory)
 
     Memory Usage
     ------------
     Peak: ~60 MB per batch (10K bars x 58 columns)
     vs. Previous: 2.9 GB for 50K bars (unbounded accumulation)
     """
+    import polars as pl
+
     # MEM-002 + MEM-011: Adaptive chunk size based on output features
     # Base: 100K trades (~15 MB dicts, ~50 MB with OHLCV bars)
     # Microstructure: 50K trades (62 columns = 12x more memory per bar)
     trade_chunk_size = 50_000 if include_microstructure else 100_000
-    bar_buffer: list[dict] = []
+
+    # Issue #88: Buffer Polars DataFrames instead of dicts
+    bar_frames: list[pl.DataFrame] = []
+    total_buffered = 0
 
     n_rows = len(trades)
     for start in range(0, n_rows, trade_chunk_size):
-        chunk = trades.slice(start, trade_chunk_size).to_dicts()
-        bars = processor.process_trades_streaming(chunk)
-        bar_buffer.extend(bars)
+        # Issue #88: Arrow-native input — .to_arrow() is zero-copy (0.45ms vs 600ms for .to_dicts())
+        chunk_arrow = trades.slice(start, trade_chunk_size).to_arrow()
+        bars_arrow = processor.process_trades_arrow(chunk_arrow)
+        bars_df = pl.from_arrow(bars_arrow)
+
+        if not bars_df.is_empty():
+            bar_frames.append(bars_df)
+            total_buffered += len(bars_df)
 
         # MEM-012: Yield when buffer exceeds batch_size to bound memory
-        while len(bar_buffer) >= bar_batch_size:
-            yield bar_buffer[:bar_batch_size]
-            bar_buffer = bar_buffer[bar_batch_size:]
+        while total_buffered >= bar_batch_size:
+            combined = pl.concat(bar_frames)
+            yield combined.head(bar_batch_size)
+            remainder = combined.slice(bar_batch_size)
+            bar_frames = [remainder] if not remainder.is_empty() else []
+            total_buffered = len(remainder) if not remainder.is_empty() else 0
 
     # Yield remaining bars
-    if bar_buffer:
-        yield bar_buffer
+    if bar_frames:
+        yield pl.concat(bar_frames)
 
 
 def _process_binance_trades(
@@ -559,41 +576,27 @@ def _process_binance_trades(
     # This prevents OOM on large date ranges (2.5+ years) with microstructure
     # Previous: all_bars.extend() caused 2.9GB allocation for 50K bars
     # Now: bounded batches of 10K bars (~60 MB each)
+    # Issue #88: _stream_bars_from_trades now yields pl.DataFrame directly (Arrow path)
     bar_batches: list[pl.DataFrame] = []
 
-    for bar_batch in _stream_bars_from_trades(
+    for bar_batch_df in _stream_bars_from_trades(
         trades_minimal,
         threshold_decimal_bps,
         include_microstructure,
         processor,
         bar_batch_size=10_000,
     ):
-        if bar_batch:
-            # Convert batch to Polars DataFrame immediately
-            # This allows garbage collection of dict batch
-            batch_df = pl.DataFrame(bar_batch, infer_schema_length=None)
-            bar_batches.append(batch_df)
+        if not bar_batch_df.is_empty():
+            bar_batches.append(bar_batch_df)
 
     if not bar_batches:
         return _empty_ohlcv_dataframe(), processor
 
     # MEM-006: Single Polars concat (efficient, no 2x memory spike like pandas)
+    from rangebar.processors.api import _arrow_bars_to_pandas
+
     result_pl = pl.concat(bar_batches)
-    result = result_pl.to_pandas()
-
-    result["timestamp"] = pd.to_datetime(result["timestamp"], format="ISO8601")
-    result = result.set_index("timestamp")
-
-    # Rename OHLCV columns to backtesting.py format
-    result = result.rename(
-        columns={
-            "open": "Open",
-            "high": "High",
-            "low": "Low",
-            "close": "Close",
-            "volume": "Volume",
-        }
-    )
+    result = _arrow_bars_to_pandas(result_pl, include_microstructure=True)
 
     # Issue #75: Always return all available columns including trade IDs
     # The caller (get_range_bars) handles filtering for user-facing output AFTER cache write.

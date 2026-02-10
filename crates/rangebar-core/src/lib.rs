@@ -45,4 +45,6 @@ pub use types::{AggTrade, DataSource, RangeBar};
 #[cfg(feature = "arrow")]
 pub use arrow_export::{
     aggtrade_schema, aggtrades_to_record_batch, rangebar_schema, rangebar_vec_to_record_batch,
+    // Issue #88: Arrow-native input path
+    record_batch_to_aggtrades, ArrowImportError,
 };
