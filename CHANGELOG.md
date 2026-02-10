@@ -1,3 +1,10 @@
+# [12.15.0](https://github.com/terrylica/rangebar-py/compare/v12.14.0...v12.15.0) (2026-02-10)
+
+
+### Features
+
+* **telemetry:** add forensics-grade NDJSON telemetry for backtesting pipeline ([9588caf](https://github.com/terrylica/rangebar-py/commit/9588cafb93965bdc6a0bd859c3bd4ec4fc4005d3))
+
 # [12.14.0](https://github.com/terrylica/rangebar-py/compare/v12.13.0...v12.14.0) (2026-02-10)
 
 
