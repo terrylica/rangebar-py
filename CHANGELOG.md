@@ -1,3 +1,10 @@
+## [12.15.1](https://github.com/terrylica/rangebar-py/compare/v12.15.0...v12.15.1) (2026-02-10)
+
+
+### Bug Fixes
+
+* **arrow:** wire include_microstructure through process_trades_polars() ([617d7f9](https://github.com/terrylica/rangebar-py/commit/617d7f9a59c56f2cc019672ab9a3deb06b96bcad))
+
 # [12.15.0](https://github.com/terrylica/rangebar-py/compare/v12.14.0...v12.15.0) (2026-02-10)
 
 
