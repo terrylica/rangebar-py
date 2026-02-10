@@ -139,15 +139,17 @@ def populate_job(
     threshold: int,
     start_date: str,
     *,
+    end_date: str | None = None,
     force_refresh: bool = False,
     include_microstructure: bool = True,
 ) -> int:
     """Run a single population job. Returns bar count."""
     from rangebar import populate_cache_resumable
 
+    job_end = end_date or END_DATE
     logger.info(
-        "Starting: %s @ %d dbps from %s (force_refresh=%s, microstructure=%s)",
-        symbol, threshold, start_date, force_refresh, include_microstructure,
+        "Starting: %s @ %d dbps from %s to %s (force_refresh=%s, microstructure=%s)",
+        symbol, threshold, start_date, job_end, force_refresh, include_microstructure,
     )
     start_time = datetime.now(tz=UTC)
 
@@ -155,7 +157,7 @@ def populate_job(
         bars = populate_cache_resumable(
             symbol,
             start_date,
-            END_DATE,
+            job_end,
             threshold_decimal_bps=threshold,
             include_microstructure=include_microstructure,
             force_refresh=force_refresh,
@@ -369,6 +371,14 @@ Examples:
     )
     parser.add_argument("--symbol", type=str, help="Single symbol (requires --threshold)")
     parser.add_argument("--threshold", type=int, help="Single threshold (requires --symbol)")
+    parser.add_argument(
+        "--start-date", type=str,
+        help="Override start date (YYYY-MM-DD). For per-year parallelization.",
+    )
+    parser.add_argument(
+        "--end-date", type=str,
+        help="Override end date (YYYY-MM-DD). For per-year parallelization.",
+    )
     parser.add_argument("--status", action="store_true", help="Show cache status")
     parser.add_argument("--plan", action="store_true", help="Show execution plan")
     parser.add_argument(
@@ -397,8 +407,10 @@ Examples:
         if args.symbol not in SYMBOLS:
             logger.error("Unknown symbol: %s", args.symbol)
             sys.exit(1)
+        job_start = args.start_date or SYMBOLS[args.symbol]
         populate_job(
-            args.symbol, args.threshold, SYMBOLS[args.symbol],
+            args.symbol, args.threshold, job_start,
+            end_date=args.end_date,
             force_refresh=args.force_refresh,
             include_microstructure=include_micro,
         )
