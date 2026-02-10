@@ -389,3 +389,4 @@ let processor = RangeBarProcessor::new(threshold_decimal_bps)
 - [/docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md) - System design
 - [/src/lib.rs](/src/lib.rs) - PyO3 bindings
 - [/python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) - Python layer
+- [/scripts/CLAUDE.md](/scripts/CLAUDE.md) - Operations, pueue jobs

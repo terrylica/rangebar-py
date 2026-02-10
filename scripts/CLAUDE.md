@@ -1,0 +1,187 @@
+# Scripts & Operations
+
+**Parent**: [/CLAUDE.md](/CLAUDE.md) | **Skills**: `Skill(devops-tools:pueue-job-orchestration)` | `Skill(rangebar-job-safety)`
+
+Operational scripts for cache population, validation, and distributed job management on remote GPU hosts.
+
+---
+
+## Quick Reference
+
+| Task                       | Command                                           | Details                                               |
+| -------------------------- | ------------------------------------------------- | ----------------------------------------------------- |
+| Queue all cache population | `mise run cache:populate-all`                     | [Pueue Population](#pueue-population)                 |
+| Check pueue status         | `mise run cache:populate-status`                  | [Monitoring](#monitoring)                             |
+| Per-year parallelization   | `--start-date` / `--end-date`                     | [Per-Year Parallelization](#per-year-parallelization) |
+| Autoscale parallelism      | `mise run cache:autoscale-loop`                   | [Autoscaler](#autoscaler)                             |
+| Check cache status         | `mise run cache:status`                           | ClickHouse bar counts                                 |
+| Detect volume overflow     | `mise run cache:detect-overflow`                  | Issue #88                                             |
+| Validate microstructure    | `uv run python scripts/validate_microstructure_*` | [Validation Scripts](#validation-scripts)             |
+
+---
+
+## Pueue Population
+
+**State-of-the-art approach** for long-running cache population on remote hosts. Pueue daemon survives SSH disconnects, crashes, and reboots.
+
+### Architecture
+
+```
+mise run cache:populate-all
+  └─→ pueue-populate.sh
+        └─→ pueue add (per symbol × threshold)
+              └─→ [systemd-run --scope -p MemoryMax=XG]  (Linux only)
+                    └─→ uv run python populate_full_cache.py
+                          └─→ populate_cache_resumable()   (day-by-day, checkpointed)
+```
+
+### Key Files
+
+| Script                      | Purpose                                         |
+| --------------------------- | ----------------------------------------------- |
+| `pueue-populate.sh`         | Pueue job orchestrator (groups, phases, guards) |
+| `populate_full_cache.py`    | Single-job entry point (Python)                 |
+| `pueue-autoscaler.sh`       | Dynamic parallelism tuning (CPU/memory aware)   |
+| `detect_volume_overflow.py` | Post-population integrity check (Issue #88)     |
+
+### Phases
+
+| Phase | Threshold (dbps) | Pueue Group | Parallel | Memory/Job |
+| ----- | ---------------- | ----------- | -------- | ---------- |
+| 1     | 1000             | p1          | 4        | ~1 GB      |
+| 2     | 250              | p2          | 2        | ~5 GB      |
+| 3     | 500, 750         | p3          | 3        | ~1.5 GB    |
+
+### Setup (One-Time on Remote Host)
+
+```bash
+# Install pueue
+~/.local/bin/pueued -d                      # Start daemon
+./scripts/pueue-populate.sh setup           # Configure groups
+
+# Or via mise
+mise run cache:populate-setup
+```
+
+### Resource Guards
+
+On Linux with cgroups v2, each job runs inside a `systemd-run` scope with per-threshold memory caps and `MemorySwapMax=0` (prevents swap escape). Bypass with `RANGEBAR_NO_CGROUP=1`.
+
+---
+
+## Per-Year Parallelization
+
+**Key insight**: Ouroboros resets processor state at year boundaries, making each year an independent processing unit. This enables splitting a multi-year job into concurrent per-year pueue jobs for massive speedup on multi-core hosts.
+
+### Why It's Safe (Three Isolation Layers)
+
+| Layer                 | Why No Conflicts                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| **Checkpoint files**  | `_get_checkpoint_path()` uses `{symbol}_{threshold}_{start}_{end}.json` — unique per year |
+| **ClickHouse writes** | INSERT is append-only; `OPTIMIZE TABLE FINAL` deduplicates afterward                      |
+| **Tick data**         | Read-only Parquet files; no write contention                                              |
+
+### Usage
+
+```bash
+# populate_full_cache.py supports --start-date and --end-date overrides
+uv run python scripts/populate_full_cache.py \
+    --symbol SHIBUSDT --threshold 250 --include-microstructure \
+    --start-date 2021-05-10 --end-date 2021-12-31
+
+# Queue per-year jobs via pueue
+pueue group add yearly --parallel 5
+for year in 2021 2022 2023 2024 2025; do
+    pueue add --group yearly --label "SHIB@250:${year}" -- \
+        uv run python scripts/populate_full_cache.py \
+        --symbol SHIBUSDT --threshold 250 --include-microstructure \
+        --start-date "${year}-01-01" --end-date "${year}-12-31"
+done
+```
+
+### Critical Rules
+
+1. **No `--force-refresh` on per-year jobs** when other year-jobs are running — `force_refresh` deletes cached bars for the specified date range, but if the original full-range job already ran `force_refresh`, the cache is already empty.
+2. **First year uses symbol's `effective_start`** from `symbols.toml`, not `01-01`.
+3. **Last year uses `probe_latest_available_date()`** as end date.
+4. **Chain `OPTIMIZE TABLE FINAL`** after all year-jobs complete via `pueue add --after`.
+5. **Memory budget**: Each job peaks at ~2-8 GB depending on threshold. With 61 GB total, 4-5 concurrent year-jobs are safe.
+
+### When to Use Per-Year vs Sequential
+
+| Scenario                                | Approach                 |
+| --------------------------------------- | ------------------------ |
+| High-volume symbol (SHIBUSDT, DOGEUSDT) | Per-year (5+ cores idle) |
+| Low-volume symbol (NEARUSDT, ATOMUSDT)  | Sequential (fast enough) |
+| Single threshold, long backfill         | Per-year                 |
+| Multiple thresholds, same symbol        | Sequential per threshold |
+
+### Performance Context
+
+SHIBUSDT@250 on 2021-05-10 (listing pump day): **3.1M trades → 128K bars**. Single-threaded intra-bar feature computation (Hurst DFA, Permutation Entropy) takes 2-4 hours for this one day. Per-year parallelization moves later years forward while 2021 grinds through the hard days.
+
+---
+
+## Autoscaler
+
+Pueue has no resource awareness. The autoscaler complements it with dynamic parallelism tuning.
+
+```bash
+mise run cache:autoscale         # Dry-run (shows what would change)
+mise run cache:autoscale-apply   # Apply changes
+mise run cache:autoscale-loop    # Continuous (60s interval)
+```
+
+**Scaling thresholds**:
+
+```
+CPU < 40% AND MEM < 60%  →  SCALE UP (+1 per group)
+CPU > 80% OR  MEM > 80%  →  SCALE DOWN (-1 per group)
+Otherwise                 →  HOLD
+```
+
+---
+
+## Monitoring
+
+```bash
+# Pueue status
+pueue status                          # All groups
+pueue status --group p2               # Specific group
+pueue follow <id>                     # Watch live output
+pueue log <id> --lines 20            # Recent output
+
+# Cache status
+mise run cache:status                 # ClickHouse bar counts
+python scripts/cache_status.py        # Direct
+
+# System resources (bigblack)
+ssh bigblack 'uptime && free -h'
+```
+
+---
+
+## Validation Scripts
+
+Portable scripts for GPU workstations without full dev environment:
+
+| Script                                 | Purpose                             |
+| -------------------------------------- | ----------------------------------- |
+| `validate_n_range_bars.py`             | Count-bounded API validation        |
+| `validate_microstructure_features.py`  | v7.0 feature validation             |
+| `validate_microstructure_roundtrip.py` | Compute → store → read → verify     |
+| `validate_backfill_preflight.py`       | Pre-population checks               |
+| `validate_clickhouse.py`               | ClickHouse connectivity             |
+| `validate_memory_efficiency.py`        | Memory usage during processing      |
+| `deduplicate_parquet_cache.py`         | Fix pre-v12.8 duplicate ticks (#78) |
+| `detect_volume_overflow.py`            | Find negative volumes (#88)         |
+
+---
+
+## Related
+
+- [/CLAUDE.md](/CLAUDE.md) - Project hub
+- [/crates/CLAUDE.md](/crates/CLAUDE.md) - Rust crate details, microstructure features
+- [/python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) - Python API, caching, validation
+- [/python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) - ClickHouse cache layer
+- [/.mise/tasks/cache.toml](/.mise/tasks/cache.toml) - mise task definitions

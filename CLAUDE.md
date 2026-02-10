@@ -12,6 +12,7 @@
 | Understand architecture | [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)                       | 8-crate workspace             |
 | Work with Rust crates   | [crates/CLAUDE.md](/crates/CLAUDE.md)                               | Crate details, microstructure |
 | Work with Python layer  | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)             | API, caching, validation      |
+| Operations & scripts    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                             | Pueue, cache population, jobs |
 | Release workflow        | [docs/development/RELEASE.md](/docs/development/RELEASE.md)         | Zig cross-compile, mise tasks |
 | Performance monitoring  | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics           |
 | Project context         | [docs/CONTEXT.md](/docs/CONTEXT.md)                                 | Why this project exists       |
@@ -303,49 +304,46 @@ df = get_range_bars("BTCUSDT", "2019-01-01", "2025-12-31")
 
 ---
 
-## Cache Population
+## Distributed Job Management
 
-To populate ClickHouse cache with range bar data (for remote hosts or new thresholds):
+**Skills**: `Skill(devops-tools:pueue-job-orchestration)` | `Skill(rangebar-job-safety)`
 
-```python
-from rangebar import get_range_bars
+Cache population on remote GPU hosts uses **pueue** (daemon survives SSH disconnects) + **mise** (SSoT for env vars) + **systemd-run** (per-job memory caps).
 
-df = get_range_bars(
-    "BTCUSDT",
-    start_date="2023-06-01",
-    end_date="2025-12-01",
-    threshold_decimal_bps=100,
-    use_cache=True,
-    fetch_if_missing=True,
-)
+```bash
+# Quick start: queue all 60 cache population jobs (15 symbols × 4 thresholds)
+mise run cache:populate-all
+
+# Monitor
+mise run cache:populate-status
+
+# Autoscale parallelism based on CPU/memory
+mise run cache:autoscale-loop
 ```
 
-**Full documentation**: [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md)
+### Per-Year Parallelization (Ouroboros-Safe)
 
-**Host-specific cache status**:
+Ouroboros resets processor state at year boundaries, making each year independent. Split slow multi-year jobs into concurrent per-year pueue jobs:
+
+```bash
+# Each year runs on its own core — 5-6x speedup on idle hosts
+uv run python scripts/populate_full_cache.py \
+    --symbol SHIBUSDT --threshold 250 --include-microstructure \
+    --start-date 2022-01-01 --end-date 2022-12-31
+```
+
+**Safe because**: checkpoint files are unique per date range (INV-1), ClickHouse INSERT is append-only, tick data is read-only.
+
+**Full details**: [scripts/CLAUDE.md](/scripts/CLAUDE.md#per-year-parallelization)
+
+### Host-Specific Status
 
 | Host        | Thresholds (dbps)   | ClickHouse | Notes            |
 | ----------- | ------------------- | ---------- | ---------------- |
 | bigblack    | 250, 500, 750, 1000 | Native     | Primary GPU host |
 | littleblack | 100                 | Docker     | Secondary host   |
 
----
-
-## Remote Host Setup (ClickHouse)
-
-**CRITICAL gotchas** when setting up rangebar on remote hosts:
-
-| Issue                   | Root Cause                                | Solution                                           |
-| ----------------------- | ----------------------------------------- | -------------------------------------------------- |
-| Connection refused      | `mise.toml` hardcodes `RANGEBAR_CH_HOSTS` | Override: `export RANGEBAR_CH_HOSTS=localhost`     |
-| ThresholdError          | Default minimum threshold validation      | Override: `export RANGEBAR_CRYPTO_MIN_THRESHOLD=1` |
-| pip install fails       | Python 3.13 externally-managed-env        | Use `uv pip install rangebar` instead              |
-| ClickHouse auth failure | Docker container without password flag    | Add `-e CLICKHOUSE_PASSWORD=` to docker run        |
-| mise not found          | mise not installed on remote              | Use explicit paths: `~/.local/bin/uv run python`   |
-
-**mise SSoT pattern**: Environment variables in `.mise.toml` are the source of truth. Remote hosts without mise must manually export required variables.
-
-**Full setup guide**: [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md#populating-remote-hosts)
+**Remote host setup**: [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md#populating-remote-hosts)
 
 ---
 
@@ -353,12 +351,13 @@ df = get_range_bars(
 
 ### CLAUDE.md Files (Hub-and-Spoke)
 
-| Directory                      | CLAUDE.md                                                                     | Purpose                         |
-| ------------------------------ | ----------------------------------------------------------------------------- | ------------------------------- |
-| `/`                            | This file                                                                     | Hub, quick reference            |
-| `/crates/`                     | [crates/CLAUDE.md](/crates/CLAUDE.md)                                         | Rust workspace, microstructure  |
-| `/python/rangebar/`            | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)                       | Python API, caching, validation |
-| `/python/rangebar/clickhouse/` | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | Cache population, status        |
+| Directory                      | CLAUDE.md                                                                     | Purpose                           |
+| ------------------------------ | ----------------------------------------------------------------------------- | --------------------------------- |
+| `/`                            | This file                                                                     | Hub, quick reference              |
+| `/crates/`                     | [crates/CLAUDE.md](/crates/CLAUDE.md)                                         | Rust workspace, microstructure    |
+| `/python/rangebar/`            | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)                       | Python API, caching, validation   |
+| `/python/rangebar/clickhouse/` | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | Cache layer, schema, remote setup |
+| `/scripts/`                    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue jobs, per-year parallelism  |
 
 ### Documentation Index
 

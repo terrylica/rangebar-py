@@ -246,4 +246,5 @@ To add a threshold to a host, run the population script above on that host.
 
 - [/CLAUDE.md](/CLAUDE.md) - Project hub
 - [/python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) - Python API
+- [/scripts/CLAUDE.md](/scripts/CLAUDE.md) - Pueue jobs, per-year parallelization, autoscaler
 - [/scripts/cache_status.py](/scripts/cache_status.py) - Status script
