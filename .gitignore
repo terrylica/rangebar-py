@@ -92,6 +92,7 @@ tmp/
 
 # Generated visualizations (backtesting.py Bokeh outputs)
 *.html
+examples/output/
 
 # Link checker cache
 .lychee*

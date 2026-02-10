@@ -112,4 +112,5 @@ includes = [
     ".mise/tasks/checksum.toml",
     ".mise/tasks/diag.toml",
     ".mise/tasks/research.toml",
+    ".mise/tasks/telemetry.toml",
 ]

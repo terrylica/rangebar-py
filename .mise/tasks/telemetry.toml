@@ -1,0 +1,73 @@
+# Telemetry Tasks
+# Usage: mise run telemetry:backtest
+
+["telemetry:backtest"]
+description = "Run backtesting example with full NDJSON telemetry"
+depends = ["build"]
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+RANGEBAR_CRYPTO_MIN_THRESHOLD=1 uv run python examples/backtesting_integration.py
+echo ""
+echo "--- Telemetry Output ---"
+echo "Events written to: logs/events.jsonl"
+tail -5 logs/events.jsonl | jq -r '.text' 2>/dev/null || tail -5 logs/events.jsonl
+"""
+
+["telemetry:query"]
+description = "Query events.jsonl by component (e.g., mise run telemetry:query -- trade)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+COMPONENT="${1:-}"
+if [ -z "$COMPONENT" ]; then
+    echo "Usage: mise run telemetry:query -- <component>"
+    echo "Components: cache_query, bar_delivery, strategy, trade, backtest, download, profiling"
+    exit 1
+fi
+jq -r "select(.record.extra.component == \"$COMPONENT\")" logs/events.jsonl 2>/dev/null || \
+    grep "\"component\":\"$COMPONENT\"" logs/events.jsonl
+"""
+
+["telemetry:profile"]
+description = "Run backtesting example under py-spy profiler"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p profile-data
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+OUTPUT="profile-data/backtest_${TIMESTAMP}.svg"
+echo "Profiling with py-spy → $OUTPUT"
+RANGEBAR_CRYPTO_MIN_THRESHOLD=1 py-spy record -o "$OUTPUT" --format speedscope -- \
+    uv run python examples/backtesting_integration.py
+echo "Flamegraph saved: $OUTPUT"
+"""
+
+["telemetry:trades"]
+description = "Extract trade log from events.jsonl as CSV"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+echo "entry_time,exit_time,entry_price,exit_price,pnl,pnl_pct,is_long"
+jq -r 'select(.record.extra.component == "trade") |
+    [.record.extra.entry_time, .record.extra.exit_time,
+     .record.extra.entry_price, .record.extra.exit_price,
+     .record.extra.pnl, .record.extra.pnl_pct, .record.extra.is_long] | @csv' \
+    logs/events.jsonl 2>/dev/null
+"""
+
+["telemetry:clean"]
+description = "Rotate/clean telemetry logs"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -f logs/events.jsonl ]; then
+    SIZE=$(stat -f%z logs/events.jsonl 2>/dev/null || stat --format=%s logs/events.jsonl 2>/dev/null)
+    echo "Current size: ${SIZE} bytes"
+    echo "Rotating..."
+    mv logs/events.jsonl "logs/events.$(date +%Y%m%d_%H%M%S).jsonl"
+    echo "Rotated. New events will be written to fresh events.jsonl"
+else
+    echo "No events.jsonl found"
+fi
+"""

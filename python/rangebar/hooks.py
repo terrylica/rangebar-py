@@ -76,6 +76,11 @@ class HookEvent(Enum):
     DOWNLOAD_COMPLETE = "download_complete"
     TICK_FETCH_PROGRESS = "tick_fetch_progress"
     MIGRATION_PROGRESS = "migration_progress"
+    # Strategy/Backtest telemetry events
+    STRATEGY_INIT = "strategy_init"
+    STRATEGY_SIGNAL = "strategy_signal"
+    TRADE_COMPLETE = "trade_complete"
+    BACKTEST_COMPLETE = "backtest_complete"
 
 
 @dataclass

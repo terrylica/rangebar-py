@@ -297,6 +297,11 @@ def get_range_bars(
     validate_symbol_registered(symbol, operation="get_range_bars")
     start_date = validate_and_clamp_start_date(symbol, start_date)
 
+    # Telemetry: generate trace_id for pipeline correlation
+    from rangebar.logging import generate_trace_id
+
+    trace_id = generate_trace_id("grb")  # grb = get_range_bars
+
     # -------------------------------------------------------------------------
     # Resolve threshold with asset-class validation (Issue #62)
     # -------------------------------------------------------------------------
@@ -425,10 +430,14 @@ def get_range_bars(
     # -------------------------------------------------------------------------
     if use_cache:
         try:
+            import time as _time
+
             from rangebar.clickhouse import RangeBarCache
+            from rangebar.logging import get_logger
 
             with RangeBarCache() as cache:
                 # Ouroboros mode filter ensures cache isolation (Plan: sparkling-coalescing-dijkstra.md)
+                _t0 = _time.perf_counter()
                 cached_bars = cache.get_bars_by_timestamp_range(
                     symbol=symbol,
                     threshold_decimal_bps=threshold_decimal_bps,
@@ -436,6 +445,20 @@ def get_range_bars(
                     end_ts=end_ts,
                     include_microstructure=include_microstructure,
                     ouroboros_mode=ouroboros,
+                )
+                _query_ms = (_time.perf_counter() - _t0) * 1000
+                _hit = cached_bars is not None and len(cached_bars) > 0
+                get_logger().bind(
+                    component="cache_query",
+                    trace_id=trace_id,
+                    symbol=symbol,
+                    threshold_dbps=threshold_decimal_bps,
+                    hit=_hit,
+                    bar_count=len(cached_bars) if _hit else 0,
+                    query_ms=round(_query_ms, 2),
+                ).info(
+                    f"cache_query: {symbol}@{threshold_decimal_bps} "
+                    f"{'HIT' if _hit else 'MISS'} ({_query_ms:.1f}ms)"
                 )
                 if cached_bars is not None and len(cached_bars) > 0:
                     # Tier 0 validation: Content-based staleness detection (Issue #39)
@@ -591,11 +614,18 @@ def get_range_bars(
 
         # Issue #48: Emit DOWNLOAD_START hook for tick fetch tracing
         from rangebar.hooks import HookEvent, emit_hook
+        from rangebar.logging import log_download_event
 
+        _tick_source = "cache" if has_cached_ticks else "network"
         emit_hook(
             HookEvent.DOWNLOAD_START, symbol=symbol,
             segment_start=str(segment_start), segment_end=str(segment_end),
-            source="cache" if has_cached_ticks else "network",
+            source=_tick_source,
+        )
+        log_download_event(
+            "download_start", symbol=symbol,
+            date=str(segment_start.date()), trace_id=trace_id,
+            source=_tick_source,
         )
 
         if has_cached_ticks:
@@ -617,6 +647,11 @@ def get_range_bars(
         emit_hook(
             HookEvent.DOWNLOAD_COMPLETE, symbol=symbol,
             segment_start=str(segment_start), segment_end=str(segment_end),
+            tick_count=len(segment_ticks),
+        )
+        log_download_event(
+            "download_complete", symbol=symbol,
+            date=str(segment_start.date()), trace_id=trace_id,
             tick_count=len(segment_ticks),
         )
 
