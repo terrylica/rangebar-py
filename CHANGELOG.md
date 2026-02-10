@@ -1,3 +1,10 @@
+# [12.13.0](https://github.com/terrylica/rangebar-py/compare/v12.12.0...v12.13.0) (2026-02-10)
+
+
+### Features
+
+* **arrow:** add Arrow-native input path for 3x pipeline speedup ([#88](https://github.com/terrylica/rangebar-py/issues/88)) ([0aecc6b](https://github.com/terrylica/rangebar-py/commit/0aecc6b42e9e767a931c11a46d8bc62e9622789c))
+
 # [12.12.0](https://github.com/terrylica/rangebar-py/compare/v12.11.1...v12.12.0) (2026-02-09)
 
 
