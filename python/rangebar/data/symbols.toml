@@ -100,7 +100,8 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2019-07-05
-keywords = ["dogecoin", "doge"]
+processing_notes = "At 250 dbps, DOGEUSDT produces ~1,000 bars/day average and 219,893 bars on pump day (2021-01-28), making intra-bar feature computation infeasible (Hurst DFA + Permutation Entropy per bar). Minimum threshold enforced via mise.toml RANGEBAR_MIN_THRESHOLD_DOGEUSDT=500."
+keywords = ["dogecoin", "doge", "meme"]
 
 [symbols.SOLUSDT]
 enabled = true
@@ -128,8 +129,8 @@ listing_date = 2021-05-10
 data_anomalies = [
     "2021-05-10: first-day bars had mixed int/float types causing Polars schema inference crash (fixed v12.10.4, verified clean with Polars 1.36+)",
 ]
-processing_notes = "Polars schema inference crash on first-day data. Fixed by infer_schema_length=None. No longer reproduces with Polars 1.36.1."
-keywords = ["shiba inu", "shib"]
+processing_notes = "At 250 dbps, SHIBUSDT produces ~1,287 bars/day with 110,727 bars on listing pump day (2021-05-10), making intra-bar feature computation infeasible. Minimum threshold enforced via mise.toml RANGEBAR_MIN_THRESHOLD_SHIBUSDT=500. Polars schema inference crash on first-day data fixed by infer_schema_length=None."
+keywords = ["shiba inu", "shib", "meme"]
 
 [symbols.AVAXUSDT]
 enabled = true

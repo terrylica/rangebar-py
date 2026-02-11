@@ -28,6 +28,16 @@ RANGEBAR_EQUITIES_MIN_THRESHOLD = "100"
 RANGEBAR_UNKNOWN_MIN_THRESHOLD = "1"
 
 # =============================================================================
+# SSoT: Per-Symbol Minimum Thresholds (Issue #89)
+# =============================================================================
+# Meme coins produce too many bars at low thresholds, making intra-bar
+# feature computation infeasible. These env vars are the SOLE SSoT —
+# threshold.py:get_min_threshold_for_symbol() reads them directly.
+# Resolution: per-symbol env > asset-class env > fallback default.
+RANGEBAR_MIN_THRESHOLD_SHIBUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_DOGEUSDT = "500"
+
+# =============================================================================
 # SSoT: Microstructure Feature Defaults (Issue #68)
 # =============================================================================
 # When include_microstructure=True, these defaults are used unless overridden.
