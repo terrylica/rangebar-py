@@ -48,6 +48,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Issue #90: Parallelize FINAL dedup across partitions for ~7x faster reads.
+# Safe because our partitions (symbol, threshold, month) are independent.
+_FINAL_READ_SETTINGS: dict[str, int] = {
+    "do_not_merge_across_partitions_select_final": 1,
+}
+
 
 @dataclass(frozen=True)
 class CacheKey:
@@ -198,6 +204,17 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
                 clean_sql = " ".join(lines)
                 if clean_sql:
                     self.client.command(clean_sql)
+
+        # Issue #90: Enable INSERT block deduplication on existing tables.
+        # ALTER TABLE MODIFY SETTING is idempotent — safe to run every init.
+        try:
+            self.client.command(
+                "ALTER TABLE rangebar_cache.range_bars "
+                "MODIFY SETTING non_replicated_deduplication_window = 1000"
+            )
+        except (OSError, RuntimeError) as e:
+            # Graceful degradation: older ClickHouse may not support this setting.
+            logger.debug("Could not set non_replicated_deduplication_window: %s", e)
 
     # =========================================================================
     # Range Bars Cache (Tier 2)
@@ -372,6 +389,7 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
                     "start_ts": key.start_ts,
                     "end_ts": key.end_ts,
                 },
+                settings=_FINAL_READ_SETTINGS,
             )
         except (OSError, RuntimeError) as e:
             logger.exception(
@@ -443,6 +461,7 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
                 "start_ts": key.start_ts,
                 "end_ts": key.end_ts,
             },
+            settings=_FINAL_READ_SETTINGS,
         )
         return bool(result)
 
@@ -580,6 +599,7 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
                 "threshold": threshold_decimal_bps,
                 "before_ts": before_timestamp_ms,
             },
+            settings=_FINAL_READ_SETTINGS,
         )
 
         rows = result.result_rows
@@ -643,6 +663,7 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
                     "threshold": threshold_decimal_bps,
                     "end_ts": before_ts,
                 },
+                settings=_FINAL_READ_SETTINGS,
             )
         else:
             # Split path: no end_ts filter (most recent)
@@ -658,6 +679,7 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
                     "symbol": symbol,
                     "threshold": threshold_decimal_bps,
                 },
+                settings=_FINAL_READ_SETTINGS,
             )
         return int(result) if result else 0
 
@@ -695,6 +717,7 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
                 "symbol": symbol,
                 "threshold": threshold_decimal_bps,
             },
+            settings=_FINAL_READ_SETTINGS,
         )
         # ClickHouse returns 0 for min() on empty result
         return int(result) if result and result > 0 else None
@@ -732,6 +755,7 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
                 "symbol": symbol,
                 "threshold": threshold_decimal_bps,
             },
+            settings=_FINAL_READ_SETTINGS,
         )
         # ClickHouse returns 0 for max() on empty result
         return int(result) if result and result > 0 else None
@@ -1097,17 +1121,18 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
         self,
         symbol: str | None = None,
         threshold_decimal_bps: int | None = None,
+        timeout: int = 600,
     ) -> None:
-        """Force deduplication by running OPTIMIZE TABLE FINAL.
+        """Force deduplication via OPTIMIZE TABLE FINAL with timeout resilience.
+
+        Issue #90: Rewritten as fire-and-forget pattern. OPTIMIZE commands are
+        submitted with short client-side timeouts. If the client times out,
+        the merge continues server-side. Progress is monitored via system.merges.
 
         ReplacingMergeTree only deduplicates during background merges. This
         method forces an immediate merge to remove duplicate rows (same
         symbol + threshold + timestamp_ms), keeping the row with the latest
         computed_at timestamp.
-
-        WARNING: OPTIMIZE TABLE FINAL is a blocking operation that can be
-        slow on large tables. Use during maintenance windows, not in
-        production request paths.
 
         Parameters
         ----------
@@ -1115,6 +1140,9 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
             Optimize only partitions for this symbol, or None for all
         threshold_decimal_bps : int | None
             Optimize only partitions for this threshold, or None for all
+        timeout : int
+            Maximum seconds to wait for merges to complete (default: 600).
+            After timeout, merges continue in background on the server.
 
         Examples
         --------
@@ -1126,9 +1154,6 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
         ...         cache.deduplicate_bars("BTCUSDT", 1000)
         """
         if symbol is not None and threshold_decimal_bps is not None:
-            # Optimize specific partitions by symbol and threshold
-            # ReplacingMergeTree partitions by (symbol, threshold, month)
-            # We need to find and optimize all relevant partitions
             logger.info(
                 "Deduplicating bars for %s @ %d dbps (OPTIMIZE FINAL)",
                 symbol,
@@ -1152,14 +1177,75 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
                     f"OPTIMIZE TABLE rangebar_cache.range_bars "
                     f"PARTITION {partition_id} FINAL"
                 )
-                self.client.command(optimize_sql)
-                logger.debug("Optimized partition %s", partition_id)
+                try:
+                    self.client.command(
+                        optimize_sql,
+                        settings={
+                            "send_timeout": 60,
+                            "receive_timeout": 60,
+                        },
+                    )
+                    logger.debug("Optimized partition %s", partition_id)
+                except (OSError, RuntimeError) as e:
+                    # Client timeout — OPTIMIZE continues server-side
+                    logger.info(
+                        "OPTIMIZE timed out client-side for partition %s, "
+                        "merge continues on server: %s",
+                        partition_id,
+                        e,
+                    )
         else:
             # Optimize entire table
             logger.info("Deduplicating all bars (OPTIMIZE TABLE FINAL)")
-            self.client.command(
-                "OPTIMIZE TABLE rangebar_cache.range_bars FINAL"
-            )
+            try:
+                self.client.command(
+                    "OPTIMIZE TABLE rangebar_cache.range_bars FINAL",
+                    settings={
+                        "send_timeout": 60,
+                        "receive_timeout": 60,
+                    },
+                )
+            except (OSError, RuntimeError) as e:
+                logger.info(
+                    "Full-table OPTIMIZE timed out client-side, "
+                    "merge continues on server: %s",
+                    e,
+                )
 
+        # Poll system.merges until our table's merges complete
+        self._wait_for_merges(timeout=timeout)
         logger.info("Deduplication complete")
+
+    def _wait_for_merges(self, timeout: int = 600, poll_interval: int = 10) -> None:
+        """Poll system.merges until no active merges for our table.
+
+        Issue #90: After submitting OPTIMIZE, poll ClickHouse to wait for
+        background merges to finish. If timeout is reached, log a warning
+        and return — merges continue server-side.
+
+        Parameters
+        ----------
+        timeout : int
+            Maximum seconds to wait (default: 600).
+        poll_interval : int
+            Seconds between polls (default: 10).
+        """
+        import time
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            result = self.client.query(
+                "SELECT count() FROM system.merges "
+                "WHERE database = 'rangebar_cache' AND table = 'range_bars'"
+            )
+            active = result.result_rows[0][0] if result.result_rows else 0
+            if active == 0:
+                logger.info("All merges complete")
+                return
+            logger.debug("Waiting for %d active merge(s)...", active)
+            time.sleep(poll_interval)
+        logger.warning(
+            "Merge wait timed out after %ds, merges continue in background",
+            timeout,
+        )
 

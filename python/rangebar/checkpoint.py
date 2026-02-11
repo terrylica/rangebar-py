@@ -642,7 +642,11 @@ def populate_cache_resumable(
 
     # Issue #77: Deduplicate after population completes
     # ReplacingMergeTree only deduplicates during background merges,
-    # so we force immediate deduplication to ensure clean data
+    # so we force immediate deduplication to ensure clean data.
+    # Issue #90: Non-fatal — dedup failure should not crash the job.
+    # INSERT dedup tokens (Issue #90) prevent most duplicates at source,
+    # read queries use FINAL for on-the-fly dedup, and the pipeline-level
+    # OPTIMIZE TABLE FINAL job catches any stragglers.
     try:
         from rangebar.clickhouse import RangeBarCache
 
@@ -656,6 +660,14 @@ def populate_cache_resumable(
             logger.debug("Deduplication complete")
     except (ImportError, ConnectionError) as e:
         logger.debug("Post-population deduplication skipped: %s", e)
+    except (OSError, RuntimeError) as e:
+        logger.warning(
+            "Post-population deduplication did not complete for %s @ %d dbps: %s. "
+            "Data is written. Run OPTIMIZE TABLE FINAL manually or via pipeline.",
+            symbol,
+            threshold_decimal_bps,
+            e,
+        )
 
     # Clean up checkpoint on success (missing_ok for concurrent jobs)
     checkpoint_path.unlink(missing_ok=True)

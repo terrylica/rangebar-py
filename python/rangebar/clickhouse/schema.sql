@@ -129,6 +129,18 @@
 -- Note: New installations do not need this migration.
 
 -- ============================================================================
+-- Migration for v12.16.x (Issue #90: INSERT block deduplication)
+-- ============================================================================
+-- Run this ONCE if upgrading from earlier versions with existing cache:
+--
+-- ALTER TABLE rangebar_cache.range_bars
+--     MODIFY SETTING non_replicated_deduplication_window = 1000;
+--
+-- Tracks last 1000 INSERT block hashes. Retry INSERTs with same
+-- insert_deduplication_token are silently dropped by ClickHouse.
+-- Note: New installations do not need this migration.
+
+-- ============================================================================
 -- Computed Range Bars Cache (Tier 2)
 -- ============================================================================
 -- Stores computed range bars with all parameters as cache key
@@ -238,7 +250,8 @@ ENGINE = ReplacingMergeTree(computed_at)
 -- Partition by symbol, threshold, and month
 PARTITION BY (symbol, threshold_decimal_bps, toYYYYMM(toDateTime(timestamp_ms / 1000)))
 -- Order for efficient lookups
-ORDER BY (symbol, threshold_decimal_bps, timestamp_ms);
+ORDER BY (symbol, threshold_decimal_bps, timestamp_ms)
+SETTINGS non_replicated_deduplication_window = 1000;
 
 -- ============================================================================
 -- Materialized Views (Optional - for analytics)

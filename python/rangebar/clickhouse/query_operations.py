@@ -22,6 +22,13 @@ from ..constants import (
 from ..conversion import normalize_arrow_dtypes
 from ..exceptions import CacheReadError
 
+# Issue #90: ClickHouse query settings for FINAL reads.
+# Parallelizes dedup across partitions for ~7x speedup on multi-partition queries.
+# Safe because our partitions (symbol, threshold, month) are independent.
+FINAL_READ_SETTINGS: dict[str, int] = {
+    "do_not_merge_across_partitions_select_final": 1,
+}
+
 logger = logging.getLogger(__name__)
 
 
@@ -143,7 +150,9 @@ class QueryOperationsMixin:
             }
             if effective_min_version:
                 params["min_version"] = effective_min_version
-            df = self.client.query_df_arrow(query, parameters=params)
+            df = self.client.query_df_arrow(
+                query, parameters=params, settings=FINAL_READ_SETTINGS,
+            )
         else:
             # Split path: no end_ts filter (most recent)
             query = f"""
@@ -162,7 +171,9 @@ class QueryOperationsMixin:
             }
             if effective_min_version:
                 params["min_version"] = effective_min_version
-            df = self.client.query_df_arrow(query, parameters=params)
+            df = self.client.query_df_arrow(
+                query, parameters=params, settings=FINAL_READ_SETTINGS,
+            )
 
         if df.empty:
             return None, available_count
@@ -318,7 +329,9 @@ class QueryOperationsMixin:
             params["min_version"] = effective_min_version
 
         try:
-            df = self.client.query_df_arrow(query, parameters=params)
+            df = self.client.query_df_arrow(
+                query, parameters=params, settings=FINAL_READ_SETTINGS,
+            )
         except (OSError, RuntimeError) as e:
             logger.exception(
                 "Cache read failed for %s @ %d dbps (range query)",

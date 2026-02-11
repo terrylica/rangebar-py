@@ -66,6 +66,26 @@ def _run_write_guards(df: object) -> None:
     _guard_volume_non_negative(df)
 
 
+def _build_insert_settings(
+    skip_dedup: bool,
+    cache_key_accessor: object = None,
+) -> dict[str, object]:
+    """Build INSERT dedup settings from cache_key (Issue #90).
+
+    Returns settings dict with insert_deduplication_token if dedup is enabled
+    and a valid cache_key exists. Returns empty dict otherwise.
+    """
+    if skip_dedup or cache_key_accessor is None:
+        return {}
+    token = cache_key_accessor()
+    if token:
+        return {
+            "insert_deduplicate": 1,
+            "insert_deduplication_token": token,
+        }
+    return {}
+
+
 class BulkStoreMixin:
     """Mixin providing bulk store operations for RangeBarCache.
 
@@ -79,6 +99,8 @@ class BulkStoreMixin:
         bars: pd.DataFrame,
         version: str | None = None,
         ouroboros_mode: str = "year",
+        *,
+        skip_dedup: bool = False,
     ) -> int:
         """Store bars without requiring CacheKey (for bar-count API).
 
@@ -98,6 +120,9 @@ class BulkStoreMixin:
             uses current package version for schema evolution tracking.
         ouroboros_mode : str
             Ouroboros reset mode: "year", "month", or "week" (default: "year")
+        skip_dedup : bool
+            If True, skip INSERT deduplication token (for force_refresh).
+            Default False enables idempotent INSERTs (Issue #90).
 
         Returns
         -------
@@ -147,13 +172,14 @@ class BulkStoreMixin:
 
         # For bulk storage without CacheKey, use timestamp range as source bounds
         if "timestamp_ms" in df.columns and len(df) > 0:
-            df["source_start_ts"] = df["timestamp_ms"].min()
-            df["source_end_ts"] = df["timestamp_ms"].max()
+            start_ts = df["timestamp_ms"].min()
+            end_ts = df["timestamp_ms"].max()
+            df["source_start_ts"] = start_ts
+            df["source_end_ts"] = end_ts
             # Generate cache_key from symbol, threshold, ouroboros, and timestamp range
-            start_ts = df["source_start_ts"].iloc[0]
-            end_ts = df["source_end_ts"].iloc[0]
             key_str = (
-                f"{symbol}_{threshold_decimal_bps}_{start_ts}_{end_ts}_{ouroboros_mode}"
+                f"{symbol}_{threshold_decimal_bps}"
+                f"_{start_ts}_{end_ts}_{ouroboros_mode}"
             )
             df["cache_key"] = hashlib.md5(key_str.encode()).hexdigest()
         else:
@@ -200,12 +226,20 @@ class BulkStoreMixin:
         # Filter to existing columns
         columns = [c for c in columns if c in df.columns]
 
+        # Issue #90: INSERT dedup token for idempotent writes.
+        insert_settings = _build_insert_settings(
+            skip_dedup,
+            (lambda: df["cache_key"].iloc[0])
+            if df.get("cache_key") is not None and len(df) > 0
+            else None,
+        )
+
         try:
-            summary = self.client.insert_df(
+            written = self.client.insert_df(
                 "rangebar_cache.range_bars",
                 df[columns],
-            )
-            written = summary.written_rows
+                settings=insert_settings,
+            ).written_rows
             logger.info(
                 "Bulk cached %d bars for %s @ %d dbps",
                 written, symbol, threshold_decimal_bps,
@@ -238,6 +272,8 @@ class BulkStoreMixin:
         bars: pl.DataFrame,
         version: str | None = None,
         ouroboros_mode: str = "year",
+        *,
+        skip_dedup: bool = False,
     ) -> int:
         """Store a batch of bars using Arrow for efficient streaming writes.
 
@@ -257,6 +293,9 @@ class BulkStoreMixin:
             uses current package version for schema evolution tracking.
         ouroboros_mode : str
             Ouroboros reset mode: "year", "month", or "week" (default: "year")
+        skip_dedup : bool
+            If True, skip INSERT deduplication token (for force_refresh).
+            Default False enables idempotent INSERTs (Issue #90).
 
         Returns
         -------
@@ -381,11 +420,20 @@ class BulkStoreMixin:
         # Filter to existing columns
         columns = [c for c in columns if c in df.columns]
 
+        # Issue #90: INSERT dedup token for idempotent writes.
+        insert_settings = _build_insert_settings(
+            skip_dedup,
+            (lambda: df["cache_key"][0])
+            if "cache_key" in df.columns and len(df) > 0
+            else None,
+        )
+
         # Use Arrow for efficient insert (zero-copy)
         arrow_table = df.select(columns).to_arrow()
         summary = self.client.insert_arrow(
             "rangebar_cache.range_bars",
             arrow_table,
+            settings=insert_settings,
         )
 
         return summary.written_rows
