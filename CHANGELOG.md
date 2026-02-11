@@ -1,3 +1,15 @@
+# [12.17.0](https://github.com/terrylica/rangebar-py/compare/v12.16.0...v12.17.0) (2026-02-11)
+
+
+### Bug Fixes
+
+* **clickhouse:** five-layer dedup hardening against OPTIMIZE timeout crashes ([#90](https://github.com/terrylica/rangebar-py/issues/90)) ([ebf4e08](https://github.com/terrylica/rangebar-py/commit/ebf4e08fc4504429b38fc9fd37eb9e35e1dfb28e))
+
+
+### Features
+
+* **threshold:** provisional 500 dbps floor for 11 mid-tier symbols ([#89](https://github.com/terrylica/rangebar-py/issues/89)) ([9adf8f4](https://github.com/terrylica/rangebar-py/commit/9adf8f4f3110aab96933a2bd483111ff090b4beb))
+
 # [12.16.0](https://github.com/terrylica/rangebar-py/compare/v12.15.1...v12.16.0) (2026-02-11)
 
 
