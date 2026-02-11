@@ -1,3 +1,15 @@
+# [12.18.0](https://github.com/terrylica/rangebar-py/compare/v12.17.0...v12.18.0) (2026-02-11)
+
+
+### Bug Fixes
+
+* **scripts:** check per-table settings via SHOW CREATE TABLE ([#90](https://github.com/terrylica/rangebar-py/issues/90)) ([131e478](https://github.com/terrylica/rangebar-py/commit/131e4780f0139ed8086ecb42c6cfa31cdd2a3ab6))
+
+
+### Features
+
+* **clickhouse:** add REMOTE connection mode, always route through bigblack ([#90](https://github.com/terrylica/rangebar-py/issues/90)) ([3618fed](https://github.com/terrylica/rangebar-py/commit/3618fed318b367e8ad499a6e983e57e8f10a986d)), closes [#89](https://github.com/terrylica/rangebar-py/issues/89)
+
 # [12.17.0](https://github.com/terrylica/rangebar-py/compare/v12.16.0...v12.17.0) (2026-02-11)
 
 
