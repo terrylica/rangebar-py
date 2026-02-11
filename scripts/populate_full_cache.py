@@ -62,43 +62,47 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 # =============================================================================
 
-# Symbol list with start dates from the unified symbol registry (Issue #79).
-# Falls back to hardcoded dates if registry is unavailable.
-# MATICUSDT removed: delisted 2024-09-10 (MATIC->POL rebrand).
-# SHIBUSDT, UNIUSDT added: in symbols.toml but missing from bigblack.
-
-FALLBACK_SYMBOLS = {
-    "BTCUSDT": "2018-01-16",
-    "ETHUSDT": "2018-01-16",
-    "BNBUSDT": "2018-01-16",
-    "SOLUSDT": "2020-08-11",
-    "XRPUSDT": "2018-05-04",
-    "DOGEUSDT": "2019-07-05",
-    "ADAUSDT": "2018-04-17",
-    "AVAXUSDT": "2020-09-22",
-    "DOTUSDT": "2020-08-18",
-    "LINKUSDT": "2019-01-16",
-    "LTCUSDT": "2018-01-16",
-    "ATOMUSDT": "2019-04-29",
-    "NEARUSDT": "2020-10-14",
-    "SHIBUSDT": "2021-05-10",
-    "UNIUSDT": "2020-09-17",
-}
-
+# Symbol list derived from the unified symbol registry (Issue #79).
+# symbols.toml is the SSoT — no hardcoded fallback.
+# If the registry fails to load, crash loudly.
 
 def _get_symbols() -> dict[str, str]:
-    """Get symbol -> start_date mapping, preferring registry."""
-    try:
-        from rangebar.symbol_registry import get_effective_start_date
+    """Get symbol -> start_date mapping from registry SSoT.
 
-        symbols = {}
-        for symbol, fallback_date in FALLBACK_SYMBOLS.items():
-            registry_date = get_effective_start_date(symbol)
-            symbols[symbol] = registry_date or fallback_date
-        return symbols
-    except ImportError:
-        logger.warning("Symbol registry unavailable, using fallback dates")
-        return dict(FALLBACK_SYMBOLS)
+    Raises
+    ------
+    RuntimeError
+        If the symbol registry cannot be loaded. Never falls back silently.
+    """
+    from rangebar.symbol_registry import (
+        get_effective_start_date,
+        get_registered_symbols,
+    )
+
+    symbols = {}
+    registered = get_registered_symbols(asset_class="crypto")
+    if not registered:
+        msg = (
+            "Symbol registry returned 0 crypto symbols. "
+            "Is symbols.toml present and maturin develop run?"
+        )
+        raise RuntimeError(msg)
+    skipped = []
+    for symbol in registered:
+        start = get_effective_start_date(symbol)
+        if start:
+            symbols[symbol] = start
+        else:
+            skipped.append(symbol)
+    if skipped:
+        logger.warning(
+            "Symbols without effective_start (skipped): %s", ", ".join(skipped)
+        )
+    logger.info(
+        "Registry loaded: %d symbols (skipped %d without effective_start)",
+        len(symbols), len(skipped),
+    )
+    return symbols
 
 
 SYMBOLS = _get_symbols()
