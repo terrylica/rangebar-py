@@ -21,30 +21,22 @@ import time
 
 
 def validate_layer1_schema_setting(client) -> bool:
-    """Layer 1: Verify non_replicated_deduplication_window is set."""
+    """Layer 1: Verify non_replicated_deduplication_window is set on the table."""
     print("\n=== Layer 1: Schema Setting ===")
     try:
-        result = client.query(
-            "SELECT value FROM system.merge_tree_settings "
-            "WHERE name = 'non_replicated_deduplication_window'"
-        )
-        if result.result_rows:
-            value = result.result_rows[0][0]
-            print(f"  non_replicated_deduplication_window = {value}")
-            if str(value) == "1000":
-                print("  PASS: Setting is 1000")
-                return True
-            print(f"  FAIL: Expected 1000, got {value}")
-            return False
-        # Setting might not appear in system.merge_tree_settings for all versions.
-        # Try checking via SHOW CREATE TABLE instead.
-        result2 = client.command(
+        # SHOW CREATE TABLE is the authoritative source for per-table settings.
+        # system.merge_tree_settings only shows global defaults, not per-table overrides.
+        create_sql = str(client.command(
             "SHOW CREATE TABLE rangebar_cache.range_bars"
-        )
-        if "non_replicated_deduplication_window" in str(result2):
+        ))
+        if "non_replicated_deduplication_window = 1000" in create_sql:
+            print("  non_replicated_deduplication_window = 1000")
             print("  PASS: Setting found in CREATE TABLE definition")
             return True
-        print("  WARN: Setting not found (may need ALTER TABLE MODIFY SETTING)")
+        if "non_replicated_deduplication_window" in create_sql:
+            print("  WARN: Setting present but not 1000")
+            return False
+        print("  FAIL: Setting not found (need ALTER TABLE MODIFY SETTING)")
         return False
     except (OSError, RuntimeError) as e:
         print(f"  FAIL: {e}")
