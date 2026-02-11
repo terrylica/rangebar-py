@@ -12,7 +12,7 @@
 | Understand architecture | [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)                                 | 8-crate workspace                                  |
 | Work with Rust crates   | [crates/CLAUDE.md](/crates/CLAUDE.md)                                         | Core algorithm, microstructure, inter-bar features |
 | Work with Python layer  | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)                       | API, caching, validation, symbol registry          |
-| ClickHouse cache ops    | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | Schema, population, remote setup                   |
+| ClickHouse cache ops    | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | Schema, population, remote setup, dedup hardening  |
 | Operations & scripts    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue, cache population, per-year parallelism      |
 | Release workflow        | [docs/development/RELEASE.md](/docs/development/RELEASE.md)                   | Zig cross-compile, mise tasks                      |
 | Performance monitoring  | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md)           | Benchmarks, metrics                                |
@@ -23,7 +23,9 @@
 
 ---
 
-## Critical Principle: Leverage Rust
+## Critical Principles
+
+### 1. Leverage Rust
 
 **ALWAYS use local Rust crates for heavy lifting.** Python handles I/O only.
 
@@ -43,6 +45,24 @@ for chunk in data_stream:
     all_data.extend(chunk)
 ```
 
+### 2. Per-Year Parallelization (Default for Cache Population)
+
+**Never queue a monolithic multi-year cache population job.** Ouroboros resets processor state at year boundaries, making each year an independent unit. Always split into per-year pueue jobs.
+
+- A single DOGEUSDT@500 job: **22 days**. Per-year splits: **3-4 days**.
+- Each year gets its own checkpoint file, ClickHouse dedup handles overlaps.
+- **Full details**: [scripts/CLAUDE.md](/scripts/CLAUDE.md#per-year-parallelization-default-strategy)
+- **Skills**: `Skill(devops-tools:pueue-job-orchestration)` | `Skill(devops-tools:distributed-job-safety)`
+
+### 3. Symbol Registry Gate
+
+**Every symbol must be registered before processing.** Unregistered symbols raise `SymbolNotRegisteredError`.
+
+- **SSoT**: `symbols.toml` (repo root symlink → `python/rangebar/data/symbols.toml`)
+- **Adding new symbols**: Edit `symbols.toml`, run `maturin develop`, then process
+- **Override** (dev only): `export RANGEBAR_SYMBOL_GATE=off`
+- **Full details**: [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md#symbol-registry-issue-79)
+
 ---
 
 ## Python API
@@ -61,7 +81,7 @@ import polars as pl
 trades = pl.scan_parquet("trades.parquet")
 df = process_trades_polars(trades, threshold_decimal_bps=250)
 
-# With microstructure features (v7.0+)
+# With microstructure features
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30", include_microstructure=True)
 
 # Long ranges (>30 days) — must populate cache first
@@ -89,7 +109,7 @@ rangebar-py/
 ├── src/lib.rs                 PyO3 bindings (Rust→Python bridge)
 ├── python/rangebar/           Python API layer
 │   ├── clickhouse/            ClickHouse cache (bigblack)
-│   ├── validation/            Microstructure validation (v7.0+)
+│   ├── validation/            Microstructure validation
 │   └── storage/               Tier 1 cache (Parquet)
 ├── scripts/                   Pueue jobs, validation, cache population
 ├── .cargo/config.toml         Cross-compile friendly rustflags
@@ -143,21 +163,7 @@ Zig cross-compilation from macOS (no remote SSH needed).
 
 ---
 
-## Symbol Registry (Issue #79)
-
-**Every symbol must be registered before processing.** Unregistered symbols raise `SymbolNotRegisteredError`.
-
-**SSoT**: `symbols.toml` (repo root symlink → `python/rangebar/data/symbols.toml`)
-
-**Adding new symbols**: Edit `symbols.toml`, run `maturin develop`, then process.
-
-**Override gate** (dev only): `export RANGEBAR_SYMBOL_GATE=off`
-
-**Full details**: [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md#symbol-registry-issue-79) (field schema, gate table, telemetry)
-
----
-
-## Microstructure Features (v7.0+)
+## Microstructure Features
 
 10 intra-bar features + 16 inter-bar lookback features computed in Rust during bar construction.
 
@@ -165,21 +171,26 @@ Zig cross-compilation from macOS (no remote SSH needed).
 
 **Inter-bar** (lookback window): `lookback_ofi`, `lookback_intensity`, `lookback_kyle_lambda`, `lookback_burstiness`, `lookback_hurst`, `lookback_permutation_entropy`, + 10 more
 
-**Full details**: [crates/CLAUDE.md](/crates/CLAUDE.md#microstructure-features-v70) (formulas, ranges, academic backing)
+**Formulas and ranges**: [crates/CLAUDE.md](/crates/CLAUDE.md#microstructure-features-v70)
 
-**Validation**: [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md#validation-framework-v70) (Tier 1 smoke, Tier 2 statistical)
+**Validation**: [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md#validation-framework-v70)
 
 ---
 
-## Memory Guards (MEM-\*)
+## ClickHouse Infrastructure
 
-| Guard   | Description                                   | Location                      |
-| ------- | --------------------------------------------- | ----------------------------- |
-| MEM-001 | Memory estimation before fetch                | `resource_guard.py`           |
-| MEM-002 | Chunked dict conversion (100K trades)         | `helpers.py`                  |
-| MEM-006 | Polars concat instead of pandas               | `conversion.py`               |
-| MEM-011 | Adaptive chunk size (50K with microstructure) | `helpers.py:304`              |
-| MEM-013 | Force ClickHouse-first for >30 day ranges     | `orchestration/range_bars.py` |
+All range bar data served from **bigblack** (remote GPU host). No local ClickHouse.
+
+| Host        | Thresholds (dbps)   | ClickHouse | Total Bars |
+| ----------- | ------------------- | ---------- | ---------- |
+| bigblack    | 250, 500, 750, 1000 | Native     | 260M+      |
+| littleblack | 100                 | Docker     | —          |
+
+**Connection mode**: `RANGEBAR_MODE=remote` (set in `.mise.toml`). Preflight: `mise run db:ensure`.
+
+**Cache operations**: [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) (schema, population, dedup hardening)
+
+**Distributed jobs**: [scripts/CLAUDE.md](/scripts/CLAUDE.md) (pueue, per-year parallelization, autoscaler)
 
 ---
 
@@ -195,56 +206,21 @@ Zig cross-compilation from macOS (no remote SSH needed).
 | Duplicate ticks in Parquet cache        | Pre-v12.8 bug          | `scripts/deduplicate_parquet_cache.py`     |
 | `SymbolNotRegisteredError`              | Symbol not in registry | Edit `symbols.toml`, `maturin develop`     |
 
----
-
-## ClickHouse Infrastructure
-
-**Architecture**: All range bar data served from **bigblack** (remote GPU host) via SSH tunnel. No local ClickHouse.
-
-**Connection mode**: `RANGEBAR_MODE=remote` (set in `.mise.toml`). Skips localhost, always routes through `RANGEBAR_CH_HOSTS` via direct connection or SSH tunnel. Preflight: `mise run db:ensure` verifies bigblack reachable before tests.
-
-| Host        | Thresholds (dbps)   | ClickHouse | Total Bars |
-| ----------- | ------------------- | ---------- | ---------- |
-| bigblack    | 250, 500, 750, 1000 | Native     | 260M+      |
-| littleblack | 100                 | Docker     | —          |
-
-**Cache operations**: [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md)
-
-**Distributed jobs**: [scripts/CLAUDE.md](/scripts/CLAUDE.md) (pueue, per-year parallelization, autoscaler)
-
-**Dedup hardening**: [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md#dedup-hardening-issue-90) (5-layer idempotent write protection)
-
----
-
-## Dedup Hardening (Issue #90)
-
-Five-layer protection against duplicate rows from OPTIMIZE timeout crashes and retry storms:
-
-| Layer | Mechanism                               | Scope        |
-| ----- | --------------------------------------- | ------------ |
-| 1     | `non_replicated_deduplication_window`   | Engine-level |
-| 2     | INSERT dedup token (`cache_key` hash)   | Per-INSERT   |
-| 3     | Fire-and-forget `OPTIMIZE` + merge poll | Post-write   |
-| 4     | `FINAL` read with partition parallelism | Query-time   |
-| 5     | Schema migration in `_ensure_schema()`  | Bootstrap    |
-
-All three write methods (`store_range_bars`, `store_bars_bulk`, `store_bars_batch`) emit INSERT dedup tokens.
-
-**Validation**: `mise run cache:validate-dedup` (runs on bigblack, ALL 4 LAYERS PASS)
-
-**Full details**: [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md#dedup-hardening-issue-90)
+**Memory guards**: [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) (MEM-001 through MEM-013)
 
 ---
 
 ## CLAUDE.md Network (Hub-and-Spoke)
 
-| Directory                      | CLAUDE.md                                                                     | Purpose                           |
-| ------------------------------ | ----------------------------------------------------------------------------- | --------------------------------- |
-| `/`                            | This file                                                                     | Hub, quick reference              |
-| `/crates/`                     | [crates/CLAUDE.md](/crates/CLAUDE.md)                                         | Rust workspace, microstructure    |
-| `/python/rangebar/`            | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)                       | Python API, caching, validation   |
-| `/python/rangebar/clickhouse/` | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | Cache layer, schema, remote setup |
-| `/scripts/`                    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue jobs, per-year parallelism  |
+This file is the **hub**. Each spoke CLAUDE.md is loaded automatically when working in that directory.
+
+| Directory                      | CLAUDE.md                                                                     | SSoT For                                                           |
+| ------------------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `/`                            | This file                                                                     | Project overview, API, architecture, principles                    |
+| `/crates/`                     | [crates/CLAUDE.md](/crates/CLAUDE.md)                                         | Rust crates, microstructure formulas, algorithm details            |
+| `/python/rangebar/`            | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)                       | Python API, caching, validation, symbol registry, memory guards    |
+| `/python/rangebar/clickhouse/` | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | ClickHouse schema, dedup hardening, cache population               |
+| `/scripts/`                    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue ops, per-year parallelism, anti-patterns, validation scripts |
 
 ---
 

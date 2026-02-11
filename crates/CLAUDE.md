@@ -385,8 +385,9 @@ let processor = RangeBarProcessor::new(threshold_decimal_bps)
 
 ## Related
 
-- [/CLAUDE.md](/CLAUDE.md) - Project hub
+- [/CLAUDE.md](/CLAUDE.md) - Project hub (architecture, principles, terminology)
 - [/docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md) - System design
 - [/src/lib.rs](/src/lib.rs) - PyO3 bindings
-- [/python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) - Python layer
-- [/scripts/CLAUDE.md](/scripts/CLAUDE.md) - Operations, pueue jobs
+- [/python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) - Python API, caching, validation, memory guards
+- [/python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) - ClickHouse cache, dedup hardening
+- [/scripts/CLAUDE.md](/scripts/CLAUDE.md) - Pueue ops, per-year parallelization, anti-patterns

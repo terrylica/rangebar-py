@@ -317,7 +317,7 @@ Validates all 4 runtime layers against live data. See `scripts/validate_dedup_ha
 
 ## Related
 
-- [/CLAUDE.md](/CLAUDE.md) - Project hub
-- [/python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) - Python API
-- [/scripts/CLAUDE.md](/scripts/CLAUDE.md) - Pueue jobs, per-year parallelization, autoscaler
-- [/scripts/cache_status.py](/scripts/cache_status.py) - Status script
+- [/CLAUDE.md](/CLAUDE.md) - Project hub (architecture, principles, terminology)
+- [/python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md) - Python API, memory guards, validation
+- [/scripts/CLAUDE.md](/scripts/CLAUDE.md) - Pueue ops, per-year parallelization (default strategy), anti-patterns
+- [/crates/CLAUDE.md](/crates/CLAUDE.md) - Rust crates, microstructure feature formulas

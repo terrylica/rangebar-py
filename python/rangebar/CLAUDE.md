@@ -421,8 +421,9 @@ For GPU workstations without full dev environment:
 
 ## Related
 
-- [/CLAUDE.md](/CLAUDE.md) - Project hub
+- [/CLAUDE.md](/CLAUDE.md) - Project hub (architecture, principles, terminology)
 - [/docs/api/INDEX.md](/docs/api/INDEX.md) - Full API reference
-- [/crates/CLAUDE.md](/crates/CLAUDE.md) - Rust crate details
-- [/scripts/CLAUDE.md](/scripts/CLAUDE.md) - Pueue jobs, per-year parallelization
+- [/crates/CLAUDE.md](/crates/CLAUDE.md) - Rust crates, microstructure feature formulas
+- [/python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) - ClickHouse cache, dedup hardening
+- [/scripts/CLAUDE.md](/scripts/CLAUDE.md) - Pueue ops, per-year parallelization (default strategy), anti-patterns
 - [/src/lib.rs](/src/lib.rs) - PyO3 bindings source

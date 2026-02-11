@@ -70,9 +70,9 @@ On Linux with cgroups v2, each job runs inside a `systemd-run` scope with per-th
 
 ---
 
-## Per-Year Parallelization
+## Per-Year Parallelization (Default Strategy)
 
-**Key insight**: Ouroboros resets processor state at year boundaries, making each year an independent processing unit. This enables splitting a multi-year job into concurrent per-year pueue jobs for massive speedup on multi-core hosts.
+**This is the default approach for all multi-year cache population.** Never queue a monolithic multi-year job. Ouroboros resets processor state at year boundaries, making each year an independent processing unit. Per-year splits provide massive speedup on multi-core hosts (22 days → 3-4 days for DOGEUSDT@500).
 
 ### Why It's Safe (Three Isolation Layers)
 
@@ -102,11 +102,22 @@ done
 
 ### Critical Rules
 
-1. **No `--force-refresh` on per-year jobs** when other year-jobs are running — `force_refresh` deletes cached bars for the specified date range, but if the original full-range job already ran `force_refresh`, the cache is already empty.
-2. **First year uses symbol's `effective_start`** from `symbols.toml`, not `01-01`.
-3. **Last year uses `probe_latest_available_date()`** as end date.
-4. **Chain `OPTIMIZE TABLE FINAL`** after all year-jobs complete via `pueue add --after`.
-5. **Memory budget**: Each job peaks at ~2-8 GB depending on threshold. With 61 GB total, 4-5 concurrent year-jobs are safe.
+1. **Working directory**: Always `cd ~/rangebar-py &&` before `pueue add` — SSH cwd defaults to `$HOME`, causing instant job failure with `No such file or directory`.
+2. **No `--force-refresh` on per-year jobs** when other year-jobs are running — `force_refresh` deletes cached bars for the specified date range, but if the original full-range job already ran `force_refresh`, the cache is already empty.
+3. **First year uses symbol's `effective_start`** from `symbols.toml`, not `01-01`.
+4. **Last year uses `probe_latest_available_date()`** as end date.
+5. **Chain `OPTIMIZE TABLE FINAL`** after all year-jobs complete via `pueue add --after`.
+6. **Memory budget**: Each job peaks at ~2-8 GB depending on threshold. With 61 GB total, 4-5 concurrent year-jobs are safe.
+
+### Anti-Patterns (Hard Lessons)
+
+| Anti-Pattern                       | What Happened                                                                                  | Fix                                              |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Monolithic multi-year job          | DOGEUSDT@500 estimated 22 days single-threaded                                                 | Split into per-year pueue jobs (22d → 3-4d)      |
+| Wrong cwd in remote pueue          | `ssh host "pueue add ..."` used `$HOME` as cwd                                                 | `cd ~/rangebar-py && pueue add ...`              |
+| OPTIMIZE TABLE timeout             | Synchronous OPTIMIZE timed out at 300s under load                                              | Made OPTIMIZE non-fatal (Issue #90)              |
+| Cascade dependency failure         | OPTIMIZE TABLE chained `--after` populate jobs; when any populate failed, OPTIMIZE was skipped | Run OPTIMIZE manually after retrying failed jobs |
+| Per-job env override bypasses SSoT | `env RANGEBAR_CRYPTO_MIN_THRESHOLD=250` in each pueue job                                      | Set in `.mise.toml [env]` instead (one place)    |
 
 ### When to Use Per-Year vs Sequential
 
