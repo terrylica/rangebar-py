@@ -1,3 +1,18 @@
+# [12.16.0](https://github.com/terrylica/rangebar-py/compare/v12.15.1...v12.16.0) (2026-02-11)
+
+
+### Bug Fixes
+
+* **core:** widen volume accumulators from i64 to i128 to prevent overflow ([#88](https://github.com/terrylica/rangebar-py/issues/88)) ([3edb388](https://github.com/terrylica/rangebar-py/commit/3edb388b86360ae9b2a5948c9cf88700345ea650))
+
+
+### Features
+
+* **pueue:** wire optimize + detect-overflow as --after dependency jobs ([#88](https://github.com/terrylica/rangebar-py/issues/88)) ([e0cbe8c](https://github.com/terrylica/rangebar-py/commit/e0cbe8cc1437db558a6627f3ddd921b16702f46f))
+* **scripts:** add --start-date/--end-date to populate_full_cache.py ([c671034](https://github.com/terrylica/rangebar-py/commit/c671034cd066a3a0ea90a05ccb1e9a95da234350))
+* **scripts:** add pipeline monitor for pueue job groups ([#88](https://github.com/terrylica/rangebar-py/issues/88)) ([d5f54b8](https://github.com/terrylica/rangebar-py/commit/d5f54b83dd5e141e0f16b62ba67ae5a47680cb43))
+* **threshold:** per-symbol min threshold for SHIB/DOGE via mise SSoT ([#89](https://github.com/terrylica/rangebar-py/issues/89)) ([c5cd702](https://github.com/terrylica/rangebar-py/commit/c5cd702bff2149fee72252f42d46377750802183))
+
 ## [12.15.1](https://github.com/terrylica/rangebar-py/compare/v12.15.0...v12.15.1) (2026-02-10)
 
 
