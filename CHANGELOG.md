@@ -1,3 +1,10 @@
+## [12.18.2](https://github.com/terrylica/rangebar-py/compare/v12.18.1...v12.18.2) (2026-02-11)
+
+
+### Bug Fixes
+
+* **release:** tolerate semantic-release success step failures ([1b6fe2c](https://github.com/terrylica/rangebar-py/commit/1b6fe2cc2c3d20218b06ed241ebc1ffe446cb7e9))
+
 ## [12.18.1](https://github.com/terrylica/rangebar-py/compare/v12.18.0...v12.18.1) (2026-02-11)
 
 
