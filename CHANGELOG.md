@@ -1,3 +1,10 @@
+## [12.18.1](https://github.com/terrylica/rangebar-py/compare/v12.18.0...v12.18.1) (2026-02-11)
+
+
+### Bug Fixes
+
+* **scripts:** derive symbol list from registry SSoT, remove hardcoded fallback ([282df67](https://github.com/terrylica/rangebar-py/commit/282df6769d2138558300e015f7828db66f16a6b1)), closes [#91](https://github.com/terrylica/rangebar-py/issues/91)
+
 # [12.18.0](https://github.com/terrylica/rangebar-py/compare/v12.17.0...v12.18.0) (2026-02-11)
 
 
