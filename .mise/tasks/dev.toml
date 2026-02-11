@@ -14,19 +14,23 @@ description = "Run Rust tests with cargo nextest (excludes PyO3 root crate)"
 run = "cargo nextest run --workspace --exclude rangebar-py"
 
 [test-py]
-description = "Run Python tests"
+description = "Run Python tests (requires bigblack ClickHouse)"
+depends = ["db:ensure"]
 run = "pytest tests/ -v"
 
 ["test:e2e"]
-description = "Run end-to-end tests (requires ClickHouse)"
+description = "Run end-to-end tests (requires bigblack ClickHouse)"
+depends = ["db:ensure"]
 run = "pytest tests/ -v -m 'not slow' --tb=short"
 
 ["test:clickhouse"]
-description = "Run ClickHouse-specific tests"
+description = "Run ClickHouse-specific tests (requires bigblack ClickHouse)"
+depends = ["db:ensure"]
 run = "pytest tests/ -v -m clickhouse --tb=short"
 
 ["test:all"]
-description = "Run all tests including slow and ClickHouse"
+description = "Run all tests (requires bigblack ClickHouse)"
+depends = ["db:ensure"]
 run = "pytest tests/ -v --tb=short"
 
 [deny]

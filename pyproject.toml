@@ -158,6 +158,7 @@ ignore = [
     "SIM117",  # Nested with statements
     "E501",    # Line too long (test output messages can be verbose)
     "B007",    # Loop control variable not used (common in iterrows)
+    "PLC0415", # Lazy imports inside test functions (ClickHouse, PyO3, etc.)
 ]
 "examples/*" = [
     "PD901",   # Generic variable name 'df'

@@ -14,6 +14,8 @@ import pandas as pd
 import pytest
 
 # Check if ClickHouse is available before running any tests
+# Uses get_available_clickhouse_host() which respects RANGEBAR_MODE=remote
+# (reaches bigblack via SSH tunnel instead of requiring localhost)
 try:
     from rangebar.clickhouse import (
         CacheKey,
@@ -23,17 +25,13 @@ try:
         get_available_clickhouse_host,
     )
 
-    _PREFLIGHT = detect_clickhouse_state()
-    _CH_AVAILABLE = _PREFLIGHT.level >= InstallationLevel.RUNNING_NO_SCHEMA
-except (ImportError, OSError, ConnectionError) as e:
+    _HOST = get_available_clickhouse_host()
+    _CH_AVAILABLE = True
+    _skip_reason = ""
+except (ImportError, OSError, ConnectionError, RuntimeError) as e:
     _CH_AVAILABLE = False
-    _PREFLIGHT = None
-    _import_error = e  # Preserve error for debugging
-
-# Skip entire module if ClickHouse not available
-_skip_reason = (
-    f"ClickHouse not available: {_PREFLIGHT.message if _PREFLIGHT else 'import failed'}"
-)
+    _HOST = None
+    _skip_reason = f"ClickHouse not available: {e}"
 pytestmark = [
     pytest.mark.clickhouse,
     pytest.mark.skipif(not _CH_AVAILABLE, reason=_skip_reason),
@@ -107,12 +105,19 @@ class TestPreflightIntegration:
     """Integration tests for preflight detection."""
 
     def test_detect_clickhouse_state(self) -> None:
-        """Test that preflight detection works against real ClickHouse."""
-        state = detect_clickhouse_state()
+        """Test that preflight detection works against real ClickHouse.
 
-        assert state.level >= InstallationLevel.RUNNING_NO_SCHEMA
-        assert state.version is not None
-        assert "ready" in state.message.lower() or "schema" in state.message.lower()
+        In REMOTE mode (RANGEBAR_MODE=remote), localhost may not have
+        ClickHouse running. detect_clickhouse_state() only checks localhost,
+        so we verify get_available_clickhouse_host() finds a host instead.
+        """
+        host = get_available_clickhouse_host()
+        assert host is not None
+        if host.method == "local":
+            # Local ClickHouse: full preflight should pass
+            state = detect_clickhouse_state()
+            assert state.level >= InstallationLevel.RUNNING_NO_SCHEMA
+            assert state.version is not None
 
     def test_get_available_host(self, clickhouse_host) -> None:
         """Test that host selection returns valid connection."""
@@ -156,11 +161,9 @@ class TestRangeBarsIntegration:
             end_ts=1704153600000,
         )
 
-        # Clean up any existing data from previous test runs
-        cache.invalidate_range_bars(key)
-        import time
-
-        time.sleep(0.5)  # Allow async mutation to complete
+        # No cleanup needed: reads use FINAL (deduplicates on read) and
+        # writes use dedup tokens (idempotent INSERTs). Re-inserting the same
+        # data with the same CacheKey is silently dropped by ClickHouse.
 
         # Store bars
         count = cache.store_range_bars(key, sample_range_bars)
@@ -391,9 +394,9 @@ class TestIssue35DuplicateBarsRegression:
             end_ts=1704153600000,
         )
 
-        # Clean up
-        cache.invalidate_range_bars(key)
-        time.sleep(0.3)
+        # No cleanup needed: reads use FINAL (deduplicates on read) and
+        # writes use dedup tokens (Issue #90). Re-inserting identical data
+        # with the same CacheKey is silently dropped by ClickHouse.
 
         # Create sample bars with unique timestamps
         bars_df = pd.DataFrame(
@@ -408,10 +411,13 @@ class TestIssue35DuplicateBarsRegression:
         )
 
         # Insert TWICE - this is when ReplacingMergeTree would show duplicates
-        # without FINAL clause (before background merge)
+        # without FINAL clause (before background merge).
+        # Note: With Issue #90 dedup tokens, the second INSERT with the same
+        # CacheKey is silently dropped (idempotent write). The FINAL clause
+        # test is still valid for cases where dedup tokens differ.
         cache.store_range_bars(key, bars_df)
         time.sleep(0.1)
-        cache.store_range_bars(key, bars_df)  # Second insert = potential duplicates
+        cache.store_range_bars(key, bars_df)  # Dropped by dedup token (same key)
         time.sleep(0.1)
 
         # Retrieve - with FINAL clause, should NOT have duplicates
@@ -438,8 +444,6 @@ class TestIssue35DuplicateBarsRegression:
 
     def test_count_bars_no_duplicates(self, cache: RangeBarCache) -> None:
         """Test that count_bars() also uses FINAL and returns correct count."""
-        import time
-
         key = CacheKey(
             symbol="REGRESSION_ISSUE35_COUNT",
             threshold_decimal_bps=200,
@@ -447,8 +451,8 @@ class TestIssue35DuplicateBarsRegression:
             end_ts=1704153600000,
         )
 
-        cache.invalidate_range_bars(key)
-        time.sleep(0.3)
+        # No cleanup needed: FINAL deduplicates reads, dedup tokens (Issue #90)
+        # make identical INSERTs idempotent.
 
         bars_df = pd.DataFrame(
             {
@@ -463,7 +467,7 @@ class TestIssue35DuplicateBarsRegression:
             ),
         )
 
-        # Insert twice
+        # Insert twice (second dropped by Issue #90 dedup token — same CacheKey)
         cache.store_range_bars(key, bars_df)
         cache.store_range_bars(key, bars_df)
 

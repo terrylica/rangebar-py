@@ -33,7 +33,7 @@ from ..exceptions import (
     CacheReadError,
     CacheWriteError,
 )
-from .bulk_operations import BulkStoreMixin
+from .bulk_operations import BulkStoreMixin, _build_insert_settings
 from .client import get_client
 from .mixin import ClickHouseClientMixin
 from .preflight import (
@@ -320,10 +320,17 @@ class RangeBarCache(ClickHouseClientMixin, BulkStoreMixin, QueryOperationsMixin)
         # Filter to existing columns
         columns = [c for c in columns if c in df.columns]
 
+        # Issue #90: INSERT dedup token for idempotent writes.
+        insert_settings = _build_insert_settings(
+            False,
+            (lambda: key.hash_key) if key.hash_key else None,
+        )
+
         try:
             summary = self.client.insert_df(
                 "rangebar_cache.range_bars",
                 df[columns],
+                settings=insert_settings,
             )
             written = summary.written_rows
             logger.info(

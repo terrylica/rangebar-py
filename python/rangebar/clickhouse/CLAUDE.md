@@ -209,6 +209,23 @@ for row in result.result_rows:
 
 ---
 
+## Connection Mode
+
+`RANGEBAR_MODE` env var (set in `.mise.toml`) controls host resolution in `preflight.py:get_available_clickhouse_host()`:
+
+| Mode     | Behavior                                                  | Use Case                      |
+| -------- | --------------------------------------------------------- | ----------------------------- |
+| `auto`   | Try localhost first, then `RANGEBAR_CH_HOSTS` via SSH     | Default (auto-detect)         |
+| `local`  | Force `localhost:8123` only                               | Local ClickHouse only         |
+| `remote` | Skip localhost, use `RANGEBAR_CH_HOSTS` via direct or SSH | **Current** (always bigblack) |
+| `cloud`  | Require `CLICKHOUSE_HOST` env var                         | Managed ClickHouse Cloud      |
+
+**Current config** (`.mise.toml`): `RANGEBAR_MODE = "remote"` — all queries route through bigblack via SSH tunnel. No local ClickHouse.
+
+**Preflight gate**: `mise run db:ensure` verifies bigblack reachable. All test tasks (`test-py`, `test:e2e`, `test:clickhouse`, `test:all`) depend on `db:ensure`.
+
+---
+
 ## Host-Specific Cache Status
 
 | Host        | Symbols                  | Thresholds Cached (dbps) | ClickHouse Setup | Notes             |
@@ -216,7 +233,8 @@ for row in result.result_rows:
 | bigblack    | 15 Tier 1 crypto symbols | 250, 500, 750, 1000      | Native           | Primary GPU host  |
 | bigblack    | EURUSD (forex)           | 50, 100, 200             | Native           | Exness Raw_Spread |
 | littleblack | BTCUSDT                  | 100                      | Docker           | Secondary host    |
-| local       | varies                   | varies                   | Native/Docker    | Development       |
+
+**Note**: Local ClickHouse has been removed. All data served from bigblack via SSH tunnel (`localhost:18123 → bigblack:8123`). The flowsurface app auto-starts the tunnel via `mise run preflight`.
 
 **Minimum crypto threshold**: 250 dbps (enforced by `RANGEBAR_CRYPTO_MIN_THRESHOLD` in `.mise.toml`)
 
@@ -228,12 +246,67 @@ To add a threshold to a host, run the population script above on that host.
 
 ---
 
+## Dedup Hardening (Issue #90)
+
+Five-layer protection against duplicate rows from OPTIMIZE timeout crashes and retry storms. Validated on bigblack (260M+ rows, ALL LAYERS PASS).
+
+### Five-Layer Architecture
+
+| Layer | Mechanism                                        | Where                      | Scope        |
+| ----- | ------------------------------------------------ | -------------------------- | ------------ |
+| 1     | `non_replicated_deduplication_window = 1000`     | `_ensure_schema()` ALTER   | Engine-level |
+| 2     | INSERT dedup token (MD5 of `cache_key`)          | `_build_insert_settings()` | Per-INSERT   |
+| 3     | Fire-and-forget `OPTIMIZE` + merge polling       | `deduplicate_bars()`       | Post-write   |
+| 4     | `SELECT ... FINAL` with partition parallelism    | `_FINAL_READ_SETTINGS`     | Query-time   |
+| 5     | Schema migration on every `RangeBarCache()` init | `_ensure_schema()`         | Bootstrap    |
+
+### Write Entry Point Map
+
+All ClickHouse write paths emit INSERT dedup tokens:
+
+| Caller                                 | Store Method         | Dedup Token | `skip_dedup`            |
+| -------------------------------------- | -------------------- | ----------- | ----------------------- |
+| `get_range_bars()`                     | `store_range_bars()` | Yes         | No (always `False`)     |
+| `populate_cache_resumable()`           | `store_bars_batch()` | Yes         | Param (default `False`) |
+| `get_n_range_bars()`                   | `store_bars_bulk()`  | Yes         | Param (default `False`) |
+| `precompute_range_bars()`              | `store_bars_bulk()`  | Yes         | Param (default `False`) |
+| `process_trades_to_dataframe_cached()` | `store_range_bars()` | Yes         | No (always `False`)     |
+
+### Key Functions and Constants
+
+| Symbol                     | File                 | Purpose                                                       |
+| -------------------------- | -------------------- | ------------------------------------------------------------- |
+| `_build_insert_settings()` | `bulk_operations.py` | Build `{insert_deduplicate, insert_deduplication_token}` dict |
+| `_FINAL_READ_SETTINGS`     | `cache.py`           | `{"do_not_merge_across_partitions_select_final": 1}`          |
+| `deduplicate_bars()`       | `cache.py`           | Fire-and-forget OPTIMIZE per partition (60s timeout)          |
+| `_wait_for_merges()`       | `cache.py`           | Poll `system.merges` until OPTIMIZE completes                 |
+| `_ensure_schema()`         | `cache.py`           | ALTER TABLE MODIFY SETTING (idempotent migration)             |
+
+### `skip_dedup` Parameter
+
+`store_bars_bulk()` and `store_bars_batch()` accept `skip_dedup: bool = False`:
+
+- **`False` (default)**: Generates dedup token from `cache_key` column. Retrying the same INSERT is silently dropped by ClickHouse.
+- **`True`**: Skips token. Used for `force_refresh=True` paths where cache was already deleted.
+
+`store_range_bars()` always passes `False` (no `force_refresh` pathway).
+
+### Validation
+
+```bash
+mise run cache:validate-dedup    # Run on bigblack (requires ClickHouse)
+```
+
+Validates all 4 runtime layers against live data. See `scripts/validate_dedup_hardening.py`.
+
+---
+
 ## Files
 
 | File                  | Purpose                                                              |
 | --------------------- | -------------------------------------------------------------------- |
-| `cache.py`            | RangeBarCache class, core cache operations                           |
-| `bulk_operations.py`  | BulkStoreMixin (store_bars_bulk, store_bars_batch)                   |
+| `cache.py`            | RangeBarCache class, core cache operations, dedup Layer 3-5          |
+| `bulk_operations.py`  | BulkStoreMixin (store_bars_bulk, store_bars_batch), dedup Layer 2    |
 | `query_operations.py` | QueryOperationsMixin (get_n_bars, get_bars_by_timestamp_range)       |
 | `schema.sql`          | ClickHouse table schema (range_bars + population_checkpoints tables) |
 | `config.py`           | Connection configuration                                             |

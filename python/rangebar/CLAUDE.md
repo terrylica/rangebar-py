@@ -65,7 +65,7 @@ python/rangebar/
 ├── __init__.py          # Public API (get_range_bars, process_trades_*)
 ├── __init__.pyi         # Type stubs for IDE/AI
 ├── _core.abi3.so        # PyO3 binary extension (built by maturin)
-├── clickhouse/          # Tier 2 cache (ClickHouse Cloud)
+├── clickhouse/          # Tier 2 cache (ClickHouse, bigblack)
 │   ├── cache.py         # Range bar cache operations
 │   └── schema.sql       # Table schema (v7.0: 10 microstructure columns)
 ├── data/                # Package data files (Issue #79)
@@ -187,7 +187,7 @@ ticks = storage.get_ticks("BTCUSDT", start, end)
 
 - Stores precomputed range bars
 - Used by `get_range_bars()` and `get_n_range_bars()`
-- Requires ClickHouse Cloud connection
+- Requires ClickHouse connection (bigblack via SSH tunnel)
 
 ```python
 from rangebar.clickhouse.cache import get_cached_bars, count_bars
@@ -394,7 +394,7 @@ df = get_range_bars("BTCUSDT", "2019-01-01", "2025-12-31")
 1. Update `__init__.py` with new function
 2. Update `__init__.pyi` with type stub
 3. Add tests in `/tests/`
-4. Update `/docs/api.md`
+4. Update `/docs/api/INDEX.md`
 
 ### Testing
 

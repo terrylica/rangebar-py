@@ -9,25 +9,27 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
 class ClickHouseConfigError(ValueError):
     """Configuration error for ClickHouse connection."""
 
 
-class ConnectionMode(str, Enum):
+class ConnectionMode(StrEnum):
     """Connection mode for ClickHouse cache.
 
     Controls how rangebar-py connects to ClickHouse:
     - LOCAL: Force localhost:8123 only (no SSH aliases)
     - CLOUD: Require CLICKHOUSE_HOST environment variable
     - AUTO: Auto-detect (try localhost first, then SSH aliases)
+    - REMOTE: Skip localhost, use RANGEBAR_CH_HOSTS via direct/SSH
     """
 
     LOCAL = "local"
     CLOUD = "cloud"
     AUTO = "auto"
+    REMOTE = "remote"
 
 
 def get_connection_mode() -> ConnectionMode:
@@ -75,7 +77,7 @@ class ClickHouseConfig:
     Environment Variables
     ---------------------
     RANGEBAR_MODE : str
-        Connection mode: "local", "cloud", or "auto" (default: auto)
+        Connection mode: "local", "cloud", "auto", or "remote" (default: auto)
     RANGEBAR_CH_HOSTS : str
         Comma-separated list of SSH aliases from ~/.ssh/config
     RANGEBAR_CH_PRIMARY : str

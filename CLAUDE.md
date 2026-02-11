@@ -6,25 +6,26 @@
 
 ## Quick Reference
 
-| Task                    | Entry Point                                                         | Details                       |
-| ----------------------- | ------------------------------------------------------------------- | ----------------------------- |
-| Generate range bars     | `get_range_bars()`                                                  | [Python API](#python-api)     |
-| Understand architecture | [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)                       | 8-crate workspace             |
-| Work with Rust crates   | [crates/CLAUDE.md](/crates/CLAUDE.md)                               | Crate details, microstructure |
-| Work with Python layer  | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)             | API, caching, validation      |
-| Operations & scripts    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                             | Pueue, cache population, jobs |
-| Release workflow        | [docs/development/RELEASE.md](/docs/development/RELEASE.md)         | Zig cross-compile, mise tasks |
-| Performance monitoring  | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics           |
-| Project context         | [docs/CONTEXT.md](/docs/CONTEXT.md)                                 | Why this project exists       |
-| API reference           | [docs/api/INDEX.md](/docs/api/INDEX.md)                             | Full Python API docs          |
+| Task                    | Entry Point                                                                   | Details                                            |
+| ----------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------- |
+| Generate range bars     | `get_range_bars()`                                                            | [Python API](#python-api)                          |
+| Understand architecture | [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)                                 | 8-crate workspace                                  |
+| Work with Rust crates   | [crates/CLAUDE.md](/crates/CLAUDE.md)                                         | Core algorithm, microstructure, inter-bar features |
+| Work with Python layer  | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)                       | API, caching, validation, symbol registry          |
+| ClickHouse cache ops    | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | Schema, population, remote setup                   |
+| Operations & scripts    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue, cache population, per-year parallelism      |
+| Release workflow        | [docs/development/RELEASE.md](/docs/development/RELEASE.md)                   | Zig cross-compile, mise tasks                      |
+| Performance monitoring  | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md)           | Benchmarks, metrics                                |
+| Project context         | [docs/CONTEXT.md](/docs/CONTEXT.md)                                           | Why this project exists                            |
+| API reference           | [docs/api/INDEX.md](/docs/api/INDEX.md)                                       | Full Python API docs                               |
+| Research                | [docs/research/INDEX.md](/docs/research/INDEX.md)                             | ML labeling, regime patterns, TDA                  |
+| Oracle verification     | [docs/verification/](/docs/verification/)                                     | Bit-exact cross-reference reports                  |
 
 ---
 
 ## Critical Principle: Leverage Rust
 
 **ALWAYS use local Rust crates for heavy lifting.** Python handles I/O only.
-
-When implementing features or fixing issues:
 
 1. **Check Rust first**: Before writing Python code, check if `rangebar-core` already provides the capability
 2. **Stream to Rust**: The `RangeBarProcessor` maintains state between `process_trades()` calls
@@ -42,8 +43,6 @@ for chunk in data_stream:
     all_data.extend(chunk)
 ```
 
-**Why**: Rust handles threshold breach, OHLCV aggregation, temporal integrity, fixed-point arithmetic.
-
 ---
 
 ## Python API
@@ -57,24 +56,27 @@ df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30")
 # Count-bounded (ML training)
 df = get_n_range_bars("BTCUSDT", n_bars=10000)
 
-# Polars users (2-3x faster) - recommended for existing Polars data
+# Polars users (2-3x faster)
 import polars as pl
-trades = pl.scan_parquet("trades.parquet")  # LazyFrame for predicate pushdown
+trades = pl.scan_parquet("trades.parquet")
 df = process_trades_polars(trades, threshold_decimal_bps=250)
 
 # With microstructure features (v7.0+)
 df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30", include_microstructure=True)
+
+# Long ranges (>30 days) — must populate cache first
+from rangebar import populate_cache_resumable
+populate_cache_resumable("BTCUSDT", "2019-01-01", "2025-12-31")
+df = get_range_bars("BTCUSDT", "2019-01-01", "2025-12-31")
 ```
 
-| API                          | Use Case                       | Details                                                   |
-| ---------------------------- | ------------------------------ | --------------------------------------------------------- |
-| `get_range_bars()`           | Date range, backtesting        | [docs/api/primary-api.md](/docs/api/primary-api.md)       |
-| `get_n_range_bars()`         | Exact N bars, ML               | [docs/api/primary-api.md](/docs/api/primary-api.md)       |
-| `populate_cache_resumable()` | Long ranges (>30 days)         | [docs/api/cache-api.md](/docs/api/cache-api.md)           |
-| `process_trades_polars()`    | Polars DataFrames, 2-3x faster | [docs/api/processing-api.md](/docs/api/processing-api.md) |
-| `process_trades_chunked()`   | Large datasets >10M trades     | [docs/api/processing-api.md](/docs/api/processing-api.md) |
-
-**Full API reference**: [docs/api/INDEX.md](/docs/api/INDEX.md)
+| API                          | Use Case                   | Details                                                   |
+| ---------------------------- | -------------------------- | --------------------------------------------------------- |
+| `get_range_bars()`           | Date range, backtesting    | [docs/api/primary-api.md](/docs/api/primary-api.md)       |
+| `get_n_range_bars()`         | Exact N bars, ML           | [docs/api/primary-api.md](/docs/api/primary-api.md)       |
+| `populate_cache_resumable()` | Long ranges (>30 days)     | [docs/api/cache-api.md](/docs/api/cache-api.md)           |
+| `process_trades_polars()`    | Polars DataFrames          | [docs/api/processing-api.md](/docs/api/processing-api.md) |
+| `process_trades_chunked()`   | Large datasets >10M trades | [docs/api/processing-api.md](/docs/api/processing-api.md) |
 
 ---
 
@@ -84,28 +86,23 @@ df = get_range_bars("BTCUSDT", "2024-01-01", "2024-06-30", include_microstructur
 rangebar-py/
 ├── crates/                    8 Rust crates (publish = false)
 │   └── rangebar-core/         Core algorithm, microstructure features
-├── src/lib.rs                 PyO3 bindings
+├── src/lib.rs                 PyO3 bindings (Rust→Python bridge)
 ├── python/rangebar/           Python API layer
-│   ├── clickhouse/            Tier 2 cache
+│   ├── clickhouse/            ClickHouse cache (bigblack)
 │   ├── validation/            Microstructure validation (v7.0+)
 │   └── storage/               Tier 1 cache (Parquet)
+├── scripts/                   Pueue jobs, validation, cache population
 ├── .cargo/config.toml         Cross-compile friendly rustflags
 └── pyproject.toml             Maturin config
 ```
 
-**Key files**:
-
-- `src/lib.rs` - PyO3 bindings (Rust→Python bridge)
-- `python/rangebar/__init__.py` - Public Python API
-- `crates/rangebar-core/src/processor.rs` - Core algorithm
+**Key files**: `src/lib.rs` (PyO3 bindings), `python/rangebar/__init__.py` (public API), `crates/rangebar-core/src/processor.rs` (core algorithm)
 
 **Full architecture**: [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)
 
 ---
 
 ## Development Commands
-
-**mise patterns**: `Skill(itp:mise-configuration)` | `Skill(itp:mise-tasks)`
 
 ```bash
 # Setup (mise manages all tools including zig)
@@ -133,45 +130,16 @@ mise run bench:validate     # Verify 1M ticks < 100ms
 
 ## Build System
 
-### Cross-Platform Wheel Building
+Zig cross-compilation from macOS (no remote SSH needed).
 
-**Strategy**: Zig cross-compilation from macOS (no remote SSH needed).
-
-| Platform         | Strategy          | Time    | Details                        |
-| ---------------- | ----------------- | ------- | ------------------------------ |
-| macOS ARM64      | Native maturin    | ~10 sec | `mise run release:macos-arm64` |
-| Linux x86_64     | Zig cross-compile | ~55 sec | `mise run release:linux`       |
-| Linux (fallback) | SSH + Docker      | ~5 min  | `LINUX_BUILD_STRATEGY=remote`  |
-
-**Key configuration**:
-
-| File                 | Purpose                                          |
-| -------------------- | ------------------------------------------------ |
-| `.mise.toml`         | Tools (zig, rust, python) + release tasks        |
-| `.cargo/config.toml` | Cross-compile rustflags (no `target-cpu=native`) |
-| `Cargo.toml`         | `rustls-tls` (no OpenSSL dependency)             |
+| Platform     | Strategy          | Time    | Command                        |
+| ------------ | ----------------- | ------- | ------------------------------ |
+| macOS ARM64  | Native maturin    | ~10 sec | `mise run release:macos-arm64` |
+| Linux x86_64 | Zig cross-compile | ~55 sec | `mise run release:linux`       |
 
 **Why rustls**: Eliminates OpenSSL dependency, enabling pure Rust cross-compilation.
 
 **Full release workflow**: [docs/development/RELEASE.md](/docs/development/RELEASE.md)
-
----
-
-## Memory Guards (MEM-\*)
-
-Production memory optimization infrastructure:
-
-| Guard   | Description                                   | Location                      |
-| ------- | --------------------------------------------- | ----------------------------- |
-| MEM-001 | Memory estimation before fetch                | `resource_guard.py`           |
-| MEM-002 | Chunked dict conversion (100K trades)         | `helpers.py`                  |
-| MEM-006 | Polars concat instead of pandas               | `conversion.py`               |
-| MEM-011 | Adaptive chunk size (50K with microstructure) | `helpers.py:304`              |
-| MEM-013 | Force ClickHouse-first for >30 day ranges     | `orchestration/range_bars.py` |
-
-**Issue #65 Fix**: MEM-011 reduces chunk size from 100K to 50K when `include_microstructure=True`, preventing OOM on large date ranges.
-
-**Issue #69 Fix**: MEM-013 requires ClickHouse cache for date ranges >30 days. See [Long Date Ranges](#long-date-ranges-30-days) below.
 
 ---
 
@@ -181,175 +149,94 @@ Production memory optimization infrastructure:
 
 **SSoT**: `symbols.toml` (repo root symlink → `python/rangebar/data/symbols.toml`)
 
-| Field             | Purpose                                |
-| ----------------- | -------------------------------------- |
-| `enabled`         | Gate flag (must be `true` to process)  |
-| `listing_date`    | When symbol listed on exchange         |
-| `effective_start` | Override listing_date for data quality |
-| `tier`            | Liquidity tier (1 = highest)           |
-| `keywords`        | AI discoverability                     |
-
 **Adding new symbols**: Edit `symbols.toml`, run `maturin develop`, then process.
 
 **Override gate** (dev only): `export RANGEBAR_SYMBOL_GATE=off`
 
-**Gate in all entry points**:
-
-| Entry Point                            | Gate     | Clamp |
-| -------------------------------------- | -------- | ----- |
-| `get_range_bars()`                     | Required | Yes   |
-| `get_n_range_bars()`                   | Required | No    |
-| `populate_cache_resumable()`           | Required | Yes   |
-| `precompute_range_bars()`              | Required | Yes   |
-| `process_trades_to_dataframe()`        | Optional | No    |
-| `process_trades_to_dataframe_cached()` | Required | No    |
+**Full details**: [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md#symbol-registry-issue-79) (field schema, gate table, telemetry)
 
 ---
 
-## Version 7.0 Features (Issue #25)
+## Microstructure Features (v7.0+)
 
-10 market microstructure features computed in Rust during bar construction:
+10 intra-bar features + 16 inter-bar lookback features computed in Rust during bar construction.
 
-| Feature                | Formula                                     | Range        |
-| ---------------------- | ------------------------------------------- | ------------ |
-| `duration_us`          | close_time - open_time                      | [0, +inf)    |
-| `ofi`                  | (buy_vol - sell_vol) / total                | [-1, 1]      |
-| `vwap_close_deviation` | (close - vwap) / (high - low)               | ~[-1, 1]     |
-| `price_impact`         | abs(close - open) / volume                  | [0, +inf)    |
-| `kyle_lambda_proxy`    | ((close-open)/open) / (imbalance/total_vol) | (-inf, +inf) |
-| `trade_intensity`      | trades / duration_sec                       | [0, +inf)    |
-| `volume_per_trade`     | volume / trade_count                        | [0, +inf)    |
-| `aggression_ratio`     | buy_count / sell_count                      | [0, 100]     |
-| `aggregation_density`  | individual_count / agg_count                | [1, +inf)    |
-| `turnover_imbalance`   | (buy_turn - sell_turn) / total_turnover     | [-1, 1]      |
+**Intra-bar**: `ofi`, `vwap_close_deviation`, `kyle_lambda_proxy`, `trade_intensity`, `volume_per_trade`, `aggression_ratio`, `aggregation_density`, `turnover_imbalance`, `duration_us`, `price_impact`
 
-**Full details**: [crates/CLAUDE.md](/crates/CLAUDE.md#microstructure-features-v70)
+**Inter-bar** (lookback window): `lookback_ofi`, `lookback_intensity`, `lookback_kyle_lambda`, `lookback_burstiness`, `lookback_hurst`, `lookback_permutation_entropy`, + 10 more
 
-**Validation**: `python/rangebar/validation/` - Tier 1 (auto), Tier 2 (before ML)
+**Full details**: [crates/CLAUDE.md](/crates/CLAUDE.md#microstructure-features-v70) (formulas, ranges, academic backing)
+
+**Validation**: [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md#validation-framework-v70) (Tier 1 smoke, Tier 2 statistical)
 
 ---
 
-## Trade ID Tracking (v12.4+, Issue #72)
+## Memory Guards (MEM-\*)
 
-Each `RangeBar` tracks aggregate trade ID range for data integrity verification:
-
-| Field                | Type  | Description                            |
-| -------------------- | ----- | -------------------------------------- |
-| `first_agg_trade_id` | `i64` | First AggTrade ID that opened this bar |
-| `last_agg_trade_id`  | `i64` | Last AggTrade ID processed in this bar |
-
-**Use cases**:
-
-- **Gap detection**: `bars[i].first_agg_trade_id == bars[i-1].last_agg_trade_id + 1`
-- **Data integrity**: Verify no trades were dropped during processing
-- **Checkpoint validation**: Confirm resume alignment after interruption
-
-```python
-from rangebar import TRADE_ID_RANGE_COLUMNS
-
-# Constant for column selection
-TRADE_ID_RANGE_COLUMNS  # ("first_agg_trade_id", "last_agg_trade_id")
-
-# Gap detection pattern
-for i in range(1, len(bars)):
-    expected = bars[i-1]["last_agg_trade_id"] + 1
-    actual = bars[i]["first_agg_trade_id"]
-    if actual != expected:
-        print(f"Gap detected: expected {expected}, got {actual}")
-```
-
-**Full details**: [crates/CLAUDE.md](/crates/CLAUDE.md#trade-id-tracking-issue-72-v124)
+| Guard   | Description                                   | Location                      |
+| ------- | --------------------------------------------- | ----------------------------- |
+| MEM-001 | Memory estimation before fetch                | `resource_guard.py`           |
+| MEM-002 | Chunked dict conversion (100K trades)         | `helpers.py`                  |
+| MEM-006 | Polars concat instead of pandas               | `conversion.py`               |
+| MEM-011 | Adaptive chunk size (50K with microstructure) | `helpers.py:304`              |
+| MEM-013 | Force ClickHouse-first for >30 day ranges     | `orchestration/range_bars.py` |
 
 ---
 
 ## Common Errors
 
-| Error                                   | Cause               | Fix                                        |
-| --------------------------------------- | ------------------- | ------------------------------------------ |
-| `RangeBarProcessor has no attribute X`  | Outdated binding    | `maturin develop`                          |
-| `Invalid threshold_decimal_bps`         | Wrong units         | Use 250 for 0.25%                          |
-| `High < Low` assertion                  | Bad input data      | Check sorting                              |
-| `target-cpu=native` cross-compile error | RUSTFLAGS pollution | Use `RUSTFLAGS=""` or `.cargo/config.toml` |
-| OOM with `include_microstructure=True`  | Large date range    | Fixed by MEM-011 adaptive chunk size       |
-| Duplicate ticks in Parquet cache        | Pre-v12.8 bug       | Run `scripts/deduplicate_parquet_cache.py` |
+| Error                                   | Cause                  | Fix                                        |
+| --------------------------------------- | ---------------------- | ------------------------------------------ |
+| `RangeBarProcessor has no attribute X`  | Outdated binding       | `maturin develop`                          |
+| `Invalid threshold_decimal_bps`         | Wrong units            | Use 250 for 0.25%                          |
+| `High < Low` assertion                  | Bad input data         | Check sorting                              |
+| `target-cpu=native` cross-compile error | RUSTFLAGS pollution    | Use `RUSTFLAGS=""` or `.cargo/config.toml` |
+| OOM with `include_microstructure=True`  | Large date range       | MEM-011 adaptive chunk size                |
+| Duplicate ticks in Parquet cache        | Pre-v12.8 bug          | `scripts/deduplicate_parquet_cache.py`     |
+| `SymbolNotRegisteredError`              | Symbol not in registry | Edit `symbols.toml`, `maturin develop`     |
 
 ---
 
-## Long Date Ranges (>30 days)
+## ClickHouse Infrastructure
 
-For date ranges exceeding 30 days, ClickHouse cache is **required** (MEM-013 guard):
+**Architecture**: All range bar data served from **bigblack** (remote GPU host) via SSH tunnel. No local ClickHouse.
 
-```python
-from rangebar import populate_cache_resumable, get_range_bars
+**Connection mode**: `RANGEBAR_MODE=remote` (set in `.mise.toml`). Skips localhost, always routes through `RANGEBAR_CH_HOSTS` via direct connection or SSH tunnel. Preflight: `mise run db:ensure` verifies bigblack reachable before tests.
 
-# Step 1: Populate cache incrementally (memory-safe, resumable)
-populate_cache_resumable("BTCUSDT", "2019-01-01", "2025-12-31")
+| Host        | Thresholds (dbps)   | ClickHouse | Total Bars |
+| ----------- | ------------------- | ---------- | ---------- |
+| bigblack    | 250, 500, 750, 1000 | Native     | 260M+      |
+| littleblack | 100                 | Docker     | —          |
 
-# Step 2: Read from cache (fast, memory-safe)
-df = get_range_bars("BTCUSDT", "2019-01-01", "2025-12-31")
-```
+**Cache operations**: [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md)
 
-**Why**: Direct processing of multi-year ranges causes OOM. The `populate_cache_resumable()` function processes day-by-day with checkpoints, enabling:
+**Distributed jobs**: [scripts/CLAUDE.md](/scripts/CLAUDE.md) (pueue, per-year parallelization, autoscaler)
 
-- **Cross-machine resume**: Checkpoints stored in both local filesystem and ClickHouse
-- **Bar-level accuracy**: Incomplete bars preserved across interrupts
-- **Force refresh**: `force_refresh=True` wipes cache and restarts
-
-| Parameter       | Default | Description                        |
-| --------------- | ------- | ---------------------------------- |
-| `force_refresh` | `False` | Wipe existing cache and checkpoint |
-| `notify`        | `True`  | Send progress notifications        |
-
-**Full API**: [docs/api/cache-api.md](/docs/api/cache-api.md#populate_cache_resumable)
+**Dedup hardening**: [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md#dedup-hardening-issue-90) (5-layer idempotent write protection)
 
 ---
 
-## Distributed Job Management
+## Dedup Hardening (Issue #90)
 
-**Skills**: `Skill(devops-tools:pueue-job-orchestration)` | `Skill(rangebar-job-safety)`
+Five-layer protection against duplicate rows from OPTIMIZE timeout crashes and retry storms:
 
-Cache population on remote GPU hosts uses **pueue** (daemon survives SSH disconnects) + **mise** (SSoT for env vars) + **systemd-run** (per-job memory caps).
+| Layer | Mechanism                               | Scope        |
+| ----- | --------------------------------------- | ------------ |
+| 1     | `non_replicated_deduplication_window`   | Engine-level |
+| 2     | INSERT dedup token (`cache_key` hash)   | Per-INSERT   |
+| 3     | Fire-and-forget `OPTIMIZE` + merge poll | Post-write   |
+| 4     | `FINAL` read with partition parallelism | Query-time   |
+| 5     | Schema migration in `_ensure_schema()`  | Bootstrap    |
 
-```bash
-# Quick start: queue all 60 cache population jobs (15 symbols × 4 thresholds)
-mise run cache:populate-all
+All three write methods (`store_range_bars`, `store_bars_bulk`, `store_bars_batch`) emit INSERT dedup tokens.
 
-# Monitor
-mise run cache:populate-status
+**Validation**: `mise run cache:validate-dedup` (runs on bigblack, ALL 4 LAYERS PASS)
 
-# Autoscale parallelism based on CPU/memory
-mise run cache:autoscale-loop
-```
-
-### Per-Year Parallelization (Ouroboros-Safe)
-
-Ouroboros resets processor state at year boundaries, making each year independent. Split slow multi-year jobs into concurrent per-year pueue jobs:
-
-```bash
-# Each year runs on its own core — 5-6x speedup on idle hosts
-uv run python scripts/populate_full_cache.py \
-    --symbol SHIBUSDT --threshold 250 --include-microstructure \
-    --start-date 2022-01-01 --end-date 2022-12-31
-```
-
-**Safe because**: checkpoint files are unique per date range (INV-1), ClickHouse INSERT is append-only, tick data is read-only.
-
-**Full details**: [scripts/CLAUDE.md](/scripts/CLAUDE.md#per-year-parallelization)
-
-### Host-Specific Status
-
-| Host        | Thresholds (dbps)   | ClickHouse | Notes            |
-| ----------- | ------------------- | ---------- | ---------------- |
-| bigblack    | 250, 500, 750, 1000 | Native     | Primary GPU host |
-| littleblack | 100                 | Docker     | Secondary host   |
-
-**Remote host setup**: [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md#populating-remote-hosts)
+**Full details**: [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md#dedup-hardening-issue-90)
 
 ---
 
-## Navigation
-
-### CLAUDE.md Files (Hub-and-Spoke)
+## CLAUDE.md Network (Hub-and-Spoke)
 
 | Directory                      | CLAUDE.md                                                                     | Purpose                           |
 | ------------------------------ | ----------------------------------------------------------------------------- | --------------------------------- |
@@ -359,28 +246,13 @@ uv run python scripts/populate_full_cache.py \
 | `/python/rangebar/clickhouse/` | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | Cache layer, schema, remote setup |
 | `/scripts/`                    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue jobs, per-year parallelism  |
 
-### Documentation Index
-
-| Document                                                            | Purpose                                 |
-| ------------------------------------------------------------------- | --------------------------------------- |
-| [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)                       | System design, dependency graph         |
-| [docs/CONTEXT.md](/docs/CONTEXT.md)                                 | Why this project exists, backtesting.py |
-| [docs/api/INDEX.md](/docs/api/INDEX.md)                             | Python API reference                    |
-| [docs/development/RELEASE.md](/docs/development/RELEASE.md)         | Release workflow, zig cross-compile     |
-| [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md) | Benchmarks, metrics, viability          |
-
 ---
 
 ## Terminology
 
-| Term                          | Acronym | Definition                                                                                                                                                                                                                                           | Unit/Range        |
-| ----------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| **Decimal Basis Points**      | dbps    | 1 dbps = 0.001% = 0.00001 (one-tenth of a basis point). Fine-grained threshold precision unit. Example: 250 dbps = 0.25%. Used throughout as `threshold_decimal_bps`. **All threshold values in this codebase use dbps.**                            | 1 dbps = 0.00001  |
-| **Ouroboros**                 | -       | Cyclical reset boundary for range bar construction. Named after the Greek serpent eating its tail (οὐροβόρος), representing cyclical nature. Resets processor state at year/month/week boundaries for reproducibility and cache-friendly processing. | year, month, week |
-| **Ouroboros Boundary**        | -       | Specific timestamp where processor state resets: year (Jan 1 00:00 UTC), month (1st 00:00 UTC), or week (Sunday 00:00 UTC for crypto, dynamic first tick for Forex).                                                                                 | timestamp         |
-| **Orphaned Bar**              | -       | Incomplete range bar at an ouroboros boundary. Marked with `is_orphan=True` and includes metadata: `ouroboros_boundary`, `expected_duration_us`, `reason`.                                                                                           | -                 |
-| **Dynamic Ouroboros**         | -       | Forex-specific ouroboros mode where the reset point is the first available tick after weekend market gap, automatically handling DST shifts.                                                                                                         | timestamp         |
-| **Exchange Session Sydney**   | -       | Boolean flag indicating Sydney exchange market session was active during bar construction. Column: `exchange_session_sydney`.                                                                                                                        | bool              |
-| **Exchange Session Tokyo**    | -       | Boolean flag indicating Tokyo exchange market session was active during bar construction. Column: `exchange_session_tokyo`.                                                                                                                          | bool              |
-| **Exchange Session London**   | -       | Boolean flag indicating London exchange market session was active during bar construction. Column: `exchange_session_london`.                                                                                                                        | bool              |
-| **Exchange Session New York** | -       | Boolean flag indicating New York exchange market session was active during bar construction. Column: `exchange_session_newyork`.                                                                                                                     | bool              |
+| Term                     | Acronym | Definition                                                                                                           |
+| ------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Decimal Basis Points** | dbps    | 1 dbps = 0.001% = 0.00001. Example: 250 dbps = 0.25%. **All threshold values use dbps.**                             |
+| **Ouroboros**            | —       | Cyclical reset boundary (year/month/week). Resets processor state for reproducibility and cache-friendly processing. |
+| **Orphaned Bar**         | —       | Incomplete bar at an ouroboros boundary. Marked `is_orphan=True` with metadata.                                      |
+| **Dynamic Ouroboros**    | —       | Forex-specific: reset at first tick after weekend gap, auto-handling DST shifts.                                     |

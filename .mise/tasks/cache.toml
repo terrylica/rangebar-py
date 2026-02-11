@@ -3,6 +3,19 @@
 #        mise run cache:populate-all
 
 # =============================================================================
+# Database Connectivity
+# =============================================================================
+
+["db:ensure"]
+description = "Verify bigblack ClickHouse is reachable via SSH"
+run = """
+ssh -o ConnectTimeout=5 -o BatchMode=yes bigblack \
+    'curl -sf http://localhost:8123/ -d "SELECT 1"' > /dev/null 2>&1 \
+    && echo "bigblack ClickHouse: OK" \
+    || { echo "ERROR: Cannot reach ClickHouse on bigblack. Check SSH config and ClickHouse status." >&2; exit 1; }
+"""
+
+# =============================================================================
 # Cache Query Tasks
 # =============================================================================
 
@@ -104,3 +117,11 @@ run = "./scripts/pueue-populate.sh optimize"
 ["cache:postprocess-all"]
 description = "Full Issue #88 post-fix pipeline via pueue: 4 SHIB jobs → optimize → detect (auto-chained)"
 run = "./scripts/pueue-populate.sh postprocess-all"
+
+# =============================================================================
+# Issue #90: Dedup Hardening Validation
+# =============================================================================
+
+["cache:validate-dedup"]
+description = "Validate Issue #90 dedup hardening layers against live ClickHouse"
+run = "python scripts/validate_dedup_hardening.py"

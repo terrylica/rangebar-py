@@ -126,7 +126,7 @@ class TestSymbolEntryLoading:
 
     def test_symbol_without_anomalies_has_empty_tuple(self):
         """Symbols without data_anomalies should have empty tuple."""
-        entry = get_symbol_entries()["XRPUSDT"]
+        entry = get_symbol_entries()["ETCUSDT"]
         assert entry.data_anomalies == ()
         assert entry.first_clean_date is None
         assert entry.processing_notes is None

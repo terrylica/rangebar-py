@@ -84,6 +84,7 @@ OP_PYPI_ITEM = "djevteztvbcqgcm3yl4njkawjq"
 # =============================================================================
 RANGEBAR_CH_HOSTS = "bigblack"
 RANGEBAR_CH_PRIMARY = "bigblack"
+RANGEBAR_MODE = "remote"
 
 # =============================================================================
 # Build Configuration

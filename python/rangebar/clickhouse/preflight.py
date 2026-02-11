@@ -257,6 +257,11 @@ def get_available_clickhouse_host() -> HostConnection:
         )
         raise ClickHouseNotConfiguredError(msg)
 
+    # REMOTE mode: Skip localhost, go straight to configured remote hosts.
+    # Use when local ClickHouse is not wanted (e.g., always use bigblack).
+    if mode == ConnectionMode.REMOTE:
+        return _resolve_remote_hosts()
+
     # AUTO mode: Try localhost first, then remote hosts
     # PRIORITY 1: Always check localhost first (prefer local execution)
     # NOTE: Use _verify_clickhouse() not _is_port_open() to verify
@@ -265,10 +270,27 @@ def get_available_clickhouse_host() -> HostConnection:
         return HostConnection(host="localhost", method="local")
 
     # PRIORITY 2-3: Try configured remote hosts
+    return _resolve_remote_hosts()
+
+
+def _resolve_remote_hosts() -> HostConnection:
+    """Resolve remote hosts from RANGEBAR_CH_HOSTS env var.
+
+    Tries direct connection first, then SSH tunnel fallback.
+
+    Returns
+    -------
+    HostConnection
+        Connection details for available remote host
+
+    Raises
+    ------
+    ClickHouseNotConfiguredError
+        If no remote hosts are reachable
+    """
     hosts_csv = os.getenv("RANGEBAR_CH_HOSTS", "")
     primary = os.getenv("RANGEBAR_CH_PRIMARY", "")
 
-    # Build host list with primary first
     hosts: list[str] = []
     if primary:
         hosts.append(primary)
@@ -278,15 +300,11 @@ def get_available_clickhouse_host() -> HostConnection:
             hosts.append(host)
 
     for host in hosts:
-        # Try direct connection first (faster if ClickHouse is exposed)
         if _is_direct_available(host):
             return HostConnection(host=host, method="direct")
-
-        # Fall back to SSH tunnel (works with firewalled hosts)
         if _is_ssh_available(host):
             return HostConnection(host=host, method="ssh_tunnel")
 
-    # FAIL LOUDLY - no hosts available
     raise ClickHouseNotConfiguredError()
 
 

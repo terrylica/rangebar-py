@@ -16,6 +16,7 @@ Operational scripts for cache population, validation, and distributed job manage
 | Autoscale parallelism      | `mise run cache:autoscale-loop`                   | [Autoscaler](#autoscaler)                             |
 | Check cache status         | `mise run cache:status`                           | ClickHouse bar counts                                 |
 | Detect volume overflow     | `mise run cache:detect-overflow`                  | Issue #88                                             |
+| Validate dedup hardening   | `mise run cache:validate-dedup`                   | Issue #90                                             |
 | Validate microstructure    | `uv run python scripts/validate_microstructure_*` | [Validation Scripts](#validation-scripts)             |
 
 ---
@@ -175,6 +176,7 @@ Portable scripts for GPU workstations without full dev environment:
 | `validate_memory_efficiency.py`        | Memory usage during processing      |
 | `deduplicate_parquet_cache.py`         | Fix pre-v12.8 duplicate ticks (#78) |
 | `detect_volume_overflow.py`            | Find negative volumes (#88)         |
+| `validate_dedup_hardening.py`          | Issue #90 dedup layer validation    |
 
 ---
 
