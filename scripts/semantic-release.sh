@@ -44,4 +44,25 @@ if [ -z "$GH_PAT" ]; then
 fi
 
 echo "Running semantic-release..."
-GITHUB_TOKEN="$GH_PAT" GH_TOKEN="$GH_PAT" bun run semantic-release --no-ci
+
+# Run semantic-release, tolerating post-release "success" step failures.
+# The success step (GitHub issue/PR comments) can fail on non-existent
+# issue references (e.g., "Closes #91" when #91 doesn't exist yet).
+# The actual release (tag, GitHub release, version bump) succeeds before
+# the success step runs, so a failure there is non-critical.
+set +e
+GITHUB_TOKEN="$GH_PAT" GH_TOKEN="$GH_PAT" bun run semantic-release --no-ci 2>&1
+SR_EXIT=$?
+set -e
+
+if [ $SR_EXIT -ne 0 ]; then
+  # Check if a release was actually created despite the error
+  VERSION=$(grep -A5 '\[workspace.package\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\(.*\)"/\1/')
+  if git tag -l "v$VERSION" | grep -q "v$VERSION"; then
+    echo "WARN: semantic-release exited $SR_EXIT but tag v$VERSION exists — release succeeded"
+    echo "WARN: The failure was likely in a post-release step (issue comments, etc.)"
+  else
+    echo "ERROR: semantic-release failed (exit $SR_EXIT) and no release tag was created"
+    exit $SR_EXIT
+  fi
+fi
