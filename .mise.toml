@@ -30,12 +30,28 @@ RANGEBAR_UNKNOWN_MIN_THRESHOLD = "1"
 # =============================================================================
 # SSoT: Per-Symbol Minimum Thresholds (Issue #89)
 # =============================================================================
-# Meme coins produce too many bars at low thresholds, making intra-bar
-# feature computation infeasible. These env vars are the SOLE SSoT —
-# threshold.py:get_min_threshold_for_symbol() reads them directly.
+# Per-symbol floors enforced by threshold.py:get_min_threshold_for_symbol().
 # Resolution: per-symbol env > asset-class env > fallback default.
+# These env vars are the SOLE SSoT — no parallel config in symbols.toml.
+#
+# Tier A: Confirmed infeasible at 250 dbps (>1000 bars/day avg)
 RANGEBAR_MIN_THRESHOLD_SHIBUSDT = "500"
 RANGEBAR_MIN_THRESHOLD_DOGEUSDT = "500"
+#
+# Tier B: Provisional 500 dbps floor pending benchmark (500-730 bars/day @250)
+# Decision: start conservative at 500, benchmark full-feature compute time,
+# lower back to 250 if per-year compute is acceptable. See Issue #89.
+RANGEBAR_MIN_THRESHOLD_SOLUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_AVAXUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_NEARUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_UNIUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_LINKUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_XRPUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_ATOMUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_DOTUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_ADAUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_LTCUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_BCHUSDT = "500"
 
 # =============================================================================
 # SSoT: Microstructure Feature Defaults (Issue #68)

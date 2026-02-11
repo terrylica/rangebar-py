@@ -82,6 +82,7 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2018-05-04
+processing_notes = "Provisional min 500 dbps (Issue #89). At 250 dbps: ~555 bars/day avg, 72,898 max (2021-02-01 pump). Pending benchmark to determine if 250 is feasible."
 keywords = ["ripple", "xrp"]
 
 [symbols.ADAUSDT]
@@ -91,6 +92,7 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2018-04-17
+processing_notes = "Provisional min 500 dbps (Issue #89). At 250 dbps: ~513 bars/day avg, 44,159 max (2021-05-19 crash). Pending benchmark."
 keywords = ["cardano", "ada"]
 
 [symbols.DOGEUSDT]
@@ -110,6 +112,7 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2020-08-11
+processing_notes = "Provisional min 500 dbps (Issue #89). At 250 dbps: ~727 bars/day avg (2nd highest), 33,036 max (2021-05-19). Pending benchmark."
 keywords = ["solana", "sol"]
 
 [symbols.DOTUSDT]
@@ -118,6 +121,7 @@ asset_class = "crypto"
 exchange = "binance"
 market = "spot"
 listing_date = 2020-08-18
+processing_notes = "Provisional min 500 dbps (Issue #89). At 250 dbps: ~534 bars/day avg, 38,116 max (2021-05-19). Pending benchmark."
 keywords = ["polkadot", "dot"]
 
 [symbols.SHIBUSDT]
@@ -142,7 +146,7 @@ listing_date = 2020-09-22
 data_anomalies = [
     "2020-09-22: first-day bars had mixed int/float types causing Polars schema inference crash (fixed v12.10.4, verified clean with Polars 1.36+)",
 ]
-processing_notes = "Polars schema inference crash on first-day data. Fixed by infer_schema_length=None. No longer reproduces with Polars 1.36.1."
+processing_notes = "Provisional min 500 dbps (Issue #89). At 250 dbps: ~688 bars/day avg, 27,445 max (2021-02-10). Polars schema inference crash on first-day data fixed by infer_schema_length=None."
 keywords = ["avalanche", "avax"]
 
 [symbols.LTCUSDT]
@@ -159,7 +163,7 @@ data_anomalies = [
     "2018-01-14: 6 ghost trades (price=0, qty=0, first_trade_id=-1) — same exchange-wide event as BTCUSDT",
     "2018-01-15: ghost trades with same pattern as BTCUSDT",
 ]
-processing_notes = "Oracle-verified 2026-02-08. Same ghost trade event as BTCUSDT. LTC has 32 days of clean data (2017-12-13 to 2018-01-13) before the ghost trade window, but these are skipped because the parser can't skip individual rows. effective_start=2018-01-16 is the intentional defense."
+processing_notes = "Provisional min 500 dbps (Issue #89). At 250 dbps: ~460 bars/day avg, 26,654 max (2021-05-19). Oracle-verified 2026-02-08. Same ghost trade event as BTCUSDT. effective_start=2018-01-16 is the intentional defense."
 keywords = ["litecoin", "ltc", "ghost trades"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
@@ -170,6 +174,7 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2019-01-16
+processing_notes = "Provisional min 500 dbps (Issue #89). At 250 dbps: ~583 bars/day avg, 26,188 max (2020-03-12). Pending benchmark."
 keywords = ["chainlink", "link"]
 
 [symbols.ATOMUSDT]
@@ -184,7 +189,7 @@ first_clean_date = 2019-04-29
 data_anomalies = [
     "2019-04-22 to 2019-04-28: Binance Vision HTTP 404 (7 days missing after listing)",
 ]
-processing_notes = "7 days missing between listing_date and first available aggTrade archive."
+processing_notes = "Provisional min 500 dbps (Issue #89). At 250 dbps: ~552 bars/day avg, 26,177 max (2021-05-19). 7 days missing between listing_date and first available aggTrade archive."
 keywords = ["cosmos", "atom", "missing data", "listing date mismatch"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
@@ -195,6 +200,7 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2020-09-17
+processing_notes = "Provisional min 500 dbps (Issue #89). At 250 dbps: ~636 bars/day avg, 35,416 max (2020-09-18 listing pump). Pending benchmark."
 keywords = ["uniswap", "uni"]
 
 [symbols.ETCUSDT]
@@ -228,6 +234,7 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2020-10-14
+processing_notes = "Provisional min 500 dbps (Issue #89). At 250 dbps: ~661 bars/day avg, 22,699 max (2022-05-11). Pending benchmark."
 keywords = ["near protocol", "near"]
 
 # Additional TIER1 symbols (from constants.py TIER1_SYMBOLS not in KNOWN_LISTING_DATES)
@@ -254,7 +261,7 @@ first_clean_date = 2019-11-28
 data_anomalies = [
     "2017-12-20 to 2019-11-27: Binance Vision HTTP 404 (~2 years of missing aggTrade archives)",
 ]
-processing_notes = "Nearly 2 years of missing data between listing and first available archive. Largest gap in registry."
+processing_notes = "Provisional min 500 dbps (Issue #89). Nearly 2 years of missing data between listing and first available archive. Largest gap in registry."
 keywords = ["bitcoin cash", "bch", "missing data"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
 
