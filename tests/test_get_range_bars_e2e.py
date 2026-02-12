@@ -419,11 +419,15 @@ class TestTier1Symbols:
     @pytest.mark.parametrize("symbol", ["BTC", "ETH", "SOL"])
     def test_tier1_symbol_works_with_usdt(self, symbol):
         """Tier-1 symbols should work with USDT pair."""
+        from rangebar.threshold import get_min_threshold_for_symbol
+
+        pair = f"{symbol}USDT"
+        threshold = max(250, get_min_threshold_for_symbol(pair))
         df = get_range_bars(
-            f"{symbol}USDT", TEST_START, TEST_END, threshold_decimal_bps=250
+            pair, TEST_START, TEST_END, threshold_decimal_bps=threshold
         )
 
-        assert len(df) > 0, f"{symbol}USDT should produce bars"
+        assert len(df) > 0, f"{pair} should produce bars"
 
 
 # =============================================================================
