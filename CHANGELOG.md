@@ -1,3 +1,10 @@
+# [12.20.0](https://github.com/terrylica/rangebar-py/compare/v12.19.0...v12.20.0) (2026-02-12)
+
+
+### Features
+
+* **streaming:** add Layer 3 live streaming sidecar (Issues [#91](https://github.com/terrylica/rangebar-py/issues/91), [#92](https://github.com/terrylica/rangebar-py/issues/92), [#93](https://github.com/terrylica/rangebar-py/issues/93)) ([b3e8e2e](https://github.com/terrylica/rangebar-py/commit/b3e8e2e93d69431427ac8a13ce992cddf8b82299))
+
 # [12.19.0](https://github.com/terrylica/rangebar-py/compare/v12.18.4...v12.19.0) (2026-02-12)
 
 
