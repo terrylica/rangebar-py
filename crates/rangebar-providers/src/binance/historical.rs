@@ -67,6 +67,10 @@ pub enum HistoricalError {
     /// the SHA-256 checksum provided by Binance.
     #[error("Checksum verification failed for {date}: {message}")]
     ChecksumMismatch { date: String, message: String },
+
+    /// REST API error (Issue #92: recency backfill)
+    #[error("REST API error: {0}")]
+    RestApiError(String),
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,6 +111,29 @@ pub fn detect_csv_headers(buffer: &str) -> bool {
     } else {
         false
     }
+}
+
+/// Binance REST API `/api/v3/aggTrades` response format (Issue #92)
+///
+/// JSON keys are short single-letter names from the Binance API:
+/// `a` = agg_trade_id, `p` = price, `q` = quantity, `f` = first_trade_id,
+/// `l` = last_trade_id, `T` = trade_time, `m` = is_buyer_maker
+#[derive(Debug, Deserialize)]
+pub struct RestAggTrade {
+    #[serde(rename = "a")]
+    pub agg_trade_id: i64,
+    #[serde(rename = "p")]
+    pub price: String,
+    #[serde(rename = "q")]
+    pub quantity: String,
+    #[serde(rename = "f")]
+    pub first_trade_id: i64,
+    #[serde(rename = "l")]
+    pub last_trade_id: i64,
+    #[serde(rename = "T")]
+    pub trade_time: i64,
+    #[serde(rename = "m")]
+    pub is_buyer_maker: bool,
 }
 
 impl From<CsvAggTrade> for AggTrade {
@@ -277,6 +304,123 @@ impl HistoricalDataLoader {
         date: NaiveDate,
     ) -> Result<Vec<AggTrade>, HistoricalError> {
         self.load_single_day_trades_with_checksum(date, true).await
+    }
+
+    /// Fetch aggregated trades from Binance REST API (Issue #92: recency backfill).
+    ///
+    /// Paginates through `/api/v3/aggTrades` (max 1000 per request).
+    /// Trades are returned sorted by timestamp in ascending order.
+    ///
+    /// # Arguments
+    ///
+    /// * `start_ms` - Start time in milliseconds (inclusive)
+    /// * `end_ms` - End time in milliseconds (inclusive)
+    ///
+    /// # Returns
+    ///
+    /// Vec of `AggTrade` with timestamps in microseconds (rangebar-core convention).
+    pub async fn fetch_aggtrades_rest(
+        &self,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> Result<Vec<AggTrade>, HistoricalError> {
+        let url = "https://api.binance.com/api/v3/aggTrades";
+        let mut all_trades: Vec<AggTrade> = Vec::new();
+        let mut current_start = start_ms;
+
+        debug!(
+            event_type = "rest_fetch_start",
+            symbol = %self.symbol,
+            start_ms = start_ms,
+            end_ms = end_ms,
+            "Fetching aggTrades from REST API"
+        );
+
+        while current_start < end_ms {
+            let response = tokio::time::timeout(
+                Duration::from_secs(30),
+                self.client
+                    .get(url)
+                    .query(&[
+                        ("symbol", self.symbol.as_str()),
+                        ("startTime", &current_start.to_string()),
+                        ("endTime", &end_ms.to_string()),
+                        ("limit", "1000"),
+                    ])
+                    .send(),
+            )
+            .await
+            .map_err(|_| HistoricalError::RestApiError(format!(
+                "Timeout fetching {} from {current_start}",
+                self.symbol
+            )))?
+            .map_err(|e| HistoricalError::RestApiError(format!(
+                "HTTP error for {}: {e}",
+                self.symbol
+            )))?;
+
+            if !response.status().is_success() {
+                return Err(HistoricalError::RestApiError(format!(
+                    "HTTP {} for {} from {current_start}",
+                    response.status(),
+                    self.symbol,
+                )));
+            }
+
+            let batch: Vec<RestAggTrade> = response
+                .json()
+                .await
+                .map_err(|e| HistoricalError::RestApiError(format!(
+                    "JSON parse error for {}: {e}",
+                    self.symbol
+                )))?;
+
+            if batch.is_empty() {
+                break;
+            }
+
+            let last_ts = batch.last().unwrap().trade_time;
+
+            for raw in &batch {
+                all_trades.push(AggTrade {
+                    agg_trade_id: raw.agg_trade_id,
+                    price: FixedPoint::from_str(&raw.price)
+                        .unwrap_or(FixedPoint(0)),
+                    volume: FixedPoint::from_str(&raw.quantity)
+                        .unwrap_or(FixedPoint(0)),
+                    first_trade_id: raw.first_trade_id,
+                    last_trade_id: raw.last_trade_id,
+                    // Convert ms → us (rangebar-core convention)
+                    timestamp: raw.trade_time * 1000,
+                    is_buyer_maker: raw.is_buyer_maker,
+                    is_best_match: None,
+                });
+            }
+
+            // Advance past last trade timestamp to avoid duplicates
+            if last_ts <= current_start {
+                // Safety: prevent infinite loop if API returns same timestamp
+                break;
+            }
+            current_start = last_ts + 1;
+
+            // If we got fewer than limit, we've exhausted the range
+            if batch.len() < 1000 {
+                break;
+            }
+        }
+
+        all_trades.sort_by_key(|t| t.timestamp);
+
+        info!(
+            event_type = "rest_fetch_complete",
+            symbol = %self.symbol,
+            trade_count = all_trades.len(),
+            range_ms = end_ms - start_ms,
+            "Fetched aggTrades from REST API"
+        );
+
+        Ok(all_trades)
     }
 
     /// Load single day trades with optional checksum verification

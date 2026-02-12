@@ -52,7 +52,7 @@ futures = "0.3"
 futures-util = "0.3"
 
 # HTTP/Network (rustls for cross-compilation - no OpenSSL dependency)
-reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "json"] }
 tokio-tungstenite = { version = "0.23", default-features = false, features = ["rustls-tls-native-roots"] }
 
 # Data formats

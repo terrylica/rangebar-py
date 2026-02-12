@@ -195,6 +195,56 @@ class QueryOperationsMixin:
 
         return df, available_count
 
+    def get_latest_bar_timestamp(
+        self,
+        symbol: str,
+        threshold_decimal_bps: int,
+    ) -> int | None:
+        """Get the most recent bar timestamp for a symbol x threshold pair.
+
+        Used by Layer 2 recency backfill to detect the gap between cached data
+        and current time.
+
+        Parameters
+        ----------
+        symbol : str
+            Trading symbol (e.g., "BTCUSDT")
+        threshold_decimal_bps : int
+            Threshold in decimal basis points
+
+        Returns
+        -------
+        int | None
+            Latest timestamp_ms value, or None if no bars exist.
+        """
+        query = """
+            SELECT max(timestamp_ms) as latest_ts
+            FROM rangebar_cache.range_bars FINAL
+            WHERE symbol = {symbol:String}
+              AND threshold_decimal_bps = {threshold:UInt32}
+        """
+        params: dict[str, str | int] = {
+            "symbol": symbol,
+            "threshold": threshold_decimal_bps,
+        }
+
+        try:
+            result = self.client.query(
+                query, parameters=params, settings=FINAL_READ_SETTINGS,
+            )
+        except (OSError, RuntimeError):
+            logger.exception(
+                "Failed to query latest timestamp for %s @ %d dbps",
+                symbol,
+                threshold_decimal_bps,
+            )
+            return None
+
+        if not result.result_rows or result.result_rows[0][0] == 0:
+            return None
+
+        return result.result_rows[0][0]
+
     def get_bars_by_timestamp_range(
         self,
         symbol: str,

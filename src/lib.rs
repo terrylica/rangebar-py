@@ -1604,6 +1604,10 @@ fn _core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
             binance_bindings::stream_binance_trades,
             m
         )?)?;
+        m.add_function(wrap_pyfunction!(
+            binance_bindings::fetch_aggtrades_rest,
+            m
+        )?)?;
 
         // Phase 3: Arrow-native stream (requires both data-providers and arrow-export)
         #[cfg(feature = "arrow-export")]
@@ -1750,6 +1754,57 @@ mod binance_bindings {
             let dict = PyDict::new_bound(py);
             // Timestamp is already in microseconds from rangebar-core
             // Convert to milliseconds for Python API consistency
+            dict.set_item("timestamp", trade.timestamp / 1000)?;
+            dict.set_item("price", trade.price.to_f64())?;
+            dict.set_item("quantity", trade.volume.to_f64())?;
+            dict.set_item("agg_trade_id", trade.agg_trade_id)?;
+            dict.set_item("first_trade_id", trade.first_trade_id)?;
+            dict.set_item("last_trade_id", trade.last_trade_id)?;
+            dict.set_item("is_buyer_maker", trade.is_buyer_maker)?;
+            results.push(dict.into());
+        }
+
+        Ok(results)
+    }
+
+    /// Fetch recent aggregated trades from Binance REST API (Issue #92).
+    ///
+    /// Paginates through `/api/v3/aggTrades` (max 1000 per request) to fill
+    /// the gap between cached historical data and the current time.
+    ///
+    /// Args:
+    ///     symbol: Trading symbol (e.g., "BTCUSDT")
+    ///     start_time_ms: Start time in milliseconds (inclusive)
+    ///     end_time_ms: End time in milliseconds (inclusive)
+    ///
+    /// Returns:
+    ///     List of trade dicts with keys: timestamp (ms), price, quantity,
+    ///     agg_trade_id, first_trade_id, last_trade_id, is_buyer_maker
+    ///
+    /// Raises:
+    ///     RuntimeError: If REST API request fails or times out
+    #[pyfunction]
+    #[pyo3(signature = (symbol, start_time_ms, end_time_ms))]
+    pub fn fetch_aggtrades_rest(
+        py: Python,
+        symbol: &str,
+        start_time_ms: i64,
+        end_time_ms: i64,
+    ) -> PyResult<Vec<PyObject>> {
+        let loader = HistoricalDataLoader::new(symbol);
+
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {e}")))?;
+
+        let trades = rt
+            .block_on(loader.fetch_aggtrades_rest(start_time_ms, end_time_ms))
+            .map_err(|e| PyRuntimeError::new_err(format!("REST API error: {e}")))?;
+
+        // Convert AggTrades to Python dicts (same format as fetch_binance_aggtrades)
+        let mut results = Vec::with_capacity(trades.len());
+        for trade in &trades {
+            let dict = PyDict::new_bound(py);
+            // Convert us → ms for Python API consistency
             dict.set_item("timestamp", trade.timestamp / 1000)?;
             dict.set_item("price", trade.price.to_f64())?;
             dict.set_item("quantity", trade.volume.to_f64())?;

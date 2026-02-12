@@ -282,6 +282,12 @@ ignore = [
 "python/rangebar/validation/tier2.py" = [
     "PLC0415", # Lazy imports (optional statsmodels/scipy/sklearn dependencies)
 ]
+"python/rangebar/recency.py" = [
+    "PLC0415", # Lazy imports (avoid circular imports with clickhouse/streaming)
+    "PLR2004", # Magic values (gap thresholds, API limits)
+    "ARG001",  # Unused arguments (verbose reserved for future use)
+    "RET504",  # Unnecessary assignment before return (readability)
+]
 "python/rangebar/storage/parquet.py" = [
     "PLC0415", # Lazy imports (pyarrow inside generator for streaming)
 ]

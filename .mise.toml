@@ -67,6 +67,16 @@ RANGEBAR_INTER_BAR_LOOKBACK_COUNT = "200"
 RANGEBAR_INCLUDE_INTRA_BAR_FEATURES = "true"
 
 # =============================================================================
+# SSoT: Recency Backfill Adaptive Thresholds (Issue #92)
+# =============================================================================
+# Layer 2 adaptive polling loop self-tunes frequency based on gap size.
+# Gap below FRESH → sleep 15 min. Gap above STALE → sleep 5 min.
+# Gap above CRITICAL → sleep 2 min. Beyond CRITICAL → sleep 30s.
+RANGEBAR_RECENCY_FRESH_THRESHOLD_MIN = "30"
+RANGEBAR_RECENCY_STALE_THRESHOLD_MIN = "120"
+RANGEBAR_RECENCY_CRITICAL_THRESHOLD_MIN = "1440"
+
+# =============================================================================
 # GitHub Account Isolation
 # =============================================================================
 GH_ACCOUNT = "terrylica"

@@ -125,3 +125,17 @@ run = "./scripts/pueue-populate.sh postprocess-all"
 ["cache:validate-dedup"]
 description = "Validate Issue #90 dedup hardening layers against live ClickHouse"
 run = "python scripts/validate_dedup_hardening.py"
+
+# =============================================================================
+# Issue #92: Layer 2 Recency Backfill
+# =============================================================================
+
+["cache:recency-backfill"]
+description = "Backfill all cached symbol x threshold pairs from REST API"
+depends = ["db:ensure"]
+run = "python scripts/recency_backfill.py --all"
+
+["cache:recency-loop"]
+description = "Start adaptive recency backfill loop (Ctrl+C to stop)"
+depends = ["db:ensure"]
+run = "python scripts/recency_backfill.py --loop"

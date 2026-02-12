@@ -50,12 +50,14 @@ __all__ = [
     "VALIDATION_PRESETS",
     "AssetClass",
     "AsyncStreamingProcessor",
+    "BackfillResult",  # Issue #92: Layer 2 recency backfill
     "BinanceLiveStream",
     "ContinuityError",
     "ContinuityWarning",
     "CryptoThresholdError",  # Issue #62: backward compat alias
     "GapInfo",
     "GapTier",
+    "LoopState",  # Issue #92: Layer 2 adaptive loop state
     "OrphanedBarMetadata",
     "OuroborosBoundary",
     "OuroborosMode",
@@ -79,6 +81,8 @@ __all__ = [
     "ValidationPreset",
     "__version__",
     "auto_memory_guard",
+    "backfill_all_recent",  # Issue #92: Layer 2 recency backfill
+    "backfill_recent",  # Issue #92: Layer 2 recency backfill
     "clear_symbol_registry_cache",  # Issue #79: runtime registry refresh
     "clear_threshold_cache",  # Issue #62: runtime config changes
     "detect_asset_class",
@@ -103,6 +107,7 @@ __all__ = [
     "process_trades_polars",
     "process_trades_to_dataframe",
     "resolve_and_validate_threshold",  # Issue #62: central validation
+    "run_adaptive_loop",  # Issue #92: Layer 2 adaptive loop
     "stream_binance_live",
     "validate_and_clamp_start_date",  # Issue #79: start date clamping
     "validate_continuity",
@@ -162,6 +167,15 @@ from .processors.api import (
     process_trades_to_dataframe_cached,
 )
 from .processors.core import RangeBarProcessor
+
+# Re-export Layer 2 recency backfill API (Issue #92)
+from .recency import (
+    BackfillResult,
+    LoopState,
+    backfill_all_recent,
+    backfill_recent,
+    run_adaptive_loop,
+)
 
 # Memory safety guards (Issue #49, MEM-011)
 # ensure_memory_limit() provides idempotent memory cap with env var support
