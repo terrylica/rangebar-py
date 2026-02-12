@@ -1,3 +1,5 @@
+## [12.18.4](https://github.com/terrylica/rangebar-py/compare/v12.18.3...v12.18.4) (2026-02-12)
+
 ## [12.18.3](https://github.com/terrylica/rangebar-py/compare/v12.18.2...v12.18.3) (2026-02-12)
 
 
