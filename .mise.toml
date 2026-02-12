@@ -77,6 +77,19 @@ RANGEBAR_RECENCY_STALE_THRESHOLD_MIN = "120"
 RANGEBAR_RECENCY_CRITICAL_THRESHOLD_MIN = "1440"
 
 # =============================================================================
+# SSoT: Layer 3 Streaming Sidecar (Issue #91)
+# =============================================================================
+# Configuration for the live WebSocket → range bar → ClickHouse sidecar.
+# Symbols: comma-separated list (e.g., "BTCUSDT,ETHUSDT").
+# Thresholds: comma-separated dbps (e.g., "250,500,750,1000").
+RANGEBAR_STREAMING_SYMBOLS = "BTCUSDT,ETHUSDT"
+RANGEBAR_STREAMING_THRESHOLDS = "250,500,750,1000"
+RANGEBAR_STREAMING_MICROSTRUCTURE = "true"
+RANGEBAR_STREAMING_GAP_FILL = "true"
+RANGEBAR_STREAMING_VERBOSE = "false"
+RANGEBAR_STREAMING_TIMEOUT_MS = "5000"
+
+# =============================================================================
 # GitHub Account Isolation
 # =============================================================================
 GH_ACCOUNT = "terrylica"

@@ -13,6 +13,10 @@ pub mod stats;
 #[cfg(feature = "indicators")]
 pub mod indicators;
 
+// Issue #91: Live bar engine for real-time streaming sidecar
+#[cfg(feature = "binance-integration")]
+pub mod live_engine;
+
 #[cfg(feature = "binance-integration")]
 pub mod universal;
 
@@ -27,6 +31,9 @@ pub use stats::{StatisticsSnapshot, StreamingConfig, StreamingStatsEngine};
 pub use indicators::{
     CCI, ExponentialMovingAverage, IndicatorError, MACD, MACDValue, RSI, SimpleMovingAverage,
 };
+
+#[cfg(feature = "binance-integration")]
+pub use live_engine::{CompletedBar, LiveBarEngine, LiveEngineConfig, LiveEngineMetrics};
 
 #[cfg(feature = "binance-integration")]
 pub use universal::{StreamError, StreamMode, TradeStream, UniversalStream};

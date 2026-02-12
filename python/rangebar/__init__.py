@@ -66,6 +66,7 @@ __all__ = [
     "PrecomputeResult",
     "RangeBarProcessor",
     "ReconnectionConfig",
+    "SidecarConfig",  # Issue #91: Layer 3 streaming sidecar
     "StalenessResult",
     "StreamingConfig",
     "StreamingError",
@@ -108,6 +109,7 @@ __all__ = [
     "process_trades_to_dataframe",
     "resolve_and_validate_threshold",  # Issue #62: central validation
     "run_adaptive_loop",  # Issue #92: Layer 2 adaptive loop
+    "run_sidecar",  # Issue #91: Layer 3 streaming sidecar
     "stream_binance_live",
     "validate_and_clamp_start_date",  # Issue #79: start date clamping
     "validate_continuity",
@@ -181,6 +183,9 @@ from .recency import (
 # ensure_memory_limit() provides idempotent memory cap with env var support
 # auto_memory_guard() is called at import to enable default 70% RAM limit
 from .resource_guard import auto_memory_guard, ensure_memory_limit
+
+# Re-export Layer 3 streaming sidecar API (Issue #91)
+from .sidecar import SidecarConfig, run_sidecar
 
 # Enable memory guard by default on import (can be disabled with RANGEBAR_NO_MEMORY_GUARD=1)
 auto_memory_guard()

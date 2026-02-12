@@ -1,0 +1,50 @@
+# Layer 3 Streaming Sidecar Tasks (Issue #91)
+# Usage: mise run streaming:start
+#        mise run streaming:dev
+#        mise run streaming:status
+
+# =============================================================================
+# Sidecar Operations
+# =============================================================================
+
+["streaming:start"]
+description = "Start Layer 3 streaming sidecar (from env vars)"
+depends = ["db:ensure"]
+run = "python scripts/streaming_sidecar.py --from-env"
+
+["streaming:dev"]
+description = "Start sidecar for BTCUSDT only (dev/testing)"
+depends = ["db:ensure"]
+run = "python scripts/streaming_sidecar.py --symbol BTCUSDT --threshold 250 --verbose"
+
+["streaming:start-all"]
+description = "Start sidecar for all Tier 1 symbols (all thresholds)"
+depends = ["db:ensure"]
+run = """
+python scripts/streaming_sidecar.py \
+    --symbol BTCUSDT --symbol ETHUSDT --symbol BNBUSDT \
+    --symbol SOLUSDT --symbol XRPUSDT --symbol ADAUSDT \
+    --symbol DOGEUSDT --symbol DOTUSDT --symbol LINKUSDT \
+    --symbol LTCUSDT --symbol BCHUSDT --symbol AVAXUSDT \
+    --symbol NEARUSDT --symbol ATOMUSDT --symbol UNIUSDT
+"""
+
+# =============================================================================
+# Status & Diagnostics
+# =============================================================================
+
+["streaming:status"]
+description = "Check streaming checkpoint state"
+run = """
+echo "=== Streaming Checkpoints ==="
+if [ -d "$HOME/.cache/rangebar/checkpoints" ]; then
+    ls -la "$HOME/.cache/rangebar/checkpoints/streaming_"*.json 2>/dev/null || echo "No streaming checkpoints found"
+    echo ""
+    echo "=== Checkpoint Contents ==="
+    for f in "$HOME/.cache/rangebar/checkpoints/streaming_"*.json; do
+        [ -f "$f" ] && echo "--- $(basename "$f") ---" && cat "$f" && echo ""
+    done
+else
+    echo "No checkpoint directory found"
+fi
+"""

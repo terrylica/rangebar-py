@@ -39,4 +39,4 @@ pub use historical::{
     IntraDayChunkIterator,
 };
 pub use symbols::{get_tier1_symbols, get_tier1_usdt_pairs, is_tier1_symbol, TIER1_SYMBOLS};
-pub use websocket::{BinanceWebSocketStream, WebSocketError};
+pub use websocket::{BinanceWebSocketStream, ReconnectionPolicy, WebSocketError};

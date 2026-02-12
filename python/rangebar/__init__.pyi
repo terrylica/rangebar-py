@@ -58,6 +58,10 @@ from .recency import backfill_all_recent as backfill_all_recent
 from .recency import backfill_recent as backfill_recent
 from .recency import run_adaptive_loop as run_adaptive_loop
 
+# Streaming sidecar (rangebar.sidecar) — Issue #91
+from .sidecar import SidecarConfig as SidecarConfig
+from .sidecar import run_sidecar as run_sidecar
+
 # Symbol registry (rangebar.symbol_registry)
 from .symbol_registry import SymbolEntry as SymbolEntry
 from .symbol_registry import SymbolTransition as SymbolTransition

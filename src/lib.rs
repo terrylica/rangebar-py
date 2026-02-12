@@ -1625,6 +1625,7 @@ fn _core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "streaming")]
     {
         m.add_class::<streaming_bindings::PyBinanceLiveStream>()?;
+        m.add_class::<streaming_bindings::PyLiveBarEngine>()?;
         m.add_class::<streaming_bindings::PyStreamingConfig>()?;
         m.add_class::<streaming_bindings::PyStreamingMetrics>()?;
         m.add_class::<streaming_bindings::PyStreamingRangeBarProcessor>()?;
@@ -2443,41 +2444,52 @@ mod streaming_bindings {
             bars: Arc<Mutex<Vec<rangebar_core::RangeBar>>>,
             connected: Arc<std::sync::atomic::AtomicBool>,
         ) -> Result<(), WebSocketError> {
-            // Create WebSocket stream
-            let mut ws_stream = BinanceWebSocketStream::new(&symbol).await?;
-            ws_stream.connect().await?;
-            ws_stream.start_processing().await?;
-
             // Create processor using ExportRangeBarProcessor for streaming
+            // NOTE: PyBinanceLiveStream uses ExportRangeBarProcessor (10 columns).
+            // For full 58-column bars, use PyLiveBarEngine instead (Issue #91).
             let mut processor =
                 rangebar_core::processor::ExportRangeBarProcessor::new(threshold_decimal_bps)
                     .map_err(|e| {
                         WebSocketError::InvalidSymbol(format!("Processor creation failed: {e}"))
                     })?;
 
-            println!(
-                "🚀 Started live stream for {symbol} at {threshold_decimal_bps} bps"
-            );
+            // Create trade channel for WebSocket → processor pipeline
+            let (trade_tx, mut trade_rx) = tokio::sync::mpsc::channel(1000);
+            let shutdown = tokio_util::sync::CancellationToken::new();
+            let shutdown_clone = shutdown.clone();
 
-            // Process trades
+            // Spawn reconnecting WebSocket in background
+            let sym = symbol.clone();
+            tokio::spawn(async move {
+                BinanceWebSocketStream::run_with_reconnect(
+                    &sym,
+                    trade_tx,
+                    Default::default(),
+                    shutdown_clone,
+                )
+                .await;
+            });
+
+            // Process trades from channel
             while connected.load(Ordering::Relaxed) {
-                if let Some(trade) = ws_stream.next_trade().await {
-                    // Process single trade using the streaming-friendly method
-                    processor.process_trades_continuously(&[trade]);
-
-                    // Extract completed bars (drains buffer to avoid memory leaks)
-                    let completed = processor.get_all_completed_bars();
-                    if !completed.is_empty() {
-                        if let Ok(mut bar_buffer) = bars.lock() {
-                            bar_buffer.extend(completed);
+                match trade_rx.recv().await {
+                    Some(trade) => {
+                        processor.process_trades_continuously(&[trade]);
+                        let completed = processor.get_all_completed_bars();
+                        if !completed.is_empty() {
+                            if let Ok(mut bar_buffer) = bars.lock() {
+                                bar_buffer.extend(completed);
+                            }
                         }
                     }
-                } else {
-                    // WebSocket disconnected
-                    break;
+                    None => {
+                        // WebSocket channel closed (all senders dropped)
+                        break;
+                    }
                 }
             }
 
+            shutdown.cancel();
             connected.store(false, Ordering::Relaxed);
             Ok(())
         }
@@ -2715,6 +2727,199 @@ mod streaming_bindings {
                 "StreamingRangeBarProcessor(threshold_bps={}, trades={}, bars={})",
                 self.threshold_decimal_bps, self.trades_processed, self.bars_generated
             )
+        }
+    }
+
+    // =========================================================================
+    // Issue #91: LiveBarEngine — full 58-column streaming with canonical processor
+    // =========================================================================
+
+    /// Live bar engine for real-time range bar construction with full microstructure.
+    ///
+    /// Unlike `BinanceLiveStream` (10 columns via `ExportRangeBarProcessor`), this
+    /// engine uses the canonical `RangeBarProcessor` with 3-step feature finalization
+    /// to produce all 58 columns including inter-bar and intra-bar features.
+    ///
+    /// Architecture: Rust handles WebSocket→trade→bar (no GIL per trade).
+    /// Python only crosses the boundary per completed bar (~1-6/sec).
+    ///
+    /// Example:
+    ///     >>> engine = LiveBarEngine(["BTCUSDT", "ETHUSDT"], [250, 500])
+    ///     >>> engine.start()
+    ///     >>> while True:
+    ///     ...     bar = engine.next_bar(timeout_ms=5000)
+    ///     ...     if bar:
+    ///     ...         print(f"{bar['_symbol']} @ {bar['_threshold']}: close={bar['close']}")
+    #[pyclass(name = "LiveBarEngine")]
+    pub struct PyLiveBarEngine {
+        engine: Option<rangebar_streaming::LiveBarEngine>,
+        runtime: Option<tokio::runtime::Runtime>,
+        started: bool,
+    }
+
+    #[pymethods]
+    impl PyLiveBarEngine {
+        /// Create a new live bar engine.
+        ///
+        /// Args:
+        ///     symbols: List of trading pairs (e.g., ["BTCUSDT", "ETHUSDT"])
+        ///     thresholds: List of thresholds in decimal basis points (e.g., [250, 500])
+        ///     include_microstructure: Whether to compute all 58 columns (default: True)
+        #[new]
+        #[pyo3(signature = (symbols, thresholds, include_microstructure=true))]
+        pub fn new(
+            symbols: Vec<String>,
+            thresholds: Vec<u32>,
+            include_microstructure: bool,
+        ) -> PyResult<Self> {
+            if symbols.is_empty() {
+                return Err(PyValueError::new_err("symbols must not be empty"));
+            }
+            if thresholds.is_empty() {
+                return Err(PyValueError::new_err("thresholds must not be empty"));
+            }
+            for &t in &thresholds {
+                if t == 0 || t > 100_000 {
+                    return Err(PyValueError::new_err(format!(
+                        "threshold must be between 1 and 100000, got {t}"
+                    )));
+                }
+            }
+
+            let mut config = rangebar_streaming::LiveEngineConfig::new(symbols, thresholds);
+            config.include_microstructure = include_microstructure;
+
+            let engine = rangebar_streaming::LiveBarEngine::new(config);
+
+            Ok(Self {
+                engine: Some(engine),
+                runtime: None,
+                started: false,
+            })
+        }
+
+        /// Start all WebSocket connections and processing loops.
+        ///
+        /// This creates a tokio runtime and spawns one task per symbol.
+        /// Non-blocking — use `next_bar()` to consume completed bars.
+        pub fn start(&mut self, py: Python) -> PyResult<()> {
+            if self.started {
+                return Ok(());
+            }
+
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {e}")))?;
+
+            // Enter runtime context so engine.start() can spawn tasks
+            let _guard = runtime.enter();
+
+            if let Some(ref mut engine) = self.engine {
+                engine
+                    .start()
+                    .map_err(|e| PyValueError::new_err(format!("Failed to start engine: {e}")))?;
+            }
+
+            self.runtime = Some(runtime);
+            self.started = true;
+
+            // Brief GIL release to let WS connections initialize
+            py.allow_threads(|| {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            });
+
+            Ok(())
+        }
+
+        /// Get the next completed bar. Blocks until available or timeout.
+        ///
+        /// Returns a dict with all columns (up to 58 with microstructure),
+        /// plus `_symbol` and `_threshold` metadata keys.
+        /// Returns None on timeout.
+        ///
+        /// Args:
+        ///     timeout_ms: Maximum wait time in milliseconds (default: 5000)
+        #[pyo3(signature = (timeout_ms=5000))]
+        pub fn next_bar(&mut self, py: Python, timeout_ms: u64) -> PyResult<Option<PyObject>> {
+            let runtime = self.runtime.as_ref().ok_or_else(|| {
+                PyRuntimeError::new_err("Engine not started. Call start() first.")
+            })?;
+
+            let engine = self.engine.as_mut().ok_or_else(|| {
+                PyRuntimeError::new_err("Engine not available")
+            })?;
+
+            let timeout = std::time::Duration::from_millis(timeout_ms);
+
+            // Release GIL while waiting for bars from Rust
+            let completed = py.allow_threads(|| {
+                runtime.block_on(engine.next_bar(tokio::time::Duration::from_millis(
+                    timeout.as_millis() as u64,
+                )))
+            });
+
+            match completed {
+                Some(completed_bar) => {
+                    let dict = rangebar_to_dict(py, &completed_bar.bar)?;
+                    // Add metadata keys
+                    let py_dict: &Bound<PyDict> = dict.downcast_bound(py)?;
+                    py_dict.set_item("_symbol", &completed_bar.symbol)?;
+                    py_dict.set_item("_threshold", completed_bar.threshold_decimal_bps)?;
+                    Ok(Some(dict))
+                }
+                None => Ok(None),
+            }
+        }
+
+        /// Graceful shutdown — cancels all WebSocket connections.
+        pub fn stop(&mut self) -> PyResult<()> {
+            if let Some(ref engine) = self.engine {
+                engine.stop();
+            }
+            self.started = false;
+            if let Some(runtime) = self.runtime.take() {
+                runtime.shutdown_background();
+            }
+            Ok(())
+        }
+
+        /// Get engine metrics.
+        ///
+        /// Returns:
+        ///     dict with trades_received, bars_emitted, reconnections
+        pub fn get_metrics(&self, py: Python) -> PyResult<PyObject> {
+            let engine = self.engine.as_ref().ok_or_else(|| {
+                PyRuntimeError::new_err("Engine not available")
+            })?;
+            let snap = engine.metrics().snapshot();
+            let dict = PyDict::new_bound(py);
+            dict.set_item("trades_received", snap.trades_received)?;
+            dict.set_item("bars_emitted", snap.bars_emitted)?;
+            dict.set_item("reconnections", snap.reconnections)?;
+            Ok(dict.into())
+        }
+
+        /// Whether the engine has been started.
+        #[getter]
+        pub const fn is_started(&self) -> bool {
+            self.started
+        }
+
+        fn __repr__(&self) -> String {
+            format!("LiveBarEngine(started={})", self.started)
+        }
+    }
+
+    impl Drop for PyLiveBarEngine {
+        fn drop(&mut self) {
+            if let Some(ref engine) = self.engine {
+                engine.stop();
+            }
+            if let Some(runtime) = self.runtime.take() {
+                runtime.shutdown_background();
+            }
         }
     }
 }

@@ -47,6 +47,7 @@ config = "0.14"
 rayon = "1.11"
 tokio = { version = "1.0", features = ["full"] }
 tokio-stream = "0.1"
+tokio-util = { version = "0.7", features = ["rt"] }
 async-trait = "0.1"
 futures = "0.3"
 futures-util = "0.3"
@@ -128,6 +129,7 @@ rangebar-streaming = { path = "crates/rangebar-streaming", optional = true }
 
 # Async runtime for data fetching and streaming
 tokio = { version = "1.0", features = ["rt-multi-thread"], optional = true }
+tokio-util = { workspace = true, optional = true }
 
 # PyO3 for Python bindings
 # NOTE: abi3 removed - pyo3-arrow requires buffer protocol (not in limited ABI)
@@ -152,8 +154,8 @@ default = ["data-providers", "arrow-export", "streaming"]
 data-providers = ["rangebar-providers", "tokio"]
 # Arrow export for streaming architecture (memory-efficient)
 arrow-export = ["arrow", "arrow-array", "arrow-schema", "pyo3-arrow", "rangebar-core/arrow"]
-# Real-time streaming support
-streaming = ["rangebar-streaming", "rangebar-providers", "tokio"]
+# Real-time streaming support (includes binance-integration for LiveBarEngine)
+streaming = ["rangebar-streaming", "rangebar-streaming/binance-integration", "rangebar-providers", "tokio", "tokio-util"]
 # Legacy feature aliases
 exness = ["data-providers"]
 binance = ["data-providers"]

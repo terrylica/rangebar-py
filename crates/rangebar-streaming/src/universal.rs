@@ -1,4 +1,4 @@
-//! Universal stream interface for all trade data sources
+//! Universal stream interface for all trade data sources (Issue #91)
 //!
 //! This module provides a unified interface for streaming trade data from
 //! different sources (WebSocket, replay buffer, historical files) with
@@ -8,13 +8,18 @@ use super::ReplayBuffer;
 use async_trait::async_trait;
 use rangebar_core::AggTrade;
 #[cfg(feature = "binance-integration")]
-use rangebar_providers::binance::{BinanceWebSocketStream, WebSocketError};
+use rangebar_providers::binance::{
+    BinanceWebSocketStream, ReconnectionPolicy, WebSocketError,
+};
 use std::sync::{
     atomic::{AtomicU32, Ordering},
     Arc,
 };
 use std::time::Duration;
-use tokio::sync::Mutex;
+#[cfg(feature = "binance-integration")]
+use tokio::sync::mpsc;
+#[cfg(feature = "binance-integration")]
+use tokio_util::sync::CancellationToken;
 
 /// Different modes for streaming trade data
 #[derive(Debug, Clone, PartialEq)]
@@ -78,11 +83,14 @@ pub enum StreamError {
     NotConnected,
 }
 
-/// Universal stream that can switch between live and replay modes
+/// Universal stream that can switch between live and replay modes.
+/// Issue #91: Refactored to use channel-based WebSocket with auto-reconnection.
 pub struct UniversalStream {
     symbol: String,
     #[cfg(feature = "binance-integration")]
-    websocket: Arc<Mutex<Option<BinanceWebSocketStream>>>,
+    trade_rx: Option<mpsc::Receiver<AggTrade>>,
+    #[cfg(feature = "binance-integration")]
+    shutdown: Option<CancellationToken>,
     replay_buffer: ReplayBuffer,
     mode: StreamMode,
     replay_stream: Option<super::replay_buffer::ReplayStream>,
@@ -100,7 +108,9 @@ impl UniversalStream {
         Ok(Self {
             symbol,
             #[cfg(feature = "binance-integration")]
-            websocket: Arc::new(Mutex::new(None)),
+            trade_rx: None,
+            #[cfg(feature = "binance-integration")]
+            shutdown: None,
             replay_buffer,
             mode: StreamMode::Live,
             replay_stream: None,
@@ -110,57 +120,55 @@ impl UniversalStream {
         })
     }
 
-    /// Connect to the live WebSocket stream
+    /// Connect to the live WebSocket stream.
+    /// Issue #91: Uses channel-based `run_with_reconnect()` with auto-reconnection.
     #[cfg(feature = "binance-integration")]
-    pub async fn connect(&mut self) -> Result<(), StreamError> {
-        let mut ws_stream = BinanceWebSocketStream::new(&self.symbol).await?;
-        ws_stream.connect().await?;
-        ws_stream.start_processing().await?;
+    pub fn connect(&mut self) -> Result<(), StreamError> {
+        let _ = BinanceWebSocketStream::new(&self.symbol)?;
 
-        {
-            let mut websocket = self.websocket.lock().await;
-            *websocket = Some(ws_stream);
-        }
+        let (trade_tx, trade_rx) = mpsc::channel(1000);
+        let shutdown = CancellationToken::new();
+        let shutdown_clone = shutdown.clone();
+        let symbol = self.symbol.clone();
 
+        tokio::spawn(async move {
+            BinanceWebSocketStream::run_with_reconnect(
+                &symbol,
+                trade_tx,
+                ReconnectionPolicy::default(),
+                shutdown_clone,
+            )
+            .await;
+        });
+
+        self.trade_rx = Some(trade_rx);
+        self.shutdown = Some(shutdown);
         self.connected = true;
-        println!("✅ Universal stream connected for {}", self.symbol);
+        tracing::info!(symbol = %self.symbol, "universal stream connected");
 
         Ok(())
     }
 
-    /// Start background task to populate replay buffer from WebSocket
+    /// Start background task to populate replay buffer from the trade channel.
+    /// Issue #91: Reads from mpsc::Receiver instead of locking WebSocket directly.
     #[cfg(feature = "binance-integration")]
-    pub async fn start_buffer_population(&self) {
-        let websocket = Arc::clone(&self.websocket);
-        let replay_buffer = self.replay_buffer.clone();
-        let symbol = self.symbol.clone();
+    pub fn start_buffer_population(&mut self) {
+        // Take the receiver — buffer population task owns it exclusively.
+        // After this, Live mode next_trade() returns None (trades flow through buffer).
+        if let Some(mut rx) = self.trade_rx.take() {
+            let replay_buffer = self.replay_buffer.clone();
+            let symbol = self.symbol.clone();
 
-        tokio::spawn(async move {
-            println!("🔄 Starting buffer population for {}", symbol);
+            tokio::spawn(async move {
+                tracing::info!(%symbol, "starting buffer population");
 
-            loop {
-                let trade = {
-                    let mut ws_guard = websocket.lock().await;
-                    if let Some(ref mut ws) = ws_guard.as_mut() {
-                        ws.next_trade().await
-                    } else {
-                        // WebSocket not available, wait and retry
-                        tokio::time::sleep(Duration::from_millis(100)).await;
-                        continue;
-                    }
-                };
-
-                if let Some(trade) = trade {
+                while let Some(trade) = rx.recv().await {
                     replay_buffer.push(trade);
-                } else {
-                    // Connection lost, try to reconnect or break
-                    println!("⚠️ WebSocket connection lost for {}", symbol);
-                    break;
                 }
-            }
 
-            println!("🔚 Buffer population ended for {}", symbol);
-        });
+                tracing::info!(%symbol, "buffer population ended");
+            });
+        }
     }
 
     /// Set the replay speed (only affects replay mode)
@@ -187,9 +195,8 @@ impl TradeStream for UniversalStream {
             StreamMode::Live => {
                 #[cfg(feature = "binance-integration")]
                 {
-                    let mut websocket = self.websocket.lock().await;
-                    if let Some(ref mut ws) = websocket.as_mut() {
-                        let trade = ws.next_trade().await;
+                    if let Some(ref mut rx) = self.trade_rx {
+                        let trade = rx.recv().await;
                         if trade.is_some() {
                             self.trade_count += 1;
                         }
@@ -233,22 +240,19 @@ impl TradeStream for UniversalStream {
                 }
 
                 self.replay_stream = Some(self.replay_buffer.replay_from(*minutes_ago, *speed));
-                println!(
-                    "🔄 Switched to replay mode: {} minutes ago at {}x speed",
-                    minutes_ago, speed
-                );
+                tracing::info!(minutes_ago, speed, "switched to replay mode");
                 self.mode = mode;
             }
             (StreamMode::Replay { .. }, StreamMode::Live) => {
                 // Switch from replay to live
                 self.replay_stream = None;
                 self.mode = mode;
-                println!("🔄 Switched to live mode");
+                tracing::info!("switched to live mode");
             }
             (_, StreamMode::Paused) => {
                 // Can always pause
                 self.mode = mode;
-                println!("⏸️ Stream paused");
+                tracing::info!("stream paused");
             }
             (StreamMode::Paused, _) => {
                 // Resume to the new mode
@@ -260,7 +264,7 @@ impl TradeStream for UniversalStream {
                     }
                 }
                 self.mode = mode;
-                println!("▶️ Stream resumed to mode: {}", self.mode);
+                tracing::info!(mode = %self.mode, "stream resumed");
             }
             _ => {
                 // Same mode or other transitions

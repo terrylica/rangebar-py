@@ -30,6 +30,12 @@ chrono.workspace = true
 # Error handling
 thiserror.workspace = true
 
+# Observability
+tracing.workspace = true
+
+# Graceful shutdown
+tokio-util.workspace = true
+
 # Optional features
 rolling-stats = { workspace = true, optional = true }
 tdigests = { workspace = true, optional = true }
