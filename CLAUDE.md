@@ -6,20 +6,21 @@
 
 ## Quick Reference
 
-| Task                    | Entry Point                                                                   | Details                                            |
-| ----------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------- |
-| Generate range bars     | `get_range_bars()`                                                            | [Python API](#python-api)                          |
-| Understand architecture | [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)                                 | 8-crate workspace                                  |
-| Work with Rust crates   | [crates/CLAUDE.md](/crates/CLAUDE.md)                                         | Core algorithm, microstructure, inter-bar features |
-| Work with Python layer  | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)                       | API, caching, validation, symbol registry          |
-| ClickHouse cache ops    | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | Schema, population, remote setup, dedup hardening  |
-| Operations & scripts    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue, cache population, per-year parallelism      |
-| Release workflow        | [docs/development/RELEASE.md](/docs/development/RELEASE.md)                   | Zig cross-compile, mise tasks                      |
-| Performance monitoring  | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md)           | Benchmarks, metrics                                |
-| Project context         | [docs/CONTEXT.md](/docs/CONTEXT.md)                                           | Why this project exists                            |
-| API reference           | [docs/api/INDEX.md](/docs/api/INDEX.md)                                       | Full Python API docs                               |
-| Research                | [docs/research/INDEX.md](/docs/research/INDEX.md)                             | ML labeling, regime patterns, TDA                  |
-| Oracle verification     | [docs/verification/](/docs/verification/)                                     | Bit-exact cross-reference reports                  |
+| Task                    | Entry Point                                                                   | Details                                               |
+| ----------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Generate range bars     | `get_range_bars()`                                                            | [Python API](#python-api)                             |
+| Real-time streaming     | `run_sidecar()` / `scripts/streaming_sidecar.py`                              | [ADR](/docs/adr/2026-01-31-realtime-streaming-api.md) |
+| Understand architecture | [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)                                 | 8-crate workspace                                     |
+| Work with Rust crates   | [crates/CLAUDE.md](/crates/CLAUDE.md)                                         | Core algorithm, microstructure, inter-bar features    |
+| Work with Python layer  | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)                       | API, caching, validation, symbol registry             |
+| ClickHouse cache ops    | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | Schema, population, remote setup, dedup hardening     |
+| Operations & scripts    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue, cache population, per-year parallelism         |
+| Release workflow        | [docs/development/RELEASE.md](/docs/development/RELEASE.md)                   | Zig cross-compile, mise tasks                         |
+| Performance monitoring  | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md)           | Benchmarks, metrics                                   |
+| Project context         | [docs/CONTEXT.md](/docs/CONTEXT.md)                                           | Why this project exists                               |
+| API reference           | [docs/api/INDEX.md](/docs/api/INDEX.md)                                       | Full Python API docs                                  |
+| Research                | [docs/research/INDEX.md](/docs/research/INDEX.md)                             | ML labeling, regime patterns, TDA                     |
+| Oracle verification     | [docs/verification/](/docs/verification/)                                     | Bit-exact cross-reference reports                     |
 
 ---
 
@@ -106,9 +107,17 @@ df = get_range_bars("BTCUSDT", "2019-01-01", "2025-12-31")
 rangebar-py/
 ├── crates/                    8 Rust crates (publish = false)
 │   └── rangebar-core/         Core algorithm, microstructure features
-├── src/lib.rs                 PyO3 bindings (Rust→Python bridge)
+├── src/                       PyO3 bindings (Issue #94: domain modules)
+│   ├── lib.rs                 Thin orchestrator (~200 lines)
+│   ├── helpers.rs             Conversion functions
+│   ├── core_bindings.rs       PyRangeBarProcessor, PyPositionVerification
+│   ├── arrow_bindings.rs      Arrow export functions
+│   ├── binance_bindings.rs    Binance data fetching
+│   ├── exness_bindings.rs     Exness data fetching
+│   └── streaming_bindings.rs  LiveBarEngine, streaming classes
 ├── python/rangebar/           Python API layer
 │   ├── clickhouse/            ClickHouse cache (bigblack)
+│   ├── sidecar.py             Streaming sidecar orchestrator (v12.20+)
 │   ├── validation/            Microstructure validation
 │   └── storage/               Tier 1 cache (Parquet)
 ├── scripts/                   Pueue jobs, validation, cache population
@@ -116,7 +125,7 @@ rangebar-py/
 └── pyproject.toml             Maturin config
 ```
 
-**Key files**: `src/lib.rs` (PyO3 bindings), `python/rangebar/__init__.py` (public API), `crates/rangebar-core/src/processor.rs` (core algorithm)
+**Key files**: `src/lib.rs` (PyO3 module registration), `python/rangebar/__init__.py` (public API), `crates/rangebar-core/src/processor.rs` (core algorithm), `python/rangebar/sidecar.py` (streaming sidecar)
 
 **Full architecture**: [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)
 

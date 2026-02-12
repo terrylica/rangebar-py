@@ -18,6 +18,7 @@ Operational scripts for cache population, validation, and distributed job manage
 | Detect volume overflow     | `mise run cache:detect-overflow`                  | Issue #88                                             |
 | Validate dedup hardening   | `mise run cache:validate-dedup`                   | Issue #90                                             |
 | Validate microstructure    | `uv run python scripts/validate_microstructure_*` | [Validation Scripts](#validation-scripts)             |
+| Run streaming sidecar      | `mise run streaming:sidecar`                      | v12.20+, real-time range bars                         |
 
 ---
 
@@ -44,6 +45,7 @@ mise run cache:populate-all
 | `populate_full_cache.py`    | Single-job entry point (Python)                 |
 | `pueue-autoscaler.sh`       | Dynamic parallelism tuning (CPU/memory aware)   |
 | `detect_volume_overflow.py` | Post-population integrity check (Issue #88)     |
+| `streaming_sidecar.py`      | Streaming sidecar CLI entry point (v12.20+)     |
 
 ### Phases
 

@@ -8,16 +8,16 @@
 
 ## Quick Reference
 
-| Crate                | Purpose         | Key Types                                     |
-| -------------------- | --------------- | --------------------------------------------- |
-| `rangebar-core`      | Core algorithm  | `RangeBarProcessor`, `RangeBar`, `FixedPoint` |
-| `rangebar-providers` | Data sources    | `HistoricalDataLoader`, `ExnessFetcher`       |
-| `rangebar-io`        | I/O operations  | Polars integration                            |
-| `rangebar-streaming` | Real-time       | `StreamingProcessor`                          |
-| `rangebar-batch`     | Batch analytics | `BatchAnalysisEngine`                         |
-| `rangebar-config`    | Configuration   | `Settings`                                    |
-| `rangebar-cli`       | CLI tools       | (disabled for PyPI)                           |
-| `rangebar`           | Meta-crate      | v4.0 compatibility                            |
+| Crate                | Purpose         | Key Types                                             |
+| -------------------- | --------------- | ----------------------------------------------------- |
+| `rangebar-core`      | Core algorithm  | `RangeBarProcessor`, `RangeBar`, `FixedPoint`         |
+| `rangebar-providers` | Data sources    | `HistoricalDataLoader`, `ExnessFetcher`               |
+| `rangebar-io`        | I/O operations  | Polars integration                                    |
+| `rangebar-streaming` | Real-time       | `StreamingProcessor`, `LiveBarEngine`, `CompletedBar` |
+| `rangebar-batch`     | Batch analytics | `BatchAnalysisEngine`                                 |
+| `rangebar-config`    | Configuration   | `Settings`                                            |
+| `rangebar-cli`       | CLI tools       | (disabled for PyPI)                                   |
+| `rangebar`           | Meta-crate      | v4.0 compatibility                                    |
 
 ---
 

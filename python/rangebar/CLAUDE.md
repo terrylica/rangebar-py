@@ -10,17 +10,18 @@ This directory contains the Python API layer for rangebar-py.
 
 ### Common Tasks & Entry Points
 
-| When Claude is asked to...              | Primary File          | Function/Class                  |
-| --------------------------------------- | --------------------- | ------------------------------- |
-| Generate range bars (date-bounded)      | `__init__.py`         | `get_range_bars()`              |
-| Generate range bars (count-bounded, ML) | `__init__.py`         | `get_n_range_bars()`            |
-| Generate range bars (existing data)     | `__init__.py`         | `process_trades_to_dataframe()` |
-| Generate range bars (Polars)            | `__init__.py`         | `process_trades_polars()`       |
-| Process large datasets                  | `__init__.py`         | `process_trades_chunked()`      |
-| Populate cache for long ranges          | `checkpoint.py`       | `populate_cache_resumable()`    |
-| Read/write tick data                    | `storage/parquet.py`  | `TickStorage` class             |
-| Bar-count cache operations              | `clickhouse/cache.py` | `count_bars()`, `get_n_bars()`  |
-| Validate microstructure features        | `validation/tier1.py` | `validate_tier1()`              |
+| When Claude is asked to...              | Primary File          | Function/Class                   |
+| --------------------------------------- | --------------------- | -------------------------------- |
+| Generate range bars (date-bounded)      | `__init__.py`         | `get_range_bars()`               |
+| Generate range bars (count-bounded, ML) | `__init__.py`         | `get_n_range_bars()`             |
+| Generate range bars (existing data)     | `__init__.py`         | `process_trades_to_dataframe()`  |
+| Generate range bars (Polars)            | `__init__.py`         | `process_trades_polars()`        |
+| Process large datasets                  | `__init__.py`         | `process_trades_chunked()`       |
+| Run streaming sidecar                   | `sidecar.py`          | `run_sidecar()`, `SidecarConfig` |
+| Populate cache for long ranges          | `checkpoint.py`       | `populate_cache_resumable()`     |
+| Read/write tick data                    | `storage/parquet.py`  | `TickStorage` class              |
+| Bar-count cache operations              | `clickhouse/cache.py` | `count_bars()`, `get_n_bars()`   |
+| Validate microstructure features        | `validation/tier1.py` | `validate_tier1()`               |
 
 ### API Selection Guide
 
@@ -36,16 +37,18 @@ Starting Point?
 
 ### File-to-Responsibility Mapping
 
-| File                    | Responsibility                   |
-| ----------------------- | -------------------------------- |
-| `__init__.py`           | Public Python API                |
-| `__init__.pyi`          | Re-export index (stubs)          |
-| `storage/parquet.py`    | Tier 1 cache (local Parquet)     |
-| `clickhouse/cache.py`   | Tier 2 cache (ClickHouse)        |
-| `clickhouse/schema.sql` | ClickHouse table schema          |
-| `validation/tier1.py`   | Fast validation (<30 sec)        |
-| `validation/tier2.py`   | Statistical validation (~10 min) |
-| `exness.py`             | Exness data source utilities     |
+| File                    | Responsibility                                  |
+| ----------------------- | ----------------------------------------------- |
+| `__init__.py`           | Public Python API                               |
+| `__init__.pyi`          | Re-export index (stubs)                         |
+| `sidecar.py`            | Streaming sidecar orchestrator (v12.20+)        |
+| `sidecar.pyi`           | Sidecar type stubs (SidecarConfig, run_sidecar) |
+| `storage/parquet.py`    | Tier 1 cache (local Parquet)                    |
+| `clickhouse/cache.py`   | Tier 2 cache (ClickHouse)                       |
+| `clickhouse/schema.sql` | ClickHouse table schema                         |
+| `validation/tier1.py`   | Fast validation (<30 sec)                       |
+| `validation/tier2.py`   | Statistical validation (~10 min)                |
+| `exness.py`             | Exness data source utilities                    |
 
 ### Performance Optimization Checklist
 
@@ -65,6 +68,8 @@ python/rangebar/
 ├── __init__.py          # Public API (get_range_bars, process_trades_*)
 ├── __init__.pyi         # Type stubs for IDE/AI
 ├── _core.abi3.so        # PyO3 binary extension (built by maturin)
+├── sidecar.py           # Streaming sidecar orchestrator (v12.20+)
+├── sidecar.pyi          # Sidecar type stubs
 ├── clickhouse/          # Tier 2 cache (ClickHouse, bigblack)
 │   ├── cache.py         # Range bar cache operations
 │   └── schema.sql       # Table schema (v7.0: 10 microstructure columns)
