@@ -146,8 +146,9 @@ class TestBarRelativeSignature:
         """Type stub should include inter_bar_lookback_bars for get_range_bars."""
         from pathlib import Path
 
-        stub_path = (
-            Path(__file__).parent / ".." / "python" / "rangebar" / "__init__.pyi"
+        stub_dir = Path(__file__).parent / ".." / "python" / "rangebar"
+        found = any(
+            "inter_bar_lookback_bars" in p.read_text()
+            for p in stub_dir.rglob("*.pyi")
         )
-        content = stub_path.read_text()
-        assert "inter_bar_lookback_bars" in content
+        assert found

@@ -77,13 +77,14 @@ class TestGetNRangeBarsToleranceParam:
     def test_parameter_in_type_stubs(self):
         """Type stub should include continuity_tolerance_pct for get_n_range_bars."""
 
-        stub_path = (
-            Path(__file__).parent / ".." / "python" / "rangebar" / "__init__.pyi"
+        stub_dir = Path(__file__).parent / ".." / "python" / "rangebar"
+        found = any(
+            "continuity_tolerance_pct" in p.read_text()
+            for p in stub_dir.rglob("*.pyi")
         )
-        content = stub_path.read_text()
 
-        # Verify the parameter appears in the stub
-        assert "continuity_tolerance_pct" in content
+        # Verify the parameter appears in the stubs
+        assert found
 
     def test_tolerance_used_in_validation(self):
         """Custom tolerance should be used instead of constant when provided."""

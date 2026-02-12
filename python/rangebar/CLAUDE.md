@@ -39,7 +39,7 @@ Starting Point?
 | File                    | Responsibility                   |
 | ----------------------- | -------------------------------- |
 | `__init__.py`           | Public Python API                |
-| `__init__.pyi`          | Type stubs for IDE/AI            |
+| `__init__.pyi`          | Re-export index (stubs)          |
 | `storage/parquet.py`    | Tier 1 cache (local Parquet)     |
 | `clickhouse/cache.py`   | Tier 2 cache (ClickHouse)        |
 | `clickhouse/schema.sql` | ClickHouse table schema          |
@@ -102,9 +102,14 @@ python/rangebar/
 - `TIER1_SYMBOLS` - 18 high-liquidity symbols
 - `THRESHOLD_PRESETS` - Named thresholds (micro, tight, standard, etc.)
 
-### `__init__.pyi` - Type Stubs
+### `.pyi` Type Stubs (PEP 561 Per-Module Layout)
 
-Provides type hints for IDE autocompletion and AI assistants. Keep in sync with `__init__.py`.
+Type stubs follow PEP 561 per-module layout. Each `.pyi` file lives alongside its `.py` source.
+
+- `__init__.pyi` — **Re-export index only** (no definitions). Uses `from .x import Y as Y` pattern.
+- Per-module stubs (e.g., `constants.pyi`, `ouroboros.pyi`, `orchestration/range_bars.pyi`) — Contain actual type definitions.
+
+**Enforced by**: `pretooluse-pyi-stub-guard.ts` hook (blocks definitions in `__init__.pyi`).
 
 ### `_core.abi3.so` - PyO3 Extension
 
@@ -392,9 +397,10 @@ df = get_range_bars("BTCUSDT", "2019-01-01", "2025-12-31")
 ### Adding New Features
 
 1. Update `__init__.py` with new function
-2. Update `__init__.pyi` with type stub
-3. Add tests in `/tests/`
-4. Update `/docs/api/INDEX.md`
+2. Add type stub to the per-module `.pyi` file (e.g., `orchestration/range_bars.pyi`)
+3. Add re-export to `__init__.pyi` (e.g., `from .orchestration.range_bars import new_func as new_func`)
+4. Add tests in `/tests/`
+5. Update `/docs/api/INDEX.md`
 
 ### Testing
 
