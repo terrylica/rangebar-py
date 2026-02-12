@@ -1,3 +1,10 @@
+## [12.18.3](https://github.com/terrylica/rangebar-py/compare/v12.18.2...v12.18.3) (2026-02-12)
+
+
+### Bug Fixes
+
+* **release:** add releaseRules so docs/style/refactor/perf trigger patch bump ([941a7e4](https://github.com/terrylica/rangebar-py/commit/941a7e4a995f1a1ef6e1a880ff9ae66add9a02fb))
+
 ## [12.18.2](https://github.com/terrylica/rangebar-py/compare/v12.18.1...v12.18.2) (2026-02-11)
 
 
