@@ -1,3 +1,10 @@
+# [12.19.0](https://github.com/terrylica/rangebar-py/compare/v12.18.4...v12.19.0) (2026-02-12)
+
+
+### Features
+
+* **recency:** add Layer 2 recency backfill with adaptive polling (Issue [#92](https://github.com/terrylica/rangebar-py/issues/92)) ([cecae88](https://github.com/terrylica/rangebar-py/commit/cecae8886b429bc78a135b8dca3a77bd0695e94c))
+
 ## [12.18.4](https://github.com/terrylica/rangebar-py/compare/v12.18.3...v12.18.4) (2026-02-12)
 
 ## [12.18.3](https://github.com/terrylica/rangebar-py/compare/v12.18.2...v12.18.3) (2026-02-12)
