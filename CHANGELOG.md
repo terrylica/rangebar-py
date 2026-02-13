@@ -1,3 +1,15 @@
+# [12.21.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.20.0...v12.21.0) (2026-02-13)
+
+
+### Bug Fixes
+
+* **test:** respect per-symbol min threshold in tier1 symbol test ([bf450d3](https://github.com-terrylica/terrylica/rangebar-py/commit/bf450d3f361d6f1ecf146055d0875282aae27586)), closes [#89](https://github.com-terrylica/terrylica/rangebar-py/issues/89)
+
+
+### Features
+
+* **compat:** add alpha-forge integration layer with TOML-embedded feature manifest (Issue [#95](https://github.com-terrylica/terrylica/rangebar-py/issues/95)) ([42e392a](https://github.com-terrylica/terrylica/rangebar-py/commit/42e392a852439de6dac73abb7310a1be0a1e8efb))
+
 # [12.20.0](https://github.com/terrylica/rangebar-py/compare/v12.19.0...v12.20.0) (2026-02-12)
 
 
