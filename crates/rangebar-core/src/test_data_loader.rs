@@ -44,8 +44,8 @@
 //! - T: Timestamp (milliseconds, integer)
 //! - m: Is buyer maker ("True"/"False" string)
 
-use crate::types::AggTrade;
 use crate::FixedPoint;
+use crate::types::AggTrade;
 use std::path::Path;
 use thiserror::Error;
 

@@ -12,11 +12,16 @@
 //! - **Arrow export**: Zero-copy streaming to Python via Arrow RecordBatch (v8.0.0+)
 
 pub mod checkpoint;
+pub mod errors;
+pub mod export_processor; // Export-oriented processor (extracted Phase 2d)
 pub mod fixed_point;
 pub mod interbar; // Issue #59: Inter-bar microstructure features (lookback window BEFORE bar)
+pub(crate) mod interbar_math; // Issue #59: Inter-bar math helpers (extracted Phase 2e)
+pub mod interbar_types; // Issue #59: Inter-bar type definitions (extracted Phase 2b)
 pub mod intrabar; // Issue #59: Intra-bar features (trades WITHIN bar)
 pub mod processor;
 pub mod timestamp;
+pub mod trade; // Trade/DataSource types (extracted Phase 2c)
 pub mod types;
 
 // Arrow export (only available with arrow feature)
@@ -39,7 +44,7 @@ pub const FEATURE_MANIFEST_TOML: &str = include_str!("../data/feature_manifest.t
 pub use checkpoint::{AnomalySummary, Checkpoint, CheckpointError, PositionVerification};
 pub use fixed_point::FixedPoint;
 pub use interbar::{InterBarConfig, InterBarFeatures, LookbackMode, TradeHistory, TradeSnapshot};
-pub use intrabar::{compute_intra_bar_features, IntraBarFeatures};
+pub use intrabar::{IntraBarFeatures, compute_intra_bar_features};
 pub use processor::{ExportRangeBarProcessor, ProcessingError, RangeBarProcessor};
 pub use timestamp::{
     create_aggtrade_with_normalized_timestamp, normalize_timestamp, validate_timestamp,
@@ -49,7 +54,11 @@ pub use types::{AggTrade, DataSource, RangeBar};
 // Arrow export re-exports (only available with arrow feature)
 #[cfg(feature = "arrow")]
 pub use arrow_export::{
-    aggtrade_schema, aggtrades_to_record_batch, rangebar_schema, rangebar_vec_to_record_batch,
+    ArrowImportError,
+    aggtrade_schema,
+    aggtrades_to_record_batch,
+    rangebar_schema,
+    rangebar_vec_to_record_batch,
     // Issue #88: Arrow-native input path
-    record_batch_to_aggtrades, ArrowImportError,
+    record_batch_to_aggtrades,
 };

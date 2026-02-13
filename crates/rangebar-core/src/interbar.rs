@@ -1,3 +1,4 @@
+// FILE-SIZE-OK: Tests stay inline (access pub(crate) math functions via glob import). Phase 2b extracted types, Phase 2e extracted math.
 //! Inter-bar microstructure features computed from lookback trade windows
 //!
 //! GitHub Issue: https://github.com/terrylica/rangebar-py/issues/59
@@ -30,120 +31,12 @@
 //! | Permutation Entropy | Bandt & Pompe (2002) - Permutation Entropy: A Natural Complexity Measure |
 
 use crate::fixed_point::FixedPoint;
+use crate::interbar_math::*;
 use crate::types::AggTrade;
 use std::collections::VecDeque;
 
-/// Configuration for inter-bar feature computation
-#[derive(Debug, Clone)]
-pub struct InterBarConfig {
-    /// Lookback mode: by count or by time
-    pub lookback_mode: LookbackMode,
-    /// Whether to compute Tier 2 features (requires more trades)
-    pub compute_tier2: bool,
-    /// Whether to compute Tier 3 features (requires 60+ trades for some)
-    pub compute_tier3: bool,
-}
-
-impl Default for InterBarConfig {
-    fn default() -> Self {
-        Self {
-            lookback_mode: LookbackMode::FixedCount(500),
-            compute_tier2: true,
-            compute_tier3: true,
-        }
-    }
-}
-
-/// Lookback mode for trade history
-#[derive(Debug, Clone)]
-pub enum LookbackMode {
-    /// Keep last N trades before bar open
-    FixedCount(usize),
-    /// Keep trades from last T microseconds before bar open
-    FixedWindow(i64),
-    /// Keep trades from last N completed bars (Issue #81)
-    ///
-    /// Self-adapting: lookback window scales with bar size.
-    /// - Micro bars (50 dbps, ~10 trades): BarRelative(3) → ~30 trades
-    /// - Standard bars (250 dbps, ~200 trades): BarRelative(3) → ~600 trades
-    /// - Macro bars (1000 dbps, ~5000 trades): BarRelative(3) → ~15,000 trades
-    BarRelative(usize),
-}
-
-/// Lightweight snapshot of trade for history buffer
-///
-/// Uses 48 bytes per trade (vs full AggTrade which is larger).
-/// For 500 trades: 24 KB memory overhead.
-#[derive(Debug, Clone)]
-pub struct TradeSnapshot {
-    /// Timestamp in microseconds (matches AggTrade)
-    pub timestamp: i64,
-    /// Price as fixed-point
-    pub price: FixedPoint,
-    /// Volume as fixed-point
-    pub volume: FixedPoint,
-    /// Whether buyer is market maker (true = sell pressure)
-    pub is_buyer_maker: bool,
-    /// Turnover (price * volume) as i128 to prevent overflow
-    pub turnover: i128,
-}
-
-impl From<&AggTrade> for TradeSnapshot {
-    fn from(trade: &AggTrade) -> Self {
-        Self {
-            timestamp: trade.timestamp,
-            price: trade.price,
-            volume: trade.volume,
-            is_buyer_maker: trade.is_buyer_maker,
-            turnover: trade.turnover(),
-        }
-    }
-}
-
-/// Inter-bar features computed from lookback window
-///
-/// All features use `Option<T>` to indicate when computation is not possible
-/// (e.g., insufficient trades in lookback window).
-#[derive(Debug, Clone, Default)]
-pub struct InterBarFeatures {
-    // === Tier 1: Core Features (7) ===
-    /// Number of trades in lookback window
-    pub lookback_trade_count: Option<u32>,
-    /// Order Flow Imbalance: (buy_vol - sell_vol) / total_vol, range [-1, 1]
-    pub lookback_ofi: Option<f64>,
-    /// Duration of lookback window in microseconds
-    pub lookback_duration_us: Option<i64>,
-    /// Trade intensity: trades per second
-    pub lookback_intensity: Option<f64>,
-    /// Volume-weighted average price
-    pub lookback_vwap: Option<FixedPoint>,
-    /// VWAP position within price range: (vwap - low) / (high - low), range [0, 1]
-    pub lookback_vwap_position: Option<f64>,
-    /// Count imbalance: (buy_count - sell_count) / total_count, range [-1, 1]
-    pub lookback_count_imbalance: Option<f64>,
-
-    // === Tier 2: Statistical Features (5) ===
-    /// Kyle's Lambda proxy (normalized): ((last-first)/first) / ((buy-sell)/total)
-    pub lookback_kyle_lambda: Option<f64>,
-    /// Burstiness (Goh-Barabási): (σ_τ - μ_τ) / (σ_τ + μ_τ), range [-1, 1]
-    pub lookback_burstiness: Option<f64>,
-    /// Volume skewness (Fisher-Pearson coefficient)
-    pub lookback_volume_skew: Option<f64>,
-    /// Excess kurtosis: E[(V-μ)⁴] / σ⁴ - 3
-    pub lookback_volume_kurt: Option<f64>,
-    /// Price range normalized: (high - low) / first_price
-    pub lookback_price_range: Option<f64>,
-
-    // === Tier 3: Advanced Features (4) ===
-    /// Kaufman Efficiency Ratio: |net movement| / sum(|individual movements|), range [0, 1]
-    pub lookback_kaufman_er: Option<f64>,
-    /// Garman-Klass volatility estimator
-    pub lookback_garman_klass_vol: Option<f64>,
-    /// Hurst exponent via DFA, soft-clamped to [0, 1]
-    pub lookback_hurst: Option<f64>,
-    /// Permutation entropy (normalized), range [0, 1]
-    pub lookback_permutation_entropy: Option<f64>,
-}
+// Re-export types from interbar_types.rs (Phase 2b extraction)
+pub use crate::interbar_types::{InterBarConfig, InterBarFeatures, LookbackMode, TradeSnapshot};
 
 /// Trade history ring buffer for inter-bar feature computation
 #[derive(Debug, Clone)]
@@ -357,27 +250,29 @@ impl TradeHistory {
 
         // Accumulate buy/sell volumes and counts
         let (buy_vol, sell_vol, buy_count, sell_count, total_turnover) =
-            lookback.iter().fold((0.0, 0.0, 0u32, 0u32, 0i128), |acc, t| {
-                if t.is_buyer_maker {
-                    // Sell pressure
-                    (
-                        acc.0,
-                        acc.1 + t.volume.to_f64(),
-                        acc.2,
-                        acc.3 + 1,
-                        acc.4 + t.turnover,
-                    )
-                } else {
-                    // Buy pressure
-                    (
-                        acc.0 + t.volume.to_f64(),
-                        acc.1,
-                        acc.2 + 1,
-                        acc.3,
-                        acc.4 + t.turnover,
-                    )
-                }
-            });
+            lookback
+                .iter()
+                .fold((0.0, 0.0, 0u32, 0u32, 0i128), |acc, t| {
+                    if t.is_buyer_maker {
+                        // Sell pressure
+                        (
+                            acc.0,
+                            acc.1 + t.volume.to_f64(),
+                            acc.2,
+                            acc.3 + 1,
+                            acc.4 + t.turnover,
+                        )
+                    } else {
+                        // Buy pressure
+                        (
+                            acc.0 + t.volume.to_f64(),
+                            acc.1,
+                            acc.2 + 1,
+                            acc.3,
+                            acc.4 + t.turnover,
+                        )
+                    }
+                });
 
         let total_vol = buy_vol + sell_vol;
 
@@ -494,7 +389,7 @@ impl TradeHistory {
             features.lookback_hurst = Some(compute_hurst_dfa(&prices));
         }
 
-        // Permutation entropy (min 60 trades for m=3, need 10 × m! = 10 × 6 = 60)
+        // Permutation entropy (min 60 trades for m=3, need 10 * m! = 10 * 6 = 60)
         if n >= 60 {
             features.lookback_permutation_entropy = Some(compute_permutation_entropy(&prices));
         }
@@ -525,409 +420,17 @@ impl TradeHistory {
     }
 }
 
-// ============================================================================
-// Tier 2 Feature Computation Functions
-// ============================================================================
-
-/// Compute Kyle's Lambda (normalized version)
-///
-/// Formula: λ = ((price_end - price_start) / price_start) / ((buy_vol - sell_vol) / total_vol)
-///
-/// Reference: Kyle (1985), Hasbrouck (2009)
-///
-/// Interpretation:
-/// - λ > 0: Price moves in direction of order flow (normal)
-/// - λ < 0: Price moves against order flow (unusual)
-/// - |λ| high: Large price impact per unit imbalance (illiquid)
-fn compute_kyle_lambda(lookback: &[&TradeSnapshot]) -> f64 {
-    if lookback.len() < 2 {
-        return 0.0;
-    }
-
-    let first_price = lookback.first().unwrap().price.to_f64();
-    let last_price = lookback.last().unwrap().price.to_f64();
-
-    let (buy_vol, sell_vol): (f64, f64) = lookback.iter().fold((0.0, 0.0), |acc, t| {
-        if t.is_buyer_maker {
-            (acc.0, acc.1 + t.volume.to_f64())
-        } else {
-            (acc.0 + t.volume.to_f64(), acc.1)
-        }
-    });
-
-    let total_vol = buy_vol + sell_vol;
-    let normalized_imbalance = if total_vol > f64::EPSILON {
-        (buy_vol - sell_vol) / total_vol
-    } else {
-        0.0
-    };
-
-    // Division by zero guards (matches existing codebase pattern)
-    if normalized_imbalance.abs() > f64::EPSILON && first_price.abs() > f64::EPSILON {
-        ((last_price - first_price) / first_price) / normalized_imbalance
-    } else {
-        0.0 // No information when imbalance is zero
-    }
-}
-
-/// Compute Burstiness (Goh-Barabási)
-///
-/// Formula: B = (σ_τ - μ_τ) / (σ_τ + μ_τ)
-///
-/// Reference: Goh & Barabási (2008), EPL, Vol. 81, 48002
-///
-/// Interpretation:
-/// - B = -1: Perfectly regular (periodic) arrivals
-/// - B = 0: Poisson process
-/// - B = +1: Maximally bursty
-fn compute_burstiness(lookback: &[&TradeSnapshot]) -> f64 {
-    if lookback.len() < 2 {
-        return 0.0;
-    }
-
-    // Compute inter-arrival times (microseconds)
-    let inter_arrivals: Vec<f64> = lookback
-        .windows(2)
-        .map(|w| (w[1].timestamp - w[0].timestamp) as f64)
-        .collect();
-
-    let n = inter_arrivals.len() as f64;
-    let mu = inter_arrivals.iter().sum::<f64>() / n;
-
-    let variance = inter_arrivals.iter().map(|t| (t - mu).powi(2)).sum::<f64>() / n;
-    let sigma = variance.sqrt();
-
-    let denominator = sigma + mu;
-    if denominator > f64::EPSILON {
-        (sigma - mu) / denominator
-    } else {
-        0.0 // All trades at same timestamp
-    }
-}
-
-/// Compute volume moments (skewness and excess kurtosis)
-///
-/// Skewness: E[(V-μ)³] / σ³ (Fisher-Pearson coefficient)
-/// Excess Kurtosis: E[(V-μ)⁴] / σ⁴ - 3 (normal distribution = 0)
-fn compute_volume_moments(lookback: &[&TradeSnapshot]) -> (f64, f64) {
-    let volumes: Vec<f64> = lookback.iter().map(|t| t.volume.to_f64()).collect();
-    let n = volumes.len() as f64;
-
-    if n < 3.0 {
-        return (0.0, 0.0);
-    }
-
-    let mu = volumes.iter().sum::<f64>() / n;
-
-    // Central moments
-    let m2 = volumes.iter().map(|v| (v - mu).powi(2)).sum::<f64>() / n;
-    let m3 = volumes.iter().map(|v| (v - mu).powi(3)).sum::<f64>() / n;
-    let m4 = volumes.iter().map(|v| (v - mu).powi(4)).sum::<f64>() / n;
-
-    let sigma = m2.sqrt();
-
-    if sigma < f64::EPSILON {
-        return (0.0, 0.0); // All same volume
-    }
-
-    let skewness = m3 / sigma.powi(3);
-    let kurtosis = m4 / sigma.powi(4) - 3.0; // Excess kurtosis
-
-    (skewness, kurtosis)
-}
-
-// ============================================================================
-// Tier 3 Feature Computation Functions
-// ============================================================================
-
-/// Compute Kaufman Efficiency Ratio
-///
-/// Formula: ER = |net movement| / sum(|individual movements|)
-///
-/// Reference: Kaufman (1995) - Smarter Trading
-///
-/// Range: [0, 1] where 1 = perfect trend, 0 = pure noise
-fn compute_kaufman_er(prices: &[f64]) -> f64 {
-    if prices.len() < 2 {
-        return 0.0;
-    }
-
-    let net_movement = (prices.last().unwrap() - prices.first().unwrap()).abs();
-
-    let volatility: f64 = prices.windows(2).map(|w| (w[1] - w[0]).abs()).sum();
-
-    if volatility > f64::EPSILON {
-        net_movement / volatility
-    } else {
-        0.0 // No movement
-    }
-}
-
-/// Compute Garman-Klass volatility estimator
-///
-/// Formula: σ² = 0.5 × ln(H/L)² - (2×ln(2) - 1) × ln(C/O)²
-///
-/// Reference: Garman & Klass (1980), Journal of Business, vol. 53, no. 1
-///
-/// Exact coefficient: (2×ln(2) - 1) ≈ 0.386294 (computed, not hardcoded)
-fn compute_garman_klass(lookback: &[&TradeSnapshot]) -> f64 {
-    if lookback.is_empty() {
-        return 0.0;
-    }
-
-    // Compute OHLC from lookback window
-    let o = lookback.first().unwrap().price.to_f64();
-    let c = lookback.last().unwrap().price.to_f64();
-    let (l, h) = lookback.iter().fold((f64::MAX, f64::MIN), |acc, t| {
-        let p = t.price.to_f64();
-        (acc.0.min(p), acc.1.max(p))
-    });
-
-    // Guard: prices must be positive
-    if o <= f64::EPSILON || l <= f64::EPSILON || h <= f64::EPSILON {
-        return 0.0;
-    }
-
-    let log_hl = (h / l).ln();
-    let log_co = (c / o).ln();
-
-    // Use exact coefficient derivation, not magic number
-    let coef = 2.0 * 2.0_f64.ln() - 1.0; // ≈ 0.386294
-
-    let variance = 0.5 * log_hl.powi(2) - coef * log_co.powi(2);
-
-    // Variance can be negative due to the subtractive term
-    if variance > 0.0 {
-        variance.sqrt()
-    } else {
-        0.0 // Return 0 for unreliable estimate
-    }
-}
-
-/// Compute Hurst exponent via Detrended Fluctuation Analysis (DFA)
-///
-/// Reference: Peng et al. (1994), Nature, 356, 168-170
-///
-/// Interpretation:
-/// - H < 0.5: Anti-correlated (mean-reverting)
-/// - H = 0.5: Random walk
-/// - H > 0.5: Positively correlated (trending)
-///
-/// Output: soft-clamped to [0, 1] for ML consumption
-fn compute_hurst_dfa(prices: &[f64]) -> f64 {
-    const MIN_SAMPLES: usize = 64;
-    if prices.len() < MIN_SAMPLES {
-        return 0.5; // Neutral (insufficient data)
-    }
-
-    // Step 1: Compute profile (cumulative deviation from mean)
-    let mean = prices.iter().sum::<f64>() / prices.len() as f64;
-    let profile: Vec<f64> = prices
-        .iter()
-        .scan(0.0, |acc, &x| {
-            *acc += x - mean;
-            Some(*acc)
-        })
-        .collect();
-
-    let n = profile.len();
-
-    // Step 2-5: Compute F(n) for multiple box sizes
-    let min_box = 4;
-    let max_box = n / 4;
-    if max_box < min_box {
-        return 0.5;
-    }
-
-    let mut log_n = Vec::new();
-    let mut log_f = Vec::new();
-
-    // Generate ~10-20 box sizes logarithmically spaced
-    let num_scales = ((max_box as f64).ln() - (min_box as f64).ln()) / 0.25;
-    let num_scales = (num_scales as usize).max(4).min(20);
-
-    for i in 0..num_scales {
-        let box_size = (min_box as f64
-            * ((max_box as f64 / min_box as f64).powf(i as f64 / (num_scales - 1) as f64)))
-            as usize;
-        let box_size = box_size.max(min_box).min(max_box);
-
-        let f_n = compute_dfa_fluctuation(&profile, box_size);
-        if f_n > f64::EPSILON {
-            log_n.push((box_size as f64).ln());
-            log_f.push(f_n.ln());
-        }
-    }
-
-    if log_n.len() < 4 {
-        return 0.5;
-    }
-
-    // Step 6: Linear regression to get slope (Hurst exponent)
-    let hurst = linear_regression_slope(&log_n, &log_f);
-
-    // Soft clamp to [0, 1] using tanh (from trading-fitness pattern)
-    soft_clamp_hurst(hurst)
-}
-
-/// Compute DFA fluctuation for given box size
-fn compute_dfa_fluctuation(profile: &[f64], box_size: usize) -> f64 {
-    let n = profile.len();
-    let num_boxes = n / box_size;
-    if num_boxes == 0 {
-        return 0.0;
-    }
-
-    let mut total_variance = 0.0;
-
-    for i in 0..num_boxes {
-        let start = i * box_size;
-        let end = start + box_size;
-        let segment = &profile[start..end];
-
-        // Fit linear trend: y = a + b*x
-        let (a, b) = linear_fit(segment);
-
-        // Compute variance of detrended segment
-        let variance: f64 = segment
-            .iter()
-            .enumerate()
-            .map(|(j, &y)| {
-                let trend = a + b * (j as f64);
-                (y - trend).powi(2)
-            })
-            .sum::<f64>()
-            / box_size as f64;
-
-        total_variance += variance;
-    }
-
-    (total_variance / num_boxes as f64).sqrt()
-}
-
-/// Least squares fit: y = a + b*x where x = 0, 1, 2, ...
-fn linear_fit(y: &[f64]) -> (f64, f64) {
-    let n = y.len() as f64;
-    let sum_x = (n - 1.0) * n / 2.0;
-    let sum_x2 = (n - 1.0) * n * (2.0 * n - 1.0) / 6.0;
-    let sum_y: f64 = y.iter().sum();
-    let sum_xy: f64 = y.iter().enumerate().map(|(i, &v)| i as f64 * v).sum();
-
-    let denom = n * sum_x2 - sum_x * sum_x;
-    if denom.abs() < f64::EPSILON {
-        return (sum_y / n, 0.0); // Flat line
-    }
-
-    let b = (n * sum_xy - sum_x * sum_y) / denom;
-    let a = (sum_y - b * sum_x) / n;
-    (a, b)
-}
-
-/// Simple least squares slope
-fn linear_regression_slope(x: &[f64], y: &[f64]) -> f64 {
-    let n = x.len() as f64;
-    let mean_x = x.iter().sum::<f64>() / n;
-    let mean_y = y.iter().sum::<f64>() / n;
-
-    let num: f64 = x
-        .iter()
-        .zip(y.iter())
-        .map(|(&xi, &yi)| (xi - mean_x) * (yi - mean_y))
-        .sum();
-    let denom: f64 = x.iter().map(|&xi| (xi - mean_x).powi(2)).sum();
-
-    if denom.abs() < f64::EPSILON {
-        0.5
-    } else {
-        num / denom
-    }
-}
-
-/// Soft clamp Hurst to [0, 1] using tanh
-///
-/// Formula: 0.5 + 0.5 × tanh((x - 0.5) × 4)
-///
-/// Maps 0.5 → 0.5, and asymptotically approaches 0 or 1 for extreme values
-fn soft_clamp_hurst(h: f64) -> f64 {
-    0.5 + 0.5 * ((h - 0.5) * 4.0).tanh()
-}
-
-/// Compute Permutation Entropy
-///
-/// Formula: H_PE = -Σ p_π × ln(p_π) / ln(m!)
-///
-/// Reference: Bandt & Pompe (2002), Phys. Rev. Lett. 88, 174102
-///
-/// Output range: [0, 1] where 0 = deterministic, 1 = completely random
-fn compute_permutation_entropy(prices: &[f64]) -> f64 {
-    const M: usize = 3; // Embedding dimension (Bandt & Pompe recommend 3-7)
-    const MIN_SAMPLES: usize = 60; // Rule of thumb: 10 × m! = 10 × 6 = 60 for m=3
-
-    if prices.len() < MIN_SAMPLES {
-        return 1.0; // Insufficient data → max entropy (no information)
-    }
-
-    // Count occurrences of each permutation pattern
-    // For m=3, there are 3! = 6 possible patterns
-    let mut pattern_counts: [usize; 6] = [0; 6];
-    let n_patterns = prices.len() - M + 1;
-
-    for i in 0..n_patterns {
-        let window = &prices[i..i + M];
-        let pattern_idx = ordinal_pattern_index_m3(window[0], window[1], window[2]);
-        pattern_counts[pattern_idx] += 1;
-    }
-
-    // Compute Shannon entropy of pattern distribution
-    let total = n_patterns as f64;
-    let entropy: f64 = pattern_counts
-        .iter()
-        .filter(|&&count| count > 0)
-        .map(|&count| {
-            let p = count as f64 / total;
-            -p * p.ln()
-        })
-        .sum();
-
-    // Normalize by maximum possible entropy: ln(3!) = ln(6)
-    let max_entropy = 6.0_f64.ln(); // ≈ 1.7918
-
-    entropy / max_entropy
-}
-
-/// Get ordinal pattern index for m=3 (0-5)
-///
-/// Patterns (lexicographic order):
-/// 0: 012 (a ≤ b ≤ c)
-/// 1: 021 (a ≤ c < b)
-/// 2: 102 (b < a ≤ c)
-/// 3: 120 (b ≤ c < a)
-/// 4: 201 (c < a ≤ b)
-/// 5: 210 (c < b < a)
-fn ordinal_pattern_index_m3(a: f64, b: f64, c: f64) -> usize {
-    if a <= b {
-        if b <= c {
-            0
-        } else if a <= c {
-            1
-        } else {
-            4
-        }
-    } else if a <= c {
-        2
-    } else if b <= c {
-        3
-    } else {
-        5
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     // Helper to create test trades
-    fn create_test_snapshot(timestamp: i64, price: f64, volume: f64, is_buyer_maker: bool) -> TradeSnapshot {
+    fn create_test_snapshot(
+        timestamp: i64,
+        price: f64,
+        volume: f64,
+        is_buyer_maker: bool,
+    ) -> TradeSnapshot {
         let price_fp = FixedPoint((price * 1e8) as i64);
         let volume_fp = FixedPoint((volume * 1e8) as i64);
         TradeSnapshot {
@@ -950,7 +453,7 @@ mod tests {
             let trade = AggTrade {
                 agg_trade_id: i,
                 price: FixedPoint(5000000000000), // 50000
-                volume: FixedPoint(100000000), // 1.0
+                volume: FixedPoint(100000000),    // 1.0
                 first_trade_id: i,
                 last_trade_id: i,
                 timestamp: i * 1000,
@@ -962,8 +465,11 @@ mod tests {
 
         let features = history.compute_features(10000);
 
-        assert!((features.lookback_ofi.unwrap() - 1.0).abs() < f64::EPSILON,
-            "OFI should be 1.0 for all buys, got {}", features.lookback_ofi.unwrap());
+        assert!(
+            (features.lookback_ofi.unwrap() - 1.0).abs() < f64::EPSILON,
+            "OFI should be 1.0 for all buys, got {}",
+            features.lookback_ofi.unwrap()
+        );
     }
 
     #[test]
@@ -987,8 +493,11 @@ mod tests {
 
         let features = history.compute_features(10000);
 
-        assert!((features.lookback_ofi.unwrap() - (-1.0)).abs() < f64::EPSILON,
-            "OFI should be -1.0 for all sells, got {}", features.lookback_ofi.unwrap());
+        assert!(
+            (features.lookback_ofi.unwrap() - (-1.0)).abs() < f64::EPSILON,
+            "OFI should be -1.0 for all sells, got {}",
+            features.lookback_ofi.unwrap()
+        );
     }
 
     #[test]
@@ -1012,8 +521,11 @@ mod tests {
 
         let features = history.compute_features(10000);
 
-        assert!(features.lookback_ofi.unwrap().abs() < f64::EPSILON,
-            "OFI should be 0.0 for balanced volumes, got {}", features.lookback_ofi.unwrap());
+        assert!(
+            features.lookback_ofi.unwrap().abs() < f64::EPSILON,
+            "OFI should be 0.0 for balanced volumes, got {}",
+            features.lookback_ofi.unwrap()
+        );
     }
 
     // ========== Burstiness Tests ==========
@@ -1029,9 +541,12 @@ mod tests {
 
         let b = compute_burstiness(&lookback);
 
-        // Perfectly regular: σ = 0 → B = -1
-        assert!((b - (-1.0)).abs() < 0.01,
-            "Burstiness should be -1 for regular intervals, got {}", b);
+        // Perfectly regular: sigma = 0 -> B = -1
+        assert!(
+            (b - (-1.0)).abs() < 0.01,
+            "Burstiness should be -1 for regular intervals, got {}",
+            b
+        );
     }
 
     // ========== Kaufman ER Tests ==========
@@ -1041,8 +556,11 @@ mod tests {
         let prices = vec![100.0, 101.0, 102.0, 103.0, 104.0];
         let er = compute_kaufman_er(&prices);
 
-        assert!((er - 1.0).abs() < f64::EPSILON,
-            "Kaufman ER should be 1.0 for perfect trend, got {}", er);
+        assert!(
+            (er - 1.0).abs() < f64::EPSILON,
+            "Kaufman ER should be 1.0 for perfect trend, got {}",
+            er
+        );
     }
 
     #[test]
@@ -1050,20 +568,26 @@ mod tests {
         let prices = vec![100.0, 102.0, 104.0, 102.0, 100.0];
         let er = compute_kaufman_er(&prices);
 
-        assert!(er.abs() < f64::EPSILON,
-            "Kaufman ER should be 0.0 for round trip, got {}", er);
+        assert!(
+            er.abs() < f64::EPSILON,
+            "Kaufman ER should be 0.0 for round trip, got {}",
+            er
+        );
     }
 
     // ========== Permutation Entropy Tests ==========
 
     #[test]
     fn test_permutation_entropy_monotonic() {
-        // Strictly increasing: only pattern 012 appears → H = 0
+        // Strictly increasing: only pattern 012 appears -> H = 0
         let prices: Vec<f64> = (1..=100).map(|i| i as f64).collect();
         let pe = compute_permutation_entropy(&prices);
 
-        assert!(pe.abs() < f64::EPSILON,
-            "PE should be 0 for monotonic, got {}", pe);
+        assert!(
+            pe.abs() < f64::EPSILON,
+            "PE should be 0 for monotonic, got {}",
+            pe
+        );
     }
 
     // ========== Temporal Integrity Tests ==========
@@ -1094,8 +618,11 @@ mod tests {
         assert_eq!(lookback.len(), 2, "Should have 2 trades before bar open");
 
         for trade in &lookback {
-            assert!(trade.timestamp < 2000,
-                "Trade at {} should be before bar open at 2000", trade.timestamp);
+            assert!(
+                trade.timestamp < 2000,
+                "Trade at {} should be before bar open at 2000",
+                trade.timestamp
+            );
         }
     }
 
@@ -1110,7 +637,7 @@ mod tests {
             let trade = AggTrade {
                 agg_trade_id: i,
                 price: FixedPoint(5000000000000),
-                volume: FixedPoint(((i % 10 + 1) as i64) * 100000000),
+                volume: FixedPoint((i % 10 + 1) * 100000000),
                 first_trade_id: i,
                 last_trade_id: i,
                 timestamp: i * 1000,
@@ -1123,8 +650,11 @@ mod tests {
         let features = history.compute_features(100000);
         let imb = features.lookback_count_imbalance.unwrap();
 
-        assert!(imb >= -1.0 && imb <= 1.0,
-            "Count imbalance should be in [-1, 1], got {}", imb);
+        assert!(
+            imb >= -1.0 && imb <= 1.0,
+            "Count imbalance should be in [-1, 1], got {}",
+            imb
+        );
     }
 
     #[test]
@@ -1150,8 +680,11 @@ mod tests {
         let features = history.compute_features(20000);
         let pos = features.lookback_vwap_position.unwrap();
 
-        assert!(pos >= 0.0 && pos <= 1.0,
-            "VWAP position should be in [0, 1], got {}", pos);
+        assert!(
+            pos >= 0.0 && pos <= 1.0,
+            "VWAP position should be in [0, 1], got {}",
+            pos
+        );
     }
 
     #[test]
@@ -1160,14 +693,21 @@ mod tests {
         // Note: tanh approaches 0 and 1 asymptotically, so we use >= and <=
         for raw_h in [-10.0, -1.0, 0.0, 0.5, 1.0, 2.0, 10.0] {
             let clamped = soft_clamp_hurst(raw_h);
-            assert!(clamped >= 0.0 && clamped <= 1.0,
-                "Hurst {} soft-clamped to {} should be in [0, 1]", raw_h, clamped);
+            assert!(
+                clamped >= 0.0 && clamped <= 1.0,
+                "Hurst {} soft-clamped to {} should be in [0, 1]",
+                raw_h,
+                clamped
+            );
         }
 
         // Verify 0.5 maps to 0.5 exactly
         let h_half = soft_clamp_hurst(0.5);
-        assert!((h_half - 0.5).abs() < f64::EPSILON,
-            "Hurst 0.5 should map to 0.5, got {}", h_half);
+        assert!(
+            (h_half - 0.5).abs() < f64::EPSILON,
+            "Hurst 0.5 should map to 0.5, got {}",
+            h_half
+        );
     }
 
     // ========== Edge Case Tests ==========
@@ -1177,7 +717,9 @@ mod tests {
         let history = TradeHistory::new(InterBarConfig::default());
         let features = history.compute_features(1000);
 
-        assert!(features.lookback_trade_count.is_none() || features.lookback_trade_count == Some(0));
+        assert!(
+            features.lookback_trade_count.is_none() || features.lookback_trade_count == Some(0)
+        );
     }
 
     #[test]
@@ -1204,15 +746,22 @@ mod tests {
 
     #[test]
     fn test_kyle_lambda_zero_imbalance() {
-        // Equal buy/sell → imbalance = 0 → should return 0, not infinity
+        // Equal buy/sell -> imbalance = 0 -> should return 0, not infinity
         let t0 = create_test_snapshot(0, 100.0, 1.0, false); // buy
         let t1 = create_test_snapshot(1000, 102.0, 1.0, true); // sell
         let lookback: Vec<&TradeSnapshot> = vec![&t0, &t1];
 
         let lambda = compute_kyle_lambda(&lookback);
 
-        assert!(lambda.is_finite(), "Kyle lambda should be finite, got {}", lambda);
-        assert!(lambda.abs() < f64::EPSILON, "Kyle lambda should be 0 for zero imbalance");
+        assert!(
+            lambda.is_finite(),
+            "Kyle lambda should be finite, got {}",
+            lambda
+        );
+        assert!(
+            lambda.abs() < f64::EPSILON,
+            "Kyle lambda should be 0 for zero imbalance"
+        );
     }
 
     // ========== BarRelative Mode Tests (Issue #81) ==========
@@ -1277,14 +826,14 @@ mod tests {
         history.on_bar_close(); // total_pushed = 35
 
         // With BarRelative(2), after 3 bar closes we keep trades from last 2 bars:
-        // bar_close_indices = [10, 30, 35] → keep last 2 → from index 10 to 35 = 25 trades
+        // bar_close_indices = [10, 30, 35] -> keep last 2 -> from index 10 to 35 = 25 trades
         // But bar 1 trades (0-9) should be pruned, keeping bars 2+3 = 25 trades + bar 3's 5
         // Actually: bar_close_indices keeps n+1=3 boundaries: [10, 30, 35]
         // Oldest boundary at [len-n_bars] = [3-2] = index 1 = 30
         // keep_count = total_pushed(35) - 30 = 5
-        // But wait — we also have current in-progress trades.
+        // But wait -- we also have current in-progress trades.
         // After bar 3 closes with 35 total, and no more pushes:
-        // trades.len() should be ≤ keep_count from the prune in on_bar_close
+        // trades.len() should be <= keep_count from the prune in on_bar_close
         // The prune happens on each push, and on_bar_close records boundary then
         // next push triggers prune.
 
@@ -1295,8 +844,11 @@ mod tests {
         // keep_count = 36 - 30 = 6 (trades from bar 2 boundary onwards)
         // But we also have protected_until which prevents pruning lookback trades
         // Without protection set (no on_bar_open called), all trades can be pruned
-        assert!(history.len() <= 26, // 25 from bars 2+3 + 1 new, minus pruned old ones
-            "Should prune old bars, got {} trades", history.len());
+        assert!(
+            history.len() <= 26, // 25 from bars 2+3 + 1 new, minus pruned old ones
+            "Should prune old bars, got {} trades",
+            history.len()
+        );
     }
 
     #[test]
@@ -1334,8 +886,11 @@ mod tests {
         // Oldest boundary for pruning: [len-n_bars] = [3-2] = index 1 = 55
         // keep_count = 59 - 55 = 4 (3 from bar 3 + 1 new)
         // This correctly adapts: bar 2 had 50 trades but bar 3 only had 3
-        assert!(history.len() <= 54, // bar 2 + bar 3 + 1 = 54 max
-            "Mixed bar sizes should prune correctly, got {} trades", history.len());
+        assert!(
+            history.len() <= 54, // bar 2 + bar 3 + 1 = 54 max
+            "Mixed bar sizes should prune correctly, got {} trades",
+            history.len()
+        );
     }
 
     #[test]
@@ -1368,7 +923,7 @@ mod tests {
         // Simulate bar 2 opening at timestamp 20000
         history.on_bar_open(20000);
 
-        // Compute features for bar 2 — should use trades before 20000
+        // Compute features for bar 2 -- should use trades before 20000
         let features = history.compute_features(20000);
 
         // All 20 trades are before bar open, should have lookback features
@@ -1397,11 +952,16 @@ mod tests {
         // Reset boundaries (ouroboros)
         history.reset_bar_boundaries();
 
-        assert!(history.bar_close_indices.is_empty(),
-            "bar_close_indices should be empty after reset");
+        assert!(
+            history.bar_close_indices.is_empty(),
+            "bar_close_indices should be empty after reset"
+        );
         // Trades should still be there
-        assert_eq!(history.len(), 10,
-            "Trades should persist after boundary reset");
+        assert_eq!(
+            history.len(),
+            10,
+            "Trades should persist after boundary reset"
+        );
     }
 
     #[test]
@@ -1422,8 +982,11 @@ mod tests {
         }
 
         // With BarRelative(2), should keep at most n+1=3 boundaries
-        assert!(history.bar_close_indices.len() <= 3,
-            "Should keep at most n+1 boundaries, got {}", history.bar_close_indices.len());
+        assert!(
+            history.bar_close_indices.len() <= 3,
+            "Should keep at most n+1 boundaries, got {}",
+            history.bar_close_indices.len()
+        );
     }
 
     #[test]
@@ -1443,9 +1006,14 @@ mod tests {
         history.on_bar_close();
 
         // FixedCount(10) keeps 2*10=20 max
-        assert!(history.len() <= 20,
-            "FixedCount(10) should keep at most 20 trades, got {}", history.len());
-        assert!(history.bar_close_indices.is_empty(),
-            "FixedCount should not track bar boundaries");
+        assert!(
+            history.len() <= 20,
+            "FixedCount(10) should keep at most 20 trades, got {}",
+            history.len()
+        );
+        assert!(
+            history.bar_close_indices.is_empty(),
+            "FixedCount should not track bar boundaries"
+        );
     }
 }

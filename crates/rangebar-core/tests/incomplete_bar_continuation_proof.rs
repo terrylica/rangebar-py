@@ -7,9 +7,9 @@
 //!
 //! This is the TRUE validation of cross-file continuation.
 
+use rangebar_core::FixedPoint;
 use rangebar_core::processor::RangeBarProcessor;
 use rangebar_core::types::AggTrade;
-use rangebar_core::FixedPoint;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -120,7 +120,7 @@ fn test_incomplete_bar_continues_across_year_boundary() {
     println!("  Trade count:    {}", inc_bar.agg_record_count);
     println!("  Open time:      {}", inc_bar.open_time);
 
-    let incomplete_open = inc_bar.open.clone();
+    let incomplete_open = inc_bar.open;
     let incomplete_trade_count = inc_bar.agg_record_count;
 
     // ═══════════════════════════════════════════════════════════════════

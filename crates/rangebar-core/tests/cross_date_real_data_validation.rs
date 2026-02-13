@@ -6,10 +6,10 @@
 //! Data source: BTCUSDT-aggTrades-2024-01-01.csv (761,223 trades)
 //! Simulates daily file boundaries at multiple points.
 
+use rangebar_core::FixedPoint;
 use rangebar_core::checkpoint::PositionVerification;
 use rangebar_core::processor::RangeBarProcessor;
 use rangebar_core::types::AggTrade;
-use rangebar_core::FixedPoint;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 

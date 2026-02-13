@@ -21,13 +21,7 @@ from ..constants import (
 )
 from ..conversion import normalize_arrow_dtypes
 from ..exceptions import CacheReadError
-
-# Issue #90: ClickHouse query settings for FINAL reads.
-# Parallelizes dedup across partitions for ~7x speedup on multi-partition queries.
-# Safe because our partitions (symbol, threshold, month) are independent.
-FINAL_READ_SETTINGS: dict[str, int] = {
-    "do_not_merge_across_partitions_select_final": 1,
-}
+from .constants import FINAL_READ_SETTINGS
 
 logger = logging.getLogger(__name__)
 

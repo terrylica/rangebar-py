@@ -281,7 +281,10 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
 
         if !intervals.is_empty() {
             let mean_tau: f64 = intervals.iter().sum::<f64>() / intervals.len() as f64;
-            let variance: f64 = intervals.iter().map(|&x| (x - mean_tau).powi(2)).sum::<f64>()
+            let variance: f64 = intervals
+                .iter()
+                .map(|&x| (x - mean_tau).powi(2))
+                .sum::<f64>()
                 / intervals.len() as f64;
             let std_tau = variance.sqrt();
 
@@ -300,8 +303,7 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
     // Volume skewness (requires >= 3 trades)
     let volume_skew = if n >= 3 {
         let mean_v: f64 = volumes.iter().sum::<f64>() / n as f64;
-        let variance: f64 =
-            volumes.iter().map(|&v| (v - mean_v).powi(2)).sum::<f64>() / n as f64;
+        let variance: f64 = volumes.iter().map(|&v| (v - mean_v).powi(2)).sum::<f64>() / n as f64;
         let std_v = variance.sqrt();
 
         if std_v > f64::EPSILON {
@@ -317,8 +319,7 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
     // Volume kurtosis (requires >= 4 trades)
     let volume_kurt = if n >= 4 {
         let mean_v: f64 = volumes.iter().sum::<f64>() / n as f64;
-        let variance: f64 =
-            volumes.iter().map(|&v| (v - mean_v).powi(2)).sum::<f64>() / n as f64;
+        let variance: f64 = volumes.iter().map(|&v| (v - mean_v).powi(2)).sum::<f64>() / n as f64;
         let std_v = variance.sqrt();
 
         if std_v > f64::EPSILON {
@@ -334,10 +335,7 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
     // Kaufman Efficiency Ratio (requires >= 2 trades)
     let kaufman_er = if n >= 2 {
         let net_move = (prices[n - 1] - prices[0]).abs();
-        let path_length: f64 = prices
-            .windows(2)
-            .map(|w| (w[1] - w[0]).abs())
-            .sum();
+        let path_length: f64 = prices.windows(2).map(|w| (w[1] - w[0]).abs()).sum();
 
         if path_length > f64::EPSILON {
             Some((net_move / path_length).clamp(0.0, 1.0))
@@ -554,7 +552,12 @@ mod tests {
     use super::*;
     use crate::fixed_point::FixedPoint;
 
-    fn create_test_trade(price: f64, volume: f64, timestamp: i64, is_buyer_maker: bool) -> AggTrade {
+    fn create_test_trade(
+        price: f64,
+        volume: f64,
+        timestamp: i64,
+        is_buyer_maker: bool,
+    ) -> AggTrade {
         AggTrade {
             agg_trade_id: timestamp,
             price: FixedPoint((price * 1e8) as i64),
@@ -627,7 +630,10 @@ mod tests {
             .collect();
 
         let features = compute_intra_bar_features(&buy_trades);
-        assert!(features.intra_ofi.unwrap() > 0.9, "All buys should have OFI near 1.0");
+        assert!(
+            features.intra_ofi.unwrap() > 0.9,
+            "All buys should have OFI near 1.0"
+        );
 
         // All sells
         let sell_trades: Vec<AggTrade> = (0..5)
@@ -635,7 +641,10 @@ mod tests {
             .collect();
 
         let features = compute_intra_bar_features(&sell_trades);
-        assert!(features.intra_ofi.unwrap() < -0.9, "All sells should have OFI near -1.0");
+        assert!(
+            features.intra_ofi.unwrap() < -0.9,
+            "All sells should have OFI near -1.0"
+        );
     }
 
     #[test]
@@ -652,16 +661,32 @@ mod tests {
 
         // All ITH features should be bounded [0, 1]
         if let Some(v) = features.intra_bull_epoch_density {
-            assert!(v >= 0.0 && v <= 1.0, "bull_epoch_density out of bounds: {}", v);
+            assert!(
+                v >= 0.0 && v <= 1.0,
+                "bull_epoch_density out of bounds: {}",
+                v
+            );
         }
         if let Some(v) = features.intra_bear_epoch_density {
-            assert!(v >= 0.0 && v <= 1.0, "bear_epoch_density out of bounds: {}", v);
+            assert!(
+                v >= 0.0 && v <= 1.0,
+                "bear_epoch_density out of bounds: {}",
+                v
+            );
         }
         if let Some(v) = features.intra_bull_excess_gain {
-            assert!(v >= 0.0 && v <= 1.0, "bull_excess_gain out of bounds: {}", v);
+            assert!(
+                v >= 0.0 && v <= 1.0,
+                "bull_excess_gain out of bounds: {}",
+                v
+            );
         }
         if let Some(v) = features.intra_bear_excess_gain {
-            assert!(v >= 0.0 && v <= 1.0, "bear_excess_gain out of bounds: {}", v);
+            assert!(
+                v >= 0.0 && v <= 1.0,
+                "bear_excess_gain out of bounds: {}",
+                v
+            );
         }
         if let Some(v) = features.intra_bull_cv {
             assert!(v >= 0.0 && v <= 1.0, "bull_cv out of bounds: {}", v);
@@ -723,7 +748,11 @@ mod tests {
         }
         // Permutation entropy should be bounded [0, 1]
         if let Some(pe) = features.intra_permutation_entropy {
-            assert!(pe >= 0.0 && pe <= 1.0, "Permutation entropy out of bounds: {}", pe);
+            assert!(
+                pe >= 0.0 && pe <= 1.0,
+                "Permutation entropy out of bounds: {}",
+                pe
+            );
         }
     }
 }

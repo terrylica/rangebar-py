@@ -7,10 +7,10 @@
 //! Data source: Binance aggTrades via Vision API (spot/daily/aggTrades)
 //! Validates that incomplete bars are correctly continued across year boundaries.
 
+use rangebar_core::FixedPoint;
 use rangebar_core::checkpoint::PositionVerification;
 use rangebar_core::processor::RangeBarProcessor;
 use rangebar_core::types::AggTrade;
-use rangebar_core::FixedPoint;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;

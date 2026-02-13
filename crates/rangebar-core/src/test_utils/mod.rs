@@ -10,8 +10,8 @@
 
 pub mod generators; // Large-scale data generation for integration tests
 
-use crate::types::{AggTrade, DataSource, RangeBar};
 use crate::FixedPoint;
+use crate::types::{AggTrade, DataSource, RangeBar};
 
 /// Creates a standard test AggTrade with sensible defaults
 pub fn create_test_agg_trade(id: i64, price: &str, volume: &str, timestamp: i64) -> AggTrade {

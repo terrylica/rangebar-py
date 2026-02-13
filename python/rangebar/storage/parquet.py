@@ -11,229 +11,35 @@ Compression choice (based on empirical benchmark 2026-01-07):
 
 from __future__ import annotations
 
-import contextlib
 import logging
-import os
 import shutil
-import tempfile
 from collections.abc import Iterator
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import polars as pl
-from platformdirs import user_cache_dir
+
+from .parquet_io import (
+    COMPRESSION,
+    COMPRESSION_LEVEL,
+    _atomic_write_parquet,
+    _is_valid_parquet,  # noqa: F401 - re-exported for backward compatibility
+    _validate_and_recover_parquet,
+    get_cache_dir,
+)
+from .parquet_query import (
+    _get_parquet_path,
+    _get_symbol_dir,
+    _timestamp_to_year_month,
+)
+from .parquet_query import fetch_date_range as _fetch_date_range
+from .parquet_query import has_ticks as _has_ticks
+from .parquet_query import read_ticks_streaming as _read_ticks_streaming
 
 if TYPE_CHECKING:
     import pandas as pd
 
-# Constants
-COMPRESSION = "zstd"
-COMPRESSION_LEVEL = 3
-APP_NAME = "rangebar"
-APP_AUTHOR = "terrylica"
-
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# Parquet Validation and Atomic Write Helpers (Issue #73)
-# =============================================================================
-
-# Minimum valid Parquet file size: 4 (header) + 4 (footer length) + 4 (footer magic)
-_MIN_PARQUET_SIZE = 12
-_PARQUET_MAGIC = b"PAR1"
-
-
-def _is_valid_parquet(path: Path) -> tuple[bool, str]:  # noqa: PLR0911
-    """Check if file is valid Parquet by verifying PAR1 magic bytes.
-
-    Parquet files MUST start and end with b"PAR1" (4 bytes each).
-    Minimum valid size: 12 bytes (4 header + 4 footer length + 4 footer magic).
-
-    Parameters
-    ----------
-    path : Path
-        Path to the Parquet file to validate.
-
-    Returns
-    -------
-    tuple[bool, str]
-        (is_valid, reason) - reason is empty string if valid.
-
-    Examples
-    --------
-    >>> is_valid, reason = _is_valid_parquet(Path("data.parquet"))
-    >>> if not is_valid:
-    ...     print(f"Corrupted: {reason}")
-    """
-    if not path.exists():
-        return False, "file does not exist"
-
-    try:
-        size = path.stat().st_size
-    except OSError as e:
-        return False, f"stat error: {e}"
-
-    if size < _MIN_PARQUET_SIZE:
-        return False, f"file too small ({size} bytes, minimum {_MIN_PARQUET_SIZE})"
-
-    try:
-        with path.open("rb") as f:
-            header = f.read(4)
-            if header != _PARQUET_MAGIC:
-                return False, f"invalid header magic: {header!r}"
-            f.seek(-4, 2)  # Seek to 4 bytes before end
-            footer = f.read(4)
-            if footer != _PARQUET_MAGIC:
-                return False, f"invalid footer magic: {footer!r}"
-    except OSError as e:
-        return False, f"read error: {e}"
-
-    return True, ""
-
-
-def _validate_and_recover_parquet(path: Path, *, auto_delete: bool = True) -> bool:
-    """Validate Parquet file and auto-delete if corrupted.
-
-    Returns True if valid, False if corrupted (and deleted if auto_delete=True).
-    Raises ParquetCorruptionError if corrupted and auto_delete=False.
-
-    Parameters
-    ----------
-    path : Path
-        Path to the Parquet file to validate.
-    auto_delete : bool
-        If True (default), delete corrupted files for re-fetch.
-        If False, raise ParquetCorruptionError instead.
-
-    Returns
-    -------
-    bool
-        True if file is valid, False if corrupted and deleted.
-
-    Raises
-    ------
-    ParquetCorruptionError
-        If file is corrupted and auto_delete=False.
-
-    Examples
-    --------
-    >>> if not _validate_and_recover_parquet(path, auto_delete=True):
-    ...     # File was corrupted and deleted, will be re-fetched
-    ...     pass
-    """
-    is_valid, reason = _is_valid_parquet(path)
-    if is_valid:
-        return True
-
-    logger.warning("Corrupted Parquet file detected: %s (%s)", path, reason)
-
-    if auto_delete:
-        try:
-            path.unlink()
-            logger.info("Auto-deleted corrupted file for re-fetch: %s", path)
-        except OSError:
-            logger.exception("Failed to delete corrupted file %s", path)
-        return False
-
-    from rangebar.exceptions import ParquetCorruptionError
-
-    msg = f"Corrupted Parquet file: {path} ({reason})"
-    raise ParquetCorruptionError(msg, path=path, reason=reason)
-
-
-def _atomic_write_parquet(
-    df: pl.DataFrame,
-    target_path: Path,
-    *,
-    compression: str = COMPRESSION,
-    compression_level: int = COMPRESSION_LEVEL,
-) -> None:
-    """Write Parquet file atomically using tempfile + fsync + rename.
-
-    Guarantees: target_path is either complete valid Parquet or doesn't exist.
-    Never leaves partial/corrupted files on crash or kill.
-
-    Parameters
-    ----------
-    df : pl.DataFrame
-        DataFrame to write.
-    target_path : Path
-        Final destination path for the Parquet file.
-    compression : str
-        Compression codec (default: "zstd").
-    compression_level : int
-        Compression level (default: 3).
-
-    Raises
-    ------
-    OSError
-        If write fails (temp file is cleaned up automatically).
-    RuntimeError
-        If Polars write fails (temp file is cleaned up automatically).
-
-    Notes
-    -----
-    This function uses the POSIX atomic rename guarantee: Path.replace() is
-    atomic on the same filesystem. The temp file is created in the same
-    directory to ensure it's on the same filesystem.
-
-    Examples
-    --------
-    >>> _atomic_write_parquet(df, Path("data.parquet"))
-    """
-    # Create temp file in same directory (required for atomic rename on same filesystem)
-    fd, temp_path_str = tempfile.mkstemp(
-        dir=target_path.parent,
-        prefix=".parquet_",
-        suffix=".tmp",
-    )
-    temp_path = Path(temp_path_str)
-
-    try:
-        os.close(fd)  # Close fd, Polars will open it itself
-        df.write_parquet(
-            temp_path,
-            compression=compression,
-            compression_level=compression_level,
-        )
-        # Sync to disk before rename to ensure durability
-        with temp_path.open("rb") as f:
-            os.fsync(f.fileno())
-        # Atomic rename (POSIX guarantees atomicity on same filesystem)
-        temp_path.replace(target_path)
-    except (OSError, RuntimeError):
-        # Clean up temp file on any failure
-        with contextlib.suppress(OSError):
-            temp_path.unlink(missing_ok=True)
-        raise
-
-
-def get_cache_dir() -> Path:
-    """Get the cross-platform cache directory for rangebar.
-
-    Returns
-    -------
-    Path
-        Platform-specific cache directory:
-        - macOS:   ~/Library/Caches/rangebar/
-        - Linux:   ~/.cache/rangebar/ (respects XDG_CACHE_HOME)
-        - Windows: %USERPROFILE%\\AppData\\Local\\terrylica\\rangebar\\Cache\\
-
-    Examples
-    --------
-    >>> from rangebar.storage import get_cache_dir
-    >>> cache_dir = get_cache_dir()
-    >>> print(cache_dir)
-    /Users/username/Library/Caches/rangebar
-    """
-    # Allow override via environment variable
-    env_override = os.getenv("RANGEBAR_CACHE_DIR")
-    if env_override:
-        return Path(env_override)
-
-    return Path(user_cache_dir(APP_NAME, APP_AUTHOR))
 
 
 class TickStorage:
@@ -291,7 +97,7 @@ class TickStorage:
 
     def _get_symbol_dir(self, symbol: str) -> Path:
         """Get directory for a symbol's tick files."""
-        return self._ticks_dir / symbol
+        return _get_symbol_dir(self._ticks_dir, symbol)
 
     def _get_parquet_path(self, symbol: str, year_month: str) -> Path:
         """Get path for a specific month's parquet file.
@@ -308,12 +114,11 @@ class TickStorage:
         Path
             Path to the parquet file
         """
-        return self._get_symbol_dir(symbol) / f"{year_month}.parquet"
+        return _get_parquet_path(self._ticks_dir, symbol, year_month)
 
     def _timestamp_to_year_month(self, timestamp_ms: int) -> str:
         """Convert millisecond timestamp to year-month string."""
-        dt = datetime.fromtimestamp(timestamp_ms / 1000, tz=UTC)
-        return dt.strftime("%Y-%m")
+        return _timestamp_to_year_month(timestamp_ms)
 
     def write_ticks(
         self,
@@ -402,7 +207,7 @@ class TickStorage:
 
         return total_rows
 
-    # Default Parquet compression ratio (compressed → in-memory expansion)
+    # Default Parquet compression ratio (compressed -> in-memory expansion)
     # Empirically measured: Binance aggTrades Parquet files expand ~4x
     _COMPRESSION_RATIO: float = 4.0
 
@@ -514,7 +319,7 @@ class TickStorage:
         # Sort and materialize
         return result.sort(timestamp_col).collect()
 
-    def read_ticks_streaming(  # noqa: PLR0912
+    def read_ticks_streaming(
         self,
         symbol: str,
         start_ts: int | None = None,
@@ -558,103 +363,16 @@ class TickStorage:
         >>> for chunk in storage.read_ticks_streaming("BTCUSDT", start_ts, end_ts):
         ...     process_chunk(chunk)
         """
-        symbol_dir = self._get_symbol_dir(symbol)
+        return _read_ticks_streaming(
+            self._ticks_dir,
+            symbol,
+            start_ts,
+            end_ts,
+            chunk_size=chunk_size,
+            timestamp_col=timestamp_col,
+        )
 
-        if not symbol_dir.exists():
-            return
-
-        # Find relevant parquet files
-        parquet_files = sorted(symbol_dir.glob("*.parquet"))
-
-        if not parquet_files:
-            return
-
-        # Filter files by month if time range specified
-        if start_ts is not None and end_ts is not None:
-            start_month = self._timestamp_to_year_month(start_ts)
-            end_month = self._timestamp_to_year_month(end_ts)
-
-            parquet_files = [
-                f for f in parquet_files if start_month <= f.stem <= end_month
-            ]
-
-        if not parquet_files:
-            return
-
-        # Issue #73: Validate files before streaming, auto-delete corrupted ones
-        valid_files = []
-        for f in parquet_files:
-            if _validate_and_recover_parquet(f, auto_delete=True):
-                valid_files.append(f)
-            # else: corrupted file deleted, will be re-fetched on next call
-
-        if not valid_files:
-            return
-
-        parquet_files = valid_files
-
-        # Process each parquet file using PyArrow's row group-based reading
-        # Row groups are Parquet's native chunking mechanism (typically 64K-1M rows)
-        # This is the key to avoiding OOM - we never load the entire file into memory
-        import pyarrow.parquet as pq
-
-        for parquet_file in parquet_files:
-            # Read parquet file in row groups
-            parquet_reader = pq.ParquetFile(parquet_file)
-            num_row_groups = parquet_reader.metadata.num_row_groups
-
-            accumulated_rows: list[pl.DataFrame] = []
-            accumulated_count = 0
-
-            for rg_idx in range(num_row_groups):
-                # Read single row group into PyArrow table (memory efficient)
-                row_group = parquet_reader.read_row_group(rg_idx)
-                chunk_df = pl.from_arrow(row_group)
-
-                # Apply time range filter using Polars expressions
-                if start_ts is not None:
-                    chunk_df = chunk_df.filter(
-                        pl.col(timestamp_col) >= pl.lit(start_ts)
-                    )
-                if end_ts is not None:
-                    chunk_df = chunk_df.filter(pl.col(timestamp_col) <= pl.lit(end_ts))
-
-                if chunk_df.is_empty():
-                    continue
-
-                accumulated_rows.append(chunk_df)
-                accumulated_count += len(chunk_df)
-
-                # Yield when accumulated enough rows
-                while accumulated_count >= chunk_size:
-                    # Concatenate and slice
-                    combined = pl.concat(accumulated_rows)
-                    combined = combined.sort(timestamp_col)
-
-                    # Yield chunk_size rows
-                    yield combined.slice(0, chunk_size)
-
-                    # Keep remainder for next iteration
-                    remainder_count = accumulated_count - chunk_size
-                    if remainder_count > 0:
-                        remainder = combined.slice(chunk_size, remainder_count)
-                        accumulated_rows = [remainder]
-                        accumulated_count = len(remainder)
-                    else:
-                        accumulated_rows = []
-                        accumulated_count = 0
-
-                    del combined
-
-            # Yield any remaining rows
-            if accumulated_rows:
-                combined = pl.concat(accumulated_rows)
-                combined = combined.sort(timestamp_col)
-                if not combined.is_empty():
-                    yield combined
-                del combined
-
-    def has_ticks(  # noqa: PLR0911
+    def has_ticks(
         self,
         symbol: str,
         start_ts: int,
@@ -686,65 +404,14 @@ class TickStorage:
         bool
             True if sufficient data exists
         """
-        symbol_dir = self._get_symbol_dir(symbol)
-        if not symbol_dir.exists():
-            return False
-
-        parquet_files = sorted(symbol_dir.glob("*.parquet"))
-        if not parquet_files:
-            return False
-
-        # Filter files by month range
-        start_month = self._timestamp_to_year_month(start_ts)
-        end_month = self._timestamp_to_year_month(end_ts)
-        parquet_files = [
-            f for f in parquet_files if start_month <= f.stem <= end_month
-        ]
-
-        if not parquet_files:
-            return False
-
-        # Issue #73: Validate files before reading
-        valid_files = [
-            f
-            for f in parquet_files
-            if _validate_and_recover_parquet(f, auto_delete=True)
-        ]
-        if not valid_files:
-            return False
-
-        # Lazy scan: reads only timestamp column metadata, never materializes full data
-        lazy = pl.scan_parquet(valid_files)
-
-        # Apply time range filter (predicate pushdown)
-        lazy = lazy.filter(
-            (pl.col(timestamp_col) >= start_ts)
-            & (pl.col(timestamp_col) <= end_ts)
+        return _has_ticks(
+            self._ticks_dir,
+            symbol,
+            start_ts,
+            end_ts,
+            min_coverage=min_coverage,
+            timestamp_col=timestamp_col,
         )
-
-        # Aggregate: only reads min/max of timestamp column
-        stats = lazy.select(
-            pl.col(timestamp_col).min().alias("min_ts"),
-            pl.col(timestamp_col).max().alias("max_ts"),
-            pl.col(timestamp_col).count().alias("count"),
-        ).collect()
-
-        if stats["count"][0] == 0:
-            return False
-
-        actual_start = stats["min_ts"][0]
-        actual_end = stats["max_ts"][0]
-        if actual_start is None or actual_end is None:
-            return False
-
-        actual_range = actual_end - actual_start
-        requested_range = end_ts - start_ts
-
-        if requested_range == 0:
-            return stats["count"][0] > 0
-
-        coverage = actual_range / requested_range
-        return coverage >= min_coverage
 
     def list_symbols(self) -> list[str]:
         """List all symbols with stored tick data.
@@ -862,7 +529,7 @@ class TickStorage:
         year: int,
         month: int,
         *,
-        timestamp_col: str = "timestamp",  # noqa: ARG002 - reserved for filtering
+        timestamp_col: str = "timestamp",
         force_refresh: bool = False,
     ) -> pl.LazyFrame:
         """Fetch tick data for a specific month (lazy loading).
@@ -950,26 +617,9 @@ class TickStorage:
         - Data is NOT automatically downloaded - use get_range_bars() first
         - Each LazyFrame can be collected independently for O(month) memory
         """
-        start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=UTC)
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=UTC)
-
-        current = start_dt.replace(day=1)
-        while current <= end_dt:
-            year = current.year
-            month = current.month
-
-            lf = self.fetch_month(symbol, year, month, timestamp_col=timestamp_col)
-
-            # Only yield non-empty LazyFrames
-            # Note: We can't easily check if LazyFrame is empty without collecting
-            # So we yield all and let caller handle empty results
-            parquet_path = self._get_parquet_path(symbol, f"{year}-{month:02d}")
-            if parquet_path.exists():
-                yield lf
-
-            # Move to next month
-            _december = 12
-            if current.month == _december:
-                current = current.replace(year=current.year + 1, month=1)
-            else:
-                current = current.replace(month=current.month + 1)
+        return _fetch_date_range(
+            self._ticks_dir,
+            symbol,
+            start_date,
+            end_date,
+        )

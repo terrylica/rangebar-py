@@ -128,8 +128,7 @@ pub fn bull_ith(nav: &[f64], tmaeg: f64) -> BullIthResult {
         }
 
         // Check bull epoch condition
-        let bull_epoch_condition =
-            excess_gains[i] > excess_losses[i] && excess_gains[i] > tmaeg;
+        let bull_epoch_condition = excess_gains[i] > excess_losses[i] && excess_gains[i] > tmaeg;
         epochs[i] = bull_epoch_condition;
     }
 
@@ -261,8 +260,7 @@ pub fn bear_ith(nav: &[f64], tmaeg: f64) -> BearIthResult {
         }
 
         // Check bear epoch condition
-        let bear_epoch_condition =
-            excess_gains[i] > excess_losses[i] && excess_gains[i] > tmaeg;
+        let bear_epoch_condition = excess_gains[i] > excess_losses[i] && excess_gains[i] > tmaeg;
         epochs[i] = bear_epoch_condition;
     }
 
@@ -328,8 +326,8 @@ fn calculate_intervals_cv_numba_style(epochs: &[bool], num_of_epochs: usize) -> 
     }
 
     // Calculate std (population std, matching numpy default)
-    let variance: f64 = intervals.iter().map(|&x| (x - mean).powi(2)).sum::<f64>()
-        / intervals.len() as f64;
+    let variance: f64 =
+        intervals.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / intervals.len() as f64;
 
     let std_dev = variance.sqrt();
 

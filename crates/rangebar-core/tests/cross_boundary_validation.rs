@@ -114,9 +114,12 @@ fn test_cross_boundary_bar_continuation_with_real_data() {
             i, full.close, split.close
         );
         assert_eq!(
-            full.volume, split.volume, // Issue #88: i128 volume
+            full.volume,
+            split.volume, // Issue #88: i128 volume
             "Bar {} volume mismatch: {} vs {}",
-            i, full.volume, split.volume
+            i,
+            full.volume,
+            split.volume
         );
     }
 

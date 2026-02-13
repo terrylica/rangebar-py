@@ -34,5 +34,5 @@ pub mod normalize;
 pub mod types;
 
 // Re-export main types and functions
-pub use features::{compute_intra_bar_features, IntraBarFeatures};
+pub use features::{IntraBarFeatures, compute_intra_bar_features};
 pub use types::{BearIthResult, BullIthResult};

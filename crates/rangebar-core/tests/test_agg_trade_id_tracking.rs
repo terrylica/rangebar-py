@@ -11,9 +11,9 @@ fn create_trade(agg_trade_id: i64, timestamp_ms: i64, price: &str, quantity: &st
         agg_trade_id,
         price: FixedPoint::from_str(price).unwrap(),
         volume: FixedPoint::from_str(quantity).unwrap(),
-        first_trade_id: agg_trade_id * 10,     // Individual trade IDs
-        last_trade_id: agg_trade_id * 10 + 2,  // Individual trade IDs
-        timestamp: timestamp_ms * 1000, // Convert to microseconds
+        first_trade_id: agg_trade_id * 10, // Individual trade IDs
+        last_trade_id: agg_trade_id * 10 + 2, // Individual trade IDs
+        timestamp: timestamp_ms * 1000,    // Convert to microseconds
         is_buyer_maker: agg_trade_id % 2 == 0,
         is_best_match: Some(true),
     }
@@ -61,8 +61,14 @@ fn test_multi_trade_bar_first_less_than_last() {
     assert!(!bars.is_empty(), "Should produce at least one bar");
     let bar = &bars[0];
 
-    assert_eq!(bar.first_agg_trade_id, 2000, "First agg_trade_id should be 2000");
-    assert_eq!(bar.last_agg_trade_id, 2004, "Last agg_trade_id should be 2004 (breach)");
+    assert_eq!(
+        bar.first_agg_trade_id, 2000,
+        "First agg_trade_id should be 2000"
+    );
+    assert_eq!(
+        bar.last_agg_trade_id, 2004,
+        "Last agg_trade_id should be 2004 (breach)"
+    );
     assert!(
         bar.first_agg_trade_id < bar.last_agg_trade_id,
         "first < last for multi-trade bar"
@@ -102,7 +108,10 @@ fn test_sequential_continuity_no_gaps() {
 
     let bars = processor.process_agg_trade_records(&trades).unwrap();
 
-    assert!(bars.len() >= 2, "Should produce multiple bars for gap testing");
+    assert!(
+        bars.len() >= 2,
+        "Should produce multiple bars for gap testing"
+    );
 
     for i in 1..bars.len() {
         let prev_last = bars[i - 1].last_agg_trade_id;

@@ -245,7 +245,9 @@ pub enum CheckpointError {
     SerializationError { message: String },
 
     /// Invalid threshold in checkpoint (Issue #62: crypto minimum threshold enforcement)
-    #[error("Invalid threshold in checkpoint: {threshold} dbps. Valid range: {min_threshold}-{max_threshold} dbps")]
+    #[error(
+        "Invalid threshold in checkpoint: {threshold} dbps. Valid range: {min_threshold}-{max_threshold} dbps"
+    )]
     InvalidThreshold {
         threshold: u32,
         min_threshold: u32,

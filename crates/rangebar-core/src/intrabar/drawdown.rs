@@ -113,11 +113,7 @@ mod tests {
         // Decline from 1.0 to 0.8 = 20% drawdown
         let prices = vec![1.0, 0.95, 0.9, 0.85, 0.8];
         let dd = compute_max_drawdown(&prices);
-        assert!(
-            (dd - 0.2).abs() < 0.01,
-            "Expected 20% drawdown, got {}",
-            dd
-        );
+        assert!((dd - 0.2).abs() < 0.01, "Expected 20% drawdown, got {}", dd);
     }
 
     #[test]

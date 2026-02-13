@@ -22,9 +22,9 @@
 //! - Used by all integration test files
 //! - Changes propagate automatically to all tests
 
+use crate::FixedPoint;
 use crate::processor::ExportRangeBarProcessor;
 use crate::types::{AggTrade, RangeBar};
-use crate::FixedPoint;
 
 // =============================================================================
 // Test Trade Creation (Centralized - used by all test files)

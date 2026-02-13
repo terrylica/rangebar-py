@@ -295,6 +295,17 @@ ignore = [
 ]
 "python/rangebar/storage/parquet.py" = [
     "PLC0415", # Lazy imports (pyarrow inside generator for streaming)
+    "ARG002",  # Unused method args (timestamp_col kept for API stability)
+]
+"python/rangebar/storage/parquet_io.py" = [
+    "PLC0415", # Lazy imports (rangebar.exceptions inside validation)
+    "PLR0911", # Too many return statements (parquet validation has many exit paths)
+]
+"python/rangebar/storage/parquet_query.py" = [
+    "PLC0415", # Lazy imports (pyarrow.parquet inside streaming generator)
+    "PLR0911", # Too many return statements (has_ticks has many early-exit checks)
+    "PLR0912", # Too many branches (read_ticks_streaming handles many edge cases)
+    "ARG001",  # Unused function args (timestamp_col kept for API stability)
 ]
 "python/rangebar/compat/*.py" = [
     "PLC0415", # Lazy imports (avoid circular imports with _core)

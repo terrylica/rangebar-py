@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, Literal
 import pandas as pd
 
 from rangebar.processors.core import RangeBarProcessor
-from rangebar.validation.cache_staleness import detect_staleness
 
 from .helpers import (
     _datetime_to_end_ms,
@@ -429,67 +428,19 @@ def get_range_bars(
     # Check ClickHouse bar cache first (Issue #21: fast path for precomputed bars)
     # -------------------------------------------------------------------------
     if use_cache:
-        try:
-            import time as _time
+        from .range_bars_cache import try_cache_read
 
-            from rangebar.clickhouse import RangeBarCache
-            from rangebar.logging import get_logger
-
-            with RangeBarCache() as cache:
-                # Ouroboros mode filter ensures cache isolation (Plan: sparkling-coalescing-dijkstra.md)
-                _t0 = _time.perf_counter()
-                cached_bars = cache.get_bars_by_timestamp_range(
-                    symbol=symbol,
-                    threshold_decimal_bps=threshold_decimal_bps,
-                    start_ts=start_ts,
-                    end_ts=end_ts,
-                    include_microstructure=include_microstructure,
-                    ouroboros_mode=ouroboros,
-                )
-                _query_ms = (_time.perf_counter() - _t0) * 1000
-                _hit = cached_bars is not None and len(cached_bars) > 0
-                get_logger().bind(
-                    component="cache_query",
-                    trace_id=trace_id,
-                    symbol=symbol,
-                    threshold_dbps=threshold_decimal_bps,
-                    hit=_hit,
-                    bar_count=len(cached_bars) if _hit else 0,
-                    query_ms=round(_query_ms, 2),
-                ).info(
-                    f"cache_query: {symbol}@{threshold_decimal_bps} "
-                    f"{'HIT' if _hit else 'MISS'} ({_query_ms:.1f}ms)"
-                )
-                if cached_bars is not None and len(cached_bars) > 0:
-                    # Tier 0 validation: Content-based staleness detection (Issue #39)
-                    # This catches stale cached data from pre-v7.0 (e.g., VWAP=0)
-                    if include_microstructure:
-                        staleness = detect_staleness(
-                            cached_bars, require_microstructure=True
-                        )
-                        if staleness.is_stale:
-                            import logging
-
-                            logger = logging.getLogger(__name__)
-                            logger.warning(
-                                "Stale cache data detected for %s: %s. "
-                                "Falling through to recompute.",
-                                symbol,
-                                staleness.reason,
-                            )
-                            # Fall through to tick processing path
-                        else:
-                            # Fast path: return validated bars from ClickHouse (~50ms)
-                            return cached_bars
-                    else:
-                        # Fast path: return precomputed bars from ClickHouse (~50ms)
-                        return cached_bars
-        except ImportError:
-            # ClickHouse not available, fall through to tick processing
-            pass
-        except ConnectionError:
-            # ClickHouse connection failed, fall through to tick processing
-            pass
+        cached_bars = try_cache_read(
+            symbol=symbol,
+            threshold_decimal_bps=threshold_decimal_bps,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            include_microstructure=include_microstructure,
+            ouroboros=ouroboros,
+            trace_id=trace_id,
+        )
+        if cached_bars is not None:
+            return cached_bars
 
     # -------------------------------------------------------------------------
     # Initialize storage (Tier 1: local Parquet ticks)
@@ -704,98 +655,25 @@ def get_range_bars(
     # -------------------------------------------------------------------------
     # Add exchange session flags (Issue #8)
     # -------------------------------------------------------------------------
-    # Session flags indicate which traditional market sessions were active
-    # at bar close time. Useful for analyzing crypto/forex behavior.
-    if include_exchange_sessions and not bars_df.empty:
-        import warnings
+    if include_exchange_sessions:
+        from .range_bars_enrich import enrich_exchange_sessions
 
-        from rangebar.ouroboros import get_active_exchange_sessions
-
-        # Compute session flags for each bar based on close timestamp (index)
-        session_data = {
-            "exchange_session_sydney": [],
-            "exchange_session_tokyo": [],
-            "exchange_session_london": [],
-            "exchange_session_newyork": [],
-        }
-        for ts in bars_df.index:
-            # Ensure timezone-aware UTC timestamp
-            if ts.tzinfo is None:
-                ts_utc = ts.tz_localize("UTC")
-            else:
-                ts_utc = ts.tz_convert("UTC")
-            # Suppress nanosecond warning - session detection is hour-granularity
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", "Discarding nonzero nanoseconds")
-                flags = get_active_exchange_sessions(ts_utc.to_pydatetime())
-            session_data["exchange_session_sydney"].append(flags.sydney)
-            session_data["exchange_session_tokyo"].append(flags.tokyo)
-            session_data["exchange_session_london"].append(flags.london)
-            session_data["exchange_session_newyork"].append(flags.newyork)
-
-        # Add columns to DataFrame
-        for col, values in session_data.items():
-            bars_df[col] = values
+        bars_df = enrich_exchange_sessions(bars_df)
 
     # -------------------------------------------------------------------------
     # Write computed bars to ClickHouse cache (Issue #37)
     # -------------------------------------------------------------------------
-    # Cache write is non-blocking: failures don't affect the return value.
-    # The computation succeeded, so we return bars even if caching fails.
-    if use_cache and bars_df is not None and not bars_df.empty:
-        try:
-            from rangebar.clickhouse import RangeBarCache
-            from rangebar.exceptions import CacheError
+    if use_cache:
+        from .range_bars_cache import try_cache_write
 
-            with RangeBarCache() as cache:
-                # Phase 3+4: Route through store_bars_batch (Arrow path, 2-3 copies)
-                # instead of store_bars_bulk (pandas path, 5-7 copies)
-                import polars as pl
-
-                bars_pl = pl.from_pandas(bars_df.reset_index())
-                written = cache.store_bars_batch(
-                    symbol=symbol,
-                    threshold_decimal_bps=threshold_decimal_bps,
-                    bars=bars_pl,
-                    version="",  # Version tracked elsewhere
-                    ouroboros_mode=ouroboros,
-                )
-                import logging
-
-                logger = logging.getLogger(__name__)
-                logger.info(
-                    "Cached %d bars for %s @ %d dbps",
-                    written,
-                    symbol,
-                    threshold_decimal_bps,
-                )
-        except ImportError:
-            # ClickHouse not available - skip caching
-            pass
-        except ConnectionError:
-            # ClickHouse connection failed - skip caching
-            pass
-        except (CacheError, OSError, RuntimeError) as e:
-            # Log but don't fail - cache is optimization layer
-            # CacheError: All cache-specific errors
-            # OSError: Network/disk errors
-            # RuntimeError: ClickHouse driver errors
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.warning("Cache write failed (non-fatal): %s", e)
+        try_cache_write(bars_df, symbol, threshold_decimal_bps, ouroboros)
 
     # -------------------------------------------------------------------------
     # Filter output columns based on include_microstructure (Issue #75)
     # -------------------------------------------------------------------------
-    # Cache storage uses full DataFrame (with trade IDs for data integrity).
-    # User-facing output respects include_microstructure for backtesting.py compat.
-    if not include_microstructure and bars_df is not None and not bars_df.empty:
-        ohlcv_cols = ["Open", "High", "Low", "Close", "Volume"]
-        available_cols = [c for c in ohlcv_cols if c in bars_df.columns]
-        bars_df = bars_df[available_cols]
+    from .range_bars_enrich import filter_output_columns
 
-    return bars_df
+    return filter_output_columns(bars_df, include_microstructure)
 
 
 def get_range_bars_pandas(
