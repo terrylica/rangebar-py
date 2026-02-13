@@ -31,3 +31,8 @@ depends = ["validate:security", "validate:injection", "validate:memory"]
 ["validate:clickhouse"]
 description = "Validate ClickHouse connectivity and cache integrity"
 run = "python scripts/validate_clickhouse.py"
+
+["validate:metadata"]
+description = "Verify feature manifest covers all constants.py column groups"
+run = "python scripts/validate_feature_manifest.py"
+sources = ["crates/rangebar-core/data/feature_manifest.toml", "python/rangebar/constants.py"]

@@ -1,0 +1,36 @@
+from enum import Enum
+from typing import Any
+
+class FeatureGroup(Enum):
+    MICROSTRUCTURE = "microstructure"
+    INTER_BAR = "inter_bar"
+    INTRA_BAR = "intra_bar"
+
+class FeatureMetadata:
+    name: str
+    group: FeatureGroup
+    description: str
+    units: str
+    nullable: bool
+    category: str
+    tier: int
+    formula: str
+    value_range: tuple[float | None, float | None]
+    min_trades: int | None
+    interpretation: str
+    reference: str | None
+    def to_dict(self) -> dict[str, Any]: ...
+
+class FeatureRegistry:
+    @property
+    def schema_version(self) -> int: ...
+    def get(self, name: str) -> FeatureMetadata | None: ...
+    def all_features(self) -> list[FeatureMetadata]: ...
+    def by_group(self, group: FeatureGroup) -> list[FeatureMetadata]: ...
+    def by_category(self, category: str) -> list[FeatureMetadata]: ...
+    def column_names(self, group: FeatureGroup | None = None) -> list[str]: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_json(self) -> str: ...
+
+def get_feature_manifest() -> FeatureRegistry: ...
+def get_feature_groups() -> dict[str, list[str]]: ...

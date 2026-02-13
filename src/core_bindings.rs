@@ -1,5 +1,12 @@
 use super::*;
 
+/// Return the raw TOML feature manifest string (Issue #95).
+/// Python parses this with tomllib (stdlib since 3.11).
+#[pyfunction]
+pub(crate) fn get_feature_manifest_raw() -> &'static str {
+    rangebar_core::FEATURE_MANIFEST_TOML
+}
+
 /// Position verification result for Python
 #[pyclass(name = "PositionVerification")]
 #[derive(Clone)]

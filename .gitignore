@@ -105,6 +105,8 @@ bun.lock
 data/
 # Issue #79: Un-ignore package data for symbol registry (maturin wheel inclusion)
 !python/rangebar/data/
+# Issue #95: Un-ignore feature manifest TOML (SSoT, embedded in Rust binary)
+!crates/rangebar-core/data/
 metadata/
 store/
 preprocessed_configs/

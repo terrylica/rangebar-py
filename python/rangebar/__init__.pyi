@@ -8,6 +8,7 @@ See PEP 561 and https://typing.python.org/en/latest/guides/writing_stubs.html
 __version__: str
 
 # Exceptions (rangebar.exceptions, rangebar.validation.continuity)
+# Alpha-forge compatibility layer (rangebar.compat) — Issue #95
 # Binance Vision probe (rangebar.binance_vision)
 from .binance_vision import (
     BINANCE_VISION_AGGTRADES_URL as BINANCE_VISION_AGGTRADES_URL,
@@ -18,6 +19,12 @@ from .binance_vision import (
 
 # Cache population (rangebar.checkpoint)
 from .checkpoint import populate_cache_resumable as populate_cache_resumable
+from .compat import get_available_symbols as get_available_symbols
+from .compat import get_cache_coverage as get_cache_coverage
+from .compat import get_feature_groups as get_feature_groups
+from .compat import get_feature_manifest as get_feature_manifest
+from .compat import get_range_bars_panel as get_range_bars_panel
+from .compat import to_panel_format as to_panel_format
 
 # Constants (rangebar.constants)
 from .constants import INTER_BAR_FEATURE_COLUMNS as INTER_BAR_FEATURE_COLUMNS

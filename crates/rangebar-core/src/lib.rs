@@ -30,6 +30,11 @@ pub mod test_utils;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_data_loader;
 
+/// Feature manifest TOML, embedded at compile time.
+/// SSoT for all microstructure feature metadata (Issue #95).
+/// Exposed to Python via PyO3 `get_feature_manifest_raw()`.
+pub const FEATURE_MANIFEST_TOML: &str = include_str!("../data/feature_manifest.toml");
+
 // Re-export commonly used types
 pub use checkpoint::{AnomalySummary, Checkpoint, CheckpointError, PositionVerification};
 pub use fixed_point::FixedPoint;

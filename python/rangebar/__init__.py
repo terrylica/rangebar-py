@@ -89,13 +89,18 @@ __all__ = [
     "detect_asset_class",
     "detect_staleness",
     "ensure_memory_limit",
+    "get_available_symbols",  # Issue #95: alpha-forge compat
+    "get_cache_coverage",  # Issue #95: alpha-forge compat
     "get_effective_start_date",  # Issue #79: symbol effective start
+    "get_feature_groups",  # Issue #95: alpha-forge compat
+    "get_feature_manifest",  # Issue #95: alpha-forge compat
     "get_min_threshold",  # Issue #62: asset-class default
     "get_min_threshold_for_symbol",  # Issue #62: per-symbol lookup
     "get_n_range_bars",
     "get_ouroboros_boundaries",
     "get_range_bars",
     "get_range_bars_pandas",
+    "get_range_bars_panel",  # Issue #95: alpha-forge compat
     "get_registered_symbols",  # Issue #79: filtered symbol listing
     "get_symbol_entries",  # Issue #79: all symbol metadata
     "get_transitions",  # Issue #79: symbol rename history
@@ -111,6 +116,7 @@ __all__ = [
     "run_adaptive_loop",  # Issue #92: Layer 2 adaptive loop
     "run_sidecar",  # Issue #91: Layer 3 streaming sidecar
     "stream_binance_live",
+    "to_panel_format",  # Issue #95: alpha-forge compat
     "validate_and_clamp_start_date",  # Issue #79: start date clamping
     "validate_continuity",
     "validate_continuity_tiered",
@@ -192,6 +198,15 @@ auto_memory_guard()
 
 # Streaming API (ADR: docs/adr/2026-01-31-realtime-streaming-api.md)
 # Import symbol registry (Issue #79: Unified Symbol Registry with mandatory gating)
+# Alpha-forge compatibility layer (Issue #95)
+from .compat import (
+    get_available_symbols,
+    get_cache_coverage,
+    get_feature_groups,
+    get_feature_manifest,
+    get_range_bars_panel,
+    to_panel_format,
+)
 from .exceptions import SymbolNotRegisteredError
 from .streaming import (
     AsyncStreamingProcessor,

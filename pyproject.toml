@@ -79,6 +79,8 @@ markers = [
     "clickhouse: marks tests requiring ClickHouse (deselect with '-m \"not clickhouse\"')",
     "benchmark: marks tests as performance benchmarks",
     "asyncio: marks tests as async (requires pytest-asyncio)",
+    "bootstrap: marks tests as transitional bootstrap (archive after stable)",
+    "contract: marks tests as alpha-forge contract tests (permanent)",
 ]
 
 [tool.coverage.run]
@@ -293,6 +295,13 @@ ignore = [
 ]
 "python/rangebar/storage/parquet.py" = [
     "PLC0415", # Lazy imports (pyarrow inside generator for streaming)
+]
+"python/rangebar/compat/*.py" = [
+    "PLC0415", # Lazy imports (avoid circular imports with _core)
+    "ANN401",  # Any type (TOML data is untyped)
+    "PLR2004", # Magic values (feature counts, range bounds)
+    "PLW0603", # Global statement (lazy singleton pattern)
+    "E501",    # Line too long (docstrings, long type annotations)
 ]
 "python/rangebar/storage/checksum_registry.py" = [
     "PLR0913", # Too many arguments (create factory method needs all fields)

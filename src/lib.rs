@@ -63,6 +63,10 @@ fn _core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyRangeBarProcessor>()?;
     m.add_class::<PyPositionVerification>()?;
+    m.add_function(wrap_pyfunction!(
+        core_bindings::get_feature_manifest_raw,
+        m
+    )?)?;
 
     // Add Arrow export functions if feature enabled
     #[cfg(feature = "arrow-export")]

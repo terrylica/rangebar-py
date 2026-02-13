@@ -1,0 +1,649 @@
+# FILE-SIZE-OK — Single Source of Truth for all 53 features. Splitting would defeat SSoT purpose.
+# =============================================================================
+# Feature Manifest — Single Source of Truth (Issue #95)
+# =============================================================================
+# Canonical definition of all rangebar microstructure features.
+# Embedded in Rust binary via include_str!() and exposed to Python via PyO3.
+#
+# Groups:
+#   microstructure (15) — Always computed, non-null (v7.0+)
+#   inter_bar (16)      — Lookback window, all nullable (v12.0+)
+#   intra_bar (22)      — Within-bar, all nullable (v12.0+)
+#
+# Source code references:
+#   crates/rangebar-core/src/types.rs       — RangeBar struct fields
+#   crates/rangebar-core/src/interbar.rs    — Inter-bar computation
+#   crates/rangebar-core/src/intrabar/      — Intra-bar computation
+
+[meta]
+schema_version = 1
+total_features = 53
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Microstructure Group (15 features, v7.0+, always non-null)
+# Source: crates/rangebar-core/src/types.rs, crates/rangebar-core/src/bar.rs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[features.vwap]
+group = "microstructure"
+description = "Volume-Weighted Average Price within bar"
+formula = "sum(price_i * qty_i) / sum(qty_i)"
+range = [0.0, "inf"]
+units = "price"
+nullable = false
+category = "liquidity"
+tier = 1
+interpretation = "Deviation from close indicates price pressure direction"
+
+[features.buy_volume]
+group = "microstructure"
+description = "Total volume of buyer-initiated trades (is_buyer_maker=false)"
+formula = "sum(qty where is_buyer_maker=false)"
+range = [0.0, "inf"]
+units = "quantity"
+nullable = false
+category = "order_flow"
+tier = 1
+interpretation = "Higher = more aggressive buying pressure"
+
+[features.sell_volume]
+group = "microstructure"
+description = "Total volume of seller-initiated trades (is_buyer_maker=true)"
+formula = "sum(qty where is_buyer_maker=true)"
+range = [0.0, "inf"]
+units = "quantity"
+nullable = false
+category = "order_flow"
+tier = 1
+interpretation = "Higher = more aggressive selling pressure"
+
+[features.individual_trade_count]
+group = "microstructure"
+description = "Number of individual exchange trades in bar"
+range = [1.0, "inf"]
+units = "count"
+nullable = false
+category = "activity"
+tier = 1
+
+[features.agg_record_count]
+group = "microstructure"
+description = "Number of Binance aggTrade records in bar"
+range = [1.0, "inf"]
+units = "count"
+nullable = false
+category = "activity"
+tier = 1
+
+[features.duration_us]
+group = "microstructure"
+description = "Bar duration from first to last trade"
+formula = "close_time - open_time"
+range = [0.0, "inf"]
+units = "microseconds"
+nullable = false
+category = "timing"
+tier = 1
+reference = "Easley et al. (2012) Volume Clock"
+interpretation = "Short = high activity period, Long = quiet period"
+
+[features.ofi]
+group = "microstructure"
+description = "Order Flow Imbalance"
+formula = "(buy_vol - sell_vol) / (buy_vol + sell_vol)"
+range = [-1.0, 1.0]
+units = "ratio"
+nullable = false
+category = "order_flow"
+tier = 1
+reference = "Chordia et al. (2002)"
+interpretation = "Positive = buyer pressure, Negative = seller pressure"
+
+[features.vwap_close_deviation]
+group = "microstructure"
+description = "VWAP-Close deviation normalized by bar range"
+formula = "(close - vwap) / (high - low)"
+range = ["-inf", "inf"]
+units = "ratio"
+nullable = false
+category = "liquidity"
+tier = 1
+reference = "Berkowitz et al. (1988)"
+interpretation = "Positive = close above VWAP (buyer won), Negative = below"
+
+[features.price_impact]
+group = "microstructure"
+description = "Price impact (Amihud-style illiquidity ratio)"
+formula = "abs(close - open) / volume"
+range = [0.0, "inf"]
+units = "price_per_volume"
+nullable = false
+category = "liquidity"
+tier = 1
+reference = "Amihud (2002)"
+interpretation = "Higher = larger moves per unit volume (less liquid)"
+
+[features.kyle_lambda_proxy]
+group = "microstructure"
+description = "Kyle's Lambda proxy — price impact of order flow"
+formula = "((close - open) / open) / ((buy_vol - sell_vol) / total_vol)"
+range = ["-inf", "inf"]
+units = "dimensionless"
+nullable = false
+category = "liquidity"
+tier = 2
+reference = "Kyle (1985)"
+interpretation = "Higher = less liquid (price moves more per unit flow)"
+
+[features.trade_intensity]
+group = "microstructure"
+description = "Trade arrival rate within bar"
+formula = "individual_trade_count / duration_seconds"
+range = [0.0, "inf"]
+units = "trades_per_second"
+nullable = false
+category = "activity"
+tier = 2
+reference = "Engle & Russell (1998) ACD models"
+interpretation = "Higher = more concentrated trading"
+
+[features.volume_per_trade]
+group = "microstructure"
+description = "Average volume per trade"
+formula = "volume / individual_trade_count"
+range = [0.0, "inf"]
+units = "quantity"
+nullable = false
+category = "activity"
+tier = 1
+reference = "Barclay & Warner (1993) stealth trading"
+
+[features.aggression_ratio]
+group = "microstructure"
+description = "Ratio of buy trade count to sell trade count"
+formula = "buy_trade_count / sell_trade_count"
+range = [0.0, 100.0]
+units = "ratio"
+nullable = false
+category = "order_flow"
+tier = 1
+reference = "Lee & Ready (1991)"
+interpretation = ">1 = buyer-dominated, <1 = seller-dominated, capped at 100.0"
+
+[features.aggregation_density]
+group = "microstructure"
+description = "Trade fragmentation: individual trades per aggTrade record"
+formula = "individual_trade_count / agg_record_count"
+range = [1.0, "inf"]
+units = "ratio"
+nullable = false
+category = "activity"
+tier = 2
+interpretation = "Higher = more fragmented (many small trades per aggregation)"
+
+[features.turnover_imbalance]
+group = "microstructure"
+description = "Dollar-weighted order flow imbalance"
+formula = "(buy_turnover - sell_turnover) / (buy_turnover + sell_turnover)"
+range = [-1.0, 1.0]
+units = "ratio"
+nullable = false
+category = "order_flow"
+tier = 1
+interpretation = "Positive = buyer turnover dominates"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Inter-Bar Group (16 features, v12.0+, all nullable)
+# Source: crates/rangebar-core/src/interbar.rs, crates/rangebar-core/src/types.rs
+# Computed from lookback window of trades BEFORE each bar opens.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# --- Tier 1: Core features (7, min_trades=1) ---
+
+[features.lookback_trade_count]
+group = "inter_bar"
+description = "Number of trades in lookback window before bar opened"
+range = [0.0, "inf"]
+units = "count"
+nullable = true
+category = "activity"
+tier = 1
+min_trades = 1
+
+[features.lookback_ofi]
+group = "inter_bar"
+description = "Order Flow Imbalance from lookback window"
+formula = "(buy_vol - sell_vol) / total_vol"
+range = [-1.0, 1.0]
+units = "ratio"
+nullable = true
+category = "order_flow"
+tier = 1
+min_trades = 1
+reference = "Chordia et al. (2002)"
+
+[features.lookback_duration_us]
+group = "inter_bar"
+description = "Duration of lookback window in microseconds"
+formula = "last_ts - first_ts"
+range = [0.0, "inf"]
+units = "microseconds"
+nullable = true
+category = "timing"
+tier = 1
+min_trades = 1
+
+[features.lookback_intensity]
+group = "inter_bar"
+description = "Trade intensity in lookback: trades per second"
+formula = "trade_count / duration_seconds"
+range = [0.0, "inf"]
+units = "trades_per_second"
+nullable = true
+category = "activity"
+tier = 1
+min_trades = 1
+reference = "Engle & Russell (1998)"
+
+[features.lookback_vwap_raw]
+group = "inter_bar"
+description = "VWAP from lookback window (FixedPoint i64 for serialization)"
+formula = "sum(price * vol) / sum(vol)"
+range = [0.0, "inf"]
+units = "price_fixedpoint"
+nullable = true
+category = "liquidity"
+tier = 1
+min_trades = 1
+
+[features.lookback_vwap_position]
+group = "inter_bar"
+description = "VWAP position within lookback price range"
+formula = "(vwap - low) / (high - low)"
+range = [0.0, 1.0]
+units = "ratio"
+nullable = true
+category = "liquidity"
+tier = 1
+min_trades = 1
+
+[features.lookback_count_imbalance]
+group = "inter_bar"
+description = "Count imbalance in lookback: (buy_count - sell_count) / total_count"
+formula = "(buy_count - sell_count) / total_count"
+range = [-1.0, 1.0]
+units = "ratio"
+nullable = true
+category = "order_flow"
+tier = 1
+min_trades = 1
+
+# --- Tier 2: Statistical features (5) ---
+
+[features.lookback_kyle_lambda]
+group = "inter_bar"
+description = "Kyle's Lambda proxy from lookback (normalized)"
+formula = "((price_end - price_start) / price_start) / ((buy_vol - sell_vol) / total_vol)"
+range = ["-inf", "inf"]
+units = "dimensionless"
+nullable = true
+category = "liquidity"
+tier = 2
+min_trades = 2
+reference = "Kyle (1985), Hasbrouck (2009)"
+
+[features.lookback_burstiness]
+group = "inter_bar"
+description = "Burstiness of inter-arrival times (Goh-Barabasi)"
+formula = "(sigma_tau - mu_tau) / (sigma_tau + mu_tau)"
+range = [-1.0, 1.0]
+units = "ratio"
+nullable = true
+category = "timing"
+tier = 2
+min_trades = 2
+reference = "Goh & Barabasi (2008) EPL 81"
+interpretation = "-1 = periodic, 0 = Poisson, +1 = bursty"
+
+[features.lookback_volume_skew]
+group = "inter_bar"
+description = "Volume distribution skewness (Fisher-Pearson)"
+formula = "E[(V - mu)^3] / sigma^3"
+range = ["-inf", "inf"]
+units = "dimensionless"
+nullable = true
+category = "distribution"
+tier = 2
+min_trades = 3
+
+[features.lookback_volume_kurt]
+group = "inter_bar"
+description = "Volume distribution excess kurtosis"
+formula = "E[(V - mu)^4] / sigma^4 - 3"
+range = [-2.0, "inf"]
+units = "dimensionless"
+nullable = true
+category = "distribution"
+tier = 2
+min_trades = 4
+interpretation = "0 = normal, positive = heavy tails"
+
+[features.lookback_price_range]
+group = "inter_bar"
+description = "Price range normalized by first price in lookback"
+formula = "(high - low) / first_price"
+range = [0.0, "inf"]
+units = "ratio"
+nullable = true
+category = "volatility"
+tier = 2
+min_trades = 1
+
+# --- Tier 3: Advanced features (4, min_trades=2-64) ---
+
+[features.lookback_kaufman_er]
+group = "inter_bar"
+description = "Kaufman Efficiency Ratio: trend vs noise"
+formula = "|net_movement| / sum(|individual_movements|)"
+range = [0.0, 1.0]
+units = "ratio"
+nullable = true
+category = "trend"
+tier = 3
+min_trades = 2
+reference = "Kaufman (1995) Smarter Trading"
+interpretation = "1 = perfect trend, 0 = pure noise"
+
+[features.lookback_garman_klass_vol]
+group = "inter_bar"
+description = "Garman-Klass volatility estimator"
+formula = "0.5 * ln(H/L)^2 - (2*ln(2) - 1) * ln(C/O)^2"
+range = [0.0, "inf"]
+units = "variance"
+nullable = true
+category = "volatility"
+tier = 3
+min_trades = 1
+reference = "Garman & Klass (1980) Journal of Business 53(1)"
+
+[features.lookback_hurst]
+group = "inter_bar"
+description = "Hurst exponent via Detrended Fluctuation Analysis"
+formula = "DFA linear regression slope"
+range = [0.0, 1.0]
+units = "exponent"
+nullable = true
+category = "complexity"
+tier = 3
+min_trades = 64
+reference = "Peng et al. (1994) Nature 356"
+interpretation = "<0.5 = mean-reverting, 0.5 = random walk, >0.5 = trending"
+
+[features.lookback_permutation_entropy]
+group = "inter_bar"
+description = "Permutation entropy (normalized, m=3)"
+formula = "-sum(p_pi * ln(p_pi)) / ln(m!)"
+range = [0.0, 1.0]
+units = "entropy"
+nullable = true
+category = "complexity"
+tier = 3
+min_trades = 60
+reference = "Bandt & Pompe (2002) Phys. Rev. Lett. 88"
+interpretation = "0 = deterministic, 1 = random"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Intra-Bar Group (22 features, v12.0+, all nullable)
+# Source: crates/rangebar-core/src/intrabar/features.rs, types.rs
+# Computed from trades WITHIN each bar (open_time to close_time).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# --- ITH Features (8) — Investment Time Horizon, normalized to [0, 1] ---
+
+[features.intra_bull_epoch_density]
+group = "intra_bar"
+description = "Bull epoch density from Investment Time Horizon analysis"
+formula = "sigmoid(bull_epochs / trade_count, 0.5, 10)"
+range = [0.0, 1.0]
+units = "density"
+nullable = true
+category = "ith"
+tier = 2
+interpretation = "Higher = more frequent bullish epochs"
+
+[features.intra_bear_epoch_density]
+group = "intra_bar"
+description = "Bear epoch density from Investment Time Horizon analysis"
+formula = "sigmoid(bear_epochs / trade_count, 0.5, 10)"
+range = [0.0, 1.0]
+units = "density"
+nullable = true
+category = "ith"
+tier = 2
+interpretation = "Higher = more frequent bearish epochs"
+
+[features.intra_bull_excess_gain]
+group = "intra_bar"
+description = "Bull excess gain sum, tanh-normalized"
+formula = "tanh(bull_excess_sum)"
+range = [0.0, 1.0]
+units = "gain"
+nullable = true
+category = "ith"
+tier = 2
+
+[features.intra_bear_excess_gain]
+group = "intra_bar"
+description = "Bear excess gain sum, tanh-normalized"
+formula = "tanh(bear_excess_sum)"
+range = [0.0, 1.0]
+units = "gain"
+nullable = true
+category = "ith"
+tier = 2
+
+[features.intra_bull_cv]
+group = "intra_bar"
+description = "Bull intervals coefficient of variation, sigmoid-normalized"
+formula = "sigmoid(bull_intervals_cv)"
+range = [0.0, 1.0]
+units = "ratio"
+nullable = true
+category = "ith"
+tier = 2
+
+[features.intra_bear_cv]
+group = "intra_bar"
+description = "Bear intervals coefficient of variation, sigmoid-normalized"
+formula = "sigmoid(bear_intervals_cv)"
+range = [0.0, 1.0]
+units = "ratio"
+nullable = true
+category = "ith"
+tier = 2
+
+[features.intra_max_drawdown]
+group = "intra_bar"
+description = "Maximum drawdown within bar"
+formula = "(peak - trough) / peak"
+range = [0.0, 1.0]
+units = "ratio"
+nullable = true
+category = "ith"
+tier = 1
+interpretation = "Higher = larger intra-bar decline from peak"
+
+[features.intra_max_runup]
+group = "intra_bar"
+description = "Maximum runup within bar"
+formula = "(peak - entry) / entry"
+range = [0.0, 1.0]
+units = "ratio"
+nullable = true
+category = "ith"
+tier = 1
+interpretation = "Higher = larger intra-bar rise from trough"
+
+# --- Statistical Features (12) ---
+
+[features.intra_trade_count]
+group = "intra_bar"
+description = "Number of trades within the bar"
+range = [0.0, "inf"]
+units = "count"
+nullable = true
+category = "activity"
+tier = 1
+
+[features.intra_ofi]
+group = "intra_bar"
+description = "Order Flow Imbalance within bar"
+formula = "(buy_vol - sell_vol) / total_vol"
+range = [-1.0, 1.0]
+units = "ratio"
+nullable = true
+category = "order_flow"
+tier = 1
+reference = "Chordia et al. (2002)"
+
+[features.intra_duration_us]
+group = "intra_bar"
+description = "Duration of bar in microseconds"
+formula = "last_ts - first_ts"
+range = [0.0, "inf"]
+units = "microseconds"
+nullable = true
+category = "timing"
+tier = 1
+
+[features.intra_intensity]
+group = "intra_bar"
+description = "Trade intensity within bar: trades per second"
+formula = "trade_count / duration_seconds"
+range = [0.0, "inf"]
+units = "trades_per_second"
+nullable = true
+category = "activity"
+tier = 1
+reference = "Engle & Russell (1998)"
+
+[features.intra_vwap_position]
+group = "intra_bar"
+description = "VWAP position within bar price range"
+formula = "(vwap - low) / (high - low)"
+range = [0.0, 1.0]
+units = "ratio"
+nullable = true
+category = "liquidity"
+tier = 1
+
+[features.intra_count_imbalance]
+group = "intra_bar"
+description = "Count imbalance within bar"
+formula = "(buy_count - sell_count) / total_count"
+range = [-1.0, 1.0]
+units = "ratio"
+nullable = true
+category = "order_flow"
+tier = 1
+
+[features.intra_kyle_lambda]
+group = "intra_bar"
+description = "Kyle's Lambda proxy within bar (normalized)"
+formula = "((last - first) / first) / ((buy_vol - sell_vol) / total_vol)"
+range = ["-inf", "inf"]
+units = "dimensionless"
+nullable = true
+category = "liquidity"
+tier = 2
+min_trades = 2
+reference = "Kyle (1985)"
+
+[features.intra_burstiness]
+group = "intra_bar"
+description = "Burstiness of intra-bar inter-arrival times (Goh-Barabasi)"
+formula = "(sigma_tau - mu_tau) / (sigma_tau + mu_tau)"
+range = [-1.0, 1.0]
+units = "ratio"
+nullable = true
+category = "timing"
+tier = 2
+min_trades = 2
+reference = "Goh & Barabasi (2008) EPL 81"
+interpretation = "-1 = periodic, 0 = Poisson, +1 = bursty"
+
+[features.intra_volume_skew]
+group = "intra_bar"
+description = "Volume distribution skewness within bar"
+formula = "E[(V - mu)^3] / sigma^3"
+range = ["-inf", "inf"]
+units = "dimensionless"
+nullable = true
+category = "distribution"
+tier = 2
+min_trades = 3
+
+[features.intra_volume_kurt]
+group = "intra_bar"
+description = "Volume distribution excess kurtosis within bar"
+formula = "E[(V - mu)^4] / sigma^4 - 3"
+range = [-2.0, "inf"]
+units = "dimensionless"
+nullable = true
+category = "distribution"
+tier = 2
+min_trades = 4
+interpretation = "0 = normal, positive = heavy tails"
+
+[features.intra_kaufman_er]
+group = "intra_bar"
+description = "Kaufman Efficiency Ratio within bar"
+formula = "|net_movement| / sum(|individual_movements|)"
+range = [0.0, 1.0]
+units = "ratio"
+nullable = true
+category = "trend"
+tier = 2
+min_trades = 2
+reference = "Kaufman (1995)"
+interpretation = "1 = perfect trend, 0 = pure noise"
+
+[features.intra_garman_klass_vol]
+group = "intra_bar"
+description = "Garman-Klass volatility estimator within bar"
+formula = "0.5 * ln(H/L)^2 - (2*ln(2) - 1) * ln(C/O)^2"
+range = [0.0, "inf"]
+units = "variance"
+nullable = true
+category = "volatility"
+tier = 2
+min_trades = 1
+reference = "Garman & Klass (1980)"
+
+# --- Complexity Features (2, require many trades) ---
+
+[features.intra_hurst]
+group = "intra_bar"
+description = "Hurst exponent via DFA within bar"
+formula = "DFA linear regression slope"
+range = [0.0, 1.0]
+units = "exponent"
+nullable = true
+category = "complexity"
+tier = 3
+min_trades = 64
+reference = "Peng et al. (1994) Nature 356"
+interpretation = "<0.5 = mean-reverting, 0.5 = random walk, >0.5 = trending"
+
+[features.intra_permutation_entropy]
+group = "intra_bar"
+description = "Permutation entropy within bar (normalized, m=3)"
+formula = "-sum(p_pi * ln(p_pi)) / ln(m!)"
+range = [0.0, 1.0]
+units = "entropy"
+nullable = true
+category = "complexity"
+tier = 3
+min_trades = 60
+reference = "Bandt & Pompe (2002) Phys. Rev. Lett. 88"
+interpretation = "0 = deterministic, 1 = random"
