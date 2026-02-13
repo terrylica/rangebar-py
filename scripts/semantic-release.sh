@@ -5,10 +5,11 @@ set -euo pipefail
 
 echo "=== Semantic Release ==="
 
-# Ensure bun dependencies
-if [ ! -d node_modules ]; then
-  echo "Installing dependencies via bun..."
-  bun install
+# Uses globally installed semantic-release (Homebrew) — no local package.json needed.
+if ! command -v semantic-release &>/dev/null; then
+  echo "ERROR: semantic-release not found globally"
+  echo "Install via: npm install -g semantic-release @semantic-release/changelog @semantic-release/exec @semantic-release/git @semantic-release/github"
+  exit 1
 fi
 
 # Verify git remote uses SSH with correct identity
@@ -51,7 +52,7 @@ echo "Running semantic-release..."
 # The actual release (tag, GitHub release, version bump) succeeds before
 # the success step runs, so a failure there is non-critical.
 set +e
-GITHUB_TOKEN="$GH_PAT" GH_TOKEN="$GH_PAT" bun run semantic-release --no-ci 2>&1
+GITHUB_TOKEN="$GH_PAT" GH_TOKEN="$GH_PAT" semantic-release --no-ci 2>&1
 SR_EXIT=$?
 set -e
 
