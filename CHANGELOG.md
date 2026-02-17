@@ -1,3 +1,10 @@
+# [12.22.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.21.1...v12.22.0) (2026-02-17)
+
+
+### Features
+
+* **perf:** memory efficiency optimizations for bar processing (Issue [#95](https://github.com-terrylica/terrylica/rangebar-py/issues/95)) ([6d84cb8](https://github.com-terrylica/terrylica/rangebar-py/commit/6d84cb8b0ad2c82d04780a81befd938f9e927f47))
+
 ## [12.21.1](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.21.0...v12.21.1) (2026-02-13)
 
 # [12.21.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.20.0...v12.21.0) (2026-02-13)
