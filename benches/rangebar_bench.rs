@@ -44,7 +44,7 @@ fn bench_range_bar_processing(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("process_trades", size), size, |b, _| {
             b.iter(|| {
-                let mut proc = RangeBarProcessor::new(8000);
+                let mut proc = RangeBarProcessor::new(8000).unwrap();
                 let bars = proc.process_agg_trade_records(black_box(&trades)).unwrap();
                 black_box(bars);
             });
@@ -113,7 +113,7 @@ fn bench_memory_efficiency(c: &mut Criterion) {
                 let trades = create_test_trades(size, 50000.0, 100.0);
 
                 b.iter(|| {
-                    let mut processor = RangeBarProcessor::new(8000);
+                    let mut processor = RangeBarProcessor::new(8000).unwrap();
                     // Process in batches to simulate real-world streaming
                     let batch_size = 1000;
                     let mut total_bars = 0;
@@ -142,7 +142,7 @@ fn bench_extreme_cases(c: &mut Criterion) {
 
     group.bench_function("high_volatility", |b| {
         b.iter(|| {
-            let mut processor = RangeBarProcessor::new(8000);
+            let mut processor = RangeBarProcessor::new(8000).unwrap();
             let bars = processor
                 .process_agg_trade_records(black_box(&high_volatility_trades))
                 .unwrap();
@@ -155,11 +155,61 @@ fn bench_extreme_cases(c: &mut Criterion) {
 
     group.bench_function("low_volatility", |b| {
         b.iter(|| {
-            let mut processor = RangeBarProcessor::new(8000);
+            let mut processor = RangeBarProcessor::new(8000).unwrap();
             let bars = processor
                 .process_agg_trade_records(black_box(&low_volatility_trades))
                 .unwrap();
             black_box(bars);
+        });
+    });
+
+    group.finish();
+}
+
+fn bench_bar_close_take(c: &mut Criterion) {
+    let mut group = c.benchmark_group("bar_close_take");
+
+    // High volatility = many bar closes = R1/R2 take() exercised heavily
+    let trades_10k = create_test_trades(10000, 50000.0, 500.0);
+    let trades_100k = create_test_trades(100000, 50000.0, 500.0);
+
+    // Single-trade path (R1): process one trade at a time
+    group.bench_function("single_trade_path_10k", |b| {
+        b.iter(|| {
+            let mut processor = RangeBarProcessor::new(250).unwrap();
+            let mut bar_count = 0_usize;
+            for trade in &trades_10k {
+                if processor
+                    .process_single_trade(black_box(trade.clone()))
+                    .unwrap()
+                    .is_some()
+                {
+                    bar_count += 1;
+                }
+            }
+            black_box(bar_count);
+        });
+    });
+
+    // Batch path (R2): process all trades in one call
+    group.bench_function("batch_path_10k", |b| {
+        b.iter(|| {
+            let mut processor = RangeBarProcessor::new(250).unwrap();
+            let bars = processor
+                .process_agg_trade_records(black_box(&trades_10k))
+                .unwrap();
+            black_box(bars.len());
+        });
+    });
+
+    // Batch path at scale (R2)
+    group.bench_function("batch_path_100k", |b| {
+        b.iter(|| {
+            let mut processor = RangeBarProcessor::new(250).unwrap();
+            let bars = processor
+                .process_agg_trade_records(black_box(&trades_100k))
+                .unwrap();
+            black_box(bars.len());
         });
     });
 
@@ -172,6 +222,7 @@ criterion_group!(
     bench_threshold_calculation,
     bench_breach_detection,
     bench_memory_efficiency,
-    bench_extreme_cases
+    bench_extreme_cases,
+    bench_bar_close_take
 );
 criterion_main!(benches);

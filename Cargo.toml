@@ -160,6 +160,10 @@ streaming = ["rangebar-streaming", "rangebar-streaming/binance-integration", "ra
 exness = ["data-providers"]
 binance = ["data-providers"]
 
+[dev-dependencies]
+criterion = { workspace = true }
+rangebar = { path = "crates/rangebar" }
+
 [build-dependencies]
 pyo3-build-config = "0.22"
 
