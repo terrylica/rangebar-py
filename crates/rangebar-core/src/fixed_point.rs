@@ -22,7 +22,7 @@ pub const BASIS_POINTS_SCALE: u32 = 100_000;
 /// Example:
 /// - 50000.12345678 → 5000012345678
 /// - 1.5 → 150000000
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "api", derive(utoipa::ToSchema))]
 pub struct FixedPoint(pub i64);
 

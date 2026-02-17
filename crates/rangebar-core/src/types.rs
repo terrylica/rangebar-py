@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub use crate::trade::{AggTrade, DataSource};
 
 /// Range bar with OHLCV data and market microstructure enhancements
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "api", derive(utoipa::ToSchema))]
 pub struct RangeBar {
     /// Opening timestamp in microseconds (first trade)

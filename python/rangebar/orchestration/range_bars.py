@@ -638,14 +638,15 @@ def get_range_bars(
         # Issue #76: Auto-detect earliest available date for helpful error message
         raise RuntimeError(_no_data_error_message(symbol, start_date, end_date, market))
 
-    # Concatenate all segments
+    # Concatenate all segments — use Polars-backed concat for memory efficiency (MEM-006)
     if not all_bars:
         bars_df = _empty_ohlcv_dataframe()
     elif len(all_bars) == 1:
         bars_df = all_bars[0]
     else:
-        bars_df = pd.concat(all_bars, axis=0)
-        bars_df = bars_df.sort_index()
+        from rangebar.conversion import _concat_pandas_via_polars
+
+        bars_df = _concat_pandas_via_polars(all_bars)
 
     # Issue #76: Explicit memory cleanup after concatenation
     # pd.concat creates a new DataFrame but source frames remain in list

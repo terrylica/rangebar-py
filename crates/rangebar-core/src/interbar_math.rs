@@ -95,10 +95,15 @@ pub(crate) fn compute_volume_moments(lookback: &[&TradeSnapshot]) -> (f64, f64) 
 
     let mu = volumes.iter().sum::<f64>() / n;
 
-    // Central moments
-    let m2 = volumes.iter().map(|v| (v - mu).powi(2)).sum::<f64>() / n;
-    let m3 = volumes.iter().map(|v| (v - mu).powi(3)).sum::<f64>() / n;
-    let m4 = volumes.iter().map(|v| (v - mu).powi(4)).sum::<f64>() / n;
+    // Central moments — single pass for m2/m3/m4 (was 3 separate passes)
+    let (m2, m3, m4) = volumes.iter().fold((0.0, 0.0, 0.0), |(m2, m3, m4), v| {
+        let d = v - mu;
+        let d2 = d * d;
+        (m2 + d2, m3 + d2 * d, m4 + d2 * d2)
+    });
+    let m2 = m2 / n;
+    let m3 = m3 / n;
+    let m4 = m4 / n;
 
     let sigma = m2.sqrt();
 
@@ -211,12 +216,12 @@ pub(crate) fn compute_hurst_dfa(prices: &[f64]) -> f64 {
         return 0.5;
     }
 
-    let mut log_n = Vec::new();
-    let mut log_f = Vec::new();
-
     // Generate ~10-20 box sizes logarithmically spaced
     let num_scales = ((max_box as f64).ln() - (min_box as f64).ln()) / 0.25;
     let num_scales = (num_scales as usize).max(4).min(20);
+
+    let mut log_n = Vec::with_capacity(num_scales);
+    let mut log_f = Vec::with_capacity(num_scales);
 
     for i in 0..num_scales {
         let box_size = (min_box as f64

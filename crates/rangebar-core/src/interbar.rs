@@ -1016,4 +1016,81 @@ mod tests {
             "FixedCount should not track bar boundaries"
         );
     }
+
+    // === Memory efficiency tests (R5) ===
+
+    #[test]
+    fn test_volume_moments_numerical_accuracy() {
+        // R5: Verify 2-pass fold produces identical results to previous 4-pass.
+        // Symmetric distribution [1,2,3,4,5] → skewness ≈ 0
+        let price_fp = FixedPoint((100.0 * 1e8) as i64);
+        let snapshots: Vec<TradeSnapshot> = (1..=5_i64)
+            .map(|v| {
+                let volume_fp = FixedPoint((v as f64 * 1e8) as i64);
+                TradeSnapshot {
+                    price: price_fp,
+                    volume: volume_fp,
+                    timestamp: v * 1000,
+                    is_buyer_maker: false,
+                    turnover: price_fp.0 as i128 * volume_fp.0 as i128,
+                }
+            })
+            .collect();
+        let refs: Vec<&TradeSnapshot> = snapshots.iter().collect();
+        let (skew, kurt) = compute_volume_moments(&refs);
+
+        // Symmetric uniform-like distribution: skewness should be 0
+        assert!(
+            skew.abs() < 1e-10,
+            "Symmetric distribution should have skewness ≈ 0, got {skew}"
+        );
+        // Uniform distribution excess kurtosis = -1.3
+        assert!(
+            (kurt - (-1.3)).abs() < 0.1,
+            "Uniform-like kurtosis should be ≈ -1.3, got {kurt}"
+        );
+    }
+
+    #[test]
+    fn test_volume_moments_edge_cases() {
+        let price_fp = FixedPoint((100.0 * 1e8) as i64);
+
+        // n < 3 returns (0, 0)
+        let v1 = FixedPoint((1.0 * 1e8) as i64);
+        let v2 = FixedPoint((2.0 * 1e8) as i64);
+        let s1 = TradeSnapshot {
+            price: price_fp,
+            volume: v1,
+            timestamp: 1000,
+            is_buyer_maker: false,
+            turnover: price_fp.0 as i128 * v1.0 as i128,
+        };
+        let s2 = TradeSnapshot {
+            price: price_fp,
+            volume: v2,
+            timestamp: 2000,
+            is_buyer_maker: false,
+            turnover: price_fp.0 as i128 * v2.0 as i128,
+        };
+        let refs: Vec<&TradeSnapshot> = vec![&s1, &s2];
+        let (skew, kurt) = compute_volume_moments(&refs);
+        assert_eq!(skew, 0.0, "n < 3 should return 0");
+        assert_eq!(kurt, 0.0, "n < 3 should return 0");
+
+        // All same volume returns (0, 0)
+        let vol = FixedPoint((5.0 * 1e8) as i64);
+        let same: Vec<TradeSnapshot> = (0..10_i64)
+            .map(|i| TradeSnapshot {
+                price: price_fp,
+                volume: vol,
+                timestamp: i * 1000,
+                is_buyer_maker: false,
+                turnover: price_fp.0 as i128 * vol.0 as i128,
+            })
+            .collect();
+        let refs: Vec<&TradeSnapshot> = same.iter().collect();
+        let (skew, kurt) = compute_volume_moments(&refs);
+        assert_eq!(skew, 0.0, "All same volume should return 0");
+        assert_eq!(kurt, 0.0, "All same volume should return 0");
+    }
 }

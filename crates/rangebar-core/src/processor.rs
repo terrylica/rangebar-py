@@ -1,3 +1,4 @@
+// FILE-SIZE-OK: 1496 lines — tests are inline (access private RangeBarState)
 //! Core range bar processing algorithm
 //!
 //! Implements non-lookahead bias range bar construction where bars close when
@@ -338,11 +339,12 @@ impl RangeBarProcessor {
                         bar_state.bar.set_intra_bar_features(&intra_bar_features);
                     }
 
-                    let completed_bar = bar_state.bar.clone();
+                    // Move bar out instead of cloning — bar_state borrow ends after
+                    // last use above (NLL), so take() is safe here.
+                    let completed_bar = self.current_bar_state.take().unwrap().bar;
 
                     // Issue #46: Don't start new bar with breaching trade.
                     // Next trade will open the new bar via defer_open.
-                    self.current_bar_state = None;
                     self.defer_open = true;
 
                     Ok(Some(completed_bar))
@@ -546,8 +548,9 @@ impl RangeBarProcessor {
                             bar_state.bar.set_intra_bar_features(&intra_bar_features);
                         }
 
-                        bars.push(bar_state.bar.clone());
-                        current_bar = None;
+                        // Move bar out instead of cloning — bar_state borrow ends
+                        // after last use above (NLL), so take() is safe here.
+                        bars.push(current_bar.take().unwrap().bar);
                         defer_open = true; // Next record will open new bar
                     } else {
                         // Either no breach OR same timestamp (gate active) - normal update
@@ -557,14 +560,14 @@ impl RangeBarProcessor {
             }
         }
 
-        // Save current bar state for checkpoint (preserves incomplete bar)
-        self.current_bar_state = current_bar.clone();
-
-        // Add final partial bar only if explicitly requested
-        // This preserves algorithm integrity: bars should only close on threshold breach
-        // Note: let-chains require Rust 2024, so we use nested if instead
-        #[allow(clippy::collapsible_if)]
+        // Save current bar state for checkpoint and optionally append incomplete bar.
+        // When include_incomplete=true, clone for checkpoint then consume for output.
+        // When include_incomplete=false, move directly (no clone needed).
         if include_incomplete {
+            self.current_bar_state = current_bar.clone();
+
+            // Add final partial bar only if explicitly requested
+            // This preserves algorithm integrity: bars should only close on threshold breach
             if let Some(mut bar_state) = current_bar {
                 // Compute microstructure features for incomplete bar (Issue #34)
                 bar_state.bar.compute_microstructure_features();
@@ -584,6 +587,9 @@ impl RangeBarProcessor {
 
                 bars.push(bar_state.bar);
             }
+        } else {
+            // No incomplete bar appended — move ownership directly, no clone needed
+            self.current_bar_state = current_bar;
         }
 
         Ok(bars)
@@ -1490,5 +1496,88 @@ mod tests {
             "50100.00000000",
             "New bar should open at trade 3's price, not trade 2's"
         );
+    }
+
+    // === Memory efficiency tests (R1/R2/R3) ===
+
+    #[test]
+    fn test_bar_close_take_single_trade() {
+        // R1: Verify bar close via single-trade path produces correct OHLCV after
+        // clone→take optimization. Uses single_breach_sequence that triggers breach.
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+        let trades = scenarios::single_breach_sequence(250);
+
+        for trade in &trades[..trades.len() - 1] {
+            let result = processor.process_single_trade(trade.clone()).unwrap();
+            assert!(result.is_none());
+        }
+
+        // Last trade triggers breach
+        let bar = processor
+            .process_single_trade(trades.last().unwrap().clone())
+            .unwrap()
+            .expect("Should produce completed bar");
+
+        // Verify OHLCV integrity after take() optimization
+        assert_eq!(bar.open.to_string(), "50000.00000000");
+        assert!(bar.high >= bar.open.max(bar.close));
+        assert!(bar.low <= bar.open.min(bar.close));
+        assert!(bar.volume > 0);
+
+        // Verify processor state is clean after bar close
+        assert!(processor.get_incomplete_bar().is_none());
+    }
+
+    #[test]
+    fn test_bar_close_take_batch() {
+        // R2: Verify batch path produces correct bars after clone→take optimization.
+        // large_sequence generates enough trades to trigger multiple breaches.
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+        let trades = scenarios::large_sequence(500);
+
+        let bars = processor.process_agg_trade_records(&trades).unwrap();
+        assert!(
+            !bars.is_empty(),
+            "Should produce at least one completed bar"
+        );
+
+        // Verify every bar has valid OHLCV invariants
+        for bar in &bars {
+            assert!(bar.high >= bar.open.max(bar.close));
+            assert!(bar.low <= bar.open.min(bar.close));
+            assert!(bar.volume > 0);
+            assert!(bar.close_time >= bar.open_time);
+        }
+    }
+
+    #[test]
+    fn test_checkpoint_conditional_clone() {
+        // R3: Verify checkpoint state is preserved correctly with both
+        // include_incomplete=true and include_incomplete=false.
+        let trades = scenarios::no_breach_sequence(250);
+
+        // Test with include_incomplete=false (move, no clone)
+        let mut processor1 = RangeBarProcessor::new(250).unwrap();
+        let bars_without = processor1.process_agg_trade_records(&trades).unwrap();
+        assert_eq!(bars_without.len(), 0);
+        // Checkpoint should be preserved
+        assert!(processor1.get_incomplete_bar().is_some());
+
+        // Test with include_incomplete=true (clone + consume)
+        let mut processor2 = RangeBarProcessor::new(250).unwrap();
+        let bars_with = processor2
+            .process_agg_trade_records_with_incomplete(&trades)
+            .unwrap();
+        assert_eq!(bars_with.len(), 1);
+        // Checkpoint should ALSO be preserved (cloned before consume)
+        assert!(processor2.get_incomplete_bar().is_some());
+
+        // Both checkpoints should have identical bar content
+        let cp1 = processor1.get_incomplete_bar().unwrap();
+        let cp2 = processor2.get_incomplete_bar().unwrap();
+        assert_eq!(cp1.open, cp2.open);
+        assert_eq!(cp1.close, cp2.close);
+        assert_eq!(cp1.high, cp2.high);
+        assert_eq!(cp1.low, cp2.low);
     }
 }

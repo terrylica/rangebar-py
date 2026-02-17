@@ -187,5 +187,59 @@ class TestE2EAPICompatibility:
         assert isinstance(df.index, pd.DatetimeIndex)
 
 
+class TestConcatViaPolars:
+    """Tests for _concat_pandas_via_polars memory efficiency (P8/MEM-006)."""
+
+    def test_concat_matches_pd_concat(self) -> None:
+        """Verify _concat_pandas_via_polars produces identical output to pd.concat."""
+        from rangebar.conversion import _concat_pandas_via_polars
+
+        # Create 5 DataFrames with OHLCV data and DatetimeIndex
+        dfs = []
+        for i in range(5):
+            base_ts = 1704067200000 + i * 100_000
+            idx = pd.to_datetime(
+                [base_ts + j * 1000 for j in range(100)], unit="ms"
+            )
+            df = pd.DataFrame(
+                {
+                    "Open": [42000.0 + j for j in range(100)],
+                    "High": [42100.0 + j for j in range(100)],
+                    "Low": [41900.0 + j for j in range(100)],
+                    "Close": [42050.0 + j for j in range(100)],
+                    "Volume": [1.0 + j * 0.1 for j in range(100)],
+                },
+                index=idx,
+            )
+            df.index.name = "timestamp"
+            dfs.append(df)
+
+        # Compare pd.concat vs _concat_pandas_via_polars
+        expected = pd.concat(dfs, axis=0).sort_index()
+        result = _concat_pandas_via_polars(dfs)
+
+        # Values must match; dtype may differ (Polars normalizes to us, pandas keeps ns)
+        pd.testing.assert_frame_equal(
+            result, expected, check_names=False, check_index_type=False
+        )
+
+    def test_concat_empty_and_single(self) -> None:
+        """Edge cases: empty list returns empty DF, single element passes through."""
+        from rangebar.conversion import _concat_pandas_via_polars
+
+        # Empty list
+        result_empty = _concat_pandas_via_polars([])
+        assert len(result_empty) == 0
+
+        # Single element
+        idx = pd.to_datetime([1704067200000], unit="ms")
+        single_df = pd.DataFrame(
+            {"Open": [42000.0], "Close": [42050.0]}, index=idx
+        )
+        single_df.index.name = "timestamp"
+        result_single = _concat_pandas_via_polars([single_df])
+        assert len(result_single) == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

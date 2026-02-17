@@ -737,3 +737,44 @@ fn test_volume_conservation_with_i128() {
         i64::MAX
     );
 }
+
+// === Memory efficiency tests (R15) ===
+
+#[test]
+fn test_fixedpoint_default() {
+    use rangebar_core::fixed_point::FixedPoint;
+    let fp = FixedPoint::default();
+    assert_eq!(fp, FixedPoint(0), "FixedPoint default should be 0");
+}
+
+#[test]
+fn test_rangebar_default() {
+    let bar = RangeBar::default();
+
+    // Numeric fields default to 0
+    assert_eq!(bar.open_time, 0);
+    assert_eq!(bar.close_time, 0);
+    assert_eq!(bar.volume, 0);
+    assert_eq!(bar.turnover, 0);
+    assert_eq!(bar.individual_trade_count, 0);
+    assert_eq!(bar.duration_us, 0);
+    assert_eq!(bar.ofi, 0.0);
+
+    // FixedPoint fields default to FixedPoint(0)
+    use rangebar_core::fixed_point::FixedPoint;
+    assert_eq!(bar.open, FixedPoint(0));
+    assert_eq!(bar.high, FixedPoint(0));
+    assert_eq!(bar.low, FixedPoint(0));
+    assert_eq!(bar.close, FixedPoint(0));
+    assert_eq!(bar.vwap, FixedPoint(0));
+
+    // All Option<T> fields default to None
+    assert!(bar.lookback_ofi.is_none());
+    assert!(bar.lookback_trade_count.is_none());
+    assert!(bar.lookback_hurst.is_none());
+    assert!(bar.lookback_permutation_entropy.is_none());
+    assert!(bar.intra_trade_count.is_none());
+    assert!(bar.intra_ofi.is_none());
+    assert!(bar.intra_bull_epoch_density.is_none());
+    assert!(bar.intra_hurst.is_none());
+}
