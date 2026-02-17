@@ -227,7 +227,8 @@ impl ExportRangeBarProcessor {
             // SAFETY: current_bar guaranteed Some - checked at line 688/734
             let completed_bar = self.current_bar.take().unwrap();
 
-            // Convert to export format (this is from an old internal structure)
+            // Convert to export format — uses ..Default::default() for all
+            // microstructure/inter-bar/intra-bar fields (0/0.0/None)
             let mut export_bar = RangeBar {
                 open_time: completed_bar.open_time,
                 close_time: completed_bar.close_time,
@@ -237,18 +238,12 @@ impl ExportRangeBarProcessor {
                 close: completed_bar.close,
                 volume: completed_bar.volume,
                 turnover: completed_bar.turnover,
-
-                // Enhanced fields
                 individual_trade_count: completed_bar.individual_trade_count as u32,
                 agg_record_count: completed_bar.agg_record_count,
                 first_trade_id: completed_bar.first_trade_id,
                 last_trade_id: completed_bar.last_trade_id,
-                // Issue #72: Aggregate trade ID tracking
-                first_agg_trade_id: completed_bar.first_agg_trade_id,
+                first_agg_trade_id: completed_bar.first_agg_trade_id, // Issue #72
                 last_agg_trade_id: completed_bar.last_agg_trade_id,
-                data_source: crate::types::DataSource::default(),
-
-                // Market microstructure fields
                 buy_volume: completed_bar.buy_volume,
                 sell_volume: completed_bar.sell_volume,
                 buy_trade_count: completed_bar.buy_trade_count as u32,
@@ -256,60 +251,7 @@ impl ExportRangeBarProcessor {
                 vwap: completed_bar.vwap,
                 buy_turnover: completed_bar.buy_turnover,
                 sell_turnover: completed_bar.sell_turnover,
-
-                // Microstructure features (Issue #25) - computed below
-                duration_us: 0,
-                ofi: 0.0,
-                vwap_close_deviation: 0.0,
-                price_impact: 0.0,
-                kyle_lambda_proxy: 0.0,
-                trade_intensity: 0.0,
-                volume_per_trade: 0.0,
-                aggression_ratio: 0.0,
-                aggregation_density_f64: 0.0,
-                turnover_imbalance: 0.0,
-
-                // Inter-bar features (Issue #59) - not computed in ExportRangeBarProcessor
-                lookback_trade_count: None,
-                lookback_ofi: None,
-                lookback_duration_us: None,
-                lookback_intensity: None,
-                lookback_vwap_raw: None,
-                lookback_vwap_position: None,
-                lookback_count_imbalance: None,
-                lookback_kyle_lambda: None,
-                lookback_burstiness: None,
-                lookback_volume_skew: None,
-                lookback_volume_kurt: None,
-                lookback_price_range: None,
-                lookback_kaufman_er: None,
-                lookback_garman_klass_vol: None,
-                lookback_hurst: None,
-                lookback_permutation_entropy: None,
-
-                // Intra-bar features (Issue #59) - not computed in ExportRangeBarProcessor
-                intra_bull_epoch_density: None,
-                intra_bear_epoch_density: None,
-                intra_bull_excess_gain: None,
-                intra_bear_excess_gain: None,
-                intra_bull_cv: None,
-                intra_bear_cv: None,
-                intra_max_drawdown: None,
-                intra_max_runup: None,
-                intra_trade_count: None,
-                intra_ofi: None,
-                intra_duration_us: None,
-                intra_intensity: None,
-                intra_vwap_position: None,
-                intra_count_imbalance: None,
-                intra_kyle_lambda: None,
-                intra_burstiness: None,
-                intra_volume_skew: None,
-                intra_volume_kurt: None,
-                intra_kaufman_er: None,
-                intra_garman_klass_vol: None,
-                intra_hurst: None,
-                intra_permutation_entropy: None,
+                ..Default::default() // Issue #25/#59: microstructure computed below; inter/intra-bar not used
             };
 
             // Compute microstructure features at bar finalization (Issue #25)
@@ -361,59 +303,8 @@ impl ExportRangeBarProcessor {
                 buy_turnover: incomplete.buy_turnover,
                 sell_turnover: incomplete.sell_turnover,
 
-                // Microstructure features (Issue #25) - computed below
-                duration_us: 0,
-                ofi: 0.0,
-                vwap_close_deviation: 0.0,
-                price_impact: 0.0,
-                kyle_lambda_proxy: 0.0,
-                trade_intensity: 0.0,
-                volume_per_trade: 0.0,
-                aggression_ratio: 0.0,
-                aggregation_density_f64: 0.0,
-                turnover_imbalance: 0.0,
-
-                // Inter-bar features (Issue #59) - not computed in ExportRangeBarProcessor
-                lookback_trade_count: None,
-                lookback_ofi: None,
-                lookback_duration_us: None,
-                lookback_intensity: None,
-                lookback_vwap_raw: None,
-                lookback_vwap_position: None,
-                lookback_count_imbalance: None,
-                lookback_kyle_lambda: None,
-                lookback_burstiness: None,
-                lookback_volume_skew: None,
-                lookback_volume_kurt: None,
-                lookback_price_range: None,
-                lookback_kaufman_er: None,
-                lookback_garman_klass_vol: None,
-                lookback_hurst: None,
-                lookback_permutation_entropy: None,
-
-                // Intra-bar features (Issue #59) - not computed in ExportRangeBarProcessor
-                intra_bull_epoch_density: None,
-                intra_bear_epoch_density: None,
-                intra_bull_excess_gain: None,
-                intra_bear_excess_gain: None,
-                intra_bull_cv: None,
-                intra_bear_cv: None,
-                intra_max_drawdown: None,
-                intra_max_runup: None,
-                intra_trade_count: None,
-                intra_ofi: None,
-                intra_duration_us: None,
-                intra_intensity: None,
-                intra_vwap_position: None,
-                intra_count_imbalance: None,
-                intra_kyle_lambda: None,
-                intra_burstiness: None,
-                intra_volume_skew: None,
-                intra_volume_kurt: None,
-                intra_kaufman_er: None,
-                intra_garman_klass_vol: None,
-                intra_hurst: None,
-                intra_permutation_entropy: None,
+                // All microstructure, inter-bar, and intra-bar features default to 0/None
+                ..Default::default()
             };
             // Compute microstructure features for incomplete bar (Issue #25)
             bar.compute_microstructure_features();
