@@ -1,3 +1,16 @@
+# [12.23.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.22.0...v12.23.0) (2026-02-18)
+
+
+### Bug Fixes
+
+* **test:** filter duplicate bars in month-boundary continuity test ([fdc927d](https://github.com-terrylica/terrylica/rangebar-py/commit/fdc927d459433d3fb9b29e811e96a0097fa96db6))
+
+
+### Features
+
+* **checkpoint:** wire Rust checkpoint system through all Python layers (Issue [#97](https://github.com-terrylica/terrylica/rangebar-py/issues/97)) ([743796f](https://github.com-terrylica/terrylica/rangebar-py/commit/743796f53cc2046e91c83544e2e2491c48534736))
+* **mise:** add recency backfill tasks (Issue [#92](https://github.com-terrylica/terrylica/rangebar-py/issues/92)) ([7f54566](https://github.com-terrylica/terrylica/rangebar-py/commit/7f545664e0e6d4f144f65daa7d3e0c450ad9401f))
+
 # [12.22.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.21.1...v12.22.0) (2026-02-17)
 
 
