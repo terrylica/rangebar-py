@@ -460,8 +460,28 @@ def _is_ouroboros_boundary(df, bar_index) -> bool:
     return ts.month == 1 and ts.day == 1 and ts.hour == 0
 
 
+def _is_duplicate_bar(df, bar_index) -> bool:
+    """Check if a gap is caused by a duplicate bar (Issue #78).
+
+    Overlapping population sessions can write the same bar twice with
+    slightly different timestamps. The "gap" between a duplicate pair
+    is the bar's own range, not a real market discontinuity.
+    """
+    if bar_index < 1 or bar_index >= len(df):
+        return False
+    prev = df.iloc[bar_index - 1]
+    curr = df.iloc[bar_index]
+    return (
+        prev["Open"] == curr["Open"]
+        and prev["High"] == curr["High"]
+        and prev["Low"] == curr["Low"]
+        and prev["Close"] == curr["Close"]
+    )
+
+
 def _filter_known_gaps(df, discontinuities) -> list:
-    """Filter out gaps from ouroboros boundaries and known market events.
+    """Filter out gaps from ouroboros boundaries, known market events,
+    and duplicate bars.
 
     Returns only genuinely unexpected gaps.
     """
@@ -469,6 +489,7 @@ def _filter_known_gaps(df, discontinuities) -> list:
         gap for gap in discontinuities
         if not _is_ouroboros_boundary(df, gap["bar_index"])
         and not _is_known_discontinuity(df, gap["bar_index"])
+        and not _is_duplicate_bar(df, gap["bar_index"])
     ]
 
 
@@ -591,9 +612,13 @@ class TestBarContinuity:
             tolerance_pct=self.CONTINUITY_TOLERANCE,
             threshold_decimal_bps=self.THRESHOLD_BPS,
         )
-        assert result["is_valid"], (
-            f"Cross-month discontinuity: {result['discontinuity_count']} gaps "
-            f"across {num_months} months"
+
+        # Filter out registered known discontinuities (ouroboros + market events)
+        unexpected_gaps = _filter_known_gaps(df, result["discontinuities"])
+        assert len(unexpected_gaps) == 0, (
+            f"Cross-month discontinuity: {len(unexpected_gaps)} unexpected gaps "
+            f"across {num_months} months. "
+            f"First: {unexpected_gaps[0] if unexpected_gaps else 'N/A'}"
         )
 
 
