@@ -1,3 +1,10 @@
+## [12.23.1](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.23.0...v12.23.1) (2026-02-18)
+
+
+### Bug Fixes
+
+* **sidecar:** skip stale checkpoint injection after gap-fill (Issue [#96](https://github.com-terrylica/terrylica/rangebar-py/issues/96)) ([cd9242a](https://github.com-terrylica/terrylica/rangebar-py/commit/cd9242aa06207be47b6ecd48966ba83d505e97f8))
+
 # [12.23.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.22.0...v12.23.0) (2026-02-18)
 
 
