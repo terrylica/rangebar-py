@@ -1,3 +1,10 @@
+# [12.24.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.23.1...v12.24.0) (2026-02-18)
+
+
+### Features
+
+* **rust:** enable crates.io publishing for core, providers, streaming (Issue [#97](https://github.com-terrylica/terrylica/rangebar-py/issues/97)) ([50ba54a](https://github.com-terrylica/terrylica/rangebar-py/commit/50ba54af21a2005fe9e88164cb0df7a1760e99aa))
+
 ## [12.23.1](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.23.0...v12.23.1) (2026-02-18)
 
 
