@@ -162,18 +162,25 @@ def _write_bar_to_clickhouse(symbol: str, threshold: int, bar_dict: dict) -> Non
 # Gap-fill on startup
 # =============================================================================
 
-def _gap_fill(symbols: list[str], thresholds: list[int]) -> None:
-    """Run Layer 2 recency backfill for all symbol x threshold pairs."""
+def _gap_fill(symbols: list[str], thresholds: list[int]) -> dict:
+    """Run Layer 2 recency backfill for all symbol x threshold pairs.
+
+    Returns dict keyed by ``"{symbol}@{threshold}"`` → ``BackfillResult``.
+    Used by ``_inject_checkpoints()`` to skip stale checkpoints (Issue #96).
+    """
     try:
         from rangebar.recency import backfill_recent
     except ImportError:
         logger.warning("recency module not available, skipping gap-fill")
-        return
+        return {}
 
+    results: dict = {}
     for symbol in symbols:
         for threshold in thresholds:
+            key = f"{symbol}@{threshold}"
             try:
                 result = backfill_recent(symbol, threshold_decimal_bps=threshold)
+                results[key] = result
                 if result and result.bars_written > 0:
                     logger.info(
                         "gap-fill: %s@%d — %d bars, gap was %.0fs",
@@ -181,6 +188,7 @@ def _gap_fill(symbols: list[str], thresholds: list[int]) -> None:
                     )
             except Exception:
                 logger.exception("gap-fill failed for %s@%d", symbol, threshold)
+    return results
 
 
 # =============================================================================
@@ -195,14 +203,35 @@ def _inject_checkpoints(
     symbols: list[str],
     thresholds: list[int],
     trace_id: str,
+    gap_fill_results: dict | None = None,
 ) -> int:
-    """Inject saved processor checkpoints into engine before start."""
+    """Inject saved processor checkpoints into engine before start.
+
+    Parameters
+    ----------
+    gap_fill_results
+        Dict keyed by ``"{symbol}@{threshold}"`` → ``BackfillResult`` from
+        ``_gap_fill()``.  When gap-fill wrote ≥1 bar for a pair, the
+        checkpoint for that pair is skipped — the gap-fill data is
+        authoritative and the checkpoint's incomplete bar is obsolete
+        (Issue #96).
+    """
     from rangebar.hooks import HookEvent, emit_hook
     from rangebar.logging import log_checkpoint_event
 
     loaded = 0
     for symbol in symbols:
         for threshold in thresholds:
+            # Issue #96: Skip checkpoint when gap-fill already wrote bars
+            key = f"{symbol}@{threshold}"
+            gf = (gap_fill_results or {}).get(key)
+            if gf is not None and getattr(gf, "bars_written", 0) > 0:
+                logger.info(
+                    "skipping checkpoint for %s@%d: gap-fill wrote %d bars",
+                    symbol, threshold, gf.bars_written,
+                )
+                continue
+
             cp = _load_checkpoint(symbol, threshold)
             if not (cp and cp.get("processor_checkpoint")):
                 continue
@@ -330,9 +359,10 @@ def run_sidecar(config: SidecarConfig) -> None:
     )
 
     # Gap-fill (Layer 2) for all symbol x threshold pairs
+    gap_fill_results = None
     if config.gap_fill_on_startup:
         logger.info("running gap-fill before starting live stream")
-        _gap_fill(config.symbols, config.thresholds)
+        gap_fill_results = _gap_fill(config.symbols, config.thresholds)
 
     # Start Rust engine
     engine = LiveBarEngine(
@@ -342,8 +372,10 @@ def run_sidecar(config: SidecarConfig) -> None:
     )
 
     # Issue #97: Inject saved processor checkpoints before starting
+    # Issue #96: Pass gap-fill results so stale checkpoints are skipped
     checkpoints_loaded = _inject_checkpoints(
         engine, config.symbols, config.thresholds, trace_id,
+        gap_fill_results=gap_fill_results,
     )
 
     engine.start()
