@@ -1,129 +1,123 @@
 # rangebar-core
 
-Core algorithm and types for non-lookahead range bar construction from tick data.
+Core algorithm for non-lookahead range bar construction from tick data, with 10 intra-bar and 16 inter-bar microstructure features computed during bar construction.
 
-## Overview
+[![crates.io](https://img.shields.io/crates/v/rangebar-core.svg)](https://crates.io/crates/rangebar-core)
+[![docs.rs](https://docs.rs/rangebar-core/badge.svg)](https://docs.rs/rangebar-core)
 
-`rangebar-core` provides the fundamental algorithm for constructing range bars - a time-independent charting technique with non-lookahead bias guarantees.
+## Installation
 
-**Algorithm Specification**: [`/docs/rangebar_core_api.md`](/docs/rangebar_core_api.md) (authoritative)
+### From crates.io
 
-## Key Features
-
-- **Fixed-Point Arithmetic**: 8-decimal precision (SCALE = 100,000,000) eliminates floating-point errors
-- **Non-Lookahead Algorithm**: Threshold breach detection uses only current and past data
-- **Minimal Dependencies**: Only 5 essential dependencies (chrono, serde, serde_json, thiserror, ahash)
-- **Type Safety**: Strongly-typed `AggTrade`, `RangeBar`, and `FixedPoint` structures
-- **Serialization Support**: Full serde support for all core types
-
-## Core Types
-
-### AggTrade
-
-Represents aggregated trade data with microsecond-precision timestamps:
-
-```rust
-pub struct AggTrade {
-    pub agg_trade_id: i64,
-    pub price: FixedPoint,
-    pub volume: FixedPoint,
-    pub timestamp: i64,  // microseconds
-    // ... other fields
-}
+```toml
+[dependencies]
+rangebar-core = "12"
 ```
 
-### RangeBar
+### From git (latest)
 
-Represents a completed range bar with OHLCV data:
-
-```rust
-pub struct RangeBar {
-    pub open: FixedPoint,
-    pub high: FixedPoint,
-    pub low: FixedPoint,
-    pub close: FixedPoint,
-    pub volume: FixedPoint,
-    pub open_time: i64,
-    pub close_time: i64,
-    // ... other fields
-}
+```toml
+[dependencies]
+rangebar-core = { git = "https://github.com/terrylica/rangebar-py", path = "crates/rangebar-core" }
 ```
 
-### FixedPoint
-
-8-decimal fixed-point arithmetic for exact decimal representation:
+## Quick Start
 
 ```rust
-pub struct FixedPoint(i64);  // Value × 100,000,000
+use rangebar_core::{RangeBarProcessor, AggTrade, FixedPoint};
 
-impl FixedPoint {
-    pub const SCALE: i64 = 100_000_000;
-    pub fn from_str(s: &str) -> Result<Self>;
-    pub fn to_f64(&self) -> f64;
-}
-```
-
-## Usage
-
-### Basic Range Bar Processing
-
-```rust
-use rangebar_core::{RangeBarProcessor, AggTrade};
-
-// Create processor with 0.25% threshold
-// v3.0.0+ uses dbps units: 250 dbps = 0.25%
+// Create processor: 250 dbps = 0.25% threshold
 let mut processor = RangeBarProcessor::new(250)?;
 
-// Process trades
+// Process a batch of trades
 let bars = processor.process_agg_trade_records(&trades)?;
+
+for bar in &bars {
+    println!(
+        "O={} H={} L={} C={} V={} trades={}",
+        bar.open.to_f64(), bar.high.to_f64(),
+        bar.low.to_f64(), bar.close.to_f64(),
+        bar.volume.to_f64(), bar.trade_count,
+    );
+}
 ```
 
-### Algorithm Invariants
-
-See [`/docs/rangebar_core_api.md`](/docs/rangebar_core_api.md) for complete specification.
-
-**Breach Consistency Invariant**:
+### Streaming (trade-by-trade)
 
 ```rust
-(high_breach → close_breach) AND (low_breach → close_breach)
+use rangebar_core::RangeBarProcessor;
+
+let mut processor = RangeBarProcessor::new(250)?;
+
+for trade in trades {
+    if let Some(completed_bar) = processor.process_single_trade(trade) {
+        // Bar completed — write to storage, emit to downstream
+        store_bar(&completed_bar);
+    }
+}
+
+// Check for incomplete bar at end of session
+if let Some(incomplete) = processor.get_incomplete_bar() {
+    println!("Incomplete bar: open={}", incomplete.open.to_f64());
+}
 ```
 
-## Dependencies
+### Checkpoint (crash recovery)
 
-- **chrono** `0.4` - Timestamp handling and conversions
-- **serde** `1.0` - Serialization framework
-- **serde_json** `1.0` - JSON serialization
-- **thiserror** `2.0` - Ergonomic error handling
+```rust
+use rangebar_core::RangeBarProcessor;
+use rangebar_core::checkpoint::Checkpoint;
 
-## Version
+let mut processor = RangeBarProcessor::new(250)?;
 
-Current version: **6.1.0** (modular crate architecture with checkpoint system)
+// ... process some trades ...
 
-## Critical Notes
+// Save state
+let checkpoint = processor.create_checkpoint();
+let json = serde_json::to_string(&checkpoint)?;
 
-### Threshold Units (v3.0.0 Breaking Change)
+// Later: restore from checkpoint
+let restored_checkpoint: Checkpoint = serde_json::from_str(&json)?;
+let mut restored = RangeBarProcessor::from_checkpoint(restored_checkpoint)?;
 
-v3.0.0 changed threshold units from 1 bps to 1 dbps:
+// Continue processing from where we left off
+let bars = restored.process_agg_trade_records(&more_trades)?;
+```
 
-- **Old API (v2.x)**: `new(25)` = 25 bps (legacy) = 0.25%
-- **New API (v3.0.0+)**: `new(250)` = 250 dbps = 0.25%
+## Threshold Units
 
-**Migration**: Multiply all threshold values by 10.
+All thresholds use **decimal basis points (dbps)**: 1 dbps = 0.001% = 0.00001.
 
-### Timestamp Precision
+| dbps | Percentage | Use Case         |
+| ---- | ---------- | ---------------- |
+| 100  | 0.10%      | Tight (scalping) |
+| 250  | 0.25%      | Standard         |
+| 500  | 0.50%      | Wide (swing)     |
+| 1000 | 1.00%      | Very wide        |
 
-All timestamps are in microseconds (16-digit). Different data sources require normalization:
+## Features
 
-- **Binance Spot**: Native 16-digit μs (no conversion)
-- **Binance UM Futures**: 13-digit ms → multiply by 1000
-- **Exness**: Converted during tick processing
+| Feature      | Default | Description                            |
+| ------------ | ------- | -------------------------------------- |
+| `test-utils` | No      | CSV loading for tests (adds `csv` dep) |
+| `python`     | No      | PyO3 type exports                      |
+| `api`        | No      | utoipa OpenAPI schemas                 |
+| `arrow`      | No      | Arrow RecordBatch export               |
 
-## Documentation
+## Microstructure Features
 
-- Comprehensive architecture: `/docs/ARCHITECTURE.md`
-- Migration guides: `/docs/planning/`
-- API examples: `/examples/`
+10 intra-bar features computed during bar construction (zero additional passes):
+
+`ofi`, `vwap_close_deviation`, `kyle_lambda_proxy`, `trade_intensity`, `volume_per_trade`, `aggression_ratio`, `aggregation_density`, `turnover_imbalance`, `duration_us`, `price_impact`
+
+16 inter-bar lookback features from trades before each bar opens:
+
+`lookback_ofi`, `lookback_intensity`, `lookback_kyle_lambda`, `lookback_burstiness`, `lookback_hurst`, `lookback_permutation_entropy`, and 10 more.
+
+## MSRV
+
+Minimum supported Rust version: **1.90**
 
 ## License
 
-See LICENSE file in the repository root.
+MIT

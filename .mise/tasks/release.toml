@@ -372,3 +372,72 @@ mise run release:pypi
 echo ""
 echo "OK: v$VERSION published to PyPI"
 """
+
+# =============================================================================
+# crates.io Publishing (Issue #97)
+# =============================================================================
+
+["release:crates"]
+description = "Publish Rust crates to crates.io (dependency order)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== Publishing to crates.io ==="
+
+VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+echo "Version: $VERSION"
+
+# Get token from 1Password (Claude Automation vault)
+CARGO_REGISTRY_TOKEN=$(OP_SERVICE_ACCOUNT_TOKEN="$(cat ~/.claude/.secrets/op-service-account-token)" \
+  op read "op://Claude Automation/crates-io-token/credential" 2>/dev/null) || {
+  echo "FAIL: No crates.io token in 1Password"
+  echo ""
+  echo "Setup instructions:"
+  echo "  1. Create token at: https://crates.io/settings/tokens"
+  echo "     - Scope: publish-update for rangebar-core, rangebar-providers, rangebar-streaming"
+  echo "  2. Store in 1Password:"
+  echo '     OP_SERVICE_ACCOUNT_TOKEN="$(cat ~/.claude/.secrets/op-service-account-token)" \\'
+  echo '       op item create --vault "Claude Automation" \\'
+  echo '       --category "API Credential" \\'
+  echo '       --title "crates.io API Token" \\'
+  echo '       "credential=<your-token>"'
+  exit 1
+}
+export CARGO_REGISTRY_TOKEN
+
+# Publish in dependency order (core must come first)
+for crate in rangebar-core rangebar-providers rangebar-streaming; do
+  echo ""
+  echo "Publishing $crate v$VERSION..."
+  if cargo publish -p "$crate" 2>&1; then
+    echo "OK: $crate published"
+  else
+    echo "WARN: $crate publish failed (may already exist on crates.io)"
+  fi
+  # crates.io index propagation delay
+  sleep 15
+done
+
+echo ""
+echo "OK: Published to crates.io"
+echo "  https://crates.io/crates/rangebar-core/$VERSION"
+echo "  https://crates.io/crates/rangebar-providers/$VERSION"
+echo "  https://crates.io/crates/rangebar-streaming/$VERSION"
+"""
+
+["release:crates-dry"]
+description = "Dry-run crates.io publish (verify packaging)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== Dry-run crates.io publish ==="
+for crate in rangebar-core rangebar-providers rangebar-streaming; do
+  echo ""
+  echo "--- $crate ---"
+  cargo publish -p "$crate" --dry-run 2>&1
+done
+echo ""
+echo "OK: All crates package successfully"
+"""

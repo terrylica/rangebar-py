@@ -2,7 +2,8 @@
 # Workspace Configuration
 # =============================================================================
 # This workspace consolidates the rangebar Rust crates with Python bindings.
-# All crates publish=false to prevent crates.io publishing.
+# Published to crates.io: rangebar-core, rangebar-providers, rangebar-streaming
+# Internal only (publish=false): rangebar-config, rangebar-io, rangebar-batch, rangebar-cli, rangebar
 
 [workspace]
 resolver = "2"
@@ -18,8 +19,6 @@ members = [
 ]
 
 [workspace.package]
-# CRITICAL: Prevent crates.io publishing - this is a PyPI-only project
-publish = false
 version = "12.23.1"
 authors = ["Terry Li <terry@eonlabs.com>"]
 categories = ["algorithms", "data-structures", "finance"]

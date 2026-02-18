@@ -1,6 +1,6 @@
 [package]
 name = "rangebar-config"
-publish.workspace = true  # CRITICAL: Inherits false - no crates.io publishing
+publish = false
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

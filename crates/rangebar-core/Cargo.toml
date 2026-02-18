@@ -1,6 +1,6 @@
 [package]
 name = "rangebar-core"
-publish.workspace = true  # CRITICAL: Inherits false - no crates.io publishing
+documentation = "https://docs.rs/rangebar-core"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

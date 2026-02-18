@@ -1,35 +1,71 @@
 # rangebar-streaming
 
-Real-time streaming processor for range bars with bounded memory and circuit breaker pattern.
+Real-time streaming engine for range bar construction over Binance WebSocket feeds, with bounded memory, circuit breaker pattern, and checkpoint recovery.
 
-## Overview
+[![crates.io](https://img.shields.io/crates/v/rangebar-streaming.svg)](https://crates.io/crates/rangebar-streaming)
+[![docs.rs](https://docs.rs/rangebar-streaming/badge.svg)](https://docs.rs/rangebar-streaming)
 
-`rangebar-streaming` provides a streaming implementation of the range bar algorithm optimized for real-time tick processing with bounded memory usage. Suitable for live trading systems, WebSocket data ingestion, and continuous market analysis.
+## Installation
 
-## Features
+### From crates.io
 
-- **Bounded Memory**: Configurable buffer size prevents memory exhaustion
-- **Circuit Breaker Pattern**: Fault tolerance with automatic error threshold detection
-- **Real-Time Metrics**: Processing statistics for monitoring
-- **Async Processing**: Tokio-based async stream processing
-- **Graceful Degradation**: Handles errors without cascade failures
+```toml
+[dependencies]
+rangebar-streaming = "12"
+```
 
-## Usage
+### From git (latest)
 
-### Basic Streaming
+```toml
+[dependencies]
+rangebar-streaming = { git = "https://github.com/terrylica/rangebar-py", path = "crates/rangebar-streaming" }
+```
+
+### With Binance WebSocket integration
+
+```toml
+[dependencies]
+rangebar-streaming = { version = "12", features = ["binance-integration"] }
+```
+
+## Quick Start
+
+### Stream Processing
 
 ```rust
 use rangebar_streaming::StreamingProcessor;
 use futures::stream::StreamExt;
 
-// Create processor with 0.25% threshold
-let mut processor = StreamingProcessor::new(250)?; // 250 dbps = 0.25%
+// Create processor: 250 dbps = 0.25% threshold
+let mut processor = StreamingProcessor::new(250)?;
 
-// Process async stream
+// Process an async trade stream
 let metrics = processor.process_stream(agg_trade_stream).await?;
 
-println!("Processed {} trades", metrics.trades_processed);
-println!("Generated {} bars", metrics.bars_generated);
+println!("Processed {} trades → {} bars", metrics.trades_processed, metrics.bars_generated);
+```
+
+### Live Bar Engine (multiplexed WebSocket)
+
+```rust
+use rangebar_streaming::LiveBarEngine;
+
+// Process multiple symbols × thresholds concurrently
+let engine = LiveBarEngine::new(
+    vec!["BTCUSDT".into(), "ETHUSDT".into()],
+    vec![250, 500],
+    true, // include microstructure features
+);
+
+engine.start();
+
+loop {
+    if let Some(bar) = engine.next_bar(timeout_ms: 5000) {
+        let symbol = bar.get("_symbol");
+        let threshold = bar.get("_threshold");
+        println!("{symbol}@{threshold}: close={}", bar.get("close"));
+    }
+}
 ```
 
 ### Custom Configuration
@@ -38,95 +74,43 @@ println!("Generated {} bars", metrics.bars_generated);
 use rangebar_streaming::{StreamingProcessor, StreamingProcessorConfig};
 
 let config = StreamingProcessorConfig {
-    max_buffer_size: 50_000,           // Max 50k trades in buffer
-    circuit_breaker_threshold: 100,     // Open circuit after 100 errors
-    metrics_interval_secs: 60,          // Report metrics every 60s
+    max_buffer_size: 50_000,
+    circuit_breaker_threshold: 100,
+    metrics_interval_secs: 60,
     ..Default::default()
 };
 
 let mut processor = StreamingProcessor::with_config(250, config)?;
 ```
 
-### Replay Buffer
+## Features
 
-For testing and development, use the replay buffer for time-aware playback:
+| Feature               | Default | Description                                  |
+| --------------------- | ------- | -------------------------------------------- |
+| `binance-integration` | No      | Binance WebSocket stream support             |
+| `stats`               | No      | Rolling statistics (rolling-stats, tdigests) |
+| `indicators`          | No      | Technical indicators                         |
+| `all`                 | No      | Enable all features                          |
 
-```rust
-use rangebar_streaming::replay::ReplayBuffer;
+## Architecture
 
-let mut buffer = ReplayBuffer::new(10_000); // 10k trade buffer
-
-// Push trades
-for trade in trades {
-    buffer.push(trade);
-}
-
-// Get trades from specific timestamp
-let recent_trades = buffer.get_trades_from(start_timestamp);
+```
+Binance WS → LiveBarEngine (tokio, multiplexed)
+                    │
+                    ├─ RangeBarProcessor (per symbol × threshold)
+                    │  └─ process_single_trade() → Option<CompletedBar>
+                    │
+                    └─ next_bar() → completed bars to consumer
 ```
 
-## Metrics
+- **Bounded memory**: Configurable buffer size prevents exhaustion
+- **Circuit breaker**: Fault tolerance with automatic error threshold detection
+- **Graceful shutdown**: `engine.stop()` + `engine.collect_checkpoints()` for recovery
 
-```rust
-pub struct StreamingMetrics {
-    pub trades_processed: u64,
-    pub bars_generated: u64,
-    pub processing_duration: Duration,
-    pub throughput_trades_per_sec: f64,
-    pub errors_encountered: u64,
-    pub circuit_breaker_active: bool,
-}
-```
+## MSRV
 
-## Circuit Breaker
-
-The circuit breaker pattern prevents cascade failures:
-
-1. **Closed State**: Normal operation, all trades processed
-2. **Open State**: Error threshold exceeded, processing halted
-3. **Half-Open State**: Testing if errors cleared
-
-```rust
-// Circuit breaker activates when error count exceeds threshold
-if metrics.circuit_breaker_active {
-    eprintln!("Circuit breaker active - too many errors");
-}
-```
-
-## Performance Characteristics
-
-- **Memory Usage**: O(buffer_size) - bounded and configurable
-- **Throughput**: Moderate (single-threaded async processing)
-- **Latency**: Low (< 1ms per trade in normal conditions)
-- **Parallelism**: Single-threaded (use rangebar-batch for multi-threaded)
-
-## Comparison: Streaming vs Batch
-
-| Feature         | Streaming       | Batch                  |
-| --------------- | --------------- | ---------------------- |
-| Memory Usage    | Bounded         | Unbounded              |
-| Throughput      | Moderate        | High                   |
-| Parallelism     | Single-threaded | Multi-threaded (Rayon) |
-| Real-time       | Yes             | No                     |
-| Use Case        | Live trading    | Historical analysis    |
-| Circuit Breaker | Yes             | No                     |
-
-## Dependencies
-
-- **rangebar-core** - Core algorithm and types
-- **rangebar-providers** - Data fetching
-- **tokio** - Async runtime
-- **futures** - Stream processing
-
-## Version
-
-Current version: **6.1.0** (modular crate architecture with checkpoint system)
-
-## Documentation
-
-- Architecture: `../../docs/ARCHITECTURE.md`
-- Examples: `../../examples/interactive/`
+Minimum supported Rust version: **1.90**
 
 ## License
 
-See LICENSE file in the repository root.
+MIT

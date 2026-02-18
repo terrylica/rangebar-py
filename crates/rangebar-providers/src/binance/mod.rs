@@ -15,7 +15,7 @@
 //!
 //! ## Data Sources
 //!
-//! - **Spot Market**: https://data.binance.vision/
+//! - **Spot Market**: <https://data.binance.vision/>
 //! - **UM Futures**: USDT-margined perpetuals
 //! - **CM Futures**: Coin-margined perpetuals
 //!
