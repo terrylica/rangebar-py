@@ -388,20 +388,13 @@ echo "=== Publishing to crates.io ==="
 VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
 echo "Version: $VERSION"
 
-# Get token from 1Password (Claude Automation vault)
+# Get token: 1Password first, file fallback
 CARGO_REGISTRY_TOKEN=$(OP_SERVICE_ACCOUNT_TOKEN="$(cat ~/.claude/.secrets/op-service-account-token)" \
-  op read "op://Claude Automation/crates-io-token/credential" 2>/dev/null) || {
-  echo "FAIL: No crates.io token in 1Password"
-  echo ""
-  echo "Setup instructions:"
-  echo "  1. Create token at: https://crates.io/settings/tokens"
-  echo "     - Scope: publish-update for rangebar-core, rangebar-providers, rangebar-streaming"
-  echo "  2. Store in 1Password:"
-  echo '     OP_SERVICE_ACCOUNT_TOKEN="$(cat ~/.claude/.secrets/op-service-account-token)" \\'
-  echo '       op item create --vault "Claude Automation" \\'
-  echo '       --category "API Credential" \\'
-  echo '       --title "crates.io API Token" \\'
-  echo '       "credential=<your-token>"'
+  op read "op://Claude Automation/crates-io-token/credential" 2>/dev/null) || \
+CARGO_REGISTRY_TOKEN=$(cat ~/.claude/.secrets/crates-io-token 2>/dev/null) || {
+  echo "FAIL: No crates.io token found"
+  echo "  Option 1: Store in 1Password Claude Automation vault as 'crates-io-token'"
+  echo "  Option 2: echo TOKEN > ~/.claude/.secrets/crates-io-token && chmod 600 ~/.claude/.secrets/crates-io-token"
   exit 1
 }
 export CARGO_REGISTRY_TOKEN
