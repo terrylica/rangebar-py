@@ -16,6 +16,8 @@
 #   .mise/tasks/checksum.toml - checksum verification
 #   .mise/tasks/diag.toml     - diagnostics
 #   .mise/tasks/research.toml - research cache population
+#   .mise/tasks/telemetry.toml - structured telemetry
+#   .mise/tasks/recency.toml  - Layer 2 recency backfill (Issue #92)
 
 [env]
 # =============================================================================
@@ -163,4 +165,5 @@ includes = [
     ".mise/tasks/diag.toml",
     ".mise/tasks/research.toml",
     ".mise/tasks/telemetry.toml",
+    ".mise/tasks/recency.toml",
 ]

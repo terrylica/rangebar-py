@@ -1,0 +1,47 @@
+# Layer 2 Recency Backfill Tasks (Issue #92)
+# Fills gap between Binance Vision archives (~2 day lag) and current time
+# Uses REST API → RangeBarProcessor → ClickHouse
+
+["recency:backfill"]
+description = "Backfill recent range bars for a symbol/threshold (SYMBOL, THRESHOLD env vars)"
+run = """
+#!/usr/bin/env bash
+set -e
+
+uv run --python 3.13 python -c '
+import os
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+from rangebar.recency import backfill_recent
+
+symbol = os.environ.get("SYMBOL", "BTCUSDT")
+threshold = int(os.environ.get("THRESHOLD", "250"))
+
+result = backfill_recent(symbol, threshold)
+print(f"\nResult: {result.bars_written} bars written for {symbol} @ {threshold} dbps")
+print(f"  Gap was {result.gap_seconds:.0f}s ({result.gap_seconds / 3600:.1f}h)")
+'
+"""
+
+["recency:backfill-all"]
+description = "Backfill recent range bars for all cached symbol x threshold pairs"
+run = """
+#!/usr/bin/env bash
+set -e
+
+uv run --python 3.13 python -c '
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+from rangebar.recency import backfill_all_recent
+
+results = backfill_all_recent()
+print()
+for r in results:
+    status = f"{r.bars_written} bars" if not r.error else f"ERROR: {r.error}"
+    print(f"  {r.symbol} @ {r.threshold_decimal_bps} dbps: {status}")
+'
+"""
