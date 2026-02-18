@@ -9,10 +9,12 @@
 //! - Completed bars emitted to a bounded channel for Python consumption
 //! - Graceful shutdown via `CancellationToken`
 
+use rangebar_core::checkpoint::Checkpoint;
 use rangebar_core::processor::{ProcessingError, RangeBarProcessor};
 use rangebar_core::interbar::InterBarConfig;
 use rangebar_core::{AggTrade, RangeBar};
 use rangebar_providers::binance::{BinanceWebSocketStream, ReconnectionPolicy};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -48,6 +50,8 @@ pub struct LiveEngineConfig {
     pub bar_channel_capacity: usize,
     /// Reconnection policy for WebSocket connections
     pub reconnection_policy: ReconnectionPolicy,
+    /// Initial checkpoints keyed by (symbol, threshold) for resuming incomplete bars
+    pub initial_checkpoints: HashMap<(String, u32), Checkpoint>,
 }
 
 impl LiveEngineConfig {
@@ -59,7 +63,15 @@ impl LiveEngineConfig {
             include_microstructure: true,
             bar_channel_capacity: 500,
             reconnection_policy: ReconnectionPolicy::default(),
+            initial_checkpoints: HashMap::new(),
         }
+    }
+
+    /// Inject a checkpoint for a specific (symbol, threshold) pair.
+    /// Must be called before `LiveBarEngine::start()`.
+    pub fn with_checkpoint(mut self, symbol: String, threshold: u32, checkpoint: Checkpoint) -> Self {
+        self.initial_checkpoints.insert((symbol, threshold), checkpoint);
+        self
     }
 }
 
@@ -74,6 +86,9 @@ pub struct LiveBarEngine {
     shutdown: CancellationToken,
     metrics: Arc<LiveEngineMetrics>,
     started: bool,
+    /// Channel for receiving processor checkpoints on shutdown
+    checkpoint_rx: Option<mpsc::Receiver<(String, u32, Checkpoint)>>,
+    checkpoint_tx: mpsc::Sender<(String, u32, Checkpoint)>,
 }
 
 impl LiveBarEngine {
@@ -82,6 +97,9 @@ impl LiveBarEngine {
     /// Does NOT start streaming — call `start()` after creation.
     pub fn new(config: LiveEngineConfig) -> Self {
         let (bar_tx, bar_rx) = mpsc::channel(config.bar_channel_capacity);
+        // Channel for extracting checkpoints on shutdown (one per symbol×threshold)
+        let max_checkpoints = config.symbols.len() * config.thresholds.len();
+        let (checkpoint_tx, checkpoint_rx) = mpsc::channel(max_checkpoints.max(1));
         Self {
             config,
             bar_rx,
@@ -89,7 +107,18 @@ impl LiveBarEngine {
             shutdown: CancellationToken::new(),
             metrics: Arc::new(LiveEngineMetrics::default()),
             started: false,
+            checkpoint_rx: Some(checkpoint_rx),
+            checkpoint_tx,
         }
+    }
+
+    /// Inject a checkpoint for a specific (symbol, threshold) pair.
+    /// Must be called before `start()`.
+    pub fn set_initial_checkpoint(&mut self, symbol: &str, threshold: u32, checkpoint: Checkpoint) {
+        self.config.initial_checkpoints.insert(
+            (symbol.to_uppercase(), threshold),
+            checkpoint,
+        );
     }
 
     /// Start all WebSocket connections and processing loops.
@@ -111,16 +140,52 @@ impl LiveBarEngine {
             let shutdown = self.shutdown.clone();
             let policy = self.config.reconnection_policy.clone();
             let metrics = Arc::clone(&self.metrics);
+            let checkpoint_tx = self.checkpoint_tx.clone();
 
             // Create processors for this symbol (one per threshold)
             let mut processors: Vec<(u32, RangeBarProcessor)> = Vec::with_capacity(thresholds.len());
             for &threshold in &thresholds {
-                let mut p = RangeBarProcessor::new(threshold)?;
-                if include_microstructure {
-                    p = p
-                        .with_inter_bar_config(InterBarConfig::default())
-                        .with_intra_bar_features();
-                }
+                // Try to restore from checkpoint, fall back to fresh processor
+                let key = (symbol.clone(), threshold);
+                let p = if let Some(cp) = self.config.initial_checkpoints.remove(&key) {
+                    match RangeBarProcessor::from_checkpoint(cp) {
+                        Ok(mut restored) => {
+                            // Re-enable microstructure features after checkpoint restore
+                            if include_microstructure {
+                                restored = restored
+                                    .with_inter_bar_config(InterBarConfig::default())
+                                    .with_intra_bar_features();
+                            }
+                            tracing::info!(
+                                %symbol, threshold,
+                                has_incomplete_bar = restored.get_incomplete_bar().is_some(),
+                                "processor restored from checkpoint"
+                            );
+                            restored
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                %symbol, threshold, ?e,
+                                "checkpoint restore failed, starting fresh"
+                            );
+                            let mut fresh = RangeBarProcessor::new(threshold)?;
+                            if include_microstructure {
+                                fresh = fresh
+                                    .with_inter_bar_config(InterBarConfig::default())
+                                    .with_intra_bar_features();
+                            }
+                            fresh
+                        }
+                    }
+                } else {
+                    let mut fresh = RangeBarProcessor::new(threshold)?;
+                    if include_microstructure {
+                        fresh = fresh
+                            .with_inter_bar_config(InterBarConfig::default())
+                            .with_intra_bar_features();
+                    }
+                    fresh
+                };
                 processors.push((threshold, p));
             }
 
@@ -129,6 +194,7 @@ impl LiveBarEngine {
                 symbol,
                 processors,
                 bar_tx,
+                checkpoint_tx,
                 policy,
                 shutdown,
                 metrics,
@@ -170,6 +236,45 @@ impl LiveBarEngine {
         self.started
     }
 
+    /// Collect checkpoints from all processors after shutdown.
+    ///
+    /// Call after `stop()`. Each symbol task sends its processor checkpoints
+    /// through the channel before exiting. Returns a map of `"SYMBOL:THRESHOLD"` → `Checkpoint`.
+    pub async fn collect_checkpoints(&mut self, timeout: Duration) -> HashMap<String, Checkpoint> {
+        let mut result = HashMap::new();
+        let rx = match self.checkpoint_rx.take() {
+            Some(rx) => rx,
+            None => return result,
+        };
+
+        // Drain all available checkpoints within timeout
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut rx = rx;
+        loop {
+            tokio::select! {
+                item = rx.recv() => {
+                    match item {
+                        Some((symbol, threshold, cp)) => {
+                            let key = format!("{symbol}:{threshold}");
+                            result.insert(key, cp);
+                        }
+                        None => break, // Channel closed, all senders dropped
+                    }
+                }
+                () = tokio::time::sleep_until(deadline) => {
+                    tracing::warn!(
+                        collected = result.len(),
+                        "checkpoint collection timed out"
+                    );
+                    break;
+                }
+            }
+        }
+
+        tracing::info!(count = result.len(), "checkpoints collected");
+        result
+    }
+
     /// Get the shutdown token (for external coordination).
     pub fn shutdown_token(&self) -> CancellationToken {
         self.shutdown.clone()
@@ -201,6 +306,7 @@ async fn symbol_task(
     symbol: String,
     mut processors: Vec<(u32, RangeBarProcessor)>,
     bar_tx: mpsc::Sender<CompletedBar>,
+    checkpoint_tx: mpsc::Sender<(String, u32, Checkpoint)>,
     policy: ReconnectionPolicy,
     shutdown: CancellationToken,
     metrics: Arc<LiveEngineMetrics>,
@@ -243,7 +349,8 @@ async fn symbol_task(
                                     };
                                     if bar_tx.send(completed).await.is_err() {
                                         tracing::warn!(%symbol, "bar channel closed, stopping symbol task");
-                                        return;
+                                        // Still extract checkpoints before returning
+                                        break;
                                     }
                                 }
                                 Ok(None) => {
@@ -266,6 +373,19 @@ async fn symbol_task(
                 tracing::info!(%symbol, "shutdown requested");
                 break;
             }
+        }
+    }
+
+    // Extract checkpoints from all processors before task exits
+    for (threshold, processor) in &processors {
+        let cp = processor.create_checkpoint(&symbol);
+        tracing::info!(
+            %symbol, threshold,
+            has_incomplete_bar = cp.has_incomplete_bar(),
+            "checkpoint extracted on shutdown"
+        );
+        if checkpoint_tx.send((symbol.clone(), *threshold, cp)).await.is_err() {
+            tracing::warn!(%symbol, threshold, "checkpoint channel closed");
         }
     }
 

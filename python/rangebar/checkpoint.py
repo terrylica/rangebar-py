@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -123,7 +124,9 @@ class PopulationCheckpoint:
             Path to save checkpoint file.
         """
         self.updated_at = datetime.now(UTC).isoformat()
-        data = json.dumps(self.to_dict(), indent=2)
+        d = self.to_dict()
+        d["provenance"] = _checkpoint_provenance()
+        data = json.dumps(d, indent=2)
 
         # Ensure parent directory exists
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -306,6 +309,37 @@ def _save_checkpoint_to_clickhouse(checkpoint: PopulationCheckpoint) -> None:
         logger.debug("ClickHouse checkpoint save failed (non-fatal): %s", e)
 
 
+def _checkpoint_provenance(trace_id: str | None = None) -> dict:
+    """Build provenance metadata for checkpoint files (Issue #97)."""
+    import rangebar
+
+    return {
+        "service": "rangebar-py",
+        "version": getattr(rangebar, "__version__", "unknown"),
+        "git_sha": os.environ.get("RANGEBAR_GIT_SHA", "unknown"),
+        "host": socket.gethostname(),
+        "pid": os.getpid(),
+        "created_utc": datetime.now(UTC).isoformat(),
+        "trace_id": trace_id,
+    }
+
+
+def _is_ouroboros_boundary(date_str: str, ouroboros: str) -> bool:
+    """Check if a date falls on an ouroboros reset boundary.
+
+    Issue #97: Used by populate_cache_resumable() to reset the threaded
+    processor at year/month/week boundaries.
+    """
+    d = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
+    if ouroboros == "year":
+        return d.month == 1 and d.day == 1
+    if ouroboros == "month":
+        return d.day == 1
+    if ouroboros == "week":
+        return d.weekday() == 0  # Monday (ISO convention for week start)
+    return False
+
+
 def _date_range(start_date: str, end_date: str) -> Iterator[str]:
     """Generate dates from start to end (inclusive).
 
@@ -403,8 +437,10 @@ def populate_cache_resumable(
     ...     force_refresh=True,
     ... )
     """
-    from rangebar import get_range_bars
     from rangebar.hooks import HookEvent, emit_hook
+    from rangebar.logging import generate_trace_id, log_checkpoint_event
+
+    trace_id = generate_trace_id("pop")
 
     # Symbol registry gate + start date clamping (Issue #79)
     from rangebar.symbol_registry import (
@@ -492,6 +528,7 @@ def populate_cache_resumable(
                 emit_hook(
                     HookEvent.CHECKPOINT_SAVED,
                     symbol=symbol,
+                    trace_id=trace_id,
                     action="resumed",
                     last_completed_date=checkpoint.last_completed_date,
                     bars_written=total_bars,
@@ -526,6 +563,98 @@ def populate_cache_resumable(
             verbose=True,
         )
 
+    # Issue #97: Thread processor across days for bar-level continuity.
+    # Bypass get_range_bars() to maintain a single processor across days.
+    # get_range_bars() creates a fresh processor per call, losing incomplete
+    # bar state at day boundaries.
+
+    from rangebar.orchestration.helpers import (
+        _parse_microstructure_env_vars,
+        _process_binance_trades,
+    )
+    from rangebar.orchestration.range_bars_cache import try_cache_write
+    from rangebar.processors.core import RangeBarProcessor
+    from rangebar.storage.parquet import TickStorage
+
+    eff_count, eff_bars, enable_intra = _parse_microstructure_env_vars(
+        include_microstructure, None, inter_bar_lookback_bars,
+    )
+    storage = TickStorage()
+    active_processor: RangeBarProcessor | None = None
+
+    # Restore processor from checkpoint if available
+    if checkpoint and checkpoint.processor_checkpoint:
+        try:
+            active_processor = RangeBarProcessor.from_checkpoint(
+                checkpoint.processor_checkpoint,
+            )
+            # Re-enable microstructure features after checkpoint restore
+            if include_microstructure:
+                active_processor.enable_microstructure(
+                    inter_bar_lookback_count=eff_count,
+                    inter_bar_lookback_bars=eff_bars,
+                    include_intra_bar_features=enable_intra,
+                )
+            logger.info(
+                "Restored processor from checkpoint "
+                "(has_incomplete_bar=%s, defer_open=%s)",
+                checkpoint.processor_checkpoint.get("has_incomplete_bar"),
+                checkpoint.processor_checkpoint.get("defer_open"),
+            )
+            log_checkpoint_event(
+                "checkpoint_restore",
+                symbol,
+                trace_id,
+                threshold_dbps=threshold_decimal_bps,
+                last_completed_date=checkpoint.last_completed_date,
+                bars_written=checkpoint.bars_written,
+                has_incomplete_bar=checkpoint.processor_checkpoint.get(
+                    "has_incomplete_bar"
+                ),
+                last_trade_id=checkpoint.processor_checkpoint.get(
+                    "last_trade_id"
+                ),
+            )
+            if notify:
+                emit_hook(
+                    HookEvent.CHECKPOINT_RESTORED,
+                    symbol=symbol,
+                    trace_id=trace_id,
+                    threshold_dbps=threshold_decimal_bps,
+                    has_incomplete_bar=checkpoint.processor_checkpoint.get(
+                        "has_incomplete_bar"
+                    ),
+                    last_trade_id=checkpoint.processor_checkpoint.get(
+                        "last_trade_id"
+                    ),
+                    defer_open=checkpoint.processor_checkpoint.get(
+                        "defer_open"
+                    ),
+                )
+        except Exception:
+            logger.exception(
+                "Failed to restore processor from checkpoint, starting fresh",
+            )
+            log_checkpoint_event(
+                "checkpoint_restore_failed",
+                symbol,
+                trace_id,
+                threshold_dbps=threshold_decimal_bps,
+                fallback="fresh_processor",
+            )
+            if notify:
+                emit_hook(
+                    HookEvent.CHECKPOINT_RESTORE_FAILED,
+                    symbol=symbol,
+                    trace_id=trace_id,
+                    threshold_dbps=threshold_decimal_bps,
+                )
+            active_processor = None
+
+    created_at = (
+        checkpoint.created_at if checkpoint else datetime.now(UTC).isoformat()
+    )
+
     for i, date in enumerate(dates, 1):
         logger.info(
             "Processing %s [%d/%d]: %s",
@@ -536,20 +665,74 @@ def populate_cache_resumable(
         )
 
         try:
-            # Fetch and compute range bars for this day
-            df = get_range_bars(
-                symbol,
-                date,
-                date,
-                threshold_decimal_bps=threshold_decimal_bps,
-                include_microstructure=include_microstructure,
-                ouroboros=ouroboros,
-                use_cache=True,
-                fetch_if_missing=True,
-                inter_bar_lookback_bars=inter_bar_lookback_bars,
+            # Issue #97: Handle ouroboros boundary — reset processor state
+            if active_processor is not None and _is_ouroboros_boundary(
+                date, ouroboros
+            ):
+                logger.info(
+                    "Ouroboros %s boundary at %s — resetting processor",
+                    ouroboros, date,
+                )
+                log_checkpoint_event(
+                    "ouroboros_reset",
+                    symbol,
+                    trace_id,
+                    date=date,
+                    boundary_type=ouroboros,
+                    had_incomplete_bar=active_processor.get_incomplete_bar()
+                    is not None,
+                )
+                active_processor.reset_at_ouroboros()
+
+            # Load tick data for this day (cache or network)
+            from rangebar.orchestration.helpers import (
+                _datetime_to_end_ms,
+                _datetime_to_start_ms,
+                _fetch_binance,
             )
 
-            bars_today = len(df) if df is not None else 0
+            day_dt = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
+            day_start_ms = _datetime_to_start_ms(day_dt)
+            day_end_ms = _datetime_to_end_ms(day_dt)
+            cache_symbol = f"BINANCE_SPOT_{symbol}".upper()
+
+            has_cached = storage.has_ticks(cache_symbol, day_start_ms, day_end_ms)
+            if has_cached:
+                day_ticks = storage.read_ticks(
+                    cache_symbol, day_start_ms, day_end_ms,
+                )
+            else:
+                day_ticks = _fetch_binance(symbol, date, date, "spot")
+                if not day_ticks.is_empty():
+                    storage.write_ticks(cache_symbol, day_ticks)
+
+            if day_ticks.is_empty():
+                logger.debug("%s %s: no tick data", symbol, date)
+                bars_today = 0
+            else:
+                # Process ticks with threaded processor
+                bars_df, active_processor = _process_binance_trades(
+                    day_ticks,
+                    threshold_decimal_bps,
+                    False,  # include_incomplete
+                    include_microstructure,
+                    processor=active_processor,
+                    symbol=symbol,
+                    inter_bar_lookback_count=eff_count,
+                    include_intra_bar_features=enable_intra,
+                    inter_bar_lookback_bars=eff_bars,
+                )
+
+                bars_today = len(bars_df) if bars_df is not None else 0
+
+                # Write to ClickHouse cache
+                if bars_df is not None and not bars_df.empty:
+                    try_cache_write(
+                        bars_df, symbol, threshold_decimal_bps, ouroboros,
+                    )
+
+                del bars_df
+
             total_bars += bars_today
 
             logger.debug(
@@ -571,8 +754,11 @@ def populate_cache_resumable(
                     total_bars=total_bars,
                 )
 
-            # Save checkpoint after each successful day
-            # Issue #69: Include new fields for bar-level resumability
+            # Issue #97: Save processor checkpoint for bar-level resumability
+            proc_cp = None
+            if active_processor is not None:
+                proc_cp = active_processor.create_checkpoint(symbol)
+
             checkpoint = PopulationCheckpoint(
                 symbol=symbol,
                 threshold_bps=threshold_decimal_bps,
@@ -580,33 +766,59 @@ def populate_cache_resumable(
                 end_date=end_date,
                 last_completed_date=date,
                 bars_written=total_bars,
-                created_at=(
-                    checkpoint.created_at
-                    if checkpoint
-                    else datetime.now(UTC).isoformat()
-                ),
+                created_at=created_at,
                 include_microstructure=include_microstructure,
                 ouroboros_mode=ouroboros,
+                processor_checkpoint=proc_cp,
+                last_trade_timestamp_ms=(
+                    proc_cp.get("last_timestamp_ms") if proc_cp else None
+                ),
+                first_agg_trade_id_in_bar=(
+                    (proc_cp.get("incomplete_bar_raw") or {}).get(
+                        "first_agg_trade_id"
+                    )
+                    if proc_cp
+                    else None
+                ),
+                last_agg_trade_id_in_bar=(
+                    (proc_cp.get("incomplete_bar_raw") or {}).get(
+                        "last_agg_trade_id"
+                    )
+                    if proc_cp
+                    else None
+                ),
             )
             # Save to local filesystem (fast)
             checkpoint.save(checkpoint_path)
             # Issue #69: Also save to ClickHouse (cross-machine resume)
             _save_checkpoint_to_clickhouse(checkpoint)
 
+            log_checkpoint_event(
+                "checkpoint_save",
+                symbol,
+                trace_id,
+                threshold_dbps=threshold_decimal_bps,
+                date=date,
+                bars_today=bars_today,
+                total_bars=total_bars,
+                has_incomplete_bar=proc_cp is not None
+                and proc_cp.get("has_incomplete_bar", False),
+                defer_open=proc_cp.get("defer_open") if proc_cp else None,
+            )
+
             if notify:
                 emit_hook(
                     HookEvent.CHECKPOINT_SAVED,
                     symbol=symbol,
+                    trace_id=trace_id,
                     date=date,
                     bars_today=bars_today,
                     total_bars=total_bars,
                     progress_pct=round(i / total_days * 100, 1),
                 )
 
-            # Issue #76: Explicit memory cleanup to prevent unbounded growth
-            # Without this, each day's DataFrame accumulates in memory
-            # causing 10+ GB growth over multi-day runs
-            del df
+            # Issue #76: Explicit memory cleanup
+            del day_ticks
 
         except (ValueError, RuntimeError, OSError) as exc:
             # Defense-in-depth: if the final day has no data (archive not yet
@@ -630,6 +842,7 @@ def populate_cache_resumable(
                 emit_hook(
                     HookEvent.POPULATION_FAILED,
                     symbol=symbol,
+                    trace_id=trace_id,
                     date=date,
                     error=str(exc),
                     total_bars=total_bars,
@@ -685,6 +898,7 @@ def populate_cache_resumable(
         emit_hook(
             HookEvent.POPULATION_COMPLETE,
             symbol=symbol,
+            trace_id=trace_id,
             start_date=start_date,
             end_date=end_date,
             total_bars=total_bars,

@@ -166,6 +166,42 @@ impl PyRangeBarProcessor {
         })
     }
 
+    /// Re-enable microstructure features on a restored processor (Issue #97).
+    ///
+    /// After `from_checkpoint()`, the processor has bar state but loses
+    /// microstructure config. Call this before processing trades to re-enable
+    /// inter-bar lookback and intra-bar features.
+    ///
+    /// Args:
+    ///     inter_bar_lookback_count: Fixed trade count for lookback window
+    ///     inter_bar_lookback_bars: Bar-relative lookback (takes precedence)
+    ///     include_intra_bar_features: Enable intra-bar features
+    #[pyo3(signature = (inter_bar_lookback_count = None, inter_bar_lookback_bars = None, include_intra_bar_features = false))]
+    fn enable_microstructure(
+        &mut self,
+        inter_bar_lookback_count: Option<usize>,
+        inter_bar_lookback_bars: Option<usize>,
+        include_intra_bar_features: bool,
+    ) {
+        if let Some(n_bars) = inter_bar_lookback_bars {
+            let config = InterBarConfig {
+                lookback_mode: LookbackMode::BarRelative(n_bars),
+                ..Default::default()
+            };
+            self.processor.set_inter_bar_config(config);
+        } else if let Some(count) = inter_bar_lookback_count {
+            let config = InterBarConfig {
+                lookback_mode: LookbackMode::FixedCount(count),
+                ..Default::default()
+            };
+            self.processor.set_inter_bar_config(config);
+        }
+
+        if include_intra_bar_features {
+            self.processor.set_intra_bar_features(true);
+        }
+    }
+
     /// Process aggregated trades into range bars (batch mode - resets state)
     ///
     /// WARNING: This method resets processor state on each call. For streaming

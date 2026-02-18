@@ -570,6 +570,37 @@ class RangeBarProcessor:
 
         return self._processor.process_trades_arrow(batch)
 
+    def enable_microstructure(
+        self,
+        *,
+        inter_bar_lookback_count: int | None = None,
+        inter_bar_lookback_bars: int | None = None,
+        include_intra_bar_features: bool = False,
+    ) -> None:
+        """Re-enable microstructure features after checkpoint restore (Issue #97).
+
+        After ``from_checkpoint()``, the processor preserves bar state but
+        loses microstructure configuration. Call this before processing
+        trades to re-enable inter-bar lookback and intra-bar features.
+
+        Parameters
+        ----------
+        inter_bar_lookback_count : int, optional
+            Fixed trade count for lookback window.
+        inter_bar_lookback_bars : int, optional
+            Bar-relative lookback (takes precedence over count).
+        include_intra_bar_features : bool, default=False
+            Enable intra-bar features.
+        """
+        self._processor.enable_microstructure(
+            inter_bar_lookback_count,
+            inter_bar_lookback_bars,
+            include_intra_bar_features,
+        )
+        self.inter_bar_lookback_count = inter_bar_lookback_count
+        self.inter_bar_lookback_bars = inter_bar_lookback_bars
+        self.include_intra_bar_features = include_intra_bar_features
+
     def reset_at_ouroboros(self) -> dict | None:
         """Reset processor state at an ouroboros boundary.
 

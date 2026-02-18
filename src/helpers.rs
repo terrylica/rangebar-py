@@ -197,6 +197,18 @@ pub(crate) fn checkpoint_to_dict(py: Python, checkpoint: &Checkpoint) -> PyResul
         bar_dict.set_item("open_time", bar.open_time)?;
         bar_dict.set_item("close_time", bar.close_time)?;
         bar_dict.set_item("agg_record_count", bar.agg_record_count)?;
+        // Issue #97: Full microstructure state for lossless checkpoint round-trip
+        bar_dict.set_item("buy_volume", bar.buy_volume as f64 / 100_000_000.0)?;
+        bar_dict.set_item("sell_volume", bar.sell_volume as f64 / 100_000_000.0)?;
+        bar_dict.set_item("individual_trade_count", bar.individual_trade_count)?;
+        bar_dict.set_item("buy_trade_count", bar.buy_trade_count)?;
+        bar_dict.set_item("sell_trade_count", bar.sell_trade_count)?;
+        bar_dict.set_item("vwap", bar.vwap.to_f64())?;
+        bar_dict.set_item("first_agg_trade_id", bar.first_agg_trade_id)?;
+        bar_dict.set_item("last_agg_trade_id", bar.last_agg_trade_id)?;
+        bar_dict.set_item("turnover", bar.turnover as f64 / 100_000_000.0)?;
+        bar_dict.set_item("buy_turnover", bar.buy_turnover as f64 / 100_000_000.0)?;
+        bar_dict.set_item("sell_turnover", bar.sell_turnover as f64 / 100_000_000.0)?;
         dict.set_item("incomplete_bar_raw", bar_dict.into_py(py))?;
     } else {
         dict.set_item("incomplete_bar", py.None())?;
@@ -404,6 +416,52 @@ pub(crate) fn dict_to_rangebar(_py: Python, dict: &Bound<PyDict>) -> PyResult<Ra
         .and_then(|v| v.extract().ok())
         .unwrap_or(0);
 
+    // Issue #97: Read full microstructure state (backward-compat: default 0)
+    let buy_volume_f64: f64 = dict
+        .get_item("buy_volume")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(0.0);
+    let sell_volume_f64: f64 = dict
+        .get_item("sell_volume")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(0.0);
+    let individual_trade_count: u32 = dict
+        .get_item("individual_trade_count")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(0);
+    let buy_trade_count: u32 = dict
+        .get_item("buy_trade_count")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(0);
+    let sell_trade_count: u32 = dict
+        .get_item("sell_trade_count")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(0);
+    let vwap_f64: f64 = dict
+        .get_item("vwap")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(0.0);
+    let first_agg_trade_id: i64 = dict
+        .get_item("first_agg_trade_id")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(0);
+    let last_agg_trade_id: i64 = dict
+        .get_item("last_agg_trade_id")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(0);
+    let turnover_f64: f64 = dict
+        .get_item("turnover")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(0.0);
+    let buy_turnover_f64: f64 = dict
+        .get_item("buy_turnover")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(0.0);
+    let sell_turnover_f64: f64 = dict
+        .get_item("sell_turnover")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(0.0);
+
     Ok(RangeBar {
         open_time,
         close_time,
@@ -413,21 +471,21 @@ pub(crate) fn dict_to_rangebar(_py: Python, dict: &Bound<PyDict>) -> PyResult<Ra
         close: f64_to_fixed_point(close),
         // Issue #88: volume fields are i128, not FixedPoint
         volume: (volume * 100_000_000.0).round() as i128,
-        turnover: 0,
-        individual_trade_count: 0,
+        turnover: (turnover_f64 * 100_000_000.0).round() as i128,
+        individual_trade_count,
         agg_record_count,
         first_trade_id: 0,
         last_trade_id: 0,
-        first_agg_trade_id: 0, // Issue #72 - default 0 for backward compatibility
-        last_agg_trade_id: 0,  // Issue #72 - default 0 for backward compatibility
+        first_agg_trade_id,
+        last_agg_trade_id,
         data_source: rangebar_core::DataSource::BinanceSpot,
-        buy_volume: 0i128,
-        sell_volume: 0i128,
-        buy_trade_count: 0,
-        sell_trade_count: 0,
-        vwap: FixedPoint(0),
-        buy_turnover: 0,
-        sell_turnover: 0,
+        buy_volume: (buy_volume_f64 * 100_000_000.0).round() as i128,
+        sell_volume: (sell_volume_f64 * 100_000_000.0).round() as i128,
+        buy_trade_count,
+        sell_trade_count,
+        vwap: f64_to_fixed_point(vwap_f64),
+        buy_turnover: (buy_turnover_f64 * 100_000_000.0).round() as i128,
+        sell_turnover: (sell_turnover_f64 * 100_000_000.0).round() as i128,
         // Microstructure features (Issue #25) - initialized to defaults
         duration_us: 0,
         ofi: 0.0,

@@ -157,6 +157,30 @@ def log_download_event(
     ).info(f"{event_type}: {symbol} {date}")
 
 
+def log_checkpoint_event(
+    event_type: str,
+    symbol: str,
+    trace_id: str,
+    **kwargs: object,
+) -> None:
+    """Log a checkpoint lifecycle event (Issue #97).
+
+    Args:
+        event_type: Type of event (checkpoint_save, checkpoint_restore, etc.)
+        symbol: Trading symbol (e.g., "BTCUSDT")
+        trace_id: Correlation ID for the pipeline run
+        **kwargs: Additional event-specific fields
+    """
+    logger = get_logger()
+    logger.bind(
+        component="checkpoint",
+        event_type=event_type,
+        symbol=symbol,
+        trace_id=trace_id,
+        **kwargs,
+    ).info(f"{event_type}: {symbol}")
+
+
 def generate_trace_id(prefix: str = "rb") -> str:
     """Generate a unique trace ID for request correlation.
 

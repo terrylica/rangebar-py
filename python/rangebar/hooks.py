@@ -81,6 +81,11 @@ class HookEvent(Enum):
     STRATEGY_SIGNAL = "strategy_signal"
     TRADE_COMPLETE = "trade_complete"
     BACKTEST_COMPLETE = "backtest_complete"
+    # Issue #97: Checkpoint lifecycle events
+    CHECKPOINT_RESTORED = "checkpoint_restored"
+    CHECKPOINT_RESTORE_FAILED = "checkpoint_restore_failed"
+    SIDECAR_CHECKPOINT_SAVED = "sidecar_checkpoint_saved"
+    SIDECAR_CHECKPOINT_RESTORED = "sidecar_checkpoint_restored"
 
 
 @dataclass

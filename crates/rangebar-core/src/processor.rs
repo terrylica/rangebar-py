@@ -227,6 +227,20 @@ impl RangeBarProcessor {
         self.include_intra_bar_features
     }
 
+    /// Re-enable inter-bar features on an existing processor (Issue #97).
+    ///
+    /// Used after `from_checkpoint()` to restore microstructure config that
+    /// is not preserved in checkpoint state.
+    pub fn set_inter_bar_config(&mut self, config: InterBarConfig) {
+        self.trade_history = Some(TradeHistory::new(config.clone()));
+        self.inter_bar_config = Some(config);
+    }
+
+    /// Re-enable intra-bar features on an existing processor (Issue #97).
+    pub fn set_intra_bar_features(&mut self, enabled: bool) {
+        self.include_intra_bar_features = enabled;
+    }
+
     /// Process a single trade and return completed bar if any
     ///
     /// Maintains internal state for streaming use case. State persists across calls

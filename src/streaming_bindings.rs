@@ -700,8 +700,82 @@ impl PyLiveBarEngine {
         }
     }
 
+    /// Inject a checkpoint for a specific (symbol, threshold) pair.
+    /// Must be called before `start()`.
+    ///
+    /// Args:
+    ///     symbol: Trading pair (e.g., "BTCUSDT")
+    ///     threshold: Threshold in decimal basis points (e.g., 250)
+    ///     checkpoint_dict: Checkpoint dict from `RangeBarProcessor.create_checkpoint()`
+    #[pyo3(signature = (symbol, threshold, checkpoint_dict))]
+    pub fn set_checkpoint(
+        &mut self,
+        py: Python,
+        symbol: &str,
+        threshold: u32,
+        checkpoint_dict: &Bound<PyDict>,
+    ) -> PyResult<()> {
+        if self.started {
+            return Err(PyRuntimeError::new_err(
+                "Cannot set checkpoint after engine has started",
+            ));
+        }
+        let checkpoint = dict_to_checkpoint(py, checkpoint_dict)?;
+        if let Some(ref mut engine) = self.engine {
+            engine.set_initial_checkpoint(symbol, threshold, checkpoint);
+        }
+        Ok(())
+    }
+
+    /// Collect processor checkpoints after shutdown.
+    ///
+    /// Call after `stop()`. Returns a dict mapping "SYMBOL:THRESHOLD" keys
+    /// to checkpoint dicts that can be saved and restored on next startup.
+    ///
+    /// Args:
+    ///     timeout_ms: Maximum wait time in milliseconds (default: 5000)
+    ///
+    /// Returns:
+    ///     dict of {str: dict} — checkpoint dicts keyed by "SYMBOL:THRESHOLD"
+    #[pyo3(signature = (timeout_ms=5000))]
+    pub fn collect_checkpoints(&mut self, py: Python, timeout_ms: u64) -> PyResult<PyObject> {
+        let runtime = self.runtime.as_ref().ok_or_else(|| {
+            PyRuntimeError::new_err("Engine runtime not available")
+        })?;
+
+        let engine = self.engine.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err("Engine not available")
+        })?;
+
+        let timeout = tokio::time::Duration::from_millis(timeout_ms);
+
+        // Release GIL while waiting for checkpoints
+        let checkpoints = py.allow_threads(|| {
+            runtime.block_on(engine.collect_checkpoints(timeout))
+        });
+
+        // Convert to Python dict
+        let result = PyDict::new_bound(py);
+        for (key, cp) in &checkpoints {
+            let cp_dict = checkpoint_to_dict(py, cp)?;
+            result.set_item(key, cp_dict)?;
+        }
+
+        Ok(result.into())
+    }
+
     /// Graceful shutdown — cancels all WebSocket connections.
     pub fn stop(&mut self) -> PyResult<()> {
+        if let Some(ref engine) = self.engine {
+            engine.stop();
+        }
+        self.started = false;
+        // Note: don't take() runtime here — collect_checkpoints() may still need it
+        Ok(())
+    }
+
+    /// Fully release engine resources. Call after collect_checkpoints().
+    pub fn shutdown(&mut self) -> PyResult<()> {
         if let Some(ref engine) = self.engine {
             engine.stop();
         }

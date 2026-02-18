@@ -110,7 +110,13 @@ def _load_checkpoint(symbol: str, threshold: int) -> dict | None:
     return None
 
 
-def _save_checkpoint(symbol: str, threshold: int, bar_dict: dict) -> None:
+def _save_checkpoint(
+    symbol: str,
+    threshold: int,
+    bar_dict: dict,
+    *,
+    processor_checkpoint: dict | None = None,
+) -> None:
     path = _checkpoint_path(symbol, threshold)
     checkpoint = {
         "symbol": symbol,
@@ -120,7 +126,16 @@ def _save_checkpoint(symbol: str, threshold: int, bar_dict: dict) -> None:
         ),
         "updated_at": time.time(),
     }
-    path.write_text(json.dumps(checkpoint))
+    if processor_checkpoint is not None:
+        checkpoint["processor_checkpoint"] = processor_checkpoint
+    # Issue #97: Provenance metadata for forensic reconstruction
+    from rangebar.checkpoint import _checkpoint_provenance
+    checkpoint["provenance"] = _checkpoint_provenance()
+    # Atomic write: temp + fsync + rename (Issue #97)
+    tmp = path.with_suffix(".tmp")
+    data = json.dumps(checkpoint)
+    tmp.write_text(data)
+    tmp.replace(path)
 
 
 # =============================================================================
@@ -169,6 +184,119 @@ def _gap_fill(symbols: list[str], thresholds: list[int]) -> None:
 
 
 # =============================================================================
+# Checkpoint inject/extract helpers (Issue #97)
+# =============================================================================
+
+_EXPECTED_KEY_PARTS = 2  # "SYMBOL:THRESHOLD" format
+
+
+def _inject_checkpoints(
+    engine: object,
+    symbols: list[str],
+    thresholds: list[int],
+    trace_id: str,
+) -> int:
+    """Inject saved processor checkpoints into engine before start."""
+    from rangebar.hooks import HookEvent, emit_hook
+    from rangebar.logging import log_checkpoint_event
+
+    loaded = 0
+    for symbol in symbols:
+        for threshold in thresholds:
+            cp = _load_checkpoint(symbol, threshold)
+            if not (cp and cp.get("processor_checkpoint")):
+                continue
+            try:
+                engine.set_checkpoint(  # type: ignore[attr-defined]
+                    symbol, threshold, cp["processor_checkpoint"],
+                )
+                loaded += 1
+                cp_age = time.time() - cp.get("updated_at", time.time())
+                logger.info(
+                    "injected checkpoint for %s@%d (age=%.0fs)",
+                    symbol, threshold, cp_age,
+                )
+                log_checkpoint_event(
+                    "sidecar_checkpoint_inject",
+                    symbol,
+                    trace_id,
+                    threshold=threshold,
+                    checkpoint_age_sec=round(cp_age),
+                    has_incomplete_bar=bool(
+                        cp["processor_checkpoint"].get("has_incomplete_bar")
+                    ),
+                )
+                emit_hook(
+                    HookEvent.SIDECAR_CHECKPOINT_RESTORED,
+                    symbol=symbol,
+                    trace_id=trace_id,
+                    threshold_dbps=threshold,
+                    has_incomplete_bar=bool(
+                        cp["processor_checkpoint"].get("has_incomplete_bar")
+                    ),
+                    checkpoint_age_sec=round(cp_age),
+                )
+            except Exception:
+                logger.exception(
+                    "failed to inject checkpoint for %s@%d", symbol, threshold,
+                )
+                log_checkpoint_event(
+                    "sidecar_checkpoint_inject_failed",
+                    symbol,
+                    trace_id,
+                    threshold=threshold,
+                )
+    return loaded
+
+
+def _extract_checkpoints(
+    engine: object,
+    trace_id: str,
+    bars_written: int,
+) -> None:
+    """Extract and save processor checkpoints on shutdown."""
+    from rangebar.hooks import HookEvent, emit_hook
+    from rangebar.logging import log_checkpoint_event
+
+    try:
+        all_checkpoints = engine.collect_checkpoints(timeout_ms=5000)  # type: ignore[attr-defined]
+        for key, cp_dict in all_checkpoints.items():
+            parts = key.split(":")
+            if len(parts) == _EXPECTED_KEY_PARTS:
+                sym, thr_str = parts
+                thr_int = int(thr_str)
+                _save_checkpoint(
+                    sym, thr_int, {},
+                    processor_checkpoint=cp_dict,
+                )
+                log_checkpoint_event(
+                    "sidecar_checkpoint_extract",
+                    sym,
+                    trace_id,
+                    threshold=thr_int,
+                    has_incomplete_bar=bool(
+                        cp_dict.get("has_incomplete_bar")
+                    ),
+                )
+                emit_hook(
+                    HookEvent.SIDECAR_CHECKPOINT_SAVED,
+                    symbol=sym,
+                    trace_id=trace_id,
+                    threshold_dbps=thr_int,
+                    has_incomplete_bar=bool(
+                        cp_dict.get("has_incomplete_bar")
+                    ),
+                    bars_written_session=bars_written,
+                )
+        logger.info(
+            "saved %d processor checkpoints on shutdown",
+            len(all_checkpoints),
+        )
+    except Exception:
+        logger.exception("failed to collect/save processor checkpoints")
+
+
+# =============================================================================
 # Main sidecar loop
 # =============================================================================
 
@@ -182,6 +310,9 @@ def run_sidecar(config: SidecarConfig) -> None:
         env-var-driven setup, or construct directly.
     """
     from rangebar._core import LiveBarEngine
+    from rangebar.logging import generate_trace_id
+
+    trace_id = generate_trace_id("sdc")
 
     if not config.symbols:
         msg = (
@@ -209,8 +340,16 @@ def run_sidecar(config: SidecarConfig) -> None:
         config.thresholds,
         config.include_microstructure,
     )
+
+    # Issue #97: Inject saved processor checkpoints before starting
+    checkpoints_loaded = _inject_checkpoints(
+        engine, config.symbols, config.thresholds, trace_id,
+    )
+
     engine.start()
-    logger.info("live bar engine started")
+    logger.info(
+        "live bar engine started (checkpoints_loaded=%d)", checkpoints_loaded,
+    )
 
     # Signal handling for graceful shutdown
     running = True
@@ -248,6 +387,11 @@ def run_sidecar(config: SidecarConfig) -> None:
 
     finally:
         engine.stop()
+
+        # Issue #97: Extract and save processor checkpoints for next startup
+        _extract_checkpoints(engine, trace_id, bars_written)
+
+        engine.shutdown()
         metrics = engine.get_metrics()
         logger.info(
             "sidecar stopped: bars_written=%d, engine_metrics=%s",
