@@ -2,7 +2,7 @@
 
 **Parent**: [/CLAUDE.md](/CLAUDE.md) | **Architecture**: [/docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)
 
-8-crate modular Rust workspace. All crates have `publish = false` (PyPI-only distribution).
+8-crate modular Rust workspace. 3 crates published to crates.io (`rangebar-core`, `rangebar-providers`, `rangebar-streaming`); 5 internal-only (`publish = false`).
 
 ---
 

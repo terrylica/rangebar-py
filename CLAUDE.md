@@ -1,6 +1,6 @@
 # CLAUDE.md - Project Memory
 
-**rangebar-py**: Rust workspace with Python bindings via PyO3/maturin. Publishes to PyPI only (not crates.io).
+**rangebar-py**: Rust workspace with Python bindings via PyO3/maturin. Publishes to PyPI (`rangebar`) and crates.io (`rangebar-core`, `rangebar-providers`, `rangebar-streaming`).
 
 ---
 
@@ -105,7 +105,7 @@ df = get_range_bars("BTCUSDT", "2019-01-01", "2025-12-31")
 
 ```
 rangebar-py/
-├── crates/                    8 Rust crates (publish = false)
+├── crates/                    8 Rust crates (3 on crates.io, 5 internal)
 │   └── rangebar-core/         Core algorithm, microstructure features
 ├── src/                       PyO3 bindings (Issue #94: domain modules)
 │   ├── lib.rs                 Thin orchestrator (~200 lines)
