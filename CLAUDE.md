@@ -14,6 +14,7 @@
 | Work with Rust crates   | [crates/CLAUDE.md](/crates/CLAUDE.md)                                         | Core algorithm, microstructure, inter-bar features    |
 | Work with Python layer  | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)                       | API, caching, validation, symbol registry             |
 | ClickHouse cache ops    | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | Schema, population, remote setup, dedup hardening     |
+| Plugin system           | [python/rangebar/plugins/CLAUDE.md](/python/rangebar/plugins/CLAUDE.md)       | FeatureProvider protocol, entry-point discovery       |
 | Operations & scripts    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue, cache population, per-year parallelism         |
 | Release workflow        | [docs/development/RELEASE.md](/docs/development/RELEASE.md)                   | Zig cross-compile, mise tasks                         |
 | Performance monitoring  | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md)           | Benchmarks, metrics                                   |
@@ -229,6 +230,7 @@ This file is the **hub**. Each spoke CLAUDE.md is loaded automatically when work
 | `/crates/`                     | [crates/CLAUDE.md](/crates/CLAUDE.md)                                         | Rust crates, microstructure formulas, algorithm details            |
 | `/python/rangebar/`            | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)                       | Python API, caching, validation, symbol registry, memory guards    |
 | `/python/rangebar/clickhouse/` | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | ClickHouse schema, dedup hardening, cache population               |
+| `/python/rangebar/plugins/`    | [python/rangebar/plugins/CLAUDE.md](/python/rangebar/plugins/CLAUDE.md)       | FeatureProvider protocol, entry-point discovery, plugin authoring  |
 | `/scripts/`                    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue ops, per-year parallelism, anti-patterns, validation scripts |
 
 ---
