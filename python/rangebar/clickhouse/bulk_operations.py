@@ -15,6 +15,7 @@ import pandas as pd
 
 from .._core import __version__
 from ..constants import (
+    _PLUGIN_FEATURE_COLUMNS,  # Issue #98: FeatureProvider plugin columns
     EXCHANGE_SESSION_COLUMNS,
     INTER_BAR_FEATURE_COLUMNS,  # Issue #78: Was missing, causing NULL lookback columns
     INTRA_BAR_FEATURE_COLUMNS,  # Issue #78: Also add intra-bar features
@@ -92,7 +93,7 @@ class BulkStoreMixin:
     Requires `self.client` from ClickHouseClientMixin.
     """
 
-    def store_bars_bulk(
+    def store_bars_bulk(  # noqa: PLR0915
         self,
         symbol: str,
         threshold_decimal_bps: int,
@@ -147,17 +148,18 @@ class BulkStoreMixin:
             len(bars), symbol, threshold_decimal_bps,
         )
 
-        df = bars.copy()
-
-        # Handle DatetimeIndex
-        if isinstance(df.index, pd.DatetimeIndex):
-            df = df.reset_index()
+        # R1 (Issue #98): reset_index() already creates a new DataFrame,
+        # so the prior .copy() was a redundant full-DataFrame copy.
+        if isinstance(bars.index, pd.DatetimeIndex):
+            df = bars.reset_index()  # creates new DF (no prior .copy() needed)
             if "timestamp" in df.columns:
                 df["timestamp_ms"] = df["timestamp"].dt.as_unit("ms").astype("int64")
                 df = df.drop(columns=["timestamp"])
             elif "index" in df.columns:
                 df["timestamp_ms"] = df["index"].dt.as_unit("ms").astype("int64")
                 df = df.drop(columns=["index"])
+        else:
+            df = bars.copy()
 
         _run_write_guards(df)
 
@@ -218,9 +220,18 @@ class BulkStoreMixin:
         # Add inter-bar and intra-bar feature columns if present (Issue #78)
         # These are Nullable in ClickHouse; clickhouse-connect's insert_df
         # requires NaN (not Python None) for Nullable numeric columns.
+        # R2 (Issue #98): Skip pd.to_numeric when dtype is already float64.
         for col in (*INTER_BAR_FEATURE_COLUMNS, *INTRA_BAR_FEATURE_COLUMNS):
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
+                if not pd.api.types.is_float_dtype(df[col]):
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+                columns.append(col)
+
+        # Add plugin feature columns if present (Issue #98)
+        for col in _PLUGIN_FEATURE_COLUMNS:
+            if col in df.columns:
+                if not pd.api.types.is_float_dtype(df[col]):
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
                 columns.append(col)
 
         # Filter to existing columns
@@ -414,6 +425,11 @@ class BulkStoreMixin:
 
         # Add intra-bar feature columns if present (Issue #78)
         for col in INTRA_BAR_FEATURE_COLUMNS:
+            if col in df.columns:
+                columns.append(col)
+
+        # Add plugin feature columns if present (Issue #98)
+        for col in _PLUGIN_FEATURE_COLUMNS:
             if col in df.columns:
                 columns.append(col)
 

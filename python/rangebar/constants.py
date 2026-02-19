@@ -300,6 +300,36 @@ ALL_OPTIONAL_COLUMNS: tuple[str, ...] = (
 )
 
 # =============================================================================
+# Plugin Feature Columns (Issue #98: FeatureProvider plugin system)
+# =============================================================================
+# Dynamically registered by discovered FeatureProvider plugins at import time.
+# These columns are Nullable(Float64) in ClickHouse, same as inter-bar features.
+#
+# IMPORTANT: Keep this list in sync with:
+# - python/rangebar/clickhouse/schema.sql (via ALTER TABLE ADD COLUMN IF NOT EXISTS)
+# - python/rangebar/clickhouse/bulk_operations.py (INSERT column loop)
+# - python/rangebar/clickhouse/query_operations.py (SELECT column list)
+
+_PLUGIN_FEATURE_COLUMNS: list[str] = []
+
+
+def register_plugin_columns(columns: tuple[str, ...]) -> None:
+    """Register additional columns from a FeatureProvider plugin.
+
+    Called by ``plugins.loader.discover_providers()`` during discovery.
+    Idempotent: duplicate column names are silently ignored.
+    """
+    for col in columns:
+        if col not in _PLUGIN_FEATURE_COLUMNS:
+            _PLUGIN_FEATURE_COLUMNS.append(col)
+
+
+def get_all_columns() -> tuple[str, ...]:
+    """ALL_OPTIONAL_COLUMNS + any dynamically registered plugin columns."""
+    return (*ALL_OPTIONAL_COLUMNS, *_PLUGIN_FEATURE_COLUMNS)
+
+
+# =============================================================================
 # Memory Guard Registry (Issue #49)
 # =============================================================================
 # Each guard prevents a specific memory exhaustion pattern.

@@ -86,6 +86,9 @@ class HookEvent(Enum):
     CHECKPOINT_RESTORE_FAILED = "checkpoint_restore_failed"
     SIDECAR_CHECKPOINT_SAVED = "sidecar_checkpoint_saved"
     SIDECAR_CHECKPOINT_RESTORED = "sidecar_checkpoint_restored"
+    # Issue #98: Plugin feature enrichment events
+    PLUGIN_ENRICH_COMPLETE = "plugin_enrich_complete"
+    PLUGIN_ENRICH_FAILED = "plugin_enrich_failed"
 
 
 @dataclass

@@ -312,6 +312,33 @@ ENGINE = ReplacingMergeTree(updated_at)
 ORDER BY (symbol, threshold_decimal_bps, start_date, end_date);
 
 -- ============================================================================
+-- Backfill Request Queue (Issue #97: On-demand trigger from flowsurface)
+-- ============================================================================
+-- flowsurface INSERTs a row when it detects stale range bar data.
+-- rangebar-py's backfill watcher polls this table and processes requests
+-- using existing backfill_recent() from recency.py.
+--
+-- Contract: flowsurface writes 'pending', watcher transitions to
+-- 'running' → 'completed'|'failed'. TTL auto-cleans after 7 days.
+
+CREATE TABLE IF NOT EXISTS rangebar_cache.backfill_requests (
+    request_id UUID DEFAULT generateUUIDv4(),
+    symbol LowCardinality(String),
+    threshold_decimal_bps UInt32 DEFAULT 0,
+    requested_at DateTime64(3) DEFAULT now64(3),
+    status LowCardinality(String) DEFAULT 'pending',
+    started_at Nullable(DateTime64(3)) DEFAULT NULL,
+    completed_at Nullable(DateTime64(3)) DEFAULT NULL,
+    bars_written UInt32 DEFAULT 0,
+    gap_seconds Float64 DEFAULT 0,
+    error Nullable(String) DEFAULT NULL,
+    source LowCardinality(String) DEFAULT 'flowsurface'
+)
+ENGINE = ReplacingMergeTree(requested_at)
+ORDER BY (request_id)
+TTL requested_at + INTERVAL 7 DAY;
+
+-- ============================================================================
 -- Indexes (ClickHouse creates automatically based on ORDER BY)
 -- ============================================================================
 -- No additional indexes needed - ORDER BY creates primary key index

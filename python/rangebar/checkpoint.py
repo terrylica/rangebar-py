@@ -723,6 +723,12 @@ def populate_cache_resumable(
                     inter_bar_lookback_bars=eff_bars,
                 )
 
+                # Issue #98: Plugin feature enrichment (post-Rust, pre-cache)
+                if bars_df is not None and not bars_df.empty:
+                    from rangebar.plugins.loader import enrich_bars
+
+                    bars_df = enrich_bars(bars_df, symbol, threshold_decimal_bps)
+
                 bars_today = len(bars_df) if bars_df is not None else 0
 
                 # Write to ClickHouse cache

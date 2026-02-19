@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     pass
 
 
-def main() -> int:  # noqa: PLR0912, PLR0915
+def main() -> int:
     """Run validation suite."""
     print("=" * 70)
     print("rangebar get_n_range_bars() Validation Suite")

@@ -43,6 +43,7 @@ rangebar = "rangebar.cli:main"
 [project.optional-dependencies]
 backtesting = ["backtesting>=0.3"]
 exness = []  # Feature flag handled at Rust build level (maturin --features exness)
+laguerre = ["atr-adaptive-laguerre>=2.1"]  # Issue #98: Laguerre RSI plugin
 dev = [
     "pytest>=7.0",
     "pytest-benchmark>=4.0",
@@ -50,6 +51,11 @@ dev = [
     "black>=23.0",
     "ruff>=0.1",
 ]
+
+[project.entry-points."rangebar.feature_providers"]
+# Issue #98: FeatureProvider plugins register here via entry points.
+# Example (from atr-adaptive-laguerre's pyproject.toml):
+#   laguerre = "atr_adaptive_laguerre.rangebar_plugin:LaguerreFeatureProvider"
 
 [project.urls]
 Repository = "https://github.com/terrylica/rangebar-py"

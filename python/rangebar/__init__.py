@@ -88,6 +88,7 @@ __all__ = [
     "clear_threshold_cache",  # Issue #62: runtime config changes
     "detect_asset_class",
     "detect_staleness",
+    "discover_providers",  # Issue #98: FeatureProvider plugin discovery
     "ensure_memory_limit",
     "get_available_symbols",  # Issue #95: alpha-forge compat
     "get_cache_coverage",  # Issue #95: alpha-forge compat
@@ -307,6 +308,12 @@ def __getattr__(name: str) -> object:
         from .exness import is_exness_available
 
         return is_exness_available
+
+    # Issue #98: Plugin system lazy loading
+    if name == "discover_providers":
+        from .plugins.loader import discover_providers
+
+        return discover_providers
 
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)

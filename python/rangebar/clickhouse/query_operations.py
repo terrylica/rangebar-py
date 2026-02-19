@@ -14,6 +14,7 @@ import logging
 import pandas as pd
 
 from ..constants import (
+    _PLUGIN_FEATURE_COLUMNS,  # Issue #98: FeatureProvider plugin columns
     INTER_BAR_FEATURE_COLUMNS,
     INTRA_BAR_FEATURE_COLUMNS,
     MICROSTRUCTURE_COLUMNS,
@@ -40,6 +41,7 @@ class QueryOperationsMixin:
         before_ts: int | None = None,
         include_microstructure: bool = False,
         min_schema_version: str | None = None,
+        include_plugin_features: bool = False,
     ) -> tuple[pd.DataFrame | None, int]:
         """Get N bars from cache, ordered chronologically (oldest first).
 
@@ -107,6 +109,10 @@ class QueryOperationsMixin:
             base_cols += "," + ",".join(INTER_BAR_FEATURE_COLUMNS)
             # Issue #78: Add intra-bar features
             base_cols += "," + ",".join(INTRA_BAR_FEATURE_COLUMNS)
+
+        # Issue #98: Add plugin feature columns if registered and requested
+        if include_plugin_features and _PLUGIN_FEATURE_COLUMNS:
+            base_cols += "," + ",".join(_PLUGIN_FEATURE_COLUMNS)
 
         # Determine effective min version for schema evolution filtering
         effective_min_version = min_schema_version
@@ -249,6 +255,7 @@ class QueryOperationsMixin:
         include_exchange_sessions: bool = False,
         ouroboros_mode: str = "year",
         min_schema_version: str | None = None,
+        include_plugin_features: bool = False,
     ) -> pd.DataFrame | None:
         """Get bars within a timestamp range (for get_range_bars cache lookup).
 
@@ -328,6 +335,10 @@ class QueryOperationsMixin:
             exchange_session_london,
             exchange_session_newyork
         """
+
+        # Issue #98: Add plugin feature columns if registered and requested
+        if include_plugin_features and _PLUGIN_FEATURE_COLUMNS:
+            base_cols += "," + ",".join(_PLUGIN_FEATURE_COLUMNS)
 
         # Ouroboros mode filter ensures cache isolation between modes
         # Plan: sparkling-coalescing-dijkstra.md

@@ -139,3 +139,17 @@ run = "python scripts/recency_backfill.py --all"
 description = "Start adaptive recency backfill loop (Ctrl+C to stop)"
 depends = ["db:ensure"]
 run = "python scripts/recency_backfill.py --loop"
+
+# =============================================================================
+# Issue #97: On-Demand Backfill Watcher (flowsurface trigger)
+# =============================================================================
+
+["cache:watcher"]
+description = "Start backfill request watcher (polls for flowsurface requests)"
+depends = ["db:ensure"]
+run = "python scripts/backfill_watcher.py"
+
+["cache:watcher-once"]
+description = "Poll backfill requests once and exit (for testing)"
+depends = ["db:ensure"]
+run = "python scripts/backfill_watcher.py --once"

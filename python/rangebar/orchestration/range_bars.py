@@ -662,6 +662,13 @@ def get_range_bars(
         bars_df = enrich_exchange_sessions(bars_df)
 
     # -------------------------------------------------------------------------
+    # Plugin feature enrichment (Issue #98: post-Rust, pre-cache)
+    # -------------------------------------------------------------------------
+    from rangebar.plugins.loader import enrich_bars
+
+    bars_df = enrich_bars(bars_df, symbol, threshold_decimal_bps)
+
+    # -------------------------------------------------------------------------
     # Write computed bars to ClickHouse cache (Issue #37)
     # -------------------------------------------------------------------------
     if use_cache:
