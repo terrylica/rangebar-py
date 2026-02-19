@@ -223,6 +223,19 @@ class RangeBarCache(
             # Graceful degradation: older ClickHouse may not support this setting.
             logger.debug("Could not set non_replicated_deduplication_window: %s", e)
 
+        # Issue #98: Auto-migrate plugin feature columns.
+        # Discovers installed FeatureProviders and ensures their columns
+        # exist in the range_bars table. Idempotent (ADD COLUMN IF NOT EXISTS).
+        try:
+            from ..plugins.loader import _get_providers
+            from ..plugins.migration import migrate_plugin_columns
+
+            providers = _get_providers()
+            if providers:
+                migrate_plugin_columns(self.client, providers)
+        except (ImportError, OSError, RuntimeError) as e:
+            logger.debug("Plugin column migration skipped: %s", e)
+
     # =========================================================================
     # Range Bars Cache (Tier 2)
     # =========================================================================
