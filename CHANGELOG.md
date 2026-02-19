@@ -1,3 +1,15 @@
+# [12.25.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.24.0...v12.25.0) (2026-02-19)
+
+
+### Bug Fixes
+
+* **release:** add file-based fallback for crates.io token in release:crates task ([c9093db](https://github.com-terrylica/terrylica/rangebar-py/commit/c9093db7c8a3176abcd6b9b96d08472479e94c12))
+
+
+### Features
+
+* **plugins:** FeatureProvider plugin system for external feature enrichment (Issue [#98](https://github.com-terrylica/terrylica/rangebar-py/issues/98)) ([c38fe52](https://github.com-terrylica/terrylica/rangebar-py/commit/c38fe52d9c70963da6e8e2d915b3a273b6bfb8e8))
+
 # [12.24.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.23.1...v12.24.0) (2026-02-18)
 
 
