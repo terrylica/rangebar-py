@@ -290,6 +290,7 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2024-03-05
+processing_notes = "Meme coin with extreme listing volatility: 40x price move in first weeks after 2024-03-05 listing (from ~$0.10 to ~$4.00+). Hurst DFA + Permutation Entropy computation infeasible at sub-1000 dbps bar densities. Hard minimum: 1000 dbps (RANGEBAR_MIN_THRESHOLD_WIFUSDT=1000). Same classification as SHIBUSDT (Tier A meme coin)."
 keywords = ["dogwifhat", "wif", "meme"]
 
 [symbols.WLDUSDT]
