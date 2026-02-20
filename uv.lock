@@ -63,7 +63,7 @@ wheels = [
 
 [[package]]
 name = "atr-adaptive-laguerre"
-version = "2.1.0"
+version = "2.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -75,9 +75,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "scipy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6c/5c/7ac105efff7a4c26b78dee65cb9a8905d36386ba60803757b40b5d68938b/atr_adaptive_laguerre-2.1.0.tar.gz", hash = "sha256:777c55e532e7ff567dbde8415ef0994790db24afea6b53af50f401c75375a1e7", size = 303816, upload-time = "2025-10-29T23:15:32.106Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3a/79/da9c8ecc6a0dc772c4430e6fdfbf58c8cf2fb408b173da4d9967d7ff96ab/atr_adaptive_laguerre-2.4.1.tar.gz", hash = "sha256:725472c8c879f6eb86fc86bfc7a9cb8c1d2891ac340779f7359107f2e6a9332c", size = 643609, upload-time = "2026-02-20T00:18:07.44Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/81/45/fc1e159ea456138285fc3f3f1e66c7050e6dfbde88f5e446b72b83defe27/atr_adaptive_laguerre-2.1.0-py3-none-any.whl", hash = "sha256:7b67773024b7968d9712019178239e0eef8dd2ea5e318e9793cd3dc0ac6f22d7", size = 58697, upload-time = "2025-10-29T23:15:30.776Z" },
+    { url = "https://files.pythonhosted.org/packages/38/ff/eb971657101fe3158ad19fa6b5f2c83ac599512390772dc979f75e1e175a/atr_adaptive_laguerre-2.4.1-py3-none-any.whl", hash = "sha256:1efa1a385209346f31c29ee46bd63273be5a941e988505cd37fb04e068ce992d", size = 65009, upload-time = "2026-02-20T00:18:20.236Z" },
 ]
 
 [[package]]
@@ -1426,7 +1426,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "arro3-core", specifier = ">=0.6.5" },
-    { name = "atr-adaptive-laguerre", marker = "extra == 'laguerre'", specifier = ">=2.1" },
+    { name = "atr-adaptive-laguerre", marker = "extra == 'laguerre'", specifier = ">=2.4.1" },
     { name = "backtesting", marker = "extra == 'backtesting'", specifier = ">=0.3" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0" },
     { name = "click", specifier = ">=8.0" },
