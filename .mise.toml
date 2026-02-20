@@ -36,8 +36,11 @@ RANGEBAR_UNKNOWN_MIN_THRESHOLD = "1"
 # Resolution: per-symbol env > asset-class env > fallback default.
 # These env vars are the SOLE SSoT — no parallel config in symbols.toml.
 #
-# Tier A: Confirmed infeasible at 250 dbps (>1000 bars/day avg)
-RANGEBAR_MIN_THRESHOLD_SHIBUSDT = "500"
+# Tier A: Confirmed infeasible below 1000 dbps
+# SHIBUSDT: extreme volatility + meme pump days make 500/750 dbps infeasible
+#   (110,727 bars on 2021-05-10 listing pump day at 500 dbps). Hard floor: 1000 dbps.
+RANGEBAR_MIN_THRESHOLD_SHIBUSDT = "1000"
+# DOGEUSDT: 219,893 bars on 2021-01-28 pump day at 250 dbps.
 RANGEBAR_MIN_THRESHOLD_DOGEUSDT = "500"
 #
 # Tier B: Provisional 500 dbps floor pending benchmark (500-730 bars/day @250)

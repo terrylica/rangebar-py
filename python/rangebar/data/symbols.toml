@@ -133,7 +133,7 @@ listing_date = 2021-05-10
 data_anomalies = [
     "2021-05-10: first-day bars had mixed int/float types causing Polars schema inference crash (fixed v12.10.4, verified clean with Polars 1.36+)",
 ]
-processing_notes = "At 250 dbps, SHIBUSDT produces ~1,287 bars/day with 110,727 bars on listing pump day (2021-05-10), making intra-bar feature computation infeasible. Minimum threshold enforced via mise.toml RANGEBAR_MIN_THRESHOLD_SHIBUSDT=500. Polars schema inference crash on first-day data fixed by infer_schema_length=None."
+processing_notes = "Extreme volatility makes sub-1000 dbps infeasible. At 500 dbps, listing pump day (2021-05-10) produces 110,727 bars — Hurst DFA + Permutation Entropy computation is infeasible at this bar density. Hard minimum: 1000 dbps (RANGEBAR_MIN_THRESHOLD_SHIBUSDT=1000). Polars schema inference crash on first-day data fixed by infer_schema_length=None."
 keywords = ["shiba inu", "shib", "meme"]
 
 [symbols.AVAXUSDT]
