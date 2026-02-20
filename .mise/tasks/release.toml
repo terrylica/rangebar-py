@@ -332,8 +332,8 @@ depends = ["release:build-all"]
 run = "./scripts/publish-to-pypi.sh"
 
 ["release:full"]
-description = "Full release workflow: version bump → build → smoke → publish"
-depends = ["release:postflight", "release:pypi"]
+description = "Full release workflow: version bump → build → smoke → publish (PyPI + crates.io)"
+depends = ["release:postflight", "release:pypi", "release:crates"]
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
@@ -344,7 +344,8 @@ echo '========================================='
 echo " Release v$VERSION complete!"
 echo '========================================='
 echo ""
-echo "Published to PyPI: https://pypi.org/project/rangebar/$VERSION/"
+echo "PyPI:      https://pypi.org/project/rangebar/$VERSION/"
+echo "crates.io: https://crates.io/crates/rangebar-core/$VERSION"
 """
 
 ["release:quick"]
