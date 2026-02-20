@@ -46,6 +46,9 @@ RANGEBAR_MIN_THRESHOLD_SHIBUSDT = "1000"
 #   No benchmark data yet but meme coin classification + extreme listing volatility
 #   guarantees infeasibility below 1000 dbps. Hard floor: 1000 dbps.
 RANGEBAR_MIN_THRESHOLD_WIFUSDT = "1000"
+# PEPEUSDT: Pepe the Frog meme coin — micro-cent fractional token, ~200MB/month aggTrade
+#   files. Extreme tick density makes sub-1000 dbps infeasible (same Tier A as SHIB/WIF).
+RANGEBAR_MIN_THRESHOLD_PEPEUSDT = "1000"
 # DOGEUSDT: 219,893 bars on 2021-01-28 pump day at 250 dbps (~110K bars at 500 dbps).
 #   At 500 dbps the pump-day bar count is comparable to SHIB@500 (infeasible tier).
 #   Floor is 500 here because DOGE@500 data is already populated on bigblack and
@@ -67,6 +70,12 @@ RANGEBAR_MIN_THRESHOLD_DOTUSDT = "500"
 RANGEBAR_MIN_THRESHOLD_ADAUSDT = "500"
 RANGEBAR_MIN_THRESHOLD_LTCUSDT = "500"
 RANGEBAR_MIN_THRESHOLD_BCHUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_TRXUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_ZECUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_HBARUSDT = "500"
+RANGEBAR_MIN_THRESHOLD_TONUSDT = "500"
+# PAXGUSDT: gold-backed token, tracks XAU/USD, low volatility — no per-symbol floor.
+#   Uses 250 dbps crypto class default. Override to lower (e.g. 100 dbps) if needed.
 
 # =============================================================================
 # SSoT: Microstructure Feature Defaults (Issue #68)
