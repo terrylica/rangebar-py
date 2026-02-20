@@ -43,7 +43,7 @@ rangebar = "rangebar.cli:main"
 [project.optional-dependencies]
 backtesting = ["backtesting>=0.3"]
 exness = []  # Feature flag handled at Rust build level (maturin --features exness)
-laguerre = ["atr-adaptive-laguerre>=2.1"]  # Issue #98: Laguerre RSI plugin
+laguerre = ["atr-adaptive-laguerre>=2.1"]  # Issue #98: Laguerre RSI plugin; NOTE: >=2.4.1 required for correct bars_in_regime (Issue #99), update when PyPI publishes 2.4.1
 dev = [
     "pytest>=7.0",
     "pytest-benchmark>=4.0",
