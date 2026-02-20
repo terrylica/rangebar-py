@@ -102,7 +102,8 @@ GITHUB_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/gh-token-terryli
 # =============================================================================
 # 1Password Configuration
 # =============================================================================
-OP_PYPI_ITEM = "djevteztvbcqgcm3yl4njkawjq"
+OP_PYPI_ITEM = "zdc7ap2ixpqgtpq62xm2davi7e"
+OP_PYPI_VAULT = "ggk4orq7rmcm7jinsb4ahygv7e"
 
 # =============================================================================
 # ClickHouse Cache Configuration

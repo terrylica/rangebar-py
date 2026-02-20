@@ -2,30 +2,29 @@
 # PyPI Publishing with 1Password Secret Management (Local-Only)
 #
 # WORKSPACE-WIDE POLICY: This script must ONLY run on local machines.
-# CI/CD publishing is forbidden - see ADR-0027 for rationale.
+# CI/CD publishing is forbidden.
 #
 # Prerequisites:
 #   - 1Password CLI installed (brew install 1password-cli)
 #   - uv package manager installed (curl -LsSf https://astral.sh/uv/install.sh | sh)
-#   - PyPI token stored in 1Password (item: djevteztvbcqgcm3yl4njkawjq)
+#   - PyPI token stored in 1Password (Claude Automation vault, item: zdc7ap2ixpqgtpq62xm2davi7e)
 #   - pyproject.toml with name and version fields
 #
 # Usage:
-#   Copy this script to your project's scripts/ directory and run:
+#   Called by: mise run release:pypi
 #     git pull origin main
 #     ./scripts/publish-to-pypi.sh
-#
-# This script is project-agnostic and environment-agnostic.
 
 set -euo pipefail
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-# 1Password item ID for PyPI token (project-scoped for rangebar)
-# Vault: Engineering (fnzrqcsl3pl3bcdojrxf46whnu)
-OP_PYPI_ITEM="${OP_PYPI_ITEM:-djevteztvbcqgcm3yl4njkawjq}"
-OP_PYPI_VAULT="${OP_PYPI_VAULT:-fnzrqcsl3pl3bcdojrxf46whnu}"
+# 1Password item ID for PyPI token
+# "PyPI Token - terrylica-pypi-entire-account-token"
+# Vault: Claude Automation (ggk4orq7rmcm7jinsb4ahygv7e) @ eonlabs.1password.com
+OP_PYPI_ITEM="${OP_PYPI_ITEM:-zdc7ap2ixpqgtpq62xm2davi7e}"
+OP_PYPI_VAULT="${OP_PYPI_VAULT:-ggk4orq7rmcm7jinsb4ahygv7e}"
 PYPI_VERIFY_DELAY="${PYPI_VERIFY_DELAY:-3}"
 
 # ============================================================================
@@ -225,20 +224,22 @@ if ! command -v op &> /dev/null; then
     exit 1
 fi
 
-# Try to get PyPI token from 1Password (Engineering vault)
+# Load service account token if available (headless/automation — no biometric prompt)
+_OP_SA_TOKEN_FILE="$HOME/.claude/.secrets/op-service-account-token"
+if [[ -f "$_OP_SA_TOKEN_FILE" ]]; then
+    export OP_SERVICE_ACCOUNT_TOKEN
+    OP_SERVICE_ACCOUNT_TOKEN="$(cat "$_OP_SA_TOKEN_FILE")"
+fi
+
+# Try to get PyPI token from 1Password (Claude Automation vault)
 if ! PYPI_TOKEN=$(op item get "$OP_PYPI_ITEM" --vault "$OP_PYPI_VAULT" --fields credential --reveal 2>/dev/null); then
     echo "   ERROR: PyPI token not found in 1Password"
     echo "   Item: $OP_PYPI_ITEM"
-    echo "   Vault: $OP_PYPI_VAULT (Engineering)"
-    echo ""
-    echo "   To fix, create a PyPI token and save to 1Password:"
-    echo "     1. Get token from: https://pypi.org/manage/account/token/"
-    echo "     2. Save to 1Password Engineering vault with:"
-    echo "        op item create --category='API Credential' --title='PyPI Token - rangebar (project-scoped)' --vault='$OP_PYPI_VAULT' 'credential=pypi-xxx'"
+    echo "   Vault: $OP_PYPI_VAULT (Claude Automation)"
     echo ""
     exit 1
 fi
-echo "   1Password token verified"
+echo "   1Password token verified (${#PYPI_TOKEN} chars)"
 
 # Step 1: Verify pyproject.toml exists
 echo -e "\n Step 1: Reading package info from pyproject.toml..."
