@@ -98,6 +98,29 @@
 -- Note: New installations do not need this migration.
 
 -- ============================================================================
+-- Migration for Issue #101 (is_liquidation_cascade flag)
+-- ============================================================================
+-- Run ONCE on existing installations (bigblack and any other cached hosts):
+--
+-- Step 1: Add column (DEFAULT expression auto-applies to new inserts)
+-- ALTER TABLE rangebar_cache.range_bars
+--     ADD COLUMN IF NOT EXISTS is_liquidation_cascade UInt8 DEFAULT toUInt8(
+--         (high - low) / open >= toFloat64(threshold_decimal_bps) / 10000.0 * 10.0
+--         AND duration_us > 0
+--         AND duration_us <= 100000
+--     );
+--
+-- Step 2: Backfill all existing rows (runs async, check system.mutations for progress)
+-- ALTER TABLE rangebar_cache.range_bars
+--     UPDATE is_liquidation_cascade = toUInt8(
+--         (high - low) / open >= toFloat64(threshold_decimal_bps) / 10000.0 * 10.0
+--         AND duration_us > 0
+--         AND duration_us <= 100000
+--     ) WHERE 1;
+--
+-- Note: New installations do not need this migration.
+
+-- ============================================================================
 -- Migration for v12.8.x (Issue #78: Intra-bar features)
 -- ============================================================================
 -- Run this ONCE if upgrading from rangebar-py v12.7.x with existing cache:
@@ -238,6 +261,19 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
     -- Trade ID range (Issue #72: data integrity verification)
     first_agg_trade_id Int64 DEFAULT 0,
     last_agg_trade_id Int64 DEFAULT 0,
+
+    -- Bar flags (Issue #101: derived metadata, always returned)
+    -- is_liquidation_cascade: True when a Binance matching-engine atomic batch
+    -- collapses many fills into one bar (range >= 10x threshold, duration <= 100ms).
+    -- Forensic basis: 2025-10-10 event — 24,433 individual trades all share
+    -- microsecond 1760131449755735. No Binance data product can split further.
+    -- Historical census (BTCUSDT@250): 427 extreme bars (0.057% of 753,113 total).
+    -- 76% concentrated on 2020-03-12 (Black Thursday) and 2021-05-19 (China ban).
+    is_liquidation_cascade UInt8 DEFAULT toUInt8(
+        (high - low) / open >= toFloat64(threshold_decimal_bps) / 10000.0 * 10.0
+        AND duration_us > 0
+        AND duration_us <= 100000
+    ),
 
     -- Cache metadata
     cache_key String,                        -- Hash of full parameters

@@ -165,6 +165,27 @@ TRADE_ID_RANGE_COLUMNS: tuple[str, ...] = (
 )
 
 # =============================================================================
+# Bar Flag Columns (Issue #101: Liquidation cascade detection)
+# =============================================================================
+# Boolean flags derived from bar properties. Always included in query output
+# regardless of include_microstructure. No Rust changes needed — computed
+# from existing ClickHouse columns via DEFAULT expression.
+#
+# is_liquidation_cascade: True when a single Binance matching-engine atomic
+#   batch collapses many fills into one bar. Rule: range >= 10x threshold
+#   AND duration_us <= 100ms. Covers 95.6% of all extreme bars (10x+).
+#   Two sub-populations: micro-ghost (1-10 trades, matching artifact) and
+#   massive-cascade (1000+ trades, genuine liquidation event).
+#   Forensic evidence: 2025-10-10 24,433 trades all at microsecond
+#   1760131449755735 — no Binance data product can split further.
+#
+# IMPORTANT: Keep in sync with schema.sql DEFAULT expression.
+
+BAR_FLAG_COLUMNS: tuple[str, ...] = (
+    "is_liquidation_cascade",
+)
+
+# =============================================================================
 # Tier-1 Symbols (high-liquidity, available on all Binance markets)
 # SSoT: symbols.toml (tier=1 entries). Verified by test_symbol_registry.py. (Issue #79)
 # =============================================================================

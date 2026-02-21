@@ -27,6 +27,7 @@ from .compat import get_range_bars_panel as get_range_bars_panel
 from .compat import to_panel_format as to_panel_format
 
 # Constants (rangebar.constants)
+from .constants import BAR_FLAG_COLUMNS as BAR_FLAG_COLUMNS
 from .constants import INTER_BAR_FEATURE_COLUMNS as INTER_BAR_FEATURE_COLUMNS
 from .constants import LONG_RANGE_DAYS as LONG_RANGE_DAYS
 from .constants import THRESHOLD_DECIMAL_MAX as THRESHOLD_DECIMAL_MAX

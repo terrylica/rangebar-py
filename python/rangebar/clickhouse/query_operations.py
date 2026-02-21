@@ -15,6 +15,7 @@ import pandas as pd
 
 from ..constants import (
     _PLUGIN_FEATURE_COLUMNS,  # Issue #98: FeatureProvider plugin columns
+    BAR_FLAG_COLUMNS,  # Issue #101: is_liquidation_cascade and future flags
     INTER_BAR_FEATURE_COLUMNS,
     INTRA_BAR_FEATURE_COLUMNS,
     MICROSTRUCTURE_COLUMNS,
@@ -89,6 +90,8 @@ class QueryOperationsMixin:
             close as Close,
             volume as Volume
         """
+        # Issue #101: Bar flags always included (lightweight boolean metadata)
+        base_cols += "," + ",".join(BAR_FLAG_COLUMNS)
         if include_microstructure:
             base_cols += """,
             vwap,
@@ -306,6 +309,8 @@ class QueryOperationsMixin:
             close as Close,
             volume as Volume
         """
+        # Issue #101: Bar flags always included (lightweight boolean metadata)
+        base_cols += "," + ",".join(BAR_FLAG_COLUMNS)
         if include_microstructure:
             base_cols += """,
             vwap,

@@ -31,6 +31,7 @@ __all__ = [
     # Sorted alphabetically for RUF022 compliance
     "ALL_OPTIONAL_COLUMNS",
     "ASSET_CLASS_MULTIPLIERS",
+    "BAR_FLAG_COLUMNS",  # Issue #101: is_liquidation_cascade and future bar flags
     "BINANCE_VISION_AGGTRADES_URL",  # Issue #88: Binance Vision probe
     "EXCHANGE_SESSION_COLUMNS",
     "INTER_BAR_FEATURE_COLUMNS",  # Issue #59 (lookback window BEFORE bar)
@@ -133,6 +134,7 @@ from .checkpoint import populate_cache_resumable
 # Import constants from centralized module (SSoT)
 from .constants import (
     ALL_OPTIONAL_COLUMNS,
+    BAR_FLAG_COLUMNS,  # Issue #101: is_liquidation_cascade
     EXCHANGE_SESSION_COLUMNS,
     INTER_BAR_FEATURE_COLUMNS,  # Issue #59 (lookback window BEFORE bar)
     INTRA_BAR_FEATURE_COLUMNS,  # Issue #59 (trades WITHIN bar)
