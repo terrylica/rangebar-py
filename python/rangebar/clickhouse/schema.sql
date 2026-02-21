@@ -105,7 +105,7 @@
 -- Step 1: Add column (DEFAULT expression auto-applies to new inserts)
 -- ALTER TABLE rangebar_cache.range_bars
 --     ADD COLUMN IF NOT EXISTS is_liquidation_cascade UInt8 DEFAULT toUInt8(
---         (high - low) / open >= toFloat64(threshold_decimal_bps) / 10000.0 * 10.0
+--         (high - low) / open >= toFloat64(threshold_decimal_bps) / 10000.0
 --         AND duration_us > 0
 --         AND duration_us <= 100000
 --     );
@@ -113,7 +113,7 @@
 -- Step 2: Backfill all existing rows (runs async, check system.mutations for progress)
 -- ALTER TABLE rangebar_cache.range_bars
 --     UPDATE is_liquidation_cascade = toUInt8(
---         (high - low) / open >= toFloat64(threshold_decimal_bps) / 10000.0 * 10.0
+--         (high - low) / open >= toFloat64(threshold_decimal_bps) / 10000.0
 --         AND duration_us > 0
 --         AND duration_us <= 100000
 --     ) WHERE 1;
@@ -270,7 +270,7 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
     -- Historical census (BTCUSDT@250): 427 extreme bars (0.057% of 753,113 total).
     -- 76% concentrated on 2020-03-12 (Black Thursday) and 2021-05-19 (China ban).
     is_liquidation_cascade UInt8 DEFAULT toUInt8(
-        (high - low) / open >= toFloat64(threshold_decimal_bps) / 10000.0 * 10.0
+        (high - low) / open >= toFloat64(threshold_decimal_bps) / 10000.0
         AND duration_us > 0
         AND duration_us <= 100000
     ),
