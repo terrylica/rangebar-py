@@ -227,6 +227,7 @@ def find_gap_dates(
 def verify_checkpoints(
     checkpoint_dir: Path,
     per_day: bool = False,
+    min_discrepancy_pct: float = 0.0,
 ) -> list[dict]:
     """Cross-validate all checkpoints against ClickHouse.
 
@@ -236,6 +237,10 @@ def verify_checkpoints(
         Directory containing checkpoint JSON files.
     per_day : bool
         If True, also check per-day coverage and report gap dates.
+    min_discrepancy_pct : float
+        Minimum missing percentage to count as a discrepancy. Deltas below
+        this threshold are logged as DEDUP (expected from OPTIMIZE FINAL)
+        but excluded from the failure list. Default 0.0 (all deltas fail).
 
     Returns
     -------
@@ -279,7 +284,10 @@ def verify_checkpoints(
             delta = claimed_bars - actual_bars
             pct = (delta / claimed_bars * 100) if claimed_bars > 0 else 0
 
-            if delta > 0:
+            if delta > 0 and pct < min_discrepancy_pct:
+                # Issue #106: Small deltas from OPTIMIZE FINAL dedup are expected
+                print(f"  DEDUP: {delta} fewer bars ({pct:.1f}%) — below {min_discrepancy_pct}% threshold")
+            elif delta > 0:
                 print(f"  DISCREPANCY: checkpoint claims {delta} more bars ({pct:.1f}%)")
                 record = {
                     "symbol": symbol,
@@ -343,6 +351,13 @@ def main() -> int:
         help="Check per-day coverage and report gap dates",
     )
     parser.add_argument(
+        "--min-discrepancy-pct",
+        type=float,
+        default=0.0,
+        help="Minimum missing %% to count as failure (default: 0). "
+        "Deltas below this are logged as DEDUP (expected from OPTIMIZE FINAL).",
+    )
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Enable verbose logging",
@@ -354,7 +369,11 @@ def main() -> int:
         format="%(levelname)s %(name)s: %(message)s",
     )
 
-    discrepancies = verify_checkpoints(args.checkpoint_dir, per_day=args.per_day)
+    discrepancies = verify_checkpoints(
+        args.checkpoint_dir,
+        per_day=args.per_day,
+        min_discrepancy_pct=args.min_discrepancy_pct,
+    )
 
     if discrepancies:
         print(f"\n{'='*60}")
