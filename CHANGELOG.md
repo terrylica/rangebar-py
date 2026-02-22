@@ -1,3 +1,25 @@
+# [12.26.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.25.1...v12.26.0) (2026-02-22)
+
+
+### Bug Fixes
+
+* **data-quality:** Issue [#99](https://github.com-terrylica/terrylica/rangebar-py/issues/99) — laguerre bars_in_regime already correct, add verification ([48f1b44](https://github.com-terrylica/terrylica/rangebar-py/commit/48f1b447b853329d98196919bcd3cfcc31451af9)), closes [terrylica/atr-adaptive-laguerre#2](https://github.com-terrylica/terrylica/atr-adaptive-laguerre/issues/2)
+* **deps:** bump laguerre dep to >=2.4.1 now that PyPI is updated ([bf61ff0](https://github.com-terrylica/terrylica/rangebar-py/commit/bf61ff0c4206bd8b11af5303f6f5cc6718f42262)), closes [#98](https://github.com-terrylica/terrylica/rangebar-py/issues/98) [#99](https://github.com-terrylica/terrylica/rangebar-py/issues/99)
+* **plugins:** auto-migrate plugin columns in _ensure_schema + add E2E validation ([60c9b13](https://github.com-terrylica/terrylica/rangebar-py/commit/60c9b13e3c3bd9670f62589032b45fc90fa8b617))
+* **plugins:** bump laguerre dep to require bars_in_regime fix, add re-population script ([2dbba0d](https://github.com-terrylica/terrylica/rangebar-py/commit/2dbba0d5b1ba6d88f882725ce1e2bc0299074446))
+* **release:** migrate PyPI publish credentials to Claude Automation vault ([1511f87](https://github.com-terrylica/terrylica/rangebar-py/commit/1511f871940e3e7b3082029ea0d9a1df6db9cbb3))
+* **release:** wire release:crates into release:full depends chain ([40f5d70](https://github.com-terrylica/terrylica/rangebar-py/commit/40f5d70ab0c4d81c67040e75fe80f33599c4e99f))
+* **schema:** correct is_liquidation_cascade threshold formula ([29bdd7a](https://github.com-terrylica/terrylica/rangebar-py/commit/29bdd7a70f82bf93693f1d5b6ae64eb9ebe05009)), closes [#101](https://github.com-terrylica/terrylica/rangebar-py/issues/101)
+* **symbols:** raise SHIBUSDT minimum threshold to 1000 dbps ([e8351f3](https://github.com-terrylica/terrylica/rangebar-py/commit/e8351f34debbdebdcc62e4513f3d72154ccbfd49))
+* **thresholds:** add WIFUSDT 1000 dbps hard floor + document meme coin Tier A policy ([6579b33](https://github.com-terrylica/terrylica/rangebar-py/commit/6579b33263ea0601d4b2a7d864f7bb9a29840d8c))
+
+
+### Features
+
+* **#101:** add is_liquidation_cascade flag for Binance atomic batch bars ([2f8a7d8](https://github.com-terrylica/terrylica/rangebar-py/commit/2f8a7d854cc2ea1f5e1cca815dbb6a232db01f2e)), closes [#101](https://github.com-terrylica/terrylica/rangebar-py/issues/101) [hi#low](https://github.com-terrylica/hi/issues/low) [#101](https://github.com-terrylica/terrylica/rangebar-py/issues/101) [#101](https://github.com-terrylica/terrylica/rangebar-py/issues/101)
+* **#102:** implement backfill_watcher.py for on-demand flowsurface backfill ([39c0df7](https://github.com-terrylica/terrylica/rangebar-py/commit/39c0df76897a0e442fa19e4f2bfbbc075dd4846b)), closes [#102](https://github.com-terrylica/terrylica/rangebar-py/issues/102) [#102](https://github.com-terrylica/terrylica/rangebar-py/issues/102)
+* **registry:** add TRXUSDT, ZECUSDT, HBARUSDT, PAXGUSDT, PEPEUSDT, TONUSDT ([5737097](https://github.com-terrylica/terrylica/rangebar-py/commit/57370972536175b8a858aa80a801274ab63d1a5d))
+
 ## [12.25.1](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.25.0...v12.25.1) (2026-02-19)
 
 # [12.25.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.24.0...v12.25.0) (2026-02-19)
