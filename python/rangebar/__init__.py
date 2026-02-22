@@ -52,6 +52,7 @@ __all__ = [
     "AssetClass",
     "AsyncStreamingProcessor",
     "BackfillResult",  # Issue #92: Layer 2 recency backfill
+    "BackfillStatus",  # Issue #102: backfill request status query
     "BinanceLiveStream",
     "ContinuityError",
     "ContinuityWarning",
@@ -85,6 +86,7 @@ __all__ = [
     "auto_memory_guard",
     "backfill_all_recent",  # Issue #92: Layer 2 recency backfill
     "backfill_recent",  # Issue #92: Layer 2 recency backfill
+    "check_backfill_status",  # Issue #102: backfill request status query
     "clear_symbol_registry_cache",  # Issue #79: runtime registry refresh
     "clear_threshold_cache",  # Issue #62: runtime config changes
     "detect_asset_class",
@@ -182,9 +184,11 @@ from .processors.core import RangeBarProcessor
 # Re-export Layer 2 recency backfill API (Issue #92)
 from .recency import (
     BackfillResult,
+    BackfillStatus,
     LoopState,
     backfill_all_recent,
     backfill_recent,
+    check_backfill_status,
     run_adaptive_loop,
 )
 

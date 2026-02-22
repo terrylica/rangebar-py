@@ -18,6 +18,7 @@
 #   .mise/tasks/research.toml - research cache population
 #   .mise/tasks/telemetry.toml - structured telemetry
 #   .mise/tasks/recency.toml  - Layer 2 recency backfill (Issue #92)
+#   .mise/tasks/deploy.toml   - Remote host deployment (bigblack)
 
 [env]
 # =============================================================================
@@ -128,6 +129,12 @@ OP_PYPI_ITEM = "zdc7ap2ixpqgtpq62xm2davi7e"
 OP_PYPI_VAULT = "ggk4orq7rmcm7jinsb4ahygv7e"
 
 # =============================================================================
+# Telegram Notifications (@rangebarbot)
+# =============================================================================
+RANGEBAR_TELEGRAM_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/rangebar-telegram-token') | trim }}"
+RANGEBAR_TELEGRAM_CHAT_ID = "90417581"
+
+# =============================================================================
 # ClickHouse Cache Configuration
 # =============================================================================
 RANGEBAR_CH_HOSTS = "bigblack"
@@ -189,4 +196,5 @@ includes = [
     ".mise/tasks/research.toml",
     ".mise/tasks/telemetry.toml",
     ".mise/tasks/recency.toml",
+    ".mise/tasks/deploy.toml",
 ]

@@ -1,0 +1,119 @@
+# Deployment Tasks
+# Usage: mise run deploy:bigblack
+# Keeps remote GPU workstations in sync with releases.
+
+["deploy:bigblack"]
+description = "Deploy latest release to bigblack GPU workstation"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== Deploying to bigblack ==="
+
+REMOTE_HOST="bigblack"
+REMOTE_DIR="/home/tca/rangebar-py"
+REMOTE_VENV="$REMOTE_DIR/.venv/bin"
+
+# Step 1: Verify SSH connectivity
+if ! ssh -o ConnectTimeout=10 -o BatchMode=yes "$REMOTE_HOST" "echo connected" >/dev/null 2>&1; then
+    echo "FAIL: Cannot connect to $REMOTE_HOST"
+    exit 1
+fi
+echo "OK: SSH connectivity verified"
+
+# Step 2: Git pull latest
+echo "Pulling latest from origin..."
+ssh "$REMOTE_HOST" "cd $REMOTE_DIR && git pull origin main"
+echo "OK: Git pull complete"
+
+# Step 3: Install latest rangebar from PyPI
+VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+echo "Installing rangebar==$VERSION from PyPI..."
+ssh "$REMOTE_HOST" "$REMOTE_VENV/pip install --upgrade rangebar==$VERSION"
+echo "OK: rangebar $VERSION installed"
+
+# Step 4: Verify version alignment
+REMOTE_VERSION=$(ssh "$REMOTE_HOST" "$REMOTE_VENV/python3 -c 'import rangebar; print(rangebar.__version__)'")
+LOCAL_VERSION=$(.venv/bin/python3 -c 'import rangebar; print(rangebar.__version__)' 2>/dev/null || echo "$VERSION")
+
+if [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ]; then
+    echo "OK: Version aligned — local=$LOCAL_VERSION, remote=$REMOTE_VERSION"
+else
+    echo "WARN: Version mismatch — local=$LOCAL_VERSION, remote=$REMOTE_VERSION"
+    exit 1
+fi
+
+# Step 5: Verify ClickHouse connectivity on bigblack
+echo "Verifying ClickHouse connectivity..."
+CH_OK=$(ssh "$REMOTE_HOST" "curl -sf 'http://localhost:8123/?query=SELECT+1'" 2>/dev/null || echo "")
+if [ "$CH_OK" = "1" ]; then
+    echo "OK: ClickHouse responsive"
+else
+    echo "WARN: ClickHouse not responding (non-fatal)"
+fi
+
+# Step 6: Verify symbols.toml is current
+echo "Verifying symbols.toml..."
+LOCAL_SYMBOLS=$(wc -l < python/rangebar/data/symbols.toml | tr -d ' ')
+REMOTE_SYMBOLS=$(ssh "$REMOTE_HOST" "wc -l < $REMOTE_DIR/python/rangebar/data/symbols.toml" | tr -d ' ')
+if [ "$LOCAL_SYMBOLS" = "$REMOTE_SYMBOLS" ]; then
+    echo "OK: symbols.toml in sync ($LOCAL_SYMBOLS lines)"
+else
+    echo "WARN: symbols.toml mismatch — local=$LOCAL_SYMBOLS lines, remote=$REMOTE_SYMBOLS lines"
+fi
+
+echo ""
+echo "OK: bigblack deployment complete (v$REMOTE_VERSION)"
+"""
+
+["deploy:bigblack-verify"]
+description = "Verify bigblack deployment without changes"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== Verifying bigblack deployment ==="
+
+REMOTE_HOST="bigblack"
+REMOTE_DIR="/home/tca/rangebar-py"
+REMOTE_VENV="$REMOTE_DIR/.venv/bin"
+
+# SSH check
+if ! ssh -o ConnectTimeout=10 -o BatchMode=yes "$REMOTE_HOST" "echo connected" >/dev/null 2>&1; then
+    echo "FAIL: Cannot connect to $REMOTE_HOST"
+    exit 1
+fi
+
+# Version
+REMOTE_VERSION=$(ssh "$REMOTE_HOST" "$REMOTE_VENV/python3 -c 'import rangebar; print(rangebar.__version__)'" 2>/dev/null || echo "N/A")
+LOCAL_VERSION=$(.venv/bin/python3 -c 'import rangebar; print(rangebar.__version__)' 2>/dev/null || echo "N/A")
+echo "rangebar: local=$LOCAL_VERSION remote=$REMOTE_VERSION"
+
+# Git status
+REMOTE_BRANCH=$(ssh "$REMOTE_HOST" "cd $REMOTE_DIR && git rev-parse --short HEAD")
+LOCAL_BRANCH=$(git rev-parse --short HEAD)
+echo "git HEAD: local=$LOCAL_BRANCH remote=$REMOTE_BRANCH"
+
+# ClickHouse
+CH_OK=$(ssh "$REMOTE_HOST" "curl -sf 'http://localhost:8123/?query=SELECT+1'" 2>/dev/null || echo "")
+if [ "$CH_OK" = "1" ]; then
+    echo "ClickHouse: OK"
+else
+    echo "ClickHouse: NOT RESPONDING"
+fi
+
+# symbols.toml
+LOCAL_SYMBOLS=$(wc -l < python/rangebar/data/symbols.toml | tr -d ' ')
+REMOTE_SYMBOLS=$(ssh "$REMOTE_HOST" "wc -l < $REMOTE_DIR/python/rangebar/data/symbols.toml" | tr -d ' ')
+echo "symbols.toml: local=$LOCAL_SYMBOLS lines remote=$REMOTE_SYMBOLS lines"
+
+# Verdict
+if [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ] && [ "$REMOTE_BRANCH" = "$LOCAL_BRANCH" ]; then
+    echo ""
+    echo "OK: bigblack is in sync"
+else
+    echo ""
+    echo "WARN: bigblack is out of sync — run: mise run deploy:bigblack"
+    exit 1
+fi
+"""

@@ -176,3 +176,88 @@ def try_cache_write(
         # OSError: Network/disk errors
         # RuntimeError: ClickHouse driver errors
         logger.warning("Cache write failed (non-fatal): %s", e)
+
+
+def fatal_cache_write(
+    bars_df: pd.DataFrame,
+    symbol: str,
+    threshold_decimal_bps: int,
+    ouroboros: str,
+) -> int:
+    """Write bars to ClickHouse cache. Raises on failure.
+
+    Unlike try_cache_write(), this function is for populate_cache_resumable()
+    where ClickHouse IS the destination, not an optional cache layer.
+    Failures must be visible to the caller so that:
+    - bars_written reflects reality (actual persisted count, not computed count)
+    - checkpoints are only saved for days that succeeded
+    - force_refresh + write failure does not silently lose data
+
+    Parameters
+    ----------
+    bars_df : pd.DataFrame
+        Range bar DataFrame to write.
+    symbol : str
+        Trading symbol (e.g., "BTCUSDT").
+    threshold_decimal_bps : int
+        Threshold in decimal basis points.
+    ouroboros : str
+        Ouroboros mode ("year", "month", "week").
+
+    Returns
+    -------
+    int
+        Number of rows actually written to ClickHouse.
+
+    Raises
+    ------
+    CacheWriteError
+        If the write fails for any reason (connection, schema, disk, etc.).
+    """
+    from rangebar.exceptions import CacheWriteError
+
+    if bars_df is None or bars_df.empty:
+        return 0
+
+    try:
+        import polars as pl
+
+        from rangebar.clickhouse import RangeBarCache
+
+        with RangeBarCache() as cache:
+            bars_pl = pl.from_pandas(bars_df.reset_index())
+            written = cache.store_bars_batch(
+                symbol=symbol,
+                threshold_decimal_bps=threshold_decimal_bps,
+                bars=bars_pl,
+                version="",
+                ouroboros_mode=ouroboros,
+            )
+            logger.info(
+                "Persisted %d bars for %s @ %d dbps",
+                written,
+                symbol,
+                threshold_decimal_bps,
+            )
+            return written
+    except ImportError as e:
+        msg = f"ClickHouse not available: {e}"
+        raise CacheWriteError(
+            msg,
+            symbol=symbol,
+            operation="fatal_cache_write",
+        ) from e
+    except ConnectionError as e:
+        msg = f"ClickHouse connection failed: {e}"
+        raise CacheWriteError(
+            msg,
+            symbol=symbol,
+            operation="fatal_cache_write",
+        ) from e
+    except (OSError, RuntimeError) as e:
+        msg = f"ClickHouse write failed: {e}"
+        raise CacheWriteError(
+            msg,
+            symbol=symbol,
+            operation="fatal_cache_write",
+        ) from e

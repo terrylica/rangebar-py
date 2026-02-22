@@ -493,10 +493,105 @@ def run_adaptive_loop(
         )
 
 
+@dataclass
+class BackfillStatus:
+    """Status of the most recent backfill request for a symbol x threshold pair."""
+
+    status: str  # "none" | "pending" | "running" | "completed" | "failed"
+    request_id: str | None = None
+    requested_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    bars_written: int = 0
+    gap_seconds: float = 0.0
+    error: str | None = None
+    elapsed_seconds: float = 0.0
+    watcher_likely_offline: bool = False
+
+
+def check_backfill_status(
+    symbol: str,
+    threshold_decimal_bps: int = 250,
+) -> BackfillStatus:
+    """Check the status of the most recent backfill request.
+
+    Queries the backfill_requests table for the latest request matching the
+    given symbol and threshold. If the request has been pending for more than
+    300 seconds, sets ``watcher_likely_offline=True``.
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol (e.g., "BTCUSDT").
+    threshold_decimal_bps : int
+        Threshold in decimal basis points (use 0 to match any threshold).
+
+    Returns
+    -------
+    BackfillStatus
+        Current status of the most recent backfill request, or status="none"
+        if no matching request exists.
+    """
+    from rangebar.clickhouse import RangeBarCache
+
+    with RangeBarCache() as cache:
+        result = cache.client.query(
+            "SELECT request_id, status, requested_at, started_at, "
+            "completed_at, bars_written, gap_seconds, error "
+            "FROM rangebar_cache.backfill_requests FINAL "
+            "WHERE symbol = {symbol:String} "
+            "  AND (threshold_decimal_bps = {threshold:UInt32} "
+            "       OR threshold_decimal_bps = 0) "
+            "ORDER BY requested_at DESC "
+            "LIMIT 1",
+            parameters={
+                "symbol": symbol,
+                "threshold": threshold_decimal_bps,
+            },
+        )
+
+    if not result.result_rows:
+        return BackfillStatus(status="none")
+
+    row = result.result_rows[0]
+    request_id = str(row[0])
+    status = str(row[1])
+    requested_at = row[2] if row[2] else None
+    started_at = row[3] if row[3] else None
+    completed_at = row[4] if row[4] else None
+    bars_written = int(row[5]) if row[5] else 0
+    gap_seconds = float(row[6]) if row[6] else 0.0
+    error = str(row[7]) if row[7] else None
+
+    # Compute elapsed time from requested_at
+    elapsed_seconds = 0.0
+    if requested_at:
+        now = datetime.now(UTC)
+        if hasattr(requested_at, "timestamp"):
+            elapsed_seconds = (now - requested_at).total_seconds()
+
+    watcher_likely_offline = status == "pending" and elapsed_seconds > 300
+
+    return BackfillStatus(
+        status=status,
+        request_id=request_id,
+        requested_at=requested_at,
+        started_at=started_at,
+        completed_at=completed_at,
+        bars_written=bars_written,
+        gap_seconds=gap_seconds,
+        error=error,
+        elapsed_seconds=elapsed_seconds,
+        watcher_likely_offline=watcher_likely_offline,
+    )
+
+
 __all__ = [
     "BackfillResult",
+    "BackfillStatus",
     "LoopState",
     "backfill_all_recent",
     "backfill_recent",
+    "check_backfill_status",
     "run_adaptive_loop",
 ]

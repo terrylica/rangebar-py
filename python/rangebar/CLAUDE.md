@@ -242,6 +242,45 @@ assert result["tier2_passed"]
 
 ---
 
+## Notifications (`notify/`)
+
+Telegram and Pushover notification modules for cache operations and monitoring.
+
+| Module        | Bot          | Use Case                            |
+| ------------- | ------------ | ----------------------------------- |
+| `telegram.py` | @rangebarbot | Hook events, gap alerts, heartbeats |
+| `pushover.py` | —            | Critical alerts (checksum failures) |
+
+### Telegram Integration
+
+```python
+from rangebar.notify.telegram import send_telegram, enable_telegram_notifications
+
+# Enable for all hook events (populate, cache write, validation, etc.)
+enable_telegram_notifications()
+
+# Or failures only
+from rangebar.notify.telegram import enable_failure_notifications
+enable_failure_notifications()
+
+# Direct message
+send_telegram("<b>Alert:</b> Custom message", disable_notification=False)
+```
+
+**Env vars**: `RANGEBAR_TELEGRAM_TOKEN` + `RANGEBAR_TELEGRAM_CHAT_ID` (set in `.mise.toml`)
+
+### Safe Populate Pattern (Post-Incident)
+
+`populate_cache_resumable()` uses `_fatal_cache_write()` (not `try_cache_write()`) to ensure ClickHouse failures raise exceptions instead of being silently swallowed. The checkpoint only advances for days where ClickHouse confirmed the write.
+
+| Guard                          | What It Prevents                          |
+| ------------------------------ | ----------------------------------------- |
+| Fatal cache write              | Silent loss of bars when SSH tunnel drops |
+| T-1 date clamping              | Crash on unavailable Binance Vision data  |
+| `bars_written` from ClickHouse | Checkpoint/ClickHouse count divergence    |
+
+---
+
 ## Common Patterns
 
 ### Date-Bounded Bars (Backtesting)

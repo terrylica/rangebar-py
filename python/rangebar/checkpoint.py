@@ -1,3 +1,4 @@
+# FILE-SIZE-OK
 """Checkpoint system for resumable cache population (Issue #40, Issue #69).
 
 Enables long-running cache population jobs to be resumed after interruption.
@@ -30,7 +31,7 @@ import os
 import socket
 import tempfile
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
 
@@ -451,6 +452,22 @@ def populate_cache_resumable(
     validate_symbol_registered(symbol, operation="populate_cache_resumable")
     start_date = validate_and_clamp_start_date(symbol, start_date)
 
+    # T-1 guard: Binance Vision publishes with ~1-day lag.
+    # Attempting to fetch today's data causes RuntimeError: "No data available"
+    # which crashes the job after checkpoint is written but before ClickHouse
+    # receives bars (gap regression scenario).
+    today_utc = datetime.now(UTC).date()
+    t1_cutoff = today_utc - timedelta(days=1)
+    end_date_parsed = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=UTC).date()
+    if end_date_parsed >= today_utc:
+        logger.warning(
+            "end_date %s is today or future; clamping to T-1 (%s) "
+            "(Binance Vision publishes with ~1-day lag)",
+            end_date_parsed,
+            t1_cutoff,
+        )
+        end_date = t1_cutoff.strftime("%Y-%m-%d")
+
     checkpoint_path = _get_checkpoint_path(
         symbol, threshold_decimal_bps, start_date, end_date, checkpoint_dir
     )
@@ -509,8 +526,6 @@ def populate_cache_resumable(
             and checkpoint.end_date == end_date
         ):
             # Resume from day after last completed
-            from datetime import timedelta
-
             last_completed = datetime.strptime(
                 checkpoint.last_completed_date, "%Y-%m-%d"
             ).replace(tzinfo=UTC)
@@ -568,11 +583,12 @@ def populate_cache_resumable(
     # get_range_bars() creates a fresh processor per call, losing incomplete
     # bar state at day boundaries.
 
+    from rangebar.exceptions import CacheWriteError
     from rangebar.orchestration.helpers import (
         _parse_microstructure_env_vars,
         _process_binance_trades,
     )
-    from rangebar.orchestration.range_bars_cache import try_cache_write
+    from rangebar.orchestration.range_bars_cache import fatal_cache_write
     from rangebar.processors.core import RangeBarProcessor
     from rangebar.storage.parquet import TickStorage
 
@@ -729,13 +745,13 @@ def populate_cache_resumable(
 
                     bars_df = enrich_bars(bars_df, symbol, threshold_decimal_bps)
 
-                bars_today = len(bars_df) if bars_df is not None else 0
-
-                # Write to ClickHouse cache
+                # Write to ClickHouse cache (fatal — ClickHouse IS the destination)
                 if bars_df is not None and not bars_df.empty:
-                    try_cache_write(
+                    bars_today = fatal_cache_write(
                         bars_df, symbol, threshold_decimal_bps, ouroboros,
                     )
+                else:
+                    bars_today = 0
 
                 del bars_df
 
@@ -826,7 +842,7 @@ def populate_cache_resumable(
             # Issue #76: Explicit memory cleanup
             del day_ticks
 
-        except (ValueError, RuntimeError, OSError) as exc:
+        except (ValueError, RuntimeError, OSError, CacheWriteError) as exc:
             # Defense-in-depth: if the final day has no data (archive not yet
             # published on Binance Vision), complete gracefully instead of
             # crashing the entire multi-day job at 99.96% completion.

@@ -107,6 +107,10 @@ def _get_symbols() -> dict[str, str]:
 
 SYMBOLS = _get_symbols()
 
+# Script-level T-1 guard via probe_latest_available_date().
+# Defense-in-depth: populate_cache_resumable() also clamps end_date >= today
+# to T-1 (yesterday UTC) at the library level, so even if this probe fails
+# or a caller passes --end-date with a future date, the library catches it.
 END_DATE = probe_latest_available_date()
 
 # Phases organized by resource requirements

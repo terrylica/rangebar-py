@@ -175,6 +175,61 @@ ssh bigblack 'uptime && free -h'
 
 ---
 
+## Gap Detection & Monitoring
+
+Automated gap detection to prevent silent data loss in ClickHouse. Born from the Feb 2026 BTCUSDT@500 incident (5.5-day gap caused by `try_cache_write()` silently swallowing SSH tunnel failures).
+
+### Scripts
+
+| Script                           | Purpose                                            | Exit Code              |
+| -------------------------------- | -------------------------------------------------- | ---------------------- |
+| `detect_gaps.py`                 | Find temporal/price gaps + freshness in ClickHouse | 0=clean, 1=gaps, 2=err |
+| `verify_checkpoint_integrity.py` | Cross-validate checkpoint files vs ClickHouse      | 0=clean, 1=mismatch    |
+| `setup_daily_gap_check.sh`       | Install daily pueue monitoring job on bigblack     | —                      |
+
+### Usage
+
+```bash
+# mise tasks
+mise run cache:check-gaps            # All symbols, all time
+mise run cache:check-gaps:recent     # Last 30 days, 6h threshold
+
+# Direct script usage
+python scripts/detect_gaps.py --help
+python scripts/detect_gaps.py --symbol BTCUSDT --threshold 500
+python scripts/detect_gaps.py --recent-days 7 --json
+
+# Freshness check (flag stale data >72 hours since last bar)
+python scripts/detect_gaps.py --recent-days 7 --max-stale-hours 72
+
+# Checkpoint integrity
+python scripts/verify_checkpoint_integrity.py --quiet
+```
+
+### Freshness Detection
+
+The `--max-stale-hours N` flag computes `now - latest_bar` for each (symbol, threshold) pair. If any pair hasn't produced a bar in N hours, it's flagged as stale and triggers exit code 1. The heartbeat uses `--max-stale-hours 72` (3 days).
+
+This catches scenarios where ALL thresholds for a symbol stop simultaneously (e.g., backfill_watcher not running) — something inter-bar gap detection alone misses because it only checks gaps between consecutive bars within existing data.
+
+### Telegram Alerts (@rangebarbot)
+
+Gap detection integrates with `rangebar.notify.telegram`:
+
+- **Gaps found** → persistent alert (stays forever, LOUD notification)
+- **All clear** → no message (or ephemeral heartbeat via launchd)
+- **`--no-notify`** flag suppresses Telegram (for dry runs)
+
+### Heartbeat (launchd)
+
+Compiled Swift binary at `~/.claude/automation/rangebar-heartbeat/rangebar-heartbeat` runs every 15 min via launchd (`com.eonlabs.rangebar-heartbeat`). Executes `detect_gaps.py` + `verify_checkpoint_integrity.py`, sends ephemeral green heartbeat (auto-deletes 2 min) on clean, persistent red alert on regression.
+
+### Gap Detection Query (SSoT)
+
+Uses ClickHouse `neighbor()` window function to compute inter-bar time deltas within each `(symbol, threshold)` partition. Gaps exceeding `--min-gap-hours` (default 6h) are flagged.
+
+---
+
 ## Validation Scripts
 
 Portable scripts for GPU workstations without full dev environment:

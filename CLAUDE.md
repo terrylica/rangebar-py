@@ -17,6 +17,7 @@
 | Plugin system           | [python/rangebar/plugins/CLAUDE.md](/python/rangebar/plugins/CLAUDE.md)       | FeatureProvider protocol, entry-point discovery       |
 | Operations & scripts    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue, cache population, per-year parallelism         |
 | Release workflow        | [docs/development/RELEASE.md](/docs/development/RELEASE.md)                   | Zig cross-compile, mise tasks                         |
+| Deploy to bigblack      | `mise run deploy:bigblack`                                                    | Git pull + PyPI install + verify                      |
 | Performance monitoring  | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md)           | Benchmarks, metrics                                   |
 | Project context         | [docs/CONTEXT.md](/docs/CONTEXT.md)                                           | Why this project exists                               |
 | API reference           | [docs/api/INDEX.md](/docs/api/INDEX.md)                                       | Full Python API docs                                  |
@@ -204,6 +205,38 @@ All range bar data served from **bigblack** (remote GPU host). No local ClickHou
 
 ---
 
+## Monitoring & Gap Prevention
+
+Automated monitoring to prevent silent data loss in the ClickHouse cache. Born from the Feb 2026 incident where 5.5 days of BTCUSDT@500 bars were lost due to `try_cache_write()` silently swallowing connection errors.
+
+### Root Cause (Resolved)
+
+`try_cache_write()` in `orchestration/range_bars_cache.py` was fire-and-forget — `populate_cache_resumable()` reused it even though ClickHouse IS the destination, not an optional cache. When SSH tunnel dropped, writes failed silently for days while the checkpoint advanced.
+
+### Three-Layer Defense
+
+| Layer             | Mechanism                                      | Details                                           |
+| ----------------- | ---------------------------------------------- | ------------------------------------------------- |
+| **Fatal writes**  | `_fatal_cache_write()` in populate path        | Raises on ClickHouse failure instead of warning   |
+| **T-1 guard**     | `populate_cache_resumable()` clamps `end_date` | Prevents crash on unavailable Binance Vision data |
+| **Gap detection** | `scripts/detect_gaps.py` + heartbeat           | Every 15 min via launchd, alerts via @rangebarbot |
+
+### Telegram Notifications (@rangebarbot)
+
+| Event                      | Behavior                                                   |
+| -------------------------- | ---------------------------------------------------------- |
+| All checks pass            | Ephemeral green heartbeat, auto-deletes after 2 min        |
+| Gap or regression detected | **Persistent** red alert, LOUD notification, stays forever |
+| Cache write failure        | Hook-driven alert via `rangebar.notify.telegram`           |
+
+**Config**: `RANGEBAR_TELEGRAM_TOKEN` + `RANGEBAR_TELEGRAM_CHAT_ID` in `.mise.toml`
+
+**Heartbeat binary**: `~/.claude/automation/rangebar-heartbeat/rangebar-heartbeat` (compiled Swift, launchd)
+
+**Full details**: [scripts/CLAUDE.md](/scripts/CLAUDE.md#gap-detection--monitoring)
+
+---
+
 ## Common Errors
 
 | Error                                   | Cause                  | Fix                                        |
@@ -231,7 +264,7 @@ This file is the **hub**. Each spoke CLAUDE.md is loaded automatically when work
 | `/python/rangebar/`            | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)                       | Python API, caching, validation, symbol registry, memory guards    |
 | `/python/rangebar/clickhouse/` | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | ClickHouse schema, dedup hardening, cache population               |
 | `/python/rangebar/plugins/`    | [python/rangebar/plugins/CLAUDE.md](/python/rangebar/plugins/CLAUDE.md)       | FeatureProvider protocol, entry-point discovery, plugin authoring  |
-| `/scripts/`                    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue ops, per-year parallelism, anti-patterns, validation scripts |
+| `/scripts/`                    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue ops, per-year parallelism, gap detection, monitoring scripts |
 
 ---
 

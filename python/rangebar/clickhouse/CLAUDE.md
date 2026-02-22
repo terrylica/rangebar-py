@@ -301,6 +301,39 @@ Validates all 4 runtime layers against live data. See `scripts/validate_dedup_ha
 
 ---
 
+## Gap Detection & Write Safety
+
+### Silent Write Failure (Feb 2026 Incident)
+
+`try_cache_write()` in `orchestration/range_bars_cache.py` catches all exceptions and returns `None` — correct for `get_range_bars()` (cache is optional) but **wrong** for `populate_cache_resumable()` (ClickHouse IS the destination).
+
+**Fix**: `populate_cache_resumable()` uses `_fatal_cache_write()` which raises on failure and returns confirmed `written_rows`. The checkpoint only advances for successfully written days.
+
+### `force_refresh` Atomicity Warning
+
+`force_refresh=True` deletes ALL existing bars BEFORE writing new ones. If the write phase fails (connection drop, T-1 error), deleted data is unrecoverable. Mitigations:
+
+- Fatal write path ensures early failure detection
+- T-1 guard prevents end-of-range crash
+- Checkpoint tracks `force_refresh_pending` state
+
+### Gap Detection Query
+
+`scripts/detect_gaps.py` uses ClickHouse `lagInFrame()` window function:
+
+```sql
+SELECT timestamp_ms,
+       lagInFrame(timestamp_ms, 1) OVER (ORDER BY timestamp_ms) AS prev_ts,
+       (timestamp_ms - prev_ts) / 3600000 AS gap_hours
+FROM rangebar_cache.range_bars FINAL
+WHERE (symbol, threshold_decimal_bps) = ({symbol:String}, {threshold:UInt32})
+HAVING gap_hours > {min_gap_hours:Float64}
+```
+
+**Note**: `neighbor()` is deprecated in ClickHouse 24.x+. Use `lagInFrame()` / `leadInFrame()`.
+
+---
+
 ## Files
 
 | File                  | Purpose                                                              |

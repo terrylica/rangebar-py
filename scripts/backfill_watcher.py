@@ -6,6 +6,13 @@ flowsurface, processes them via `backfill_recent()`, and updates status.
 
 Status lifecycle: pending -> running -> completed | failed
 
+Features (Wave 3):
+- Fan-out: threshold=0 resolves to ALL cached thresholds (not just lowest)
+- Dedup-aware: GROUP BY (symbol, threshold) collapses duplicate requests
+- Cooldown: skip recently-completed (symbol, threshold) pairs (default 300s)
+- Gap tracking: gap_seconds written at _mark_running() time for UI feedback
+- Exception capture: actual exception messages preserved in failed status
+
 USAGE:
 ======
 # Long-running daemon (30s poll interval)
@@ -28,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
 
@@ -41,115 +49,176 @@ logger = logging.getLogger(__name__)
 POLL_INTERVAL_SECONDS = 30
 DEFAULT_THRESHOLD_DBPS = 250
 
+# In-memory cooldown tracker: (symbol, threshold) -> monotonic timestamp of last completion
+_cooldown_tracker: dict[tuple[str, int], float] = {}
+
+_COOLDOWN_SECONDS = int(
+    os.environ.get("RANGEBAR_BACKFILL_COOLDOWN_SECONDS", "300")
+)
+
+
+def _is_on_cooldown(symbol: str, threshold: int) -> bool:
+    """Check if (symbol, threshold) was completed within the cooldown window."""
+    key = (symbol, threshold)
+    last_completed = _cooldown_tracker.get(key)
+    if last_completed is None:
+        return False
+    return (time.monotonic() - last_completed) < _COOLDOWN_SECONDS
+
+
+def _record_cooldown(symbol: str, threshold: int) -> None:
+    """Record completion time for cooldown tracking."""
+    _cooldown_tracker[(symbol, threshold)] = time.monotonic()
+
 
 def _fetch_pending_requests(cache: object) -> list[dict]:
-    """Query backfill_requests for all pending rows, oldest first."""
+    """Query backfill_requests for pending rows, grouped by (symbol, threshold).
+
+    Returns one logical request per (symbol, threshold) pair with all
+    duplicate request_ids collected for batch status updates.
+    """
     result = cache.client.query(
-        "SELECT request_id, symbol, threshold_decimal_bps "
+        "SELECT symbol, threshold_decimal_bps, "
+        "min(request_id) AS oldest_id, "
+        "groupArray(request_id) AS all_ids, "
+        "min(requested_at) AS earliest "
         "FROM rangebar_cache.backfill_requests FINAL "
         "WHERE status = 'pending' "
-        "ORDER BY requested_at ASC"
+        "GROUP BY symbol, threshold_decimal_bps "
+        "ORDER BY earliest ASC"
     )
     return [
         {
-            "request_id": str(row[0]),
-            "symbol": row[1],
-            "threshold_decimal_bps": int(row[2]),
+            "symbol": row[0],
+            "threshold_decimal_bps": int(row[1]),
+            "oldest_id": str(row[2]),
+            "all_ids": [str(rid) for rid in row[3]],
         }
         for row in result.result_rows
     ]
 
 
-def _mark_running(cache: object, request_id: str) -> None:
-    """Transition a request from pending -> running."""
-    cache.client.command(
-        "ALTER TABLE rangebar_cache.backfill_requests UPDATE "
-        "status = 'running', started_at = now64(3) "
-        "WHERE request_id = {request_id:String}",
-        parameters={"request_id": request_id},
-    )
+def _mark_running(
+    cache: object, request_ids: list[str], *, gap_seconds: float = 0.0
+) -> None:
+    """Transition request(s) from pending -> running with gap_seconds."""
+    for request_id in request_ids:
+        cache.client.command(
+            "ALTER TABLE rangebar_cache.backfill_requests UPDATE "
+            "status = 'running', started_at = now64(3), "
+            "gap_seconds = {gap_seconds:Float64} "
+            "WHERE request_id = {request_id:String}",
+            parameters={
+                "request_id": request_id,
+                "gap_seconds": gap_seconds,
+            },
+        )
 
 
 def _mark_completed(
     cache: object,
-    request_id: str,
+    request_ids: list[str],
     bars_written: int,
     gap_seconds: float,
 ) -> None:
-    """Transition a request from running -> completed."""
-    cache.client.command(
-        "ALTER TABLE rangebar_cache.backfill_requests UPDATE "
-        "status = 'completed', completed_at = now64(3), "
-        "bars_written = {bars_written:UInt32}, gap_seconds = {gap_seconds:Float64} "
-        "WHERE request_id = {request_id:String}",
-        parameters={
-            "request_id": request_id,
-            "bars_written": bars_written,
-            "gap_seconds": gap_seconds,
-        },
-    )
+    """Transition request(s) from running -> completed."""
+    for request_id in request_ids:
+        cache.client.command(
+            "ALTER TABLE rangebar_cache.backfill_requests UPDATE "
+            "status = 'completed', completed_at = now64(3), "
+            "bars_written = {bars_written:UInt32}, gap_seconds = {gap_seconds:Float64} "
+            "WHERE request_id = {request_id:String}",
+            parameters={
+                "request_id": request_id,
+                "bars_written": bars_written,
+                "gap_seconds": gap_seconds,
+            },
+        )
 
 
-def _mark_failed(cache: object, request_id: str, error: str) -> None:
-    """Transition a request from running -> failed."""
+def _mark_failed(cache: object, request_ids: list[str], error: str) -> None:
+    """Transition request(s) from running -> failed."""
     error_truncated = error[:500] if len(error) > 500 else error
-    cache.client.command(
-        "ALTER TABLE rangebar_cache.backfill_requests UPDATE "
-        "status = 'failed', completed_at = now64(3), "
-        "error = {error:String} "
-        "WHERE request_id = {request_id:String}",
-        parameters={
-            "request_id": request_id,
-            "error": error_truncated,
-        },
-    )
+    for request_id in request_ids:
+        cache.client.command(
+            "ALTER TABLE rangebar_cache.backfill_requests UPDATE "
+            "status = 'failed', completed_at = now64(3), "
+            "error = {error:String} "
+            "WHERE request_id = {request_id:String}",
+            parameters={
+                "request_id": request_id,
+                "error": error_truncated,
+            },
+        )
 
 
-def _resolve_threshold(cache: object, symbol: str, threshold: int) -> int:
+def _resolve_thresholds(cache: object, symbol: str, threshold: int) -> list[int]:
     """Resolve threshold_decimal_bps, handling the DEFAULT 0 case.
 
-    flowsurface may insert requests with threshold=0 (ClickHouse DEFAULT).
-    Query the first cached threshold for the symbol, fall back to 250 dbps.
+    When threshold=0 (flowsurface default): return ALL cached thresholds for
+    the symbol. This prevents starvation where only the lowest threshold gets
+    backfilled.
+
+    When threshold > 0: return [threshold] as a single-element list.
     """
     if threshold > 0:
-        return threshold
+        return [threshold]
 
     result = cache.client.query(
         "SELECT DISTINCT threshold_decimal_bps "
         "FROM rangebar_cache.range_bars FINAL "
         "WHERE symbol = {symbol:String} "
-        "ORDER BY threshold_decimal_bps ASC LIMIT 1",
+        "ORDER BY threshold_decimal_bps ASC",
         parameters={"symbol": symbol},
     )
     if result.result_rows:
-        resolved = int(result.result_rows[0][0])
+        thresholds = [int(row[0]) for row in result.result_rows]
         logger.info(
-            "%s: threshold=0 resolved to %d dbps (from cache)", symbol, resolved
+            "%s: threshold=0 resolved to %s dbps (all cached)",
+            symbol,
+            thresholds,
         )
-        return resolved
+        return thresholds
 
-    logger.info("%s: threshold=0, no cache — using %d dbps", symbol, DEFAULT_THRESHOLD_DBPS)
-    return DEFAULT_THRESHOLD_DBPS
+    logger.info(
+        "%s: threshold=0, no cache — using %d dbps", symbol, DEFAULT_THRESHOLD_DBPS
+    )
+    return [DEFAULT_THRESHOLD_DBPS]
 
 
-def _process_request(cache: object, request: dict, *, verbose: bool = False) -> bool:
-    """Validate and process a single backfill request.
+def _compute_gap_seconds(cache: object, symbol: str, threshold: int) -> float:
+    """Compute gap_seconds between latest cached bar and now."""
+    from datetime import UTC, datetime
 
-    Uses the shared cache connection for status mutations to avoid
-    opening multiple SSH tunnels per request.
+    latest_ts = cache.get_latest_bar_timestamp(symbol, threshold)
+    if latest_ts is None:
+        return 0.0
+    now_ms = int(datetime.now(UTC).timestamp() * 1000)
+    return (now_ms - latest_ts) / 1000.0
+
+
+def _process_request_group(
+    cache: object, request: dict, *, verbose: bool = False
+) -> bool:
+    """Validate and process a dedup-grouped backfill request.
+
+    A request group contains one logical (symbol, threshold) pair with
+    potentially multiple request_ids that all get the same status updates.
 
     Returns True if backfill succeeded, False on failure.
     """
     from rangebar.recency import backfill_recent
     from rangebar.symbol_registry import get_symbol_entries
 
-    request_id = request["request_id"]
+    all_ids = request["all_ids"]
     symbol = request["symbol"]
     threshold = request["threshold_decimal_bps"]
+    display_id = request["oldest_id"][:8]
 
     logger.info(
-        "Processing request %s: %s @ %d dbps",
-        request_id[:8],
+        "Processing request group %s (%d request(s)): %s @ %d dbps",
+        display_id,
+        len(all_ids),
         symbol,
         threshold,
     )
@@ -158,61 +227,121 @@ def _process_request(cache: object, request: dict, *, verbose: bool = False) -> 
     entries = get_symbol_entries()
     if symbol not in entries or not entries[symbol].enabled:
         error_msg = f"symbol '{symbol}' not registered or not enabled"
-        logger.warning("Request %s: %s", request_id[:8], error_msg)
-        _mark_failed(cache, request_id, error_msg)
+        logger.warning("Request %s: %s", display_id, error_msg)
+        _mark_failed(cache, all_ids, error_msg)
         return False
 
-    # Resolve threshold (handle DEFAULT 0 from flowsurface)
-    threshold = _resolve_threshold(cache, symbol, threshold)
+    # Resolve thresholds (fan-out threshold=0 -> all cached thresholds)
+    thresholds = _resolve_thresholds(cache, symbol, threshold)
 
-    # Mark as running
-    _mark_running(cache, request_id)
+    # Filter by cooldown
+    actionable = [t for t in thresholds if not _is_on_cooldown(symbol, t)]
+    if not actionable:
+        logger.info(
+            "Request %s: %s — all thresholds %s on cooldown, skipping",
+            display_id,
+            symbol,
+            thresholds,
+        )
+        _mark_completed(cache, all_ids, bars_written=0, gap_seconds=0.0)
+        return True
 
-    # Run backfill via existing recency.py API
-    try:
-        result = backfill_recent(
+    skipped = [t for t in thresholds if t not in actionable]
+    if skipped:
+        logger.info(
+            "Request %s: %s — skipping thresholds %s (cooldown), processing %s",
+            display_id,
             symbol,
-            threshold,
-            include_microstructure=True,
-            verbose=verbose,
+            skipped,
+            actionable,
         )
-    except (RuntimeError, OSError, ConnectionError, ValueError):
-        logger.exception(
-            "Request %s failed: %s @ %d",
-            request_id[:8],
-            symbol,
-            threshold,
-        )
-        _mark_failed(cache, request_id, "Backfill failed with exception")
-        return False
 
-    if result.error:
-        logger.warning(
-            "Request %s backfill error: %s @ %d: %s",
-            request_id[:8],
+    # Compute gap_seconds for the first actionable threshold (for UI display)
+    gap_seconds = _compute_gap_seconds(cache, symbol, actionable[0])
+
+    # Mark all request_ids as running with gap_seconds
+    _mark_running(cache, all_ids, gap_seconds=gap_seconds)
+
+    # Run backfill for each actionable threshold
+    total_bars = 0
+    max_gap = gap_seconds
+    any_failed = False
+    last_error = ""
+
+    for t in actionable:
+        try:
+            result = backfill_recent(
+                symbol,
+                t,
+                include_microstructure=True,
+                verbose=verbose,
+            )
+        except (RuntimeError, OSError, ConnectionError, ValueError) as e:
+            logger.exception(
+                "Request %s failed: %s @ %d",
+                display_id,
+                symbol,
+                t,
+            )
+            last_error = str(e)[:500]
+            any_failed = True
+            continue
+
+        if result.error:
+            logger.warning(
+                "Request %s backfill error: %s @ %d: %s",
+                display_id,
+                symbol,
+                t,
+                result.error,
+            )
+            last_error = result.error
+            any_failed = True
+            continue
+
+        total_bars += result.bars_written
+        max_gap = max(max_gap, result.gap_seconds)
+        _record_cooldown(symbol, t)
+
+        logger.info(
+            "Request %s: %s @ %d — %d bars, gap %.1f min",
+            display_id,
             symbol,
-            threshold,
-            result.error,
+            t,
+            result.bars_written,
+            result.gap_seconds / 60,
         )
-        _mark_failed(cache, request_id, result.error)
+
+    if any_failed and total_bars == 0:
+        _mark_failed(cache, all_ids, last_error)
         return False
 
     logger.info(
-        "Request %s done: %s @ %d — %d bars, gap %.1f min",
-        request_id[:8],
+        "Request group %s done: %s — %d bars total across %d threshold(s)",
+        display_id,
         symbol,
-        threshold,
-        result.bars_written,
-        result.gap_seconds / 60,
+        total_bars,
+        len(actionable),
     )
-    _mark_completed(cache, request_id, result.bars_written, result.gap_seconds)
+    _mark_completed(cache, all_ids, total_bars, max_gap)
     return True
 
 
 def poll_once(*, verbose: bool = False) -> int:
     """Poll for pending requests and process all of them.
 
-    Returns the number of requests processed.
+    Flow:
+    1. Fetch pending requests (GROUP BY symbol, threshold — dedup-aware)
+    2. For each unique (symbol, threshold) group:
+       a. Resolve thresholds (fan-out threshold=0 -> all cached)
+       b. Filter by cooldown (skip recently completed)
+       c. Validate symbol
+       d. Mark all request_ids as running (with gap_seconds)
+       e. For each actionable threshold: call backfill_recent()
+       f. Record cooldown on success
+       g. Mark all request_ids as completed/failed with aggregate bars_written
+
+    Returns the number of request groups processed.
     """
     from rangebar.clickhouse import RangeBarCache
 
@@ -223,11 +352,11 @@ def poll_once(*, verbose: bool = False) -> int:
             logger.debug("No pending backfill requests")
             return 0
 
-        logger.info("Found %d pending request(s)", len(pending))
+        logger.info("Found %d pending request group(s)", len(pending))
 
         processed = 0
         for request in pending:
-            _process_request(cache, request, verbose=verbose)
+            _process_request_group(cache, request, verbose=verbose)
             processed += 1
 
     return processed
