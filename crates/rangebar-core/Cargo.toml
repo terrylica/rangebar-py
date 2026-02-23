@@ -151,5 +151,9 @@ harness = false  # Disable test harness for Hurst DFA memoization benchmark (Iss
 name = "intrabar_early_exit_benchmark"
 harness = false  # Disable test harness for intra-bar early-exit optimization (Issue #96 Task #193)
 
+[[bench]]
+name = "ofi_ilp_optimization_benchmark"
+harness = false  # Disable test harness for OFI branchless ILP optimization (Issue #96 Task #194)
+
 [lints]
 workspace = true

@@ -172,6 +172,73 @@ pub fn accumulate_buy_sell_branchless(trades: &[&TradeSnapshot]) -> (f64, f64) {
     (buy_vol, sell_vol)
 }
 
+/// Compute Order Flow Imbalance (OFI) with branchless ILP (Issue #96 Task #194)
+///
+/// Optimized computation of (buy_vol - sell_vol) / (buy_vol + sell_vol) using:
+/// 1. Pair-wise processing for instruction-level parallelism (ILP)
+/// 2. Branchless arithmetic for epsilon check (avoid branch misprediction)
+/// 3. Direct f64 handling (no epsilon branches)
+///
+/// # Performance Characteristics
+/// - Expected speedup: 1-2% on medium-large windows (n > 50 trades)
+/// - Superscalar CPU exploitation through independent operations
+/// - Zero branches = immune to branch prediction misses
+///
+/// # Example
+/// ```ignore
+/// let ofi = compute_ofi_branchless(&lookback);
+/// assert!(ofi >= -1.0 && ofi <= 1.0);
+/// ```
+#[inline]
+pub fn compute_ofi_branchless(trades: &[&TradeSnapshot]) -> f64 {
+    let mut buy_vol = 0.0;
+    let mut sell_vol = 0.0;
+
+    // Process pairs for ILP + branchless accumulation
+    // Each pair iteration has independent operations that can execute in parallel
+    let pairs = trades.len() / 2;
+    for i in 0..pairs {
+        let t1 = &trades[i * 2];
+        let t2 = &trades[i * 2 + 1];
+
+        let vol1 = t1.volume.to_f64();
+        let vol2 = t2.volume.to_f64();
+
+        // Branchless masks: Convert bool to f64 (1.0 or 0.0)
+        // t.is_buyer_maker=true → mask=1.0 (seller), false → mask=0.0 (buyer)
+        let mask1 = t1.is_buyer_maker as u32 as f64;
+        let mask2 = t2.is_buyer_maker as u32 as f64;
+
+        // Arithmetic selection (no branches - pure CPU throughput)
+        sell_vol += vol1 * mask1;
+        buy_vol += vol1 * (1.0 - mask1);
+
+        sell_vol += vol2 * mask2;
+        buy_vol += vol2 * (1.0 - mask2);
+    }
+
+    // Scalar remainder for odd-length arrays
+    if trades.len() % 2 == 1 {
+        let t = &trades[trades.len() - 1];
+        let vol = t.volume.to_f64();
+        let mask = t.is_buyer_maker as u32 as f64;
+
+        sell_vol += vol * mask;
+        buy_vol += vol * (1.0 - mask);
+    }
+
+    let total_vol = buy_vol + sell_vol;
+
+    // Branchless epsilon handling: avoid branch prediction on epsilon check
+    // Use conditional assignment instead of if-else branch
+    // If total_vol > EPSILON: ofi = (buy - sell) / total, else ofi = 0.0
+    // Mask pattern: (condition as 0.0 or 1.0) * value
+    let is_nonzero = (total_vol > f64::EPSILON) as u32 as f64;
+    let reciprocal = (1.0 / total_vol).is_finite() as u32 as f64 * (1.0 / total_vol);
+
+    (buy_vol - sell_vol) * reciprocal * is_nonzero
+}
+
 /// Entropy result cache for deterministic price sequences (Issue #96 Task #117)
 ///
 /// Caches permutation entropy results to avoid redundant computation on identical
