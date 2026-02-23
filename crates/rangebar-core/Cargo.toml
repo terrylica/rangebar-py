@@ -131,5 +131,9 @@ harness = false  # Disable test harness for dynamic parallelization dispatch (Is
 name = "kyle_lambda_branchless_benchmark"
 harness = false  # Disable test harness for Kyle Lambda branchless optimization (Issue #96 Task #184)
 
+[[bench]]
+name = "entropy_cache_warmup_benchmark"
+harness = false  # Disable test harness for entropy cache warm-up benchmark (Issue #96 Task #191)
+
 [lints]
 workspace = true

@@ -36,9 +36,16 @@ use crate::types::AggTrade;
 use rayon::join; // Issue #115: Parallelization of Tier 2/3 features
 use smallvec::SmallVec;
 use std::collections::VecDeque;
+use once_cell::sync::Lazy; // Issue #96 Task #191: Lazy static for warm-up initialization
 
 // Re-export types from interbar_types.rs (Phase 2b extraction)
 pub use crate::interbar_types::{InterBarConfig, InterBarFeatures, LookbackMode, TradeSnapshot};
+
+/// Issue #96 Task #191: Lazy initialization of entropy cache warm-up
+/// Ensures warm-up runs exactly once, on first TradeHistory creation in the process
+static ENTROPY_CACHE_WARMUP: Lazy<()> = Lazy::new(|| {
+    crate::entropy_cache_global::warm_up_entropy_cache();
+});
 
 /// Trade history ring buffer for inter-bar feature computation
 #[derive(Debug, Clone)]
@@ -126,6 +133,10 @@ impl TradeHistory {
         config: InterBarConfig,
         external_cache: Option<std::sync::Arc<parking_lot::RwLock<crate::interbar_math::EntropyCache>>>,
     ) -> Self {
+        // Issue #96 Task #191: Trigger entropy cache warm-up on first TradeHistory creation
+        // Uses lazy static to ensure it runs exactly once per process
+        let _ = &*ENTROPY_CACHE_WARMUP;
+
         // Issue #118: Optimized capacity sizing based on lookback config
         // Reduces memory overhead by 20-30% while maintaining safety margins
         let capacity = match &config.lookback_mode {
