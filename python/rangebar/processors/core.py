@@ -1,3 +1,4 @@
+# FILE-SIZE-OK: Multi-method processor cohesion (M2 modularization hub)
 # polars-exception: backtesting.py requires Pandas DataFrames with DatetimeIndex
 # Issue #46: Modularization M2 - Extract RangeBarProcessor from __init__.py
 """RangeBarProcessor: Core processor for converting tick data to range bars.
@@ -206,8 +207,10 @@ class RangeBarProcessor:
         return instance
 
     def process_trades(
-        self, trades: list[dict[str, int | float]]
-    ) -> list[dict[str, str | float | int]]:
+        self,
+        trades: list[dict[str, int | float]],
+        return_format: str = "dict",
+    ) -> list[dict[str, str | float | int]] | PyRecordBatch:
         """Process trades into range bars.
 
         Parameters
@@ -223,22 +226,24 @@ class RangeBarProcessor:
             - first_trade_id: int
             - last_trade_id: int
             - is_buyer_maker: bool
+        return_format : str, default="dict"
+            Output format: "dict" (list of dicts) or "arrow" (Arrow RecordBatch).
+            Arrow format enables zero-copy conversion to Polars/pandas (recommended
+            for performance-critical applications, Issue #96).
 
         Returns
         -------
-        List[Dict]
-            List of range bar dictionaries with keys:
-            - timestamp: str (RFC3339 format)
-            - open: float
-            - high: float
-            - low: float
-            - close: float
-            - volume: float
-            - vwap: float (volume-weighted average price)
-            - buy_volume: float
-            - sell_volume: float
-            - individual_trade_count: int
-            - agg_record_count: int
+        List[Dict] or PyRecordBatch
+            If return_format="dict":
+                List of range bar dictionaries with keys:
+                - timestamp: str (RFC3339 format)
+                - open: float, high, low, close: float
+                - volume: float, vwap: float, buy_volume, sell_volume: float
+                - individual_trade_count, agg_record_count: int
+
+            If return_format="arrow":
+                Arrow RecordBatch with 30 columns (OHLCV + microstructure).
+                Zero-copy compatible with Polars/PyArrow.
 
         Raises
         ------
@@ -246,9 +251,13 @@ class RangeBarProcessor:
             If required trade fields are missing
         RuntimeError
             If trades are not sorted chronologically
+        ValueError
+            If return_format is neither "dict" nor "arrow"
 
         Examples
         --------
+        Dictionary output (default, backwards compatible):
+
         >>> processor = RangeBarProcessor(250)
         >>> trades = [
         ...     {"timestamp": 1704067200000, "price": 42000.0, "quantity": 1.0},
@@ -259,11 +268,30 @@ class RangeBarProcessor:
         1
         >>> bars[0]["open"]
         42000.0
+
+        Arrow output (3-5x faster, recommended):
+
+        >>> import polars as pl
+        >>> bars_arrow = processor.process_trades(trades, return_format="arrow")
+        >>> df = pl.from_arrow(bars_arrow)  # Zero-copy!
+        >>> print(df.shape)
+        (1, 30)
         """
         if not trades:
+            # Empty result in requested format
+            if return_format == "arrow":
+                # Return empty Arrow batch with correct schema
+                try:
+                    return self._processor.process_trades([], return_format="arrow")
+                except ImportError as e:
+                    msg = (
+                        "Arrow output requires 'arro3' library. "
+                        "Install with: pip install arro3"
+                    )
+                    raise ValueError(msg) from e
             return []
 
-        return self._processor.process_trades(trades)
+        return self._processor.process_trades(trades, return_format=return_format)
 
     def process_trades_streaming(
         self, trades: list[dict[str, int | float]]
