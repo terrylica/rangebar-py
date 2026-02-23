@@ -426,3 +426,72 @@ pub(crate) fn ordinal_pattern_index_m3(a: f64, b: f64, c: f64) -> usize {
         5
     }
 }
+
+#[cfg(test)]
+mod hurst_accuracy_tests {
+    use super::*;
+
+    #[test]
+    fn test_hurst_accuracy_trending() {
+        // Strongly trending series (H > 0.5)
+        let mut prices = vec![0.0; 256];
+        for i in 0..256 {
+            prices[i] = i as f64 * 1.0; // Linear trend
+        }
+
+        let dfa_h = compute_hurst_dfa(&prices);
+        let rs_h = hurst::rssimple(prices.clone());
+
+        println!("Trending series:");
+        println!("  DFA H = {:.4}", dfa_h);
+        println!("  R/S H = {:.4}", rs_h);
+        println!("  Both > 0.5? DFA={}, RS={}", dfa_h > 0.5, rs_h > 0.5);
+
+        // Both should agree on trending direction (H > 0.5)
+        assert!(dfa_h > 0.5, "DFA should detect trending");
+        assert!(rs_h > 0.5, "R/S should detect trending");
+    }
+
+    #[test]
+    fn test_hurst_accuracy_mean_reverting() {
+        // Mean-reverting series (H < 0.5)
+        let mut prices = vec![0.5; 256];
+        for i in 0..256 {
+            prices[i] = if i % 2 == 0 { 0.0 } else { 1.0 };
+        }
+
+        let dfa_h = compute_hurst_dfa(&prices);
+        let rs_h = hurst::rssimple(prices.clone());
+
+        println!("Mean-reverting series:");
+        println!("  DFA H = {:.4}", dfa_h);
+        println!("  R/S H = {:.4}", rs_h);
+        println!("  Both < 0.5? DFA={}, RS={}", dfa_h < 0.5, rs_h < 0.5);
+
+        // Both should agree on mean-reversion (H < 0.5)
+        assert!(dfa_h < 0.5, "DFA should detect mean-reversion");
+        assert!(rs_h < 0.5, "R/S should detect mean-reversion");
+    }
+
+    #[test]
+    fn test_hurst_accuracy_random_walk() {
+        // Brownian motion / random walk (H ≈ 0.5)
+        let mut prices = vec![0.0; 256];
+        let mut rng = 12345u64;
+        prices[0] = 0.0;
+
+        for i in 1..256 {
+            rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
+            let step = if (rng >> 16) & 1 == 0 { 1.0 } else { -1.0 };
+            prices[i] = prices[i - 1] + step;
+        }
+
+        let dfa_h = compute_hurst_dfa(&prices);
+        let rs_h = hurst::rssimple(prices.clone());
+
+        println!("Random walk series:");
+        println!("  DFA H = {:.4}", dfa_h);
+        println!("  R/S H = {:.4}", rs_h);
+        println!("  Both ≈ 0.5? DFA={:.2}, RS={:.2}", dfa_h, rs_h);
+    }
+}
