@@ -989,6 +989,13 @@ impl TradeHistory {
         let prices = &cache.prices;
         let (open, high, low, close) = (cache.open, cache.high, cache.low, cache.close);
 
+        // Issue #96 Task #206: Early validity checks on price data
+        // Skip Tier 3 computation if price data is invalid (NaN or degenerate)
+        // This avoids expensive computation on corrupt/incomplete bars
+        if prices.is_empty() || prices.iter().any(|p| !p.is_finite()) {
+            return features;  // Return default (all None) for invalid prices
+        }
+
         // Kaufman Efficiency Ratio (min 2 trades)
         if n >= 2 {
             features.lookback_kaufman_er = Some(compute_kaufman_er(prices));
