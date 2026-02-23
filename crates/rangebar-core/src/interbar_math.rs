@@ -728,4 +728,418 @@ mod hurst_accuracy_tests {
         let er = compute_kaufman_er(&prices);
         assert!(er < 0.3, "Ranging market should have low efficiency ratio, got {}", er);
     }
+
+    // ===== NEW TIER 3 FEATURE EDGE CASE TESTS (Task #17) =====
+
+    // Kyle Lambda - Additional Edge Cases
+    #[test]
+    fn test_kyle_lambda_negative_trend_sell_pressure() {
+        use crate::interbar_types::TradeSnapshot;
+        // Price decreases with SELL pressure (is_buyer_maker=true = SELL)
+        let trades = vec![
+            TradeSnapshot {
+                timestamp: 1000000,
+                price: crate::FixedPoint::from_str("101.0").unwrap(),
+                volume: crate::FixedPoint::from_str("1.0").unwrap(),
+                is_buyer_maker: false, // BUY (minimal)
+                turnover: (101 * 1) as i128 * 100000000i128,
+            },
+            TradeSnapshot {
+                timestamp: 1000100,
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str("10.0").unwrap(),
+                is_buyer_maker: true, // SELL (large sell volume)
+                turnover: (100 * 10) as i128 * 100000000i128,
+            },
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let kyle_lambda = compute_kyle_lambda(&refs);
+        // With more sell volume (imbalance < 0) and price decrease, kyle_lambda should be positive
+        // (price moves in direction of order flow)
+        assert!(kyle_lambda > 0.0, "Sell pressure with price decrease should give positive kyle_lambda");
+    }
+
+    #[test]
+    fn test_kyle_lambda_zero_price_movement() {
+        use crate::interbar_types::TradeSnapshot;
+        // Price doesn't change but there's volume imbalance
+        let trades = vec![
+            TradeSnapshot {
+                timestamp: 1000000,
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str("5.0").unwrap(),
+                is_buyer_maker: false, // BUY
+                turnover: (100 * 5) as i128 * 100000000i128,
+            },
+            TradeSnapshot {
+                timestamp: 1000100,
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str("1.0").unwrap(),
+                is_buyer_maker: true, // SELL (minimal)
+                turnover: (100 * 1) as i128 * 100000000i128,
+            },
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let kyle_lambda = compute_kyle_lambda(&refs);
+        // No price movement should give 0 kyle_lambda
+        assert_eq!(kyle_lambda, 0.0, "Zero price movement should give 0");
+    }
+
+    #[test]
+    fn test_kyle_lambda_tiny_prices() {
+        use crate::interbar_types::TradeSnapshot;
+        // Test with very small prices (e.g., penny stocks)
+        let trades = vec![
+            TradeSnapshot {
+                timestamp: 1000000,
+                price: crate::FixedPoint::from_str("0.001").unwrap(),
+                volume: crate::FixedPoint::from_str("100000.0").unwrap(),
+                is_buyer_maker: true,
+                turnover: (1 * 100000) as i128 * 100000000i128,
+            },
+            TradeSnapshot {
+                timestamp: 1000100,
+                price: crate::FixedPoint::from_str("0.002").unwrap(),
+                volume: crate::FixedPoint::from_str("50000.0").unwrap(),
+                is_buyer_maker: false,
+                turnover: (2 * 50000) as i128 * 100000000i128,
+            },
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let kyle_lambda = compute_kyle_lambda(&refs);
+        assert!(kyle_lambda.is_finite(), "Should handle tiny prices without NaN/Inf");
+    }
+
+    #[test]
+    fn test_kyle_lambda_opposing_flows() {
+        use crate::interbar_types::TradeSnapshot;
+        // Buy and sell at different times with conflicting pressures
+        let trades = vec![
+            TradeSnapshot {
+                timestamp: 1000000,
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str("10.0").unwrap(),
+                is_buyer_maker: false, // BUY (large)
+                turnover: (100 * 10) as i128 * 100000000i128,
+            },
+            TradeSnapshot {
+                timestamp: 1000100,
+                price: crate::FixedPoint::from_str("99.0").unwrap(),
+                volume: crate::FixedPoint::from_str("5.0").unwrap(),
+                is_buyer_maker: true, // SELL (price down despite buy pressure initially)
+                turnover: (99 * 5) as i128 * 100000000i128,
+            },
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let kyle_lambda = compute_kyle_lambda(&refs);
+        // Price decreased against buy pressure → negative kyle_lambda
+        assert!(kyle_lambda < 0.0, "Price moving against order flow should give negative kyle_lambda");
+    }
+
+    // Burstiness - Additional Edge Cases
+    #[test]
+    fn test_burstiness_clustered_arrivals() {
+        use crate::interbar_types::TradeSnapshot;
+        // Trades clustered at start, then gap
+        let mut trades = Vec::new();
+        // Cluster: 10 trades in 100ms
+        for i in 0..10 {
+            trades.push(TradeSnapshot {
+                timestamp: 1000000 + (i * 10) as i64,
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str("1.0").unwrap(),
+                is_buyer_maker: i % 2 == 0,
+                turnover: (100 * 1) as i128 * 100000000i128,
+            });
+        }
+        // Large gap: 1000ms
+        for i in 0..5 {
+            trades.push(TradeSnapshot {
+                timestamp: 1000100 + 1000 + (i * 10) as i64,
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str("1.0").unwrap(),
+                is_buyer_maker: i % 2 == 0,
+                turnover: (100 * 1) as i128 * 100000000i128,
+            });
+        }
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let burstiness = compute_burstiness(&refs);
+        // Bursty pattern should give high burstiness
+        assert!(burstiness > 0.0, "Clustered arrivals should have positive burstiness, got {}", burstiness);
+        assert!(burstiness <= 1.0, "Burstiness should be bounded by 1.0");
+    }
+
+    #[test]
+    fn test_burstiness_perfectly_regular() {
+        use crate::interbar_types::TradeSnapshot;
+        // Perfectly regular 100ms intervals
+        let mut trades = Vec::new();
+        for i in 0..20 {
+            trades.push(TradeSnapshot {
+                timestamp: 1000000 + (i * 100) as i64,
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str("1.0").unwrap(),
+                is_buyer_maker: i % 2 == 0,
+                turnover: (100 * 1) as i128 * 100000000i128,
+            });
+        }
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let burstiness = compute_burstiness(&refs);
+        // Regular arrivals should give burstiness near -1
+        assert!(burstiness < 0.0, "Regular periodic arrivals should have negative burstiness, got {}", burstiness);
+    }
+
+    #[test]
+    fn test_burstiness_extreme_gap() {
+        use crate::interbar_types::TradeSnapshot;
+        // One large burst followed by extreme gap
+        let mut trades = Vec::new();
+        // Initial burst: 5 trades
+        for i in 0..5 {
+            trades.push(TradeSnapshot {
+                timestamp: 1000000 + (i as i64),
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str("1.0").unwrap(),
+                is_buyer_maker: i % 2 == 0,
+                turnover: (100 * 1) as i128 * 100000000i128,
+            });
+        }
+        // Massive gap then one more trade
+        trades.push(TradeSnapshot {
+            timestamp: 1000000 + 100000,
+            price: crate::FixedPoint::from_str("100.0").unwrap(),
+            volume: crate::FixedPoint::from_str("1.0").unwrap(),
+            is_buyer_maker: false,
+            turnover: (100 * 1) as i128 * 100000000i128,
+        });
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let burstiness = compute_burstiness(&refs);
+        // Extreme gap should produce positive (bursty) burstiness
+        assert!(burstiness > 0.0, "Extreme gap should produce positive burstiness");
+        assert!(burstiness <= 1.0, "Burstiness should be bounded");
+    }
+
+    // Garman-Klass - Additional Edge Cases
+    #[test]
+    fn test_garman_klass_high_volatility() {
+        use crate::{FixedPoint, interbar_types::TradeSnapshot};
+        // Large price swings (H >> L)
+        let prices = vec![100.0, 150.0, 120.0, 180.0, 110.0];
+        let snapshots: Vec<TradeSnapshot> = prices
+            .iter()
+            .enumerate()
+            .map(|(i, &price)| {
+                let price_fp = FixedPoint::from_str(&format!("{:.8}", price)).expect("valid price");
+                let vol_fp = FixedPoint::from_str("1.00000000").expect("valid volume");
+                let turnover_f64 = price_fp.to_f64() * vol_fp.to_f64();
+                TradeSnapshot {
+                    price: price_fp,
+                    volume: vol_fp,
+                    timestamp: 1000 + (i as i64 * 100),
+                    is_buyer_maker: false,
+                    turnover: (turnover_f64 * 1e8) as i128,
+                }
+            })
+            .collect();
+        let snapshot_refs: Vec<&TradeSnapshot> = snapshots.iter().collect();
+        let vol = compute_garman_klass(&snapshot_refs);
+        assert!(vol > 0.0, "High volatility scenario should produce non-zero volatility");
+        assert!(!vol.is_nan(), "Garman-Klass must not be NaN");
+    }
+
+    #[test]
+    fn test_garman_klass_extreme_ohlc_ratios() {
+        use crate::{FixedPoint, interbar_types::TradeSnapshot};
+        // Extreme high/low ratio
+        let prices = vec![100.0, 1000.0, 200.0]; // H/L = 5
+        let snapshots: Vec<TradeSnapshot> = prices
+            .iter()
+            .enumerate()
+            .map(|(i, &price)| {
+                let price_fp = FixedPoint::from_str(&format!("{:.8}", price)).expect("valid price");
+                let vol_fp = FixedPoint::from_str("1.00000000").expect("valid volume");
+                let turnover_f64 = price_fp.to_f64() * vol_fp.to_f64();
+                TradeSnapshot {
+                    price: price_fp,
+                    volume: vol_fp,
+                    timestamp: 1000 + (i as i64 * 100),
+                    is_buyer_maker: false,
+                    turnover: (turnover_f64 * 1e8) as i128,
+                }
+            })
+            .collect();
+        let snapshot_refs: Vec<&TradeSnapshot> = snapshots.iter().collect();
+        let vol = compute_garman_klass(&snapshot_refs);
+        // Should handle extreme ratios without panic
+        assert!(vol >= 0.0, "Garman-Klass must be non-negative");
+        assert!(vol.is_finite(), "Garman-Klass must be finite");
+    }
+
+    // Permutation Entropy - Additional Edge Cases
+    #[test]
+    fn test_permutation_entropy_deterministic_pattern() {
+        // Perfectly ordered ascending pattern
+        let prices: Vec<f64> = (0..100).map(|i| i as f64).collect();
+        let entropy = compute_permutation_entropy(&prices);
+        // Deterministic pattern should have low entropy
+        assert!(entropy >= 0.0 && entropy <= 1.0, "Entropy must be in [0,1]");
+    }
+
+    #[test]
+    fn test_permutation_entropy_oscillating_pattern() {
+        // Simple oscillating pattern (should have repeating permutations)
+        let mut prices = Vec::new();
+        for i in 0..100 {
+            prices.push(if i % 3 == 0 { 100.0 } else if i % 3 == 1 { 101.0 } else { 99.0 });
+        }
+        let entropy = compute_permutation_entropy(&prices);
+        // Repeating pattern should have lower entropy than random
+        assert!(entropy >= 0.0 && entropy <= 1.0, "Entropy must be in [0,1]");
+        assert!(!entropy.is_nan(), "Entropy must not be NaN");
+    }
+
+    // Kaufman ER - Additional Edge Cases
+    #[test]
+    fn test_kaufman_er_single_large_move() {
+        // Single direction move with no noise
+        let mut prices = Vec::new();
+        for i in 0..50 {
+            prices.push(100.0 + i as f64); // Perfect linear trend
+        }
+        let er = compute_kaufman_er(&prices);
+        // Perfect trend should give ER close to 1.0
+        assert!(er > 0.9, "Perfect trend should have ER > 0.9, got {}", er);
+    }
+
+    #[test]
+    fn test_kaufman_er_noise_dominated() {
+        // High-frequency noise with minimal net movement
+        let mut prices = Vec::new();
+        let mut rng = 12345u64;
+        prices.push(100.0);
+        for _ in 1..100 {
+            rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
+            let noise = ((rng >> 16) as f64 % 200.0) - 100.0; // Random [-100, 100] bps
+            let new_price = prices.last().unwrap() + noise * 0.0001; // ±0.01 bps noise
+            prices.push(new_price);
+        }
+        let er = compute_kaufman_er(&prices);
+        // Noise-dominated should have lower ER than trending
+        assert!(er < 0.5, "Noise-dominated market should have ER < 0.5, got {}", er);
+        assert!(!er.is_nan(), "ER must be finite");
+    }
+
+    // Hurst - Additional Advanced Tests
+    #[test]
+    fn test_hurst_strong_reverting_pattern() {
+        // Alternating high-low pattern (strong mean reversion)
+        let mut prices = vec![100.0; 200];
+        for i in 0..200 {
+            prices[i] = if i % 2 == 0 { 99.0 } else { 101.0 };
+        }
+        let h = compute_hurst_dfa(&prices);
+        assert!(h < 0.5, "Strong mean reverting should have H < 0.5, got {}", h);
+        assert!(h.is_finite(), "Hurst must be finite");
+    }
+
+    #[test]
+    fn test_hurst_extreme_volatility() {
+        // Extreme spikes and drops
+        let mut prices = vec![100.0; 200];
+        for i in 0..200 {
+            prices[i] = match i % 4 {
+                0 => 100.0,
+                1 => 200.0, // Spike
+                2 => 150.0,
+                _ => 50.0,  // Drop
+            };
+        }
+        let h = compute_hurst_dfa(&prices);
+        assert!(h >= 0.0 && h <= 1.0, "Hurst must be in [0,1] even for extreme volatility");
+    }
+
+    // Volume Moments - Additional Tests
+    #[test]
+    fn test_volume_moments_constant_volume() {
+        use crate::interbar_types::TradeSnapshot;
+        // All trades same volume → skewness and kurtosis should be 0
+        let trades: Vec<TradeSnapshot> = (0..20)
+            .map(|i| TradeSnapshot {
+                timestamp: 1000000 + (i as i64 * 100),
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str("1.0").unwrap(),
+                is_buyer_maker: i % 2 == 0,
+                turnover: (100 * 1) as i128 * 100000000i128,
+            })
+            .collect();
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (skew, kurt) = compute_volume_moments(&refs);
+        assert_eq!(skew, 0.0, "Constant volume should have zero skewness");
+        assert_eq!(kurt, 0.0, "Constant volume should have zero kurtosis");
+    }
+
+    #[test]
+    fn test_volume_moments_right_skewed() {
+        use crate::interbar_types::TradeSnapshot;
+        // Volume distribution skewed right (many small, few large)
+        let volumes = vec![1.0, 1.0, 1.0, 1.0, 100.0]; // Right skew
+        let trades: Vec<TradeSnapshot> = volumes
+            .iter()
+            .enumerate()
+            .map(|(i, &vol)| TradeSnapshot {
+                timestamp: 1000000 + (i as i64 * 100),
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str(&format!("{:.8}", vol)).unwrap(),
+                is_buyer_maker: i % 2 == 0,
+                turnover: (100.0 * vol * 1e8) as i128,
+            })
+            .collect();
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (skew, _kurt) = compute_volume_moments(&refs);
+        // Right-skewed should have positive skewness
+        assert!(skew > 0.0, "Right-skewed volume should have positive skewness, got {}", skew);
+    }
+
+    #[test]
+    fn test_volume_moments_heavy_tails() {
+        use crate::interbar_types::TradeSnapshot;
+        // Volume distribution with heavy tails (high kurtosis)
+        let mut volumes = vec![1.0; 18]; // Many small volumes
+        volumes.push(100.0); // One extreme value
+        volumes.push(100.0); // Another extreme
+
+        let trades: Vec<TradeSnapshot> = volumes
+            .iter()
+            .enumerate()
+            .map(|(i, &vol)| TradeSnapshot {
+                timestamp: 1000000 + (i as i64 * 100),
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str(&format!("{:.8}", vol)).unwrap(),
+                is_buyer_maker: i % 2 == 0,
+                turnover: (100.0 * vol * 1e8) as i128,
+            })
+            .collect();
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (_skew, kurt) = compute_volume_moments(&refs);
+        // Heavy tails should have high (positive) kurtosis
+        assert!(kurt > 0.0, "Heavy-tailed distribution should have positive kurtosis, got {}", kurt);
+    }
+
+    // Ordinal Pattern - Additional Coverage
+    #[test]
+    fn test_ordinal_pattern_equal_values() {
+        // Test handling of equal values in patterns
+        // Verify the ordinal pattern function handles equal values gracefully
+        let test_cases = vec![
+            (1.0, 1.0, 2.0), // a=b < c
+            (1.0, 2.0, 2.0), // a < b=c (uses < for b<=c branch)
+            (1.0, 1.0, 1.0), // a=b=c
+            (2.0, 2.0, 1.0), // a=b > c
+        ];
+        for (a, b, c) in test_cases {
+            let idx = ordinal_pattern_index_m3(a, b, c);
+            // All indices should be in valid range [0, 5]
+            assert!(idx < 6, "Pattern index must be < 6, got {}", idx);
+        }
+    }
 }
