@@ -1327,6 +1327,21 @@ fn compute_permutation_entropy_m3_cached_batch(prices: &[f64]) -> f64 {
 fn compute_permutation_entropy_m2(prices: &[f64]) -> f64 {
     debug_assert!(prices.len() >= 10);
 
+    // Issue #96 Task #204: Early-exit for sorted sequences
+    // If all prices[i] <= prices[i+1] (monotonic ascending), all patterns are 0
+    // Early detection avoids full loop computation for consolidated/trending price periods
+    let mut all_ascending = true;
+    for i in 0..prices.len() - 1 {
+        if prices[i] > prices[i + 1] {
+            all_ascending = false;
+            break;
+        }
+    }
+
+    if all_ascending {
+        return 0.0; // All patterns identical = entropy 0
+    }
+
     let mut counts = [0u8; 2]; // 2! = 2 patterns, u8 for cache efficiency
     let n_patterns = prices.len() - 1;
 
