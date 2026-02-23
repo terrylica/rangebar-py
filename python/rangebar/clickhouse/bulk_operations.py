@@ -206,14 +206,18 @@ class BulkStoreMixin:
             "source_end_ts",
         ]
 
+        # Issue #96 Task #37: Cache available column set for O(1) membership testing
+        # Instead of repeated df.columns lookups (O(n)), use frozenset (O(1))
+        available_cols = frozenset(df.columns)
+
         # Add optional columns if present (from constants.py SSoT)
         for col in (*MICROSTRUCTURE_COLUMNS, *TRADE_ID_RANGE_COLUMNS):
-            if col in df.columns:
+            if col in available_cols:
                 columns.append(col)
 
         # Add exchange session columns; cast bool_ to int (Issue #8, #50)
         for col in EXCHANGE_SESSION_COLUMNS:
-            if col in df.columns:
+            if col in available_cols:
                 df[col] = df[col].astype(int)
                 columns.append(col)
 
@@ -222,20 +226,17 @@ class BulkStoreMixin:
         # requires NaN (not Python None) for Nullable numeric columns.
         # R2 (Issue #98): Skip pd.to_numeric when dtype is already float64.
         for col in (*INTER_BAR_FEATURE_COLUMNS, *INTRA_BAR_FEATURE_COLUMNS):
-            if col in df.columns:
+            if col in available_cols:
                 if not pd.api.types.is_float_dtype(df[col]):
                     df[col] = pd.to_numeric(df[col], errors="coerce")
                 columns.append(col)
 
         # Add plugin feature columns if present (Issue #98)
         for col in _PLUGIN_FEATURE_COLUMNS:
-            if col in df.columns:
+            if col in available_cols:
                 if not pd.api.types.is_float_dtype(df[col]):
                     df[col] = pd.to_numeric(df[col], errors="coerce")
                 columns.append(col)
-
-        # Filter to existing columns
-        columns = [c for c in columns if c in df.columns]
 
         # Issue #90: INSERT dedup token for idempotent writes.
         insert_settings = _build_insert_settings(
