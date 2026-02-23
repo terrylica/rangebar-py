@@ -771,9 +771,18 @@ impl TradeHistory {
         let mut features = InterBarFeatures::default();
         let n = lookback.len();
 
-        // Issue #96 Task #99: Use cache passed from compute_features()
-        // Avoids redundant float conversion if Tier 3 also enabled
-        let cache = cache.cloned().unwrap_or_else(|| crate::interbar_math::extract_lookback_cache(lookback));
+        // Issue #96 Task #187: Eliminate redundant SmallVec clone
+        // Use cache reference directly if provided, only extract on cache miss (rare)
+        // Avoids cloning ~400-2000 f64 values per tier computation
+        let cache_owned;
+        let cache = match cache {
+            Some(c) => c,  // Fast path: use reference directly (no clone)
+            None => {
+                // Slow path: extract only when not provided
+                cache_owned = crate::interbar_math::extract_lookback_cache(lookback);
+                &cache_owned
+            }
+        };
 
         // Kyle's Lambda (min 2 trades)
         if n >= 2 {
@@ -828,9 +837,18 @@ impl TradeHistory {
         let mut features = InterBarFeatures::default();
         let n = lookback.len();
 
-        // Issue #96 Task #99: Use cache passed from compute_features()
-        // If neither Tier 2 nor this cache is provided, extract independently
-        let cache = cache.cloned().unwrap_or_else(|| crate::interbar_math::extract_lookback_cache(lookback));
+        // Issue #96 Task #187: Eliminate redundant SmallVec clone
+        // Use cache reference directly if provided, only extract on cache miss (rare)
+        // Avoids cloning ~400-2000 f64 values per tier computation
+        let cache_owned;
+        let cache = match cache {
+            Some(c) => c,  // Fast path: use reference directly (no clone)
+            None => {
+                // Slow path: extract only when not provided
+                cache_owned = crate::interbar_math::extract_lookback_cache(lookback);
+                &cache_owned
+            }
+        };
         // Issue #110: Avoid cloning prices - all Tier 3 functions accept &[f64]
         let prices = &cache.prices;
         let (open, high, low, close) = (cache.open, cache.high, cache.low, cache.close);
