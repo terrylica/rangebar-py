@@ -303,36 +303,35 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
         None
     };
 
-    // Volume skewness (requires >= 3 trades)
-    let volume_skew = if n >= 3 {
-        let mean_v: f64 = volumes.iter().sum::<f64>() / n as f64;
-        let variance: f64 = volumes.iter().map(|&v| (v - mean_v).powi(2)).sum::<f64>() / n as f64;
-        let std_v = variance.sqrt();
+    // Issue #96 Task #55: Consolidate volume skewness and kurtosis in single pass
+    // Compute all volume moments (mean, m2, m3, m4) with minimal allocations
+    let (volume_skew, volume_kurt) = if n >= 3 {
+        // Phase 1: Compute mean
+        let sum_vol = volumes.iter().sum::<f64>();
+        let mean_v = sum_vol / n as f64;
+
+        // Phase 2: Compute central moments (m2, m3, m4) in single pass
+        let (m2, m3, m4) = volumes.iter().fold((0.0, 0.0, 0.0), |(m2, m3, m4), &v| {
+            let d = v - mean_v;
+            let d2 = d * d;
+            (m2 + d2, m3 + d2 * d, m4 + d2 * d2)
+        });
+
+        let m2_norm = m2 / n as f64;
+        let m3_norm = m3 / n as f64;
+        let m4_norm = m4 / n as f64;
+
+        let std_v = m2_norm.sqrt();
 
         if std_v > f64::EPSILON {
-            let m3: f64 = volumes.iter().map(|&v| (v - mean_v).powi(3)).sum::<f64>() / n as f64;
-            Some(m3 / std_v.powi(3))
+            let skew = Some(m3_norm / std_v.powi(3));
+            let kurt = Some(m4_norm / std_v.powi(4) - 3.0); // Excess kurtosis
+            (skew, kurt)
         } else {
-            None
+            (None, None)
         }
     } else {
-        None
-    };
-
-    // Volume kurtosis (requires >= 4 trades)
-    let volume_kurt = if n >= 4 {
-        let mean_v: f64 = volumes.iter().sum::<f64>() / n as f64;
-        let variance: f64 = volumes.iter().map(|&v| (v - mean_v).powi(2)).sum::<f64>() / n as f64;
-        let std_v = variance.sqrt();
-
-        if std_v > f64::EPSILON {
-            let m4: f64 = volumes.iter().map(|&v| (v - mean_v).powi(4)).sum::<f64>() / n as f64;
-            Some(m4 / std_v.powi(4) - 3.0) // Excess kurtosis
-        } else {
-            None
-        }
-    } else {
-        None
+        (None, None)
     };
 
     // Kaufman Efficiency Ratio (requires >= 2 trades)
