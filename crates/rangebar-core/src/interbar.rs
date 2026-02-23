@@ -75,6 +75,11 @@ pub struct TradeHistory {
     adaptive_prune_batch: usize,
     /// Tracks total trades pruned and prune calls for efficiency measurement
     prune_stats: (usize, usize), // (trades_pruned, prune_calls)
+    /// Issue #96 Task #163: Cache last binary search result (thread-safe, with Arc for Clone)
+    /// Avoids O(log n) binary search when bar_open_time hasn't changed significantly
+    /// Most bars have similar/close timestamps, so cutoff index changes slowly
+    /// Uses Arc<parking_lot::Mutex<>> for thread-safe shared access with Clone support
+    last_binary_search_cache: std::sync::Arc<parking_lot::Mutex<Option<(i64, usize)>>>,  // (open_time, cutoff_idx)
 }
 
 impl TradeHistory {
@@ -166,6 +171,7 @@ impl TradeHistory {
             feature_result_cache,
             adaptive_prune_batch: initial_prune_batch,
             prune_stats: (0, 0),
+            last_binary_search_cache: std::sync::Arc::new(parking_lot::Mutex::new(None)), // Issue #96 Task #163: Initialize binary search cache
         }
     }
 
@@ -360,10 +366,39 @@ impl TradeHistory {
     /// O(log n) vs O(n) for linear scan. Returns SmallVec with 256 inline capacity.
     /// Typical lookback windows (100-500 trades) avoid heap allocation entirely.
     /// Issue #96 Task #41: Binary search optimization for lookback filter.
+    /// Issue #96 Task #163: Cache binary search results (O(1) hit path for repeated timestamps)
     pub fn get_lookback_trades(&self, bar_open_time: i64) -> SmallVec<[&TradeSnapshot; 256]> {
         use std::cmp::Ordering;
 
-        // Binary search to find first index where timestamp >= bar_open_time
+        // Issue #96 Task #163: Check cache first
+        // During typical trading, timestamps change gradually so this hits frequently
+        {
+            let cache = self.last_binary_search_cache.lock();
+            if let Some((cached_time, cached_idx)) = *cache {
+                if cached_time == bar_open_time {
+                    // Cache hit: return cached result (O(1) instead of O(log n))
+                    let cutoff_idx = cached_idx;
+                    drop(cache); // Release lock before constructing result
+                    if cutoff_idx == 0 {
+                        return SmallVec::new();
+                    }
+                    if cutoff_idx == 1 {
+                        let mut result = SmallVec::new();
+                        result.push(&self.trades[0]);
+                        return result;
+                    }
+                    if cutoff_idx == 2 {
+                        let mut result = SmallVec::new();
+                        result.push(&self.trades[0]);
+                        result.push(&self.trades[1]);
+                        return result;
+                    }
+                    return self.trades.iter().take(cutoff_idx).collect();
+                }
+            }
+        } // Lock is released here
+
+        // Cache miss: perform binary search
         let cutoff_idx = match self.trades.binary_search_by(|trade| {
             if trade.timestamp < bar_open_time {
                 Ordering::Less
@@ -374,6 +409,9 @@ impl TradeHistory {
             Ok(idx) => idx,  // Found exact match - exclude trades at bar_open_time
             Err(idx) => idx, // Insertion point - all trades before this are < bar_open_time
         };
+
+        // Issue #96 Task #163: Update cache with new result
+        *self.last_binary_search_cache.lock() = Some((bar_open_time, cutoff_idx));
 
         // Issue #96 Task #68: Early-exit for tiny lookbacks to avoid collect() overhead
         // If cutoff_idx < 3, we have 0-2 trades: direct inline collection is more efficient
