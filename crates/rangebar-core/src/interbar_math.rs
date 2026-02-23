@@ -673,16 +673,17 @@ mod simd {
         };
 
         let total_vol = buy_vol + sell_vol;
+        let first_price_abs = first_price.abs();
 
         // Early-exit optimization: extreme imbalance
         if buy_vol >= total_vol - f64::EPSILON {
-            return if first_price.abs() > f64::EPSILON {
+            return if first_price_abs > f64::EPSILON {
                 (last_price - first_price) / first_price
             } else {
                 0.0
             };
         } else if sell_vol >= total_vol - f64::EPSILON {
-            return if first_price.abs() > f64::EPSILON {
+            return if first_price_abs > f64::EPSILON {
                 -((last_price - first_price) / first_price)
             } else {
                 0.0
@@ -695,7 +696,10 @@ mod simd {
             0.0
         };
 
-        if normalized_imbalance.abs() > f64::EPSILON && first_price.abs() > f64::EPSILON {
+        // Issue #96 Task #199: Eliminated redundant .abs() calls (Task #198 pattern)
+        // Cached first_price.abs() before use to avoid 3x recomputation
+        let normalized_imbalance_abs = normalized_imbalance.abs();
+        if normalized_imbalance_abs > f64::EPSILON && first_price_abs > f64::EPSILON {
             ((last_price - first_price) / first_price) / normalized_imbalance
         } else {
             0.0
