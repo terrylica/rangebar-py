@@ -252,10 +252,21 @@ fn bench_hurst_dfa_scaling(c: &mut Criterion) {
 
 /// Compare our optimized Hurst DFA across different use cases
 /// Issue #96: Memory Efficiency - Performance enhancement survey Phase 3
+/// Benchmark: DFA performance analysis (Phase 3a Research)
+/// Phase 3a: Crate Integration Research - evrom/hurst evaluation
+///
+/// NOTE: hurst crate API exploration needed before full integration.
+/// Next steps:
+/// 1. Evaluate hurst crate API (check actual exports)
+/// 2. Add rescaled_range benchmark once API is confirmed
+/// 3. Measure speedup: target 1.5-3x for O(n log n) vs O(n²)
+/// 4. Validate oracle accuracy (cross-check 1000 bars vs ClickHouse baseline)
+///
+/// References: .claude/phase3-decision-matrix.md, docs/development/PERFORMANCE.md
 fn bench_hurst_crate_comparison(c: &mut Criterion) {
     use rangebar_core::interbar_math::compute_hurst_dfa;
 
-    let mut group = c.benchmark_group("hurst_optimization_analysis");
+    let mut group = c.benchmark_group("hurst_crate_comparison");
     group.sample_size(30);
 
     // Test case 1: Typical trading window (trending + noise)
@@ -278,21 +289,24 @@ fn bench_hurst_crate_comparison(c: &mut Criterion) {
         prices_1024.push(price);
     }
 
-    // Benchmark typical lookback window
-    group.bench_function("optimized_dfa_512", |b| {
+    // Benchmark our optimized DFA (baseline O(n²))
+    group.bench_function("baseline_dfa_512", |b| {
         b.iter(|| {
             let h = compute_hurst_dfa(black_box(&prices_512));
             black_box(h);
         });
     });
 
-    // Benchmark larger lookback
-    group.bench_function("optimized_dfa_1024", |b| {
+    group.bench_function("baseline_dfa_1024", |b| {
         b.iter(|| {
             let h = compute_hurst_dfa(black_box(&prices_1024));
             black_box(h);
         });
     });
+
+    // TODO: Add evrom/hurst R/S benchmarks once API is validated
+    // Expected: 5-10x speedup for larger series due to O(n log n) vs O(n²)
+    // Note: hurst crate API differs from initial assumption, needs documentation review
 
     group.finish();
 }
