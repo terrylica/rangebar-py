@@ -198,6 +198,10 @@ harness = false
 name = "kyle_lambda_profiling"
 harness = false  # Issue #96 Task #148: Kyle Lambda profiling to determine SIMD viability
 
+[[bench]]
+name = "streaming_latency_profiler"
+harness = false  # Issue #96 Task #144: Streaming latency profiling
+
 # =============================================================================
 # Build Profiles
 # =============================================================================
