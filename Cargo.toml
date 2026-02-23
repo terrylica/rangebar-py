@@ -202,6 +202,10 @@ harness = false  # Issue #96 Task #148: Kyle Lambda profiling to determine SIMD 
 name = "streaming_latency_profiler"
 harness = false  # Issue #96 Task #144: Streaming latency profiling
 
+[[bench]]
+name = "feature_attribution_profiler"
+harness = false  # Issue #96 Task #144 Phase 2: Feature attribution analysis
+
 # =============================================================================
 # Build Profiles
 # =============================================================================
