@@ -50,6 +50,12 @@ moka = { version = "0.12", features = ["sync"] }
 # Provides portable SIMD without nightly requirement
 wide = "0.7"
 
+# mimalloc for high-performance memory allocation (Phase 9 Task #147)
+# Expected 2-5x speedup on multithreaded workloads vs glibc malloc
+# Survey: https://github.com/microsoft/mimalloc - production-proven at scale
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+mimalloc = { version = "0.1", default-features = false }
+
 [dev-dependencies]
 csv.workspace = true  # Required for test_data_loader during test compilation
 

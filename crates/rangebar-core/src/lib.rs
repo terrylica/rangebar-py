@@ -11,6 +11,12 @@
 //! - **Cross-file checkpoints**: Seamless continuation across file boundaries (v6.1.0+)
 //! - **Arrow export**: Zero-copy streaming to Python via Arrow RecordBatch (v8.0.0+)
 
+// Issue #147 (Phase 9): Use Mimalloc for high-performance memory allocation
+// Expected 2-5x speedup on multithreaded workloads (entropy cache, trade accumulation)
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 pub mod checkpoint;
 pub mod errors;
 pub mod export_processor; // Export-oriented processor (extracted Phase 2d)
