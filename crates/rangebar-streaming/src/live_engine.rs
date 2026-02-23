@@ -1,4 +1,5 @@
 //! Live bar engine for real-time range bar construction (Issue #91)
+//! # FILE-SIZE-OK
 //!
 //! Multiplexes Binance WebSocket streams across symbols and fans out trades
 //! to canonical `RangeBarProcessor` instances (full 58-column microstructure).
@@ -61,7 +62,7 @@ impl LiveEngineConfig {
             symbols,
             thresholds,
             include_microstructure: true,
-            bar_channel_capacity: 500,
+            bar_channel_capacity: 10_000,  // Issue #96 Task #6: 10K bars backpressure bound
             reconnection_policy: ReconnectionPolicy::default(),
             initial_checkpoints: HashMap::new(),
         }
