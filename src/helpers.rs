@@ -1,9 +1,14 @@
 use super::*;
 
+/// Issue #96 Task #82: Pre-compute numeric scale constants to reduce instruction cache pollution
+const VOLUME_SCALE: f64 = 100_000_000.0;
+const TIMESTAMP_SCALE_US: f64 = 1_000_000.0;
+const TIMESTAMP_SCALE_NS: f64 = 1_000_000_000.0;
+
 /// Convert f64 to `FixedPoint` (8 decimal precision)
 pub(crate) fn f64_to_fixed_point(value: f64) -> FixedPoint {
-    // FixedPoint uses i64 with 8 decimal places (scale = 100_000_000)
-    let scaled = (value * 100_000_000.0).round() as i64;
+    // FixedPoint uses i64 with 8 decimal places (scale = VOLUME_SCALE)
+    let scaled = (value * VOLUME_SCALE).round() as i64;
     FixedPoint(scaled)
 }
 
@@ -80,10 +85,10 @@ pub(crate) fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject>
     let dict = PyDict::new_bound(py);
 
     // Convert timestamp from microseconds to RFC3339 string
-    let timestamp_seconds = bar.close_time as f64 / 1_000_000.0;
+    let timestamp_seconds = bar.close_time as f64 / TIMESTAMP_SCALE_US;
     let datetime = chrono::DateTime::from_timestamp(
         timestamp_seconds as i64,
-        (timestamp_seconds.fract() * 1_000_000_000.0) as u32,
+        (timestamp_seconds.fract() * TIMESTAMP_SCALE_NS) as u32,
     )
     .ok_or_else(|| PyValueError::new_err("Invalid timestamp"))?;
 
@@ -95,12 +100,12 @@ pub(crate) fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject>
     dict.set_item("low", bar.low.to_f64())?;
     dict.set_item("close", bar.close.to_f64())?;
     // Issue #88: i128 volume → f64 (FixedPoint scale)
-    dict.set_item("volume", bar.volume as f64 / 100_000_000.0)?;
+    dict.set_item("volume", bar.volume as f64 / VOLUME_SCALE)?;
 
     // Optional: Include market microstructure data
     dict.set_item("vwap", bar.vwap.to_f64())?;
-    dict.set_item("buy_volume", bar.buy_volume as f64 / 100_000_000.0)?;
-    dict.set_item("sell_volume", bar.sell_volume as f64 / 100_000_000.0)?;
+    dict.set_item("buy_volume", bar.buy_volume as f64 / VOLUME_SCALE)?;
+    dict.set_item("sell_volume", bar.sell_volume as f64 / VOLUME_SCALE)?;
     dict.set_item("individual_trade_count", bar.individual_trade_count)?;
     dict.set_item("agg_record_count", bar.agg_record_count)?;
 
@@ -256,22 +261,22 @@ pub(crate) fn checkpoint_to_dict(py: Python, checkpoint: &Checkpoint) -> PyResul
         bar_dict.set_item("high", bar.high.to_f64())?;
         bar_dict.set_item("low", bar.low.to_f64())?;
         bar_dict.set_item("close", bar.close.to_f64())?;
-        bar_dict.set_item("volume", bar.volume as f64 / 100_000_000.0)?; // Issue #88: i128
+        bar_dict.set_item("volume", bar.volume as f64 / VOLUME_SCALE)?; // Issue #88: i128
         bar_dict.set_item("open_time", bar.open_time)?;
         bar_dict.set_item("close_time", bar.close_time)?;
         bar_dict.set_item("agg_record_count", bar.agg_record_count)?;
         // Issue #97: Full microstructure state for lossless checkpoint round-trip
-        bar_dict.set_item("buy_volume", bar.buy_volume as f64 / 100_000_000.0)?;
-        bar_dict.set_item("sell_volume", bar.sell_volume as f64 / 100_000_000.0)?;
+        bar_dict.set_item("buy_volume", bar.buy_volume as f64 / VOLUME_SCALE)?;
+        bar_dict.set_item("sell_volume", bar.sell_volume as f64 / VOLUME_SCALE)?;
         bar_dict.set_item("individual_trade_count", bar.individual_trade_count)?;
         bar_dict.set_item("buy_trade_count", bar.buy_trade_count)?;
         bar_dict.set_item("sell_trade_count", bar.sell_trade_count)?;
         bar_dict.set_item("vwap", bar.vwap.to_f64())?;
         bar_dict.set_item("first_agg_trade_id", bar.first_agg_trade_id)?;
         bar_dict.set_item("last_agg_trade_id", bar.last_agg_trade_id)?;
-        bar_dict.set_item("turnover", bar.turnover as f64 / 100_000_000.0)?;
-        bar_dict.set_item("buy_turnover", bar.buy_turnover as f64 / 100_000_000.0)?;
-        bar_dict.set_item("sell_turnover", bar.sell_turnover as f64 / 100_000_000.0)?;
+        bar_dict.set_item("turnover", bar.turnover as f64 / VOLUME_SCALE)?;
+        bar_dict.set_item("buy_turnover", bar.buy_turnover as f64 / VOLUME_SCALE)?;
+        bar_dict.set_item("sell_turnover", bar.sell_turnover as f64 / VOLUME_SCALE)?;
         dict.set_item("incomplete_bar_raw", bar_dict.into_py(py))?;
     } else {
         dict.set_item("incomplete_bar", py.None())?;
