@@ -94,5 +94,9 @@ harness = false  # Disable test harness for comprehensive Phase 2-6 performance 
 name = "production_validation"
 harness = false  # Disable test harness for Phase 7 production validation with real Binance data (Issue #96 Task #138)
 
+[[bench]]
+name = "tier_breakdown_real_data"
+harness = false  # Disable test harness for Tier-by-Tier breakdown on real data (Issue #96 Task #140)
+
 [lints]
 workspace = true
