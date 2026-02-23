@@ -1185,4 +1185,191 @@ mod hurst_accuracy_tests {
             assert!(idx < 6, "Pattern index must be < 6, got {}", idx);
         }
     }
+
+    // ========== NEW TESTS FOR TASK #23 (Expanded Coverage) ==========
+
+    // Permutation Entropy - Adaptive Path Tests (M=2 for small windows)
+    #[test]
+    fn test_adaptive_permutation_entropy_m2_small_window() {
+        // Small window (n < 20) should use M=2 path
+        let prices = vec![100.0, 101.0, 100.5, 102.0, 99.0];
+        let entropy = compute_permutation_entropy(&prices);
+        assert!(entropy >= 0.0 && entropy <= 1.0, "Entropy should be normalized [0,1]");
+        // M=2 should return meaningful value, not default max
+        assert!(entropy < 1.0, "M=2 adaptive path should return meaningful entropy");
+    }
+
+    #[test]
+    fn test_adaptive_permutation_entropy_m2_deterministic() {
+        // Perfectly ascending should have low entropy
+        let prices: Vec<f64> = (0..15).map(|i| i as f64).collect();
+        let entropy = compute_permutation_entropy(&prices);
+        assert!(entropy < 0.3, "Monotonic sequence should have low entropy, got {}", entropy);
+    }
+
+    #[test]
+    fn test_adaptive_permutation_entropy_m2_m3_transition() {
+        // Test behavior at M=2→M=3 boundary (n=20)
+        let mut prices: Vec<f64> = (0..20).map(|i| (i as f64 * 0.5).sin()).collect();
+        let entropy_boundary = compute_permutation_entropy(&prices);
+
+        prices.push(21.0);
+        let entropy_m3 = compute_permutation_entropy(&prices);
+
+        // Both should be in valid range
+        assert!(entropy_boundary >= 0.0 && entropy_boundary <= 1.0);
+        assert!(entropy_m3 >= 0.0 && entropy_m3 <= 1.0);
+    }
+
+    #[test]
+    fn test_adaptive_permutation_entropy_insufficient_data() {
+        // Too small (< 10) should return max entropy
+        let prices = vec![1.0, 2.0];
+        let entropy = compute_permutation_entropy(&prices);
+        assert_eq!(entropy, 1.0, "Insufficient data should return max entropy");
+    }
+
+    // Kyle Lambda - Extended Edge Cases
+    #[test]
+    fn test_kyle_lambda_zero_imbalance_extended() {
+        use crate::interbar_types::TradeSnapshot;
+        // Equal buy and sell volume → zero imbalance → lambda = 0
+        let trades: Vec<TradeSnapshot> = vec![
+            TradeSnapshot {
+                timestamp: 1000,
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str("10.0").unwrap(),
+                is_buyer_maker: true,
+                turnover: 1_000_000_000i128,
+            },
+            TradeSnapshot {
+                timestamp: 2000,
+                price: crate::FixedPoint::from_str("101.0").unwrap(),
+                volume: crate::FixedPoint::from_str("10.0").unwrap(),
+                is_buyer_maker: false,
+                turnover: 1_010_000_000i128,
+            },
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let lambda = compute_kyle_lambda(&refs);
+        assert_eq!(lambda, 0.0, "Zero imbalance should yield zero lambda");
+    }
+
+    #[test]
+    fn test_kyle_lambda_strong_buy_pressure_extended() {
+        use crate::interbar_types::TradeSnapshot;
+        // Heavy buy pressure (price up, dominated by buy volume)
+        let trades: Vec<TradeSnapshot> = (0..10)
+            .map(|i| TradeSnapshot {
+                timestamp: 1000 + (i as i64 * 100),
+                price: crate::FixedPoint::from_str(&format!("{}.0", 100 + i / 2)).unwrap(),
+                volume: if i % 2 == 0 {
+                    crate::FixedPoint::from_str("100.0").unwrap() // Heavy buy
+                } else {
+                    crate::FixedPoint::from_str("1.0").unwrap() // Light sell
+                },
+                is_buyer_maker: i % 2 == 0,
+                turnover: ((100 + i / 2) as i128 * if i % 2 == 0 { 100 } else { 1 } * 100_000_000i128),
+            })
+            .collect();
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let lambda = compute_kyle_lambda(&refs);
+        assert!(lambda > 0.0, "Buy pressure should yield positive lambda");
+    }
+
+    // Burstiness - Timing Analysis Extended
+    #[test]
+    fn test_burstiness_regular_arrivals_extended() {
+        use crate::interbar_types::TradeSnapshot;
+        // Regular spacing (Poisson-like) → burstiness near 0
+        let trades: Vec<TradeSnapshot> = (0..20)
+            .map(|i| TradeSnapshot {
+                timestamp: 1000 + (i as i64 * 1000), // Uniform 1-second spacing
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str("1.0").unwrap(),
+                is_buyer_maker: i % 2 == 0,
+                turnover: 100_000_000i128,
+            })
+            .collect();
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let burst = compute_burstiness(&refs);
+        assert!(burst.abs() < 0.2, "Regular arrivals should have low burstiness, got {}", burst);
+    }
+
+    #[test]
+    fn test_burstiness_clustered_arrivals_extended() {
+        use crate::interbar_types::TradeSnapshot;
+        // Clustered (bursty) → burstiness > 0.5
+        let timestamp = 1000i64;
+        let trades: Vec<TradeSnapshot> = (0..20)
+            .map(|i| {
+                let ts = if i < 10 {
+                    timestamp + (i as i64 * 100) // Cluster 1: 100µs apart
+                } else {
+                    timestamp + 1_000_000 + ((i - 10) as i64 * 100) // Cluster 2: far apart
+                };
+                TradeSnapshot {
+                    timestamp: ts,
+                    price: crate::FixedPoint::from_str("100.0").unwrap(),
+                    volume: crate::FixedPoint::from_str("1.0").unwrap(),
+                    is_buyer_maker: i % 2 == 0,
+                    turnover: 100_000_000i128,
+                }
+            })
+            .collect();
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let burst = compute_burstiness(&refs);
+        assert!(burst > 0.3, "Clustered arrivals should have high burstiness, got {}", burst);
+    }
+
+    // Hurst Exponent - Confidence & Bounds
+    #[test]
+    fn test_hurst_soft_clamp_boundary_extended() {
+        // Test soft_clamp_hurst at boundaries
+        assert!(soft_clamp_hurst(0.0) >= 0.0 && soft_clamp_hurst(0.0) <= 1.0);
+        assert!(soft_clamp_hurst(1.0) >= 0.0 && soft_clamp_hurst(1.0) <= 1.0);
+        assert!(soft_clamp_hurst(2.0) >= 0.0 && soft_clamp_hurst(2.0) <= 1.0);
+        // Extreme negative
+        assert!(soft_clamp_hurst(-10.0) >= 0.0 && soft_clamp_hurst(-10.0) <= 1.0);
+    }
+
+    #[test]
+    fn test_hurst_monotonicity_extended() {
+        // Hurst should be monotonic in trending strength
+        let trending: Vec<f64> = (0..256).map(|i| i as f64).collect();
+        let mean_reverting = vec![0.5; 256];
+
+        let h_trending = compute_hurst_dfa(&trending);
+        let h_mean_revert = compute_hurst_dfa(&mean_reverting);
+
+        // Trending should have higher Hurst
+        assert!(h_trending > h_mean_revert, "Trending should have higher H than mean-reverting");
+    }
+
+    // Multi-feature consistency (cross-validation)
+    #[test]
+    fn test_feature_consistency_normal_market_extended() {
+        use crate::interbar_types::TradeSnapshot;
+        // Normal market conditions
+        let trades: Vec<TradeSnapshot> = (0..100)
+            .map(|i| TradeSnapshot {
+                timestamp: 1000 + (i as i64 * 1000),
+                price: crate::FixedPoint::from_str(&format!("{}.0", 100.0 + (i % 10) as f64 * 0.1)).unwrap(),
+                volume: crate::FixedPoint::from_str("10.0").unwrap(),
+                is_buyer_maker: i % 2 == 0,
+                turnover: (100 * 10 * 100_000_000i128),
+            })
+            .collect();
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+
+        // All features should return valid numbers
+        let kyle = compute_kyle_lambda(&refs);
+        let burst = compute_burstiness(&refs);
+        let (skew, kurt) = compute_volume_moments(&refs);
+
+        assert!(kyle.is_finite(), "Kyle lambda must be finite");
+        assert!(burst.is_finite(), "Burstiness must be finite");
+        assert!(skew.is_finite(), "Skewness must be finite");
+        assert!(kurt.is_finite(), "Kurtosis must be finite");
+    }
 }
