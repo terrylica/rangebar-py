@@ -1710,7 +1710,9 @@ mod tests {
 
         // Should produce a bar after migration
         assert!(!bars.is_empty(), "Should produce bars after v1→v2 migration");
-        assert_eq!(bars[0].symbol, "BTCUSDT");
+        // Verify bar has valid OHLCV (symbol is in Checkpoint, not RangeBar)
+        assert!(bars[0].volume > 0, "Bar should have volume after migration");
+        assert!(bars[0].close_time >= bars[0].open_time, "Bar times should be valid");
 
         // Create new checkpoint from processor after migration
         let new_checkpoint = processor.create_checkpoint("BTCUSDT");
