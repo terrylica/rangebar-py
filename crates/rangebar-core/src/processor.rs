@@ -576,7 +576,13 @@ impl RangeBarProcessor {
         // When include_incomplete=true, clone for checkpoint then consume for output.
         // When include_incomplete=false, move directly (no clone needed).
         if include_incomplete {
-            self.current_bar_state = current_bar.clone();
+            // Issue #96 Task #45: Reduce clone size by clearing accumulated_trades
+            // (not needed after intra-bar features computed). Saves ~50+ bytes per clone.
+            if let Some(ref state) = current_bar {
+                let mut checkpoint_state = state.clone();
+                checkpoint_state.accumulated_trades.clear();
+                self.current_bar_state = Some(checkpoint_state);
+            }
 
             // Add final partial bar only if explicitly requested
             // This preserves algorithm integrity: bars should only close on threshold breach
