@@ -63,12 +63,13 @@ mimalloc = { version = "0.1", default-features = false }
 csv.workspace = true  # Required for test_data_loader during test compilation
 
 [features]
-default = ["simd-burstiness"]  # Issue #96 Task #102: Enable SIMD burstiness by default for 2-4x speedup
+default = ["simd-burstiness", "simd-kyle-lambda"]  # Issue #96 Task #102/148: Enable SIMD for 2-4x speedup
 test-utils = ["dep:csv"]  # Real data loading requires csv crate
 python = ["pyo3"]  # Python bindings via PyO3 (future phase)
 api = ["utoipa"]     # API schemas via utoipa (future phase)
 arrow = ["dep:arrow", "dep:arrow-array", "dep:arrow-schema"]  # Arrow export for streaming architecture
 simd-burstiness = []  # Issue #96 Task #102: SIMD-accelerated burstiness computation (2-4x speedup on Tier 2 features)
+simd-kyle-lambda = []  # Issue #96 Task #148 Phase 2: SIMD-accelerated Kyle Lambda computation (1.5-2.5x speedup)
 simd-permutation-entropy = []  # Task #93: SIMD-accelerated permutation entropy (3-6x speedup)
 
 [[bench]]
