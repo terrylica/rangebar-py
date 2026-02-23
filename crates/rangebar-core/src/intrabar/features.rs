@@ -363,7 +363,10 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
             let mean_tau: f64 = intervals.iter().sum::<f64>() / intervals.len() as f64;
             let variance: f64 = intervals
                 .iter()
-                .map(|&x| (x - mean_tau).powi(2))
+                .map(|&x| {
+                    let d = x - mean_tau;
+                    d * d  // Multiply instead of powi(2)
+                })
                 .sum::<f64>()
                 / intervals.len() as f64;
             let std_tau = variance.sqrt();
@@ -391,7 +394,11 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
         let std_v = m2_norm.sqrt();
 
         if std_v > f64::EPSILON {
-            (Some(m3_norm / std_v.powi(3)), Some(m4_norm / std_v.powi(4) - 3.0))
+            // Issue #96 Task #170: Memoize powi() calls with multiplication chains
+            let std_v2 = std_v * std_v;
+            let std_v3 = std_v2 * std_v;
+            let std_v4 = std_v2 * std_v2;
+            (Some(m3_norm / std_v3), Some(m4_norm / std_v4 - 3.0))
         } else {
             (None, None)
         }
