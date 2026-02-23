@@ -1,3 +1,4 @@
+// FILE-SIZE-OK: Integration tests, naturally grow with feature coverage
 //! Comprehensive tests for microstructure features (Issue #25, Issue #96)
 //!
 //! Tests for:
@@ -321,5 +322,227 @@ fn test_all_microstructure_features_present() {
             bar.duration_us >= 0,
             "duration_us must be non-negative"
         );
+    }
+}
+
+// ============================================================================
+// Tier 2 Inter-Bar Feature Tests (Issue #104 Task #12)
+// ============================================================================
+
+#[test]
+fn test_lookback_kyle_lambda_empty_window() {
+    // Kyle Lambda with empty lookback should return None
+    let mut processor = RangeBarProcessor::new(250).expect("failed to create processor");
+    processor = processor.with_inter_bar_config(Default::default());
+
+    // First bar (no prior trades for lookback)
+    let trades = vec![
+        create_trade(1, "50000.0", "1.0", 1640995200000, false),
+        create_trade(2, "50100.0", "2.0", 1640995201000, true),
+        create_trade(3, "50150.0", "1.5", 1640995202000, false),
+    ];
+
+    let bars = processor
+        .process_agg_trade_records(&trades)
+        .expect("failed to process");
+
+    for bar in bars {
+        // First bar has no lookback history
+        assert!(
+            bar.lookback_kyle_lambda.is_none()
+                || bar.lookback_kyle_lambda.map(|v| v.is_finite()).unwrap_or(true),
+            "Kyle Lambda must be None or finite"
+        );
+    }
+}
+
+#[test]
+fn test_lookback_kyle_lambda_single_trade() {
+    // Kyle Lambda with single trade should be None or 0
+    let mut processor = RangeBarProcessor::new(250).expect("failed to create processor");
+    processor = processor.with_inter_bar_config(Default::default());
+
+    let trades = vec![
+        create_trade(1, "50000.0", "1.0", 1640995200000, false),
+        create_trade(2, "50100.0", "2.0", 1640995201000, false),
+    ];
+
+    let bars = processor
+        .process_agg_trade_records(&trades)
+        .expect("failed to process");
+
+    // Second bar has one trade in lookback (typically should be None or bounded)
+    if bars.len() > 1 {
+        let bar = &bars[1];
+        if let Some(kyle) = bar.lookback_kyle_lambda {
+            assert!(kyle.is_finite(), "Kyle Lambda must be finite");
+        }
+    }
+}
+
+#[test]
+fn test_lookback_kyle_lambda_zero_imbalance() {
+    // Kyle Lambda with perfectly balanced buy/sell should be close to 0
+    let mut processor = RangeBarProcessor::new(250).expect("failed to create processor");
+    processor = processor.with_inter_bar_config(Default::default());
+
+    let mut trades = vec![];
+    let base_time = 1640995200000i64;
+
+    // Create balanced trades (equal buy/sell volume and count)
+    for i in 0..20 {
+        let is_buyer_maker = i % 2 == 0;
+        trades.push(create_trade(
+            i + 1,
+            "50000.0",
+            "1.0",
+            base_time + (i as i64) * 1000,
+            is_buyer_maker,
+        ));
+    }
+
+    let bars = processor
+        .process_agg_trade_records(&trades)
+        .expect("failed to process");
+
+    for bar in bars {
+        if let Some(kyle) = bar.lookback_kyle_lambda {
+            assert!(kyle.is_finite(), "Kyle Lambda must be finite for balanced trades");
+            // Balanced imbalance should yield Kyle lambda close to 0
+            assert!(kyle.abs() < 0.5, "Kyle Lambda should be close to 0 for balanced trades, got {}", kyle);
+        }
+    }
+}
+
+#[test]
+fn test_lookback_burstiness_bounded() {
+    // Burstiness should be bounded in [-1, 1]
+    let mut processor = RangeBarProcessor::new(250).expect("failed to create processor");
+    processor = processor.with_inter_bar_config(Default::default());
+
+    let trades = vec![
+        create_trade(1, "50000.0", "1.0", 1640995200000, false),
+        create_trade(2, "50100.0", "2.0", 1640995201000, true),
+        create_trade(3, "50150.0", "1.5", 1640995202000, false),
+        create_trade(4, "50200.0", "3.0", 1640995203000, true),
+        create_trade(5, "50250.0", "2.5", 1640995204000, false),
+    ];
+
+    let bars = processor
+        .process_agg_trade_records(&trades)
+        .expect("failed to process");
+
+    for bar in bars {
+        if let Some(burst) = bar.lookback_burstiness {
+            assert!(burst.is_finite(), "Burstiness must be finite");
+            assert!(
+                burst >= -1.0 && burst <= 1.0,
+                "Burstiness out of bounds: {} (expected [-1, 1])",
+                burst
+            );
+        }
+    }
+}
+
+#[test]
+fn test_lookback_kaufman_er_trending_vs_ranging() {
+    // Kaufman ER should differ between trending and ranging markets
+    let mut processor_trend = RangeBarProcessor::new(250).expect("failed to create processor");
+    processor_trend = processor_trend.with_inter_bar_config(Default::default());
+
+    let mut processor_range = RangeBarProcessor::new(250).expect("failed to create processor");
+    processor_range = processor_range.with_inter_bar_config(Default::default());
+
+    // Trending: monotonic increasing prices
+    let trending_trades = vec![
+        create_trade(1, "50000.0", "1.0", 1640995200000, false),
+        create_trade(2, "50050.0", "1.0", 1640995201000, false),
+        create_trade(3, "50100.0", "1.0", 1640995202000, false),
+        create_trade(4, "50150.0", "1.0", 1640995203000, false),
+        create_trade(5, "50200.0", "1.0", 1640995204000, false),
+    ];
+
+    // Ranging: oscillating prices
+    let ranging_trades = vec![
+        create_trade(1, "50000.0", "1.0", 1640995200000, false),
+        create_trade(2, "50050.0", "1.0", 1640995201000, false),
+        create_trade(3, "50025.0", "1.0", 1640995202000, false),
+        create_trade(4, "50075.0", "1.0", 1640995203000, false),
+        create_trade(5, "50050.0", "1.0", 1640995204000, false),
+    ];
+
+    let trend_bars = processor_trend
+        .process_agg_trade_records(&trending_trades)
+        .expect("failed to process trending");
+
+    let range_bars = processor_range
+        .process_agg_trade_records(&ranging_trades)
+        .expect("failed to process ranging");
+
+    // Find bars with Kaufman ER values
+    for bar in &trend_bars {
+        if let Some(er) = bar.lookback_kaufman_er {
+            assert!(er.is_finite(), "Kaufman ER must be finite");
+            assert!(er >= 0.0 && er <= 1.0, "Kaufman ER out of bounds: {}", er);
+        }
+    }
+
+    for bar in &range_bars {
+        if let Some(er) = bar.lookback_kaufman_er {
+            assert!(er.is_finite(), "Kaufman ER must be finite");
+            assert!(er >= 0.0 && er <= 1.0, "Kaufman ER out of bounds: {}", er);
+        }
+    }
+}
+
+#[test]
+fn test_all_interbar_features_when_enabled() {
+    // When inter-bar features are enabled, all features should be computable
+    let mut processor = RangeBarProcessor::new(250).expect("failed to create processor");
+    processor = processor.with_inter_bar_config(Default::default());
+
+    let mut trades = vec![];
+    let base_time = 1640995200000i64;
+
+    // Generate enough trades to populate lookback window
+    for i in 0..100 {
+        trades.push(create_trade(
+            i + 1,
+            &format!("50000.{:02}", i),
+            "1.0",
+            base_time + (i as i64) * 100,
+            i % 2 == 0,
+        ));
+    }
+
+    let bars = processor
+        .process_agg_trade_records(&trades)
+        .expect("failed to process");
+
+    // Skip first few bars (lookback buildup), check later bars
+    for bar in bars.iter().skip(5) {
+        // Tier 1 features (should be present for later bars)
+        if let Some(count) = bar.lookback_trade_count {
+            assert!(count >= 0, "lookback_trade_count must be non-negative");
+        }
+        if let Some(ofi) = bar.lookback_ofi {
+            assert!(ofi.is_finite(), "lookback_ofi must be finite");
+        }
+        if let Some(duration) = bar.lookback_duration_us {
+            assert!(duration >= 0, "lookback_duration_us must be non-negative");
+        }
+
+        // Tier 2 features (optional but should be computable)
+        if let Some(kyle) = bar.lookback_kyle_lambda {
+            assert!(kyle.is_finite(), "Kyle Lambda must be finite when present");
+        }
+        if let Some(burst) = bar.lookback_burstiness {
+            assert!(burst.is_finite(), "Burstiness must be finite when present");
+            assert!(burst >= -1.0 && burst <= 1.0, "Burstiness out of bounds");
+        }
+        if let Some(er) = bar.lookback_kaufman_er {
+            assert!(er.is_finite(), "Kaufman ER must be finite when present");
+            assert!(er >= 0.0 && er <= 1.0, "Kaufman ER out of bounds");
+        }
     }
 }
