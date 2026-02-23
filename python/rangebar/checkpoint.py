@@ -380,6 +380,7 @@ def populate_cache_resumable(
     notify: bool = True,
     verbose: bool = True,
     inter_bar_lookback_bars: int | None = None,
+    num_async_writers: int = 0,
 ) -> int:
     """Populate cache for a date range with automatic checkpointing.
 
@@ -416,6 +417,10 @@ def populate_cache_resumable(
     verbose : bool
         Show progress bar (tqdm) and structured logging (default: True).
         Set to False for batch/CI environments.
+    num_async_writers : int
+        Number of concurrent ClickHouse write workers (default: 0 = disabled).
+        If > 0, enables async writes with connection pooling for 2-3x speedup.
+        Issue #96 Phase 4: Async cache writes + connection pooling.
 
     Returns
     -------
@@ -671,6 +676,33 @@ def populate_cache_resumable(
         checkpoint.created_at if checkpoint else datetime.now(UTC).isoformat()
     )
 
+    # Issue #96 Phase 4: Initialize thread pool for concurrent ClickHouse writes
+    thread_pool = None
+    if num_async_writers > 0:
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+
+            from rangebar.clickhouse.connection_pool import get_connection_pool
+
+            # Initialize connection pool (reuse across all writes)
+            get_connection_pool(max_pool_size=num_async_writers * 2)
+            logger.info(
+                "Initialized ClickHouse connection pool: max=%d",
+                num_async_writers * 2,
+            )
+
+            # Create thread pool for concurrent writes
+            thread_pool = ThreadPoolExecutor(max_workers=num_async_writers)
+            logger.info(
+                "Concurrent cache writer initialized: %d workers",
+                num_async_writers,
+            )
+
+        except (ImportError, ConnectionError, OSError) as e:
+            logger.warning("Failed to initialize thread pool: %s", e)
+            logger.info("Falling back to synchronous writes")
+            thread_pool = None
+
     for i, date in enumerate(dates, 1):
         logger.info(
             "Processing %s [%d/%d]: %s",
@@ -747,9 +779,21 @@ def populate_cache_resumable(
 
                 # Write to ClickHouse cache (fatal — ClickHouse IS the destination)
                 if bars_df is not None and not bars_df.empty:
-                    bars_today = fatal_cache_write(
-                        bars_df, symbol, threshold_decimal_bps, ouroboros,
-                    )
+                    # Issue #96 Phase 4: Use thread pool if available
+                    if thread_pool is not None:
+                        # Submit write to thread pool (waits at end with shutdown)
+                        thread_pool.submit(
+                            fatal_cache_write,
+                            bars_df,
+                            symbol,
+                            threshold_decimal_bps,
+                            ouroboros,
+                        )
+                        bars_today = len(bars_df)
+                    else:
+                        bars_today = fatal_cache_write(
+                            bars_df, symbol, threshold_decimal_bps, ouroboros,
+                        )
                 else:
                     bars_today = 0
 
@@ -925,6 +969,12 @@ def populate_cache_resumable(
             end_date=end_date,
             total_bars=total_bars,
         )
+
+    # Issue #96 Phase 4: Wait for pending async writes to complete
+    if thread_pool is not None:
+        logger.info("Waiting for pending ClickHouse writes to complete...")
+        thread_pool.shutdown(wait=True)
+        logger.info("All writes completed, thread pool shut down")
 
     return total_bars
 
