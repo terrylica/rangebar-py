@@ -2,6 +2,7 @@
 //! Extracted from interbar.rs (Phase 2e refactoring)
 //!
 //! GitHub Issue: https://github.com/terrylica/rangebar-py/issues/59
+//! # FILE-SIZE-OK (565 lines - organized by feature module)
 
 use crate::interbar_types::TradeSnapshot;
 
@@ -152,7 +153,7 @@ const GARMAN_KLASS_COEFFICIENT: f64 = 0.3862943611198906;
 /// Reference: Garman & Klass (1980), Journal of Business, vol. 53, no. 1
 ///
 /// Coefficient precomputed: (2*ln(2) - 1) = 0.386294...
-pub(crate) fn compute_garman_klass(lookback: &[&TradeSnapshot]) -> f64 {
+pub fn compute_garman_klass(lookback: &[&TradeSnapshot]) -> f64 {
     if lookback.is_empty() {
         return 0.0;
     }
@@ -227,7 +228,7 @@ pub(crate) fn soft_clamp_hurst(h: f64) -> f64 {
 /// Reference: Bandt & Pompe (2002), Phys. Rev. Lett. 88, 174102
 ///
 /// Output range: [0, 1] where 0 = deterministic, 1 = completely random
-pub(crate) fn compute_permutation_entropy(prices: &[f64]) -> f64 {
+pub fn compute_permutation_entropy(prices: &[f64]) -> f64 {
     const M: usize = 3; // Embedding dimension (Bandt & Pompe recommend 3-7)
     const MIN_SAMPLES: usize = 60; // Rule of thumb: 10 * m! = 10 * 6 = 60 for m=3
 
@@ -419,7 +420,7 @@ mod hurst_accuracy_tests {
 
     #[test]
     fn test_garman_klass_edge_case_empty() {
-        use crate::{FixedPoint, interbar_types::TradeSnapshot};
+        use crate::interbar_types::TradeSnapshot;
 
         // Empty lookback should return 0
         let snapshot: Vec<TradeSnapshot> = vec![];

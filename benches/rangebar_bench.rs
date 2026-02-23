@@ -343,6 +343,7 @@ fn bench_hurst_crate_comparison(c: &mut Criterion) {
 /// Issue #96: Performance optimization for inter-bar features
 fn bench_garman_klass(c: &mut Criterion) {
     use rangebar_core::interbar_math::compute_garman_klass;
+    use rangebar_core::interbar_types::TradeSnapshot;
 
     let mut group = c.benchmark_group("garman_klass_optimization");
     group.sample_size(100);
@@ -372,9 +373,10 @@ fn bench_garman_klass(c: &mut Criterion) {
             BenchmarkId::new("compute_garman_klass", lookback_size),
             lookback_size,
             |b, _| {
-                let trade_refs: Vec<&AggTrade> = trades.iter().collect();
+                let snapshots: Vec<TradeSnapshot> = trades.iter().map(|t| t.into()).collect();
+                let snapshot_refs: Vec<&TradeSnapshot> = snapshots.iter().collect();
                 b.iter(|| {
-                    let vol = compute_garman_klass(black_box(&trade_refs));
+                    let vol = compute_garman_klass(black_box(&snapshot_refs));
                     black_box(vol);
                 });
             },
@@ -394,6 +396,42 @@ criterion_group!(
     bench_bar_close_take,
     bench_hurst_dfa_scaling,
     bench_hurst_crate_comparison,
-    bench_garman_klass
+    bench_garman_klass,
+    bench_permutation_entropy
 );
 criterion_main!(benches);
+
+/// Permutation entropy optimization benchmark
+/// Phase 4b: Identify optimization opportunities for pattern counting
+/// Issue #96: Inter-bar feature performance optimization
+fn bench_permutation_entropy(c: &mut Criterion) {
+    use rangebar_core::interbar_math::compute_permutation_entropy;
+
+    let mut group = c.benchmark_group("permutation_entropy_optimization");
+    group.sample_size(50);
+
+    // Test different series lengths
+    for series_len in [64, 128, 256, 512].iter() {
+        let mut prices = Vec::with_capacity(*series_len);
+        let mut price = 50000.0;
+
+        for i in 0..*series_len {
+            let noise = ((i * 7919) % 1000) as f64 / 1000.0 - 0.5;
+            price += noise * 10.0;
+            prices.push(price);
+        }
+
+        group.bench_with_input(
+            BenchmarkId::new("compute_permutation_entropy", series_len),
+            series_len,
+            |b, _| {
+                b.iter(|| {
+                    let entropy = compute_permutation_entropy(black_box(&prices));
+                    black_box(entropy);
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
