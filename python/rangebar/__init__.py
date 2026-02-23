@@ -115,6 +115,7 @@ __all__ = [
     "probe_latest_available_date",  # Issue #88: Binance Vision probe
     "process_trades_chunked",
     "process_trades_polars",
+    "process_trades_polars_lazy",  # Task #94: Lazy evaluation for predicate pushdown
     "process_trades_to_dataframe",
     "resolve_and_validate_threshold",  # Issue #62: central validation
     "run_adaptive_loop",  # Issue #92: Layer 2 adaptive loop
@@ -176,6 +177,7 @@ from .ouroboros import (
 from .processors.api import (
     process_trades_chunked,
     process_trades_polars,
+    process_trades_polars_lazy,
     process_trades_to_dataframe,
     process_trades_to_dataframe_cached,
 )

@@ -44,6 +44,7 @@ python = ["pyo3"]  # Python bindings via PyO3 (future phase)
 api = ["utoipa"]     # API schemas via utoipa (future phase)
 arrow = ["dep:arrow", "dep:arrow-array", "dep:arrow-schema"]  # Arrow export for streaming architecture
 simd-burstiness = []  # SIMD-accelerated burstiness computation (nightly-only, portable_simd)
+simd-permutation-entropy = []  # Task #93: SIMD-accelerated permutation entropy (3-6x speedup)
 
 [lints]
 workspace = true

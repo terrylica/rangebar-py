@@ -55,6 +55,7 @@ from .ouroboros import get_ouroboros_boundaries as get_ouroboros_boundaries
 
 # Trade processing (rangebar.processors.api)
 from .processors.api import process_trades_polars as process_trades_polars
+from .processors.api import process_trades_polars_lazy as process_trades_polars_lazy
 from .processors.api import (
     process_trades_to_dataframe as process_trades_to_dataframe,
 )
