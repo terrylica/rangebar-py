@@ -675,14 +675,48 @@ fn compute_kyle_lambda_scalar(lookback: &[&TradeSnapshot]) -> f64 {
             }
         })
     } else {
-        // Medium windows (10-500): Full computation
-        lookback.iter().fold((0.0, 0.0), |acc, t| {
-            if t.is_buyer_maker {
-                (acc.0, acc.1 + t.volume.to_f64())
+        // Medium windows (10-500): Full computation with ILP optimization
+        // Issue #96 Task #175: Process trades in pairs to enable instruction-level parallelism
+        // Instead of sequential fold with dependent branches, process (buy_vol, sell_vol) pairs
+        // allowing super-scalar CPUs to execute both branches in parallel
+        let mut buy_vol = 0.0;
+        let mut sell_vol = 0.0;
+
+        // Process pairs of trades for ILP (2 independent condition checks per iteration)
+        let pairs = lookback.len() / 2;
+        for i in 0..pairs {
+            let t1 = &lookback[i * 2];
+            let t2 = &lookback[i * 2 + 1];
+
+            // Both conditions can execute in parallel; accumulations are independent
+            let vol1 = t1.volume.to_f64();
+            let vol2 = t2.volume.to_f64();
+
+            if t1.is_buyer_maker {
+                sell_vol += vol1;
             } else {
-                (acc.0 + t.volume.to_f64(), acc.1)
+                buy_vol += vol1;
             }
-        })
+
+            if t2.is_buyer_maker {
+                sell_vol += vol2;
+            } else {
+                buy_vol += vol2;
+            }
+        }
+
+        // Handle odd trade if present
+        if lookback.len() % 2 == 1 {
+            let t = &lookback[lookback.len() - 1];
+            let vol = t.volume.to_f64();
+            if t.is_buyer_maker {
+                sell_vol += vol;
+            } else {
+                buy_vol += vol;
+            }
+        }
+
+        (buy_vol, sell_vol)
     };
 
     let total_vol = buy_vol + sell_vol;
