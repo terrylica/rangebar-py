@@ -1,6 +1,11 @@
 use super::*;
 use chrono::NaiveDate;
 
+/// Issue #96 Task #83: Error message constants to reduce rodata duplication
+const ERR_INVALID_START_DATE: &str = "Invalid start_date format: ";
+const ERR_INVALID_END_DATE: &str = "Invalid end_date format: ";
+const ERR_DATE_ORDER: &str = "start_date must be <= end_date";
+
 /// Binance market type enum
 #[pyclass(name = "MarketType", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -56,12 +61,12 @@ pub fn fetch_binance_aggtrades(
 ) -> PyResult<Vec<PyObject>> {
     // Parse dates
     let start = NaiveDate::parse_from_str(start_date, "%Y-%m-%d")
-        .map_err(|e| PyValueError::new_err(format!("Invalid start_date format: {e}")))?;
+        .map_err(|e| PyValueError::new_err(format!("{}{e}", ERR_INVALID_START_DATE)))?;
     let end = NaiveDate::parse_from_str(end_date, "%Y-%m-%d")
-        .map_err(|e| PyValueError::new_err(format!("Invalid end_date format: {e}")))?;
+        .map_err(|e| PyValueError::new_err(format!("{}{e}", ERR_INVALID_END_DATE)))?;
 
     if start > end {
-        return Err(PyValueError::new_err("start_date must be <= end_date"));
+        return Err(PyValueError::new_err(ERR_DATE_ORDER));
     }
 
     // Create loader with market type
@@ -242,12 +247,12 @@ impl PyBinanceTradeStream {
     ) -> PyResult<Self> {
         // Parse dates
         let start = NaiveDate::parse_from_str(start_date, "%Y-%m-%d")
-            .map_err(|e| PyValueError::new_err(format!("Invalid start_date format: {e}")))?;
+            .map_err(|e| PyValueError::new_err(format!("{}{e}", ERR_INVALID_START_DATE)))?;
         let end = NaiveDate::parse_from_str(end_date, "%Y-%m-%d")
-            .map_err(|e| PyValueError::new_err(format!("Invalid end_date format: {e}")))?;
+            .map_err(|e| PyValueError::new_err(format!("{}{e}", ERR_INVALID_END_DATE)))?;
 
         if start > end {
-            return Err(PyValueError::new_err("start_date must be <= end_date"));
+            return Err(PyValueError::new_err(ERR_DATE_ORDER));
         }
 
         if chunk_hours == 0 || chunk_hours > 24 {
@@ -417,12 +422,12 @@ impl PyBinanceTradeStreamArrow {
         verify_checksum: bool,
     ) -> PyResult<Self> {
         let start = NaiveDate::parse_from_str(start_date, "%Y-%m-%d")
-            .map_err(|e| PyValueError::new_err(format!("Invalid start_date format: {e}")))?;
+            .map_err(|e| PyValueError::new_err(format!("{}{e}", ERR_INVALID_START_DATE)))?;
         let end = NaiveDate::parse_from_str(end_date, "%Y-%m-%d")
-            .map_err(|e| PyValueError::new_err(format!("Invalid end_date format: {e}")))?;
+            .map_err(|e| PyValueError::new_err(format!("{}{e}", ERR_INVALID_END_DATE)))?;
 
         if start > end {
-            return Err(PyValueError::new_err("start_date must be <= end_date"));
+            return Err(PyValueError::new_err(ERR_DATE_ORDER));
         }
 
         if chunk_hours == 0 || chunk_hours > 24 {
