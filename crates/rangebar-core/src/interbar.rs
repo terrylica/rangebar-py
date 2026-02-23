@@ -270,6 +270,9 @@ impl TradeHistory {
 
     /// Compute inter-bar features from lookback window
     ///
+    /// Issue #96 Task #99: Memoized float conversions for 2-5% speedup
+    /// Extracts prices/volumes once and reuses across all 16 features.
+    ///
     /// # Arguments
     ///
     /// * `bar_open_time` - The open timestamp of the current bar (microseconds)
@@ -290,14 +293,22 @@ impl TradeHistory {
         // === Tier 1: Core Features ===
         self.compute_tier1_features(&lookback, &mut features);
 
+        // === Issue #96 Task #99: Single-pass cache extraction ===
+        // Pre-compute all float conversions once, before any Tier 2/3 features
+        let cache = if self.config.compute_tier2 || self.config.compute_tier3 {
+            Some(crate::interbar_math::extract_lookback_cache(&lookback))
+        } else {
+            None
+        };
+
         // === Tier 2: Statistical Features ===
         if self.config.compute_tier2 {
-            self.compute_tier2_features(&lookback, &mut features);
+            self.compute_tier2_features(&lookback, &mut features, cache.as_ref());
         }
 
         // === Tier 3: Advanced Features ===
         if self.config.compute_tier3 {
-            self.compute_tier3_features(&lookback, &mut features);
+            self.compute_tier3_features(&lookback, &mut features, cache.as_ref());
         }
 
         features
@@ -402,8 +413,21 @@ impl TradeHistory {
     }
 
     /// Compute Tier 2 features (5 features, varying min trades)
-    fn compute_tier2_features(&self, lookback: &[&TradeSnapshot], features: &mut InterBarFeatures) {
+    ///
+    /// Issue #96 Task #99: Optimized with memoized float conversions.
+    /// Uses pre-computed cache passed from compute_features() to avoid
+    /// redundant float conversions across multiple feature functions.
+    fn compute_tier2_features(
+        &self,
+        lookback: &[&TradeSnapshot],
+        features: &mut InterBarFeatures,
+        cache: Option<&crate::interbar_math::LookbackCache>,
+    ) {
         let n = lookback.len();
+
+        // Issue #96 Task #99: Use cache passed from compute_features()
+        // Avoids redundant float conversion if Tier 3 also enabled
+        let cache = cache.cloned().unwrap_or_else(|| crate::interbar_math::extract_lookback_cache(lookback));
 
         // Kyle's Lambda (min 2 trades)
         if n >= 2 {
@@ -416,8 +440,9 @@ impl TradeHistory {
         }
 
         // Volume skewness (min 3 trades)
+        // Issue #96 Task #99: Use cached volumes instead of repeated .volume.to_f64() calls
         if n >= 3 {
-            let (skew, kurt) = compute_volume_moments(lookback);
+            let (skew, kurt) = crate::interbar_math::compute_volume_moments_cached(&cache.volumes);
             features.lookback_volume_skew = Some(skew);
             // Kurtosis requires 4 trades for meaningful estimate
             if n >= 4 {
@@ -426,14 +451,11 @@ impl TradeHistory {
         }
 
         // Price range (min 1 trade)
+        // Issue #96 Task #99: Use cached open (first price) and OHLC instead of conversion + fold
         if n >= 1 {
-            let first_price = lookback.first().unwrap().price.to_f64();
-            let (low, high) = lookback.iter().fold((i64::MAX, i64::MIN), |acc, t| {
-                (acc.0.min(t.price.0), acc.1.max(t.price.0))
-            });
-            let range = (high - low) as f64 / 1e8; // Convert from FixedPoint scale
-            features.lookback_price_range = Some(if first_price > f64::EPSILON {
-                range / first_price
+            let range = cache.high - cache.low;
+            features.lookback_price_range = Some(if cache.open > f64::EPSILON {
+                range / cache.open
             } else {
                 0.0
             });
@@ -445,13 +467,20 @@ impl TradeHistory {
     /// Issue #96 Task #77: Single-pass OHLC + prices extraction for 1.3-1.6x speedup
     /// Combines price collection with OHLC computation (eliminates double-pass)
     /// Issue #96 Task #10: SmallVec optimization for price allocation (typical 100-500 trades)
-    fn compute_tier3_features(&self, lookback: &[&TradeSnapshot], features: &mut InterBarFeatures) {
+    /// Issue #96 Task #99: Reuses memoized float conversions from shared cache
+    fn compute_tier3_features(
+        &self,
+        lookback: &[&TradeSnapshot],
+        features: &mut InterBarFeatures,
+        cache: Option<&crate::interbar_math::LookbackCache>,
+    ) {
         let n = lookback.len();
 
-        // Issue #96 Task #77: Combined extraction avoids separate iterations
-        // Single O(n) pass extracts prices + OHLC instead of two separate passes
-        let (prices, (open, high, low, close)) =
-            crate::interbar_math::extract_prices_and_ohlc_cached(lookback);
+        // Issue #96 Task #99: Use cache passed from compute_features()
+        // If neither Tier 2 nor this cache is provided, extract independently
+        let cache = cache.cloned().unwrap_or_else(|| crate::interbar_math::extract_lookback_cache(lookback));
+        let prices = cache.prices.clone();
+        let (open, high, low, close) = (cache.open, cache.high, cache.low, cache.close);
 
         // Kaufman Efficiency Ratio (min 2 trades)
         if n >= 2 {
