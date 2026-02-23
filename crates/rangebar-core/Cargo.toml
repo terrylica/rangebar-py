@@ -62,5 +62,9 @@ simd-permutation-entropy = []  # Task #93: SIMD-accelerated permutation entropy 
 name = "interbar_performance"
 harness = false  # Disable test harness to run custom benchmark code
 
+[[bench]]
+name = "tier2_profiling"
+harness = false  # Disable test harness for custom profiling code (Phase 5A - Issue #96 Task #126)
+
 [lints]
 workspace = true
