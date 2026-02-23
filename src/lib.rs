@@ -53,6 +53,8 @@ mod binance_bindings;
 #[cfg(feature = "streaming")]
 mod streaming_bindings;
 
+mod thread_pool_init;
+
 // =============================================================================
 // Python Module Registration
 // =============================================================================
@@ -60,6 +62,10 @@ mod streaming_bindings;
 /// Python module
 #[pymodule]
 fn _core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Initialize rayon global thread pool (Task #90, Issue #96)
+    // This eliminates lazy initialization overhead on first parallel operation
+    let _ = thread_pool_init::initialize_rayon_pool();
+
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyRangeBarProcessor>()?;
     m.add_class::<PyPositionVerification>()?;

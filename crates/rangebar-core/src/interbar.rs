@@ -65,12 +65,18 @@ impl TradeHistory {
             LookbackMode::FixedCount(n) => *n * 2, // 2x capacity to hold pre-bar + in-bar trades
             LookbackMode::FixedWindow(_) | LookbackMode::BarRelative(_) => 2000, // Dynamic initial capacity
         };
+        // Task #91: Pre-allocate bar_close_indices buffer
+        // Typical lookback: 10-100 bars, so capacity 128 avoids most re-allocations
+        let bar_capacity = match &config.lookback_mode {
+            LookbackMode::BarRelative(n_bars) => (*n_bars + 1).min(128),
+            _ => 128,
+        };
         Self {
             trades: VecDeque::with_capacity(capacity),
             config,
             protected_until: None,
             total_pushed: 0,
-            bar_close_indices: VecDeque::new(),
+            bar_close_indices: VecDeque::with_capacity(bar_capacity),
         }
     }
 
@@ -82,7 +88,7 @@ impl TradeHistory {
         let snapshot = TradeSnapshot::from(trade);
         self.trades.push_back(snapshot);
         self.total_pushed += 1;
-        self.prune();
+        self.prune_if_needed();
     }
 
     /// Notify that a new bar has opened at the given timestamp
@@ -111,6 +117,26 @@ impl TradeHistory {
             }
         }
         // Keep protection until next bar opens (all modes)
+    }
+
+    /// Conditionally prune trades based on capacity (Task #91: reduce prune() call overhead)
+    ///
+    /// Only calls the full prune() when approaching capacity limits.
+    /// This reduces function call overhead while maintaining correctness.
+    fn prune_if_needed(&mut self) {
+        let should_prune = match &self.config.lookback_mode {
+            LookbackMode::FixedCount(n) => {
+                // Prune only if we've substantially exceeded capacity
+                // This amortizes the cost across multiple pushes
+                self.trades.len() > *n * 3
+            }
+            LookbackMode::FixedWindow(_) => self.trades.len() > 3000,
+            LookbackMode::BarRelative(_) => self.trades.len() > 5000,
+        };
+
+        if should_prune {
+            self.prune();
+        }
     }
 
     /// Prune old trades based on lookback configuration

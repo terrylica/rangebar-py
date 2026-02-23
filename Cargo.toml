@@ -94,6 +94,7 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 # Utilities
 once_cell = "1.21"
 num_cpus = "1.17"
+parking_lot = "0.12"
 
 # Dev dependencies
 version-sync = "0.9"
@@ -139,6 +140,11 @@ pyo3 = { version = "0.22", features = ["extension-module"] }
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+parking_lot = { workspace = true }
+
+# Parallelism
+rayon = { workspace = true }
+num_cpus = { workspace = true }
 
 # Arrow ecosystem (streaming architecture)
 arrow = { workspace = true, optional = true }

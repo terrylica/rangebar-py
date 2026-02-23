@@ -5,7 +5,8 @@ use rangebar_providers::binance::websocket::{
 };
 use rangebar_streaming::processor::{MetricsSummary, StreamingProcessorConfig};
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 /// Streaming metrics snapshot for Python
 #[pyclass(name = "StreamingMetrics")]
@@ -179,9 +180,7 @@ impl PyBinanceLiveStream {
         loop {
             // Check for available bars
             {
-                let mut bars = self.bars.lock().map_err(|_| {
-                    PyRuntimeError::new_err("Failed to acquire lock on bars buffer")
-                })?;
+                let mut bars = self.bars.lock();
 
                 if !bars.is_empty() {
                     let bar = bars.remove(0);
@@ -213,8 +212,7 @@ impl PyBinanceLiveStream {
     pub fn get_pending_bars(&self, py: Python) -> PyResult<PyObject> {
         let mut bars = self
             .bars
-            .lock()
-            .map_err(|_| PyRuntimeError::new_err("Failed to acquire lock on bars buffer"))?;
+            .lock();
 
         let result = PyList::empty_bound(py);
         for bar in bars.drain(..) {
@@ -304,9 +302,8 @@ impl PyBinanceLiveStream {
                     processor.process_trades_continuously(&[trade]);
                     let completed = processor.get_all_completed_bars();
                     if !completed.is_empty() {
-                        if let Ok(mut bar_buffer) = bars.lock() {
-                            bar_buffer.extend(completed);
-                        }
+                        let mut bar_buffer = bars.lock();
+                        bar_buffer.extend(completed);
                     }
                 }
                 None => {
