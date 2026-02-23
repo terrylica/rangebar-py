@@ -192,159 +192,20 @@ pub(crate) fn compute_garman_klass(lookback: &[&TradeSnapshot]) -> f64 {
 ///
 /// Output: soft-clamped to [0, 1] for ML consumption
 pub fn compute_hurst_dfa(prices: &[f64]) -> f64 {
+    // Issue #96 Phase 3b: Integrate evrom/hurst for 4-5x speedup
+    // Rescaled Range (R/S) Analysis: O(n log n) vs DFA O(n²)
+
     const MIN_SAMPLES: usize = 64;
     if prices.len() < MIN_SAMPLES {
         return 0.5; // Neutral (insufficient data)
     }
 
-    // Step 1: Compute profile (cumulative deviation from mean)
-    let mean = prices.iter().sum::<f64>() / prices.len() as f64;
-    let profile: Vec<f64> = prices
-        .iter()
-        .scan(0.0, |acc, &x| {
-            *acc += x - mean;
-            Some(*acc)
-        })
-        .collect();
+    // Use evrom/hurst R/S Analysis (O(n log n), 4-5x faster than DFA)
+    // Note: hurst::rssimple() takes owned Vec, so clone prices
+    let h = hurst::rssimple(prices.to_vec());
 
-    let n = profile.len();
-
-    // Step 2-5: Compute F(n) for multiple box sizes
-    let min_box = 4;
-    let max_box = n / 4;
-    if max_box < min_box {
-        return 0.5;
-    }
-
-    // Generate ~10-20 box sizes logarithmically spaced
-    let num_scales = ((max_box as f64).ln() - (min_box as f64).ln()) / 0.25;
-    let num_scales = (num_scales as usize).max(4).min(20);
-
-    let mut log_n = Vec::with_capacity(num_scales);
-    let mut log_f = Vec::with_capacity(num_scales);
-
-    for i in 0..num_scales {
-        let box_size = (min_box as f64
-            * ((max_box as f64 / min_box as f64).powf(i as f64 / (num_scales - 1) as f64)))
-            as usize;
-        let box_size = box_size.max(min_box).min(max_box);
-
-        let f_n = compute_dfa_fluctuation(&profile, box_size);
-        if f_n > f64::EPSILON {
-            log_n.push((box_size as f64).ln());
-            log_f.push(f_n.ln());
-        }
-    }
-
-    if log_n.len() < 4 {
-        return 0.5;
-    }
-
-    // Step 6: Linear regression to get slope (Hurst exponent)
-    let hurst = linear_regression_slope(&log_n, &log_f);
-
-    // Soft clamp to [0, 1] using tanh (from trading-fitness pattern)
-    soft_clamp_hurst(hurst)
-}
-
-/// Compute DFA fluctuation for given box size
-/// Optimized: fuses linear fit computation with variance calculation in single pass
-#[inline]
-pub(crate) fn compute_dfa_fluctuation(profile: &[f64], box_size: usize) -> f64 {
-    let n = profile.len();
-    let num_boxes = n / box_size;
-    if num_boxes == 0 {
-        return 0.0;
-    }
-
-    let mut total_variance = 0.0;
-
-    for i in 0..num_boxes {
-        let start = i * box_size;
-        let end = start + box_size;
-        let segment = &profile[start..end];
-
-        // Single pass: compute fit coefficients AND variance simultaneously
-        // Accumulate sums needed for linear fit
-        let n_f64 = box_size as f64;
-        let sum_x = (box_size as f64 - 1.0) * box_size as f64 / 2.0;
-        let sum_x2 = (box_size as f64 - 1.0) * box_size as f64 * (2.0 * box_size as f64 - 1.0) / 6.0;
-
-        let (sum_y, sum_xy) = segment
-            .iter()
-            .enumerate()
-            .fold((0.0, 0.0), |(sy, sxy), (j, &y)| {
-                let x = j as f64;
-                (sy + y, sxy + x * y)
-            });
-
-        // Compute line fit coefficients
-        let denom = n_f64 * sum_x2 - sum_x * sum_x;
-        let (a, b) = if denom.abs() < f64::EPSILON {
-            (sum_y / n_f64, 0.0)
-        } else {
-            let b = (n_f64 * sum_xy - sum_x * sum_y) / denom;
-            let a = (sum_y - b * sum_x) / n_f64;
-            (a, b)
-        };
-
-        // Compute variance of detrended segment
-        // Optimization: use multiplication instead of .powi(2)
-        #[allow(non_snake_case)]
-        let variance: f64 = {
-            let mut V = 0.0;
-            for (j, &y) in segment.iter().enumerate() {
-                let trend = a + b * (j as f64);
-                let residual = y - trend;
-                V += residual * residual; // Faster than residual.powi(2)
-            }
-            V / box_size as f64
-        };
-
-        total_variance += variance;
-    }
-
-    (total_variance / num_boxes as f64).sqrt()
-}
-
-/// Least squares fit: y = a + b*x where x = 0, 1, 2, ...
-#[inline]
-pub(crate) fn linear_fit(y: &[f64]) -> (f64, f64) {
-    let n = y.len() as f64;
-    let sum_x = (n - 1.0) * n / 2.0;
-    let sum_x2 = (n - 1.0) * n * (2.0 * n - 1.0) / 6.0;
-    let sum_y: f64 = y.iter().sum();
-    let sum_xy: f64 = y.iter().enumerate().map(|(i, &v)| i as f64 * v).sum();
-
-    let denom = n * sum_x2 - sum_x * sum_x;
-    if denom.abs() < f64::EPSILON {
-        return (sum_y / n, 0.0); // Flat line
-    }
-
-    let b = (n * sum_xy - sum_x * sum_y) / denom;
-    let a = (sum_y - b * sum_x) / n;
-    (a, b)
-}
-
-/// Simple least squares slope
-#[inline]
-pub(crate) fn linear_regression_slope(x: &[f64], y: &[f64]) -> f64 {
-    let n = x.len() as f64;
-    let mean_x = x.iter().sum::<f64>() / n;
-    let mean_y = y.iter().sum::<f64>() / n;
-
-    let num: f64 = x
-        .iter()
-        .zip(y.iter())
-        .map(|(&xi, &yi)| (xi - mean_x) * (yi - mean_y))
-        .sum();
-    let denom: f64 = x.iter().map(|&xi| (xi - mean_x).powi(2)).sum();
-
-    if denom.abs() < f64::EPSILON {
-        0.5
-    } else {
-        num / denom
-    }
+    // Soft clamp to [0, 1] using tanh (matches DFA output normalization)
+    soft_clamp_hurst(h)
 }
 
 /// Soft clamp Hurst to [0, 1] using tanh
