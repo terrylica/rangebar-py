@@ -562,4 +562,170 @@ mod hurst_accuracy_tests {
             );
         }
     }
+
+    // Tier 2 Feature Tests: Kyle Lambda
+    #[test]
+    fn test_kyle_lambda_edge_case_empty() {
+        let kyle_lambda = compute_kyle_lambda(&[]);
+        assert_eq!(kyle_lambda, 0.0, "Empty lookback should return 0");
+    }
+
+    #[test]
+    fn test_kyle_lambda_edge_case_single_trade() {
+        use crate::interbar_types::TradeSnapshot;
+        let snapshot = TradeSnapshot {
+            timestamp: 1000000,
+            price: crate::FixedPoint::from_str("100.0").unwrap(),
+            volume: crate::FixedPoint::from_str("1.0").unwrap(),
+            is_buyer_maker: true,
+            turnover: (100 * 1) as i128 * 100000000i128,
+        };
+        let kyle_lambda = compute_kyle_lambda(&[&snapshot]);
+        assert_eq!(kyle_lambda, 0.0, "Single trade should return 0 (insufficient data)");
+    }
+
+    #[test]
+    fn test_kyle_lambda_zero_imbalance() {
+        use crate::interbar_types::TradeSnapshot;
+        // Equal buy and sell volume should give zero imbalance
+        let trades = vec![
+            TradeSnapshot {
+                timestamp: 1000000,
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str("1.0").unwrap(),
+                is_buyer_maker: true,
+                turnover: (100 * 1) as i128 * 100000000i128,
+            },
+            TradeSnapshot {
+                timestamp: 1000100,
+                price: crate::FixedPoint::from_str("100.5").unwrap(),
+                volume: crate::FixedPoint::from_str("1.0").unwrap(),
+                is_buyer_maker: false, // Seller (opposite)
+                turnover: (100 * 1) as i128 * 100000000i128,
+            },
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let kyle_lambda = compute_kyle_lambda(&refs);
+        assert_eq!(kyle_lambda, 0.0, "Zero imbalance should return 0");
+    }
+
+    #[test]
+    fn test_kyle_lambda_positive_trend_buy_pressure() {
+        use crate::interbar_types::TradeSnapshot;
+        // Price increases with BUY pressure (is_buyer_maker=false = BUY)
+        // More buy volume (aggressive buyers) pushes price up
+        let trades = vec![
+            TradeSnapshot {
+                timestamp: 1000000,
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str("1.0").unwrap(),
+                is_buyer_maker: true, // SELL (minimal)
+                turnover: (100 * 1) as i128 * 100000000i128,
+            },
+            TradeSnapshot {
+                timestamp: 1000100,
+                price: crate::FixedPoint::from_str("101.0").unwrap(),
+                volume: crate::FixedPoint::from_str("10.0").unwrap(),
+                is_buyer_maker: false, // BUY (large buy volume)
+                turnover: (101 * 10) as i128 * 100000000i128,
+            },
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let kyle_lambda = compute_kyle_lambda(&refs);
+        // With more buy volume (imbalance > 0) and price increase, kyle_lambda should be positive
+        assert!(kyle_lambda > 0.0, "Buy pressure with price increase should give positive kyle_lambda, got {}", kyle_lambda);
+    }
+
+    #[test]
+    fn test_kyle_lambda_bounded() {
+        use crate::interbar_types::TradeSnapshot;
+        // Kyle lambda should be finite (not NaN or Inf)
+        for _i in 0..10 {
+            let trades = vec![
+                TradeSnapshot {
+                    timestamp: 1000000,
+                    price: crate::FixedPoint::from_str("100.0").unwrap(),
+                    volume: crate::FixedPoint::from_str("5.0").unwrap(),
+                    is_buyer_maker: true,
+                    turnover: (100 * 5) as i128 * 100000000i128,
+                },
+                TradeSnapshot {
+                    timestamp: 1000100,
+                    price: crate::FixedPoint::from_str("105.0").unwrap(),
+                    volume: crate::FixedPoint::from_str("2.0").unwrap(),
+                    is_buyer_maker: false,
+                    turnover: (105 * 2) as i128 * 100000000i128,
+                },
+            ];
+            let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+            let kyle_lambda = compute_kyle_lambda(&refs);
+            assert!(kyle_lambda.is_finite(), "Kyle lambda must be finite, got {}", kyle_lambda);
+        }
+    }
+
+    // Tier 2 Feature Tests: Burstiness
+    #[test]
+    fn test_burstiness_edge_case_empty() {
+        let burstiness = compute_burstiness(&[]);
+        assert_eq!(burstiness, 0.0, "Empty lookback should return 0");
+    }
+
+    #[test]
+    fn test_burstiness_single_trade() {
+        use crate::interbar_types::TradeSnapshot;
+        let snapshot = TradeSnapshot {
+            timestamp: 1000000,
+            price: crate::FixedPoint::from_str("100.0").unwrap(),
+            volume: crate::FixedPoint::from_str("1.0").unwrap(),
+            is_buyer_maker: true,
+            turnover: (100 * 1) as i128 * 100000000i128,
+        };
+        let burstiness = compute_burstiness(&[&snapshot]);
+        assert_eq!(burstiness, 0.0, "Single trade should return 0 (insufficient data)");
+    }
+
+    #[test]
+    fn test_burstiness_bounds() {
+        use crate::interbar_types::TradeSnapshot;
+        // Create regular arrivals (approximately)
+        let mut trades = Vec::new();
+        for i in 0..20 {
+            trades.push(TradeSnapshot {
+                timestamp: 1000000 + (i * 100) as i64,
+                price: crate::FixedPoint::from_str("100.0").unwrap(),
+                volume: crate::FixedPoint::from_str("1.0").unwrap(),
+                is_buyer_maker: i % 2 == 0,
+                turnover: (100 * 1) as i128 * 100000000i128,
+            });
+        }
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let burstiness = compute_burstiness(&refs);
+        assert!(burstiness >= -1.0 && burstiness <= 1.0, "Burstiness must be in [-1, 1], got {}", burstiness);
+    }
+
+    // Tier 3 Feature Tests: Additional Kaufman ER edge cases
+    #[test]
+    fn test_kaufman_er_trending_market() {
+        // Strong uptrend
+        let mut prices = Vec::new();
+        let mut price = 100.0;
+        for _ in 0..50 {
+            price += 0.1; // Consistent uptrend
+            prices.push(price);
+        }
+        let er = compute_kaufman_er(&prices);
+        assert!(er > 0.5, "Strong trending market should have high efficiency ratio, got {}", er);
+    }
+
+    #[test]
+    fn test_kaufman_er_ranging_market() {
+        // Oscillating prices (ranging)
+        let mut prices = Vec::new();
+        for i in 0..50 {
+            let price = 100.0 + if (i % 2) == 0 { 0.1 } else { -0.1 };
+            prices.push(price);
+        }
+        let er = compute_kaufman_er(&prices);
+        assert!(er < 0.3, "Ranging market should have low efficiency ratio, got {}", er);
+    }
 }
