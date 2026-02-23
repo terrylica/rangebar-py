@@ -292,11 +292,11 @@ fn compute_burstiness_scalar(lookback: &[&TradeSnapshot]) -> f64 {
         return 0.0;
     }
 
-    // Compute inter-arrival times (microseconds)
-    let inter_arrivals: Vec<f64> = lookback
-        .windows(2)
-        .map(|w| (w[1].timestamp - w[0].timestamp) as f64)
-        .collect();
+    // Compute inter-arrival times (microseconds) using direct indexing for better performance
+    let mut inter_arrivals: Vec<f64> = Vec::with_capacity(lookback.len() - 1);
+    for i in 1..lookback.len() {
+        inter_arrivals.push((lookback[i].timestamp - lookback[i - 1].timestamp) as f64);
+    }
 
     let n = inter_arrivals.len() as f64;
     let mu = inter_arrivals.iter().sum::<f64>() / n;
@@ -367,7 +367,11 @@ pub fn compute_kaufman_er(prices: &[f64]) -> f64 {
 
     let net_movement = (prices.last().unwrap() - prices.first().unwrap()).abs();
 
-    let volatility: f64 = prices.windows(2).map(|w| (w[1] - w[0]).abs()).sum();
+    // Direct indexing loop for better CPU branch prediction and vectorization
+    let mut volatility = 0.0;
+    for i in 1..prices.len() {
+        volatility += (prices[i] - prices[i - 1]).abs();
+    }
 
     if volatility > f64::EPSILON {
         net_movement / volatility
