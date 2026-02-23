@@ -540,10 +540,14 @@ impl TradeHistory {
             return result;
         }
 
-        self.trades
-            .iter()
-            .take(cutoff_idx)
-            .collect()
+        // Issue #96 Task #185: Manual loop instead of .collect() to eliminate iterator overhead
+        // Generic case (cutoff_idx >= 3) uses index-based loop matching fast-path pattern
+        // Enables compiler optimization (bounds elimination, vectorization)
+        let mut result = SmallVec::new();
+        for i in 0..cutoff_idx {
+            result.push(&self.trades[i]);
+        }
+        result
     }
 
     /// Get buffer statistics for benchmarking and profiling
