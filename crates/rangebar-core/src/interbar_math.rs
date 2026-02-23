@@ -275,6 +275,26 @@ pub fn compute_kyle_lambda(lookback: &[&TradeSnapshot]) -> f64 {
     };
 
     let total_vol = buy_vol + sell_vol;
+
+    // Issue #96 Task #65: Coarse bounds check for extreme imbalance (early-exit optimization)
+    // If one volume dominates completely (other volume ~= 0), imbalance is extreme (|imbalance| >= 1.0 - eps)
+    // and we can return early without expensive normalization
+    if buy_vol >= total_vol - f64::EPSILON {
+        // All buys: normalized_imbalance ≈ 1.0
+        return if first_price.abs() > f64::EPSILON {
+            (last_price - first_price) / first_price
+        } else {
+            0.0
+        };
+    } else if sell_vol >= total_vol - f64::EPSILON {
+        // All sells: normalized_imbalance ≈ -1.0
+        return if first_price.abs() > f64::EPSILON {
+            -((last_price - first_price) / first_price)
+        } else {
+            0.0
+        };
+    }
+
     let normalized_imbalance = if total_vol > f64::EPSILON {
         (buy_vol - sell_vol) / total_vol
     } else {
