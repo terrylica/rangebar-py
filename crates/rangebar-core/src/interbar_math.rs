@@ -146,6 +146,29 @@ impl EntropyCache {
         }
     }
 
+    /// Create entropy cache with custom capacity (Issue #145: Global cache sizing)
+    ///
+    /// Used by global entropy cache to support larger capacity (512-1024 entries)
+    /// for improved hit ratio on multi-symbol workloads.
+    ///
+    /// ## Memory Usage
+    ///
+    /// Approximate memory per entry: 40 bytes (moka overhead + u64 hash + f64 value)
+    /// - 128 entries ≈ 5KB (default, per-processor)
+    /// - 512 entries ≈ 20KB (4x improvement)
+    /// - 1024 entries ≈ 40KB (8x improvement, global cache)
+    pub fn with_capacity(capacity: u64) -> Self {
+        let cache = moka::sync::Cache::builder()
+            .max_capacity(capacity)
+            .build();
+
+        Self {
+            cache,
+            hits: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            misses: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }
+    }
+
     /// Compute hash of price sequence
     fn price_hash(prices: &[f64]) -> u64 {
         use std::collections::hash_map::DefaultHasher;

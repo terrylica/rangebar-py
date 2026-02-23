@@ -18,6 +18,7 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 pub mod checkpoint;
+pub mod entropy_cache_global; // Issue #145: Multi-symbol entropy cache sharing (Phase 1)
 pub mod errors;
 pub mod export_processor; // Export-oriented processor (extracted Phase 2d)
 pub mod fixed_point;
@@ -48,6 +49,9 @@ pub const FEATURE_MANIFEST_TOML: &str = include_str!("../data/feature_manifest.t
 
 // Re-export commonly used types
 pub use checkpoint::{AnomalySummary, Checkpoint, CheckpointError, PositionVerification};
+pub use entropy_cache_global::{
+    create_local_entropy_cache, get_global_entropy_cache, GLOBAL_ENTROPY_CACHE_CAPACITY,
+}; // Issue #145: Global entropy cache API
 pub use fixed_point::FixedPoint;
 pub use interbar::{InterBarConfig, InterBarFeatures, LookbackMode, TradeHistory, TradeSnapshot};
 pub use intrabar::{IntraBarFeatures, compute_intra_bar_features};
