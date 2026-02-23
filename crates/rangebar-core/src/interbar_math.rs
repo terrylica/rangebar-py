@@ -694,9 +694,16 @@ mod simd {
             0.0
         };
 
-        // Issue #96 Task #203: Branchless epsilon handling in SIMD path
+        // Issue #96 Task #208: Early-exit for zero imbalance (SIMD path)
+        // If buy_vol ≈ sell_vol (perfectly balanced), Kyle Lambda = price_change / 0 = undefined
+        // Skip expensive price change calculation and return 0.0 immediately
         let imbalance_abs = normalized_imbalance.abs();
-        let imbalance_valid = if imbalance_abs > f64::EPSILON { 1.0 } else { 0.0 };
+        if imbalance_abs <= f64::EPSILON {
+            return 0.0;  // Balanced imbalance -> Kyle Lambda = 0.0
+        }
+
+        // Issue #96 Task #203: Branchless epsilon handling in SIMD path
+        let imbalance_valid = 1.0;  // Already verified imbalance_abs > f64::EPSILON above
         let price_valid = if first_price_abs > f64::EPSILON { 1.0 } else { 0.0 };
         let both_valid = imbalance_valid * price_valid;
 
@@ -905,14 +912,21 @@ fn compute_kyle_lambda_scalar(lookback: &[&TradeSnapshot]) -> f64 {
         0.0
     };
 
+    // Issue #96 Task #208: Early-exit for zero imbalance
+    // If buy_vol ≈ sell_vol (perfectly balanced), Kyle Lambda = price_change / 0 = undefined
+    // Skip expensive price change calculation and return 0.0 immediately
+    let imbalance_abs = normalized_imbalance.abs();
+    if imbalance_abs <= f64::EPSILON {
+        return 0.0;  // Balanced imbalance -> Kyle Lambda = 0.0
+    }
+
     // Issue #96 Task #203: Branchless epsilon handling using masks
     // Avoids branch misprediction penalties by checking preconditions once
     // Pattern: similar to Task #200 (OFI branchless), mask-based arithmetic
-    let imbalance_abs = normalized_imbalance.abs();
     let first_price_abs = first_price.abs();
 
     // Branchless precondition checks: convert booleans to 0.0/1.0 masks
-    let imbalance_valid = if imbalance_abs > f64::EPSILON { 1.0 } else { 0.0 };
+    let imbalance_valid = 1.0;  // Already verified imbalance_abs > f64::EPSILON above
     let price_valid = if first_price_abs > f64::EPSILON { 1.0 } else { 0.0 };
     let both_valid = imbalance_valid * price_valid;  // 1.0 iff both valid
 
