@@ -250,6 +250,10 @@ harness = false  # Issue #96 Task #161: ApEn SIMD optimization analysis
 name = "intrabar_dual_pass_benchmark"
 harness = false  # Issue #96 Task #166: Intra-bar dual-pass elimination optimization
 
+[[bench]]
+name = "normalization_lut_benchmark"
+harness = false  # Issue #96 Task #197: Normalization LUT (sigmoid/tanh) optimization
+
 # =============================================================================
 # Build Profiles
 # =============================================================================

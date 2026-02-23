@@ -31,6 +31,7 @@ pub mod drawdown;
 pub mod features;
 pub mod ith;
 pub mod normalize;
+pub mod normalization_lut;
 pub mod types;
 
 // Re-export main types and functions

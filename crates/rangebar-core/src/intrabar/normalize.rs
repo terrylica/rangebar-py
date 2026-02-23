@@ -7,6 +7,11 @@
 //! MODIFICATIONS: Extracted only the functions needed for intra-bar features
 //!
 //! All outputs are bounded to [0, 1] for LSTM/BiLSTM consumption.
+//!
+//! Issue #96 Task #197: Uses precomputed lookup tables for sigmoid and tanh
+//! to replace expensive transcendental function calls (~100-200 CPU cycles each).
+
+use super::normalization_lut::{sigmoid_lut, tanh_lut};
 
 /// Logistic sigmoid function: 1 / (1 + exp(-(x - center) * scale))
 ///
@@ -26,13 +31,15 @@ pub fn logistic_sigmoid(x: f64, center: f64, scale: f64) -> f64 {
 
 /// Normalize epoch count to [0, 1] using rank-based transform.
 ///
-/// Uses a logistic sigmoid applied to the epoch density (epochs/lookback).
+/// Uses a precomputed lookup table for sigmoid applied to epoch density (epochs/lookback).
 /// The sigmoid naturally maps any density to (0, 1) without hardcoded thresholds.
 ///
-/// The function is: sigmoid(10 * (density - 0.5))
+/// The function is: sigmoid_lut(density) ≈ sigmoid(10 * (density - 0.5))
 /// - density=0 → ~0.007 (near zero, distinguishable)
 /// - density=0.5 → 0.5 (exactly half)
 /// - density=1 → ~0.993 (near one)
+///
+/// Issue #96 Task #197: Uses precomputed LUT instead of exp() (100-200 CPU cycles → <1 CPU cycle).
 ///
 /// # Arguments
 /// * `epochs` - Number of ITH epochs detected
@@ -49,12 +56,12 @@ pub fn normalize_epochs(epochs: usize, lookback: usize) -> f64 {
     // Epoch density: fraction of observations that are epochs
     let density = epochs as f64 / lookback as f64;
 
-    // Logistic sigmoid centered at 0.5 with scale 10
-    // This provides good discrimination across the full [0, 1] density range
-    logistic_sigmoid(density, 0.5, 10.0)
+    // Precomputed sigmoid LUT in 0.01 steps [0, 1] density range
+    // Replaces expensive exp() call with O(1) table lookup
+    sigmoid_lut(density)
 }
 
-/// Normalize excess gain/loss to [0, 1] using tanh.
+/// Normalize excess gain/loss to [0, 1] using precomputed tanh lookup table.
 ///
 /// Tanh is mathematically natural for this purpose:
 /// - Maps [0, ∞) → [0, 1)
@@ -66,6 +73,9 @@ pub fn normalize_epochs(epochs: usize, lookback: usize) -> f64 {
 /// typical ITH excess gains range from 0 to 20%, and we want
 /// this range to occupy most of the [0, 0.8] output space.
 ///
+/// Issue #96 Task #197: Uses precomputed LUT in 0.1 steps [0, 5] range
+/// instead of exp() (50-100 CPU cycles → <1 CPU cycle).
+///
 /// # Arguments
 /// * `value` - Raw excess gain or loss (absolute value used)
 ///
@@ -73,13 +83,13 @@ pub fn normalize_epochs(epochs: usize, lookback: usize) -> f64 {
 /// Normalized value in [0, 1)
 #[inline]
 pub fn normalize_excess(value: f64) -> f64 {
-    // tanh(x * 5) provides:
-    // - 1% → 0.05
-    // - 5% → 0.24
-    // - 10% → 0.46
-    // - 20% → 0.76
-    // - 100% → 0.9999
-    (value.abs() * 5.0).tanh()
+    // tanh_lut(x * 5) provides (from precomputed table):
+    // - 1% (0.05 scaled) → ~0.05
+    // - 5% (0.25 scaled) → ~0.24
+    // - 10% (0.50 scaled) → ~0.46
+    // - 20% (1.00 scaled) → ~0.76
+    // - 100% (5.00 scaled) → ~0.9999 (saturates at 1.0)
+    tanh_lut(value.abs() * 5.0)
 }
 
 /// Normalize coefficient of variation (CV) to [0, 1] using logistic sigmoid.
