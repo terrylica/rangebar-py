@@ -117,24 +117,32 @@ pub fn extract_lookback_cache(lookback: &[&TradeSnapshot]) -> LookbackCache {
 /// - Uses moka::sync::Cache with automatic LRU eviction (Issue #96 Task #125)
 /// - Hash function: DefaultHasher (captures exact floating-point values)
 /// - Thread-safe via moka's internal locking
-/// - Metrics: Cache hit/miss tracking available via moka API
+/// - Metrics: Cache hit/miss/eviction tracking (Issue #96 Task #135)
 #[derive(Clone)]
 pub struct EntropyCache {
     /// Production-grade LRU cache (moka provides automatic eviction)
     /// Key: hash of price sequence, Value: computed entropy
     /// Max capacity: 128 entries (tuned for typical consolidation windows)
     cache: moka::sync::Cache<u64, f64>,
+    /// Metrics: hit counter (atomic for thread-safe access)
+    hits: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    /// Metrics: miss counter (atomic for thread-safe access)
+    misses: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl EntropyCache {
-    /// Create new empty entropy cache with LRU eviction
+    /// Create new empty entropy cache with LRU eviction and metrics tracking (Task #135)
     pub fn new() -> Self {
         // Configure moka cache: 128 max entries, ~10KB memory for typical entropy values
         let cache = moka::sync::Cache::builder()
             .max_capacity(128)
             .build();
 
-        Self { cache }
+        Self {
+            cache,
+            hits: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            misses: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }
     }
 
     /// Compute hash of price sequence
@@ -153,13 +161,23 @@ impl EntropyCache {
     }
 
     /// Get cached entropy result if available (O(1) operation)
+    /// Tracks hit/miss metrics for cache effectiveness analysis (Task #135)
     pub fn get(&self, prices: &[f64]) -> Option<f64> {
         if prices.is_empty() {
             return None;
         }
 
         let hash = Self::price_hash(prices);
-        self.cache.get(&hash)
+        match self.cache.get(&hash) {
+            Some(entropy) => {
+                self.hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Some(entropy)
+            }
+            None => {
+                self.misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                None
+            }
+        }
     }
 
     /// Cache entropy result (O(1) operation, moka handles LRU eviction)
@@ -171,12 +189,36 @@ impl EntropyCache {
         let hash = Self::price_hash(prices);
         self.cache.insert(hash, entropy);
     }
+
+    /// Get cache metrics: (hits, misses, hit_ratio)
+    /// Returns hit ratio as percentage (0-100) for analysis (Task #135)
+    pub fn metrics(&self) -> (usize, usize, f64) {
+        let hits = self.hits.load(std::sync::atomic::Ordering::Relaxed);
+        let misses = self.misses.load(std::sync::atomic::Ordering::Relaxed);
+        let total = hits + misses;
+        let hit_ratio = if total > 0 {
+            (hits as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
+        (hits, misses, hit_ratio)
+    }
+
+    /// Reset metrics counters (useful for per-symbol analysis)
+    pub fn reset_metrics(&mut self) {
+        self.hits.store(0, std::sync::atomic::Ordering::Relaxed);
+        self.misses.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 impl std::fmt::Debug for EntropyCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (hits, misses, hit_ratio) = self.metrics();
         f.debug_struct("EntropyCache")
             .field("cache_size", &"moka(max_128)")
+            .field("hits", &hits)
+            .field("misses", &misses)
+            .field("hit_ratio_percent", &format!("{:.1}%", hit_ratio))
             .finish()
     }
 }
