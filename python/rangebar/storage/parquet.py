@@ -41,6 +41,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Issue #96 Task #39: Minimum file size for Parquet validation
+# Tiny files (< 1KB) are empty or metadata-only, not worth validating
+_MIN_PARQUET_SIZE = 1024
+
 
 class TickStorage:
     """Parquet-based tick data storage with ZSTD-3 compression.
@@ -184,9 +188,13 @@ class TickStorage:
             write_df = group_df.drop("_year_month")
 
             if parquet_path.exists():
-                # Validate existing file before reading (Issue #73)
-                if not _validate_and_recover_parquet(parquet_path, auto_delete=True):
-                    # File was corrupted and deleted, write fresh
+                # Issue #96 Task #39: Skip validation for tiny files
+                # Tiny files are likely empty or metadata-only, not worth validating
+                file_size = parquet_path.stat().st_size
+                if file_size < _MIN_PARQUET_SIZE or not _validate_and_recover_parquet(
+                    parquet_path, auto_delete=True
+                ):
+                    # File was corrupted/tiny and deleted, write fresh
                     _atomic_write_parquet(write_df, parquet_path)
                 else:
                     # Append to existing valid file
