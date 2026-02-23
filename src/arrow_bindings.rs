@@ -1,5 +1,8 @@
 use super::*;
 
+/// Issue #96 Task #80: Pre-compute volume scale constant to reduce instruction cache pollution
+const VOLUME_SCALE: f64 = 100_000_000.0;
+
 /// Convert a list of range bar dicts to an Arrow RecordBatch.
 ///
 /// This is the primary export function for streaming range bars to Python
@@ -175,7 +178,7 @@ fn dict_to_rangebar_full(
         low: f64_to_fixed_point(low),
         close: f64_to_fixed_point(close),
         // Issue #88: volume fields are i128, not FixedPoint
-        volume: (volume * 100_000_000.0).round() as i128,
+        volume: (volume * VOLUME_SCALE).round() as i128,
         turnover: 0, // Not typically stored in dict
         individual_trade_count,
         agg_record_count,
@@ -184,8 +187,8 @@ fn dict_to_rangebar_full(
         first_agg_trade_id, // Issue #72
         last_agg_trade_id,  // Issue #72
         data_source: rangebar_core::DataSource::BinanceFuturesUM,
-        buy_volume: (buy_volume * 100_000_000.0).round() as i128,
-        sell_volume: (sell_volume * 100_000_000.0).round() as i128,
+        buy_volume: (buy_volume * VOLUME_SCALE).round() as i128,
+        sell_volume: (sell_volume * VOLUME_SCALE).round() as i128,
         buy_trade_count,
         sell_trade_count,
         vwap: f64_to_fixed_point(vwap),
