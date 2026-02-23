@@ -23,6 +23,14 @@ pub struct RangeBarProcessor {
     /// Threshold in decimal basis points (250 = 25bps, v3.0.0+)
     threshold_decimal_bps: u32,
 
+    /// Issue #96 Task #98: Pre-computed threshold ratio for fast delta calculation
+    /// Stores (threshold_decimal_bps * SCALE) / BASIS_POINTS_SCALE as fixed-point
+    /// This allows compute_range_thresholds() to compute delta = (price * ratio) / SCALE
+    /// without repeated division, avoiding i128 arithmetic in hot path.
+    /// Performance: Eliminates BASIS_POINTS_SCALE division on every bar creation.
+    /// Made public for testing purposes.
+    pub threshold_ratio: i64,
+
     /// Current bar state for streaming processing (Q19)
     /// Enables get_incomplete_bar() and stateful process_single_trade()
     current_bar_state: Option<RangeBarState>,
@@ -142,8 +150,15 @@ impl RangeBarProcessor {
             });
         }
 
+        // Issue #96 Task #98: Pre-compute threshold ratio
+        // Ratio = (threshold_decimal_bps * SCALE) / BASIS_POINTS_SCALE
+        // This is used in compute_range_thresholds() for fast delta calculation
+        let threshold_ratio = ((threshold_decimal_bps as i64) * crate::fixed_point::SCALE as i64)
+            / (crate::fixed_point::BASIS_POINTS_SCALE as i64);
+
         Ok(Self {
             threshold_decimal_bps,
+            threshold_ratio,
             current_bar_state: None,
             price_window: PriceWindow::new(),
             last_trade_id: None,
@@ -286,9 +301,9 @@ impl RangeBarProcessor {
                 history.on_bar_open(trade.timestamp);
             }
             self.current_bar_state = Some(if self.include_intra_bar_features {
-                RangeBarState::new_with_trade_accumulation(&trade, self.threshold_decimal_bps)
+                RangeBarState::new_with_trade_accumulation(&trade, self.threshold_ratio)
             } else {
-                RangeBarState::new(&trade, self.threshold_decimal_bps)
+                RangeBarState::new(&trade, self.threshold_ratio)
             });
             self.defer_open = false;
             return Ok(None);
@@ -302,9 +317,9 @@ impl RangeBarProcessor {
                     history.on_bar_open(trade.timestamp);
                 }
                 self.current_bar_state = Some(if self.include_intra_bar_features {
-                    RangeBarState::new_with_trade_accumulation(&trade, self.threshold_decimal_bps)
+                    RangeBarState::new_with_trade_accumulation(&trade, self.threshold_ratio)
                 } else {
-                    RangeBarState::new(&trade, self.threshold_decimal_bps)
+                    RangeBarState::new(&trade, self.threshold_ratio)
                 });
                 Ok(None)
             }
@@ -489,10 +504,10 @@ impl RangeBarProcessor {
                 current_bar = Some(if self.include_intra_bar_features {
                     RangeBarState::new_with_trade_accumulation(
                         agg_record,
-                        self.threshold_decimal_bps,
+                        self.threshold_ratio,
                     )
                 } else {
-                    RangeBarState::new(agg_record, self.threshold_decimal_bps)
+                    RangeBarState::new(agg_record, self.threshold_ratio)
                 });
                 defer_open = false;
                 continue;
@@ -508,10 +523,10 @@ impl RangeBarProcessor {
                     current_bar = Some(if self.include_intra_bar_features {
                         RangeBarState::new_with_trade_accumulation(
                             agg_record,
-                            self.threshold_decimal_bps,
+                            self.threshold_ratio,
                         )
                     } else {
-                        RangeBarState::new(agg_record, self.threshold_decimal_bps)
+                        RangeBarState::new(agg_record, self.threshold_ratio)
                     });
                 }
                 Some(ref mut bar_state) => {
@@ -716,8 +731,13 @@ impl RangeBarProcessor {
             _ => None,
         };
 
+        // Issue #96 Task #98: Pre-compute threshold ratio (same as with_options)
+        let threshold_ratio = ((checkpoint.threshold_decimal_bps as i64) * crate::fixed_point::SCALE as i64)
+            / (crate::fixed_point::BASIS_POINTS_SCALE as i64);
+
         Ok(Self {
             threshold_decimal_bps: checkpoint.threshold_decimal_bps,
+            threshold_ratio,
             current_bar_state,
             price_window: PriceWindow::new(), // Reset - will be rebuilt from new trades
             last_trade_id: checkpoint.last_trade_id,
@@ -936,12 +956,14 @@ struct RangeBarState {
 
 impl RangeBarState {
     /// Create new range bar state from opening trade
-    fn new(trade: &AggTrade, threshold_decimal_bps: u32) -> Self {
+    /// Issue #96 Task #98: Accept pre-computed threshold_ratio for fast threshold calculation
+    fn new(trade: &AggTrade, threshold_ratio: i64) -> Self {
         let bar = RangeBar::new(trade);
 
-        // Compute FIXED thresholds from opening price
+        // Issue #96 Task #98: Use cached ratio instead of repeated division
+        // This avoids BASIS_POINTS_SCALE division on every bar creation
         let (upper_threshold, lower_threshold) =
-            bar.open.compute_range_thresholds(threshold_decimal_bps);
+            bar.open.compute_range_thresholds_cached(threshold_ratio);
 
         Self {
             bar,
@@ -952,12 +974,14 @@ impl RangeBarState {
     }
 
     /// Create new range bar state with intra-bar feature accumulation
-    fn new_with_trade_accumulation(trade: &AggTrade, threshold_decimal_bps: u32) -> Self {
+    /// Issue #96 Task #98: Accept pre-computed threshold_ratio for fast threshold calculation
+    fn new_with_trade_accumulation(trade: &AggTrade, threshold_ratio: i64) -> Self {
         let bar = RangeBar::new(trade);
 
-        // Compute FIXED thresholds from opening price
+        // Issue #96 Task #98: Use cached ratio instead of repeated division
+        // This avoids BASIS_POINTS_SCALE division on every bar creation
         let (upper_threshold, lower_threshold) =
-            bar.open.compute_range_thresholds(threshold_decimal_bps);
+            bar.open.compute_range_thresholds_cached(threshold_ratio);
 
         Self {
             bar,
@@ -1110,7 +1134,7 @@ mod tests {
         let processor = RangeBarProcessor::new(250).unwrap(); // 250 × 0.1bps = 25bps = 0.25%
 
         let trade = test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1000);
-        let bar_state = RangeBarState::new(&trade, processor.threshold_decimal_bps);
+        let bar_state = RangeBarState::new(&trade, processor.threshold_ratio);
 
         // 50000 * 0.0025 = 125 (25bps = 0.25%)
         assert_eq!(bar_state.upper_threshold.to_string(), "50125.00000000");

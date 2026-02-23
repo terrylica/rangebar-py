@@ -120,6 +120,28 @@ impl FixedPoint {
         (upper, lower)
     }
 
+    /// Issue #96 Task #98: Fast threshold computation using pre-computed ratio
+    ///
+    /// Avoids repeated division by BASIS_POINTS_SCALE in hot path (every bar creation).
+    /// Instead of: delta = (price * threshold_dbps) / 100_000
+    /// We use: delta = (price * ratio) / SCALE, where ratio is pre-computed.
+    ///
+    /// # Arguments
+    /// * `threshold_ratio` - Pre-computed (threshold_dbps * SCALE) / 100_000
+    ///   This should be computed once at RangeBarProcessor initialization.
+    #[inline]
+    pub fn compute_range_thresholds_cached(&self, threshold_ratio: i64) -> (FixedPoint, FixedPoint) {
+        // Calculate threshold delta using cached ratio: delta = (price * ratio) / SCALE
+        // Avoids division in hot path, only does multiplication
+        let delta = (self.0 as i128 * threshold_ratio as i128) / SCALE as i128;
+        let delta = delta as i64;
+
+        let upper = FixedPoint(self.0 + delta);
+        let lower = FixedPoint(self.0 - delta);
+
+        (upper, lower)
+    }
+
     /// Convert to f64 for user-friendly output
     pub fn to_f64(&self) -> f64 {
         self.0 as f64 / SCALE as f64
