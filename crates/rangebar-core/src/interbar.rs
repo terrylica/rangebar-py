@@ -491,12 +491,13 @@ impl TradeHistory {
         // Issue #96 Task #99: Use cache passed from compute_features()
         // If neither Tier 2 nor this cache is provided, extract independently
         let cache = cache.cloned().unwrap_or_else(|| crate::interbar_math::extract_lookback_cache(lookback));
-        let prices = cache.prices.clone();
+        // Issue #110: Avoid cloning prices - all Tier 3 functions accept &[f64]
+        let prices = &cache.prices;
         let (open, high, low, close) = (cache.open, cache.high, cache.low, cache.close);
 
         // Kaufman Efficiency Ratio (min 2 trades)
         if n >= 2 {
-            features.lookback_kaufman_er = Some(compute_kaufman_er(&prices));
+            features.lookback_kaufman_er = Some(compute_kaufman_er(prices));
         }
 
         // Garman-Klass volatility (min 1 trade) - use batch OHLC data
@@ -506,7 +507,7 @@ impl TradeHistory {
 
         // Hurst exponent via DFA (min 64 trades for reliable estimate)
         if n >= 64 {
-            features.lookback_hurst = Some(compute_hurst_dfa(&prices));
+            features.lookback_hurst = Some(compute_hurst_dfa(prices));
         }
 
         // Entropy: adaptive switching (Issue #96 Task #7 Phase 3)
@@ -514,7 +515,7 @@ impl TradeHistory {
         // - Large windows (n >= 500): Approximate Entropy (5-10x faster on large n)
         // Minimum 60 trades for permutation entropy (m=3, need 10 * m! = 60)
         if n >= 60 {
-            features.lookback_permutation_entropy = Some(compute_entropy_adaptive(&prices));
+            features.lookback_permutation_entropy = Some(compute_entropy_adaptive(prices));
         }
     }
 
