@@ -11,6 +11,7 @@ use crate::fixed_point::FixedPoint;
 use crate::interbar::{InterBarConfig, TradeHistory}; // Issue #59
 use crate::intrabar::compute_intra_bar_features; // Issue #59: Intra-bar features
 use crate::types::{AggTrade, RangeBar};
+use smallvec::SmallVec; // Issue #119: Trade accumulation with inline buffer (512 slots ≈ 29KB)
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 // Re-export ProcessingError from errors.rs (Phase 2a extraction)
@@ -726,7 +727,7 @@ impl RangeBarProcessor {
                 bar,
                 upper_threshold: upper,
                 lower_threshold: lower,
-                accumulated_trades: Vec::new(), // Lost on checkpoint - features may be partial
+                accumulated_trades: SmallVec::new(), // Lost on checkpoint - features may be partial
             }),
             _ => None,
         };
@@ -951,7 +952,9 @@ struct RangeBarState {
     /// When intra-bar features are enabled, trades are accumulated here
     /// during bar construction and used to compute features at bar close.
     /// Cleared when bar closes to free memory.
-    pub accumulated_trades: Vec<AggTrade>,
+    /// Issue #119: Uses SmallVec to inline up to 512 trades (99% of bars),
+    /// avoiding heap allocation for typical bar sizes.
+    pub accumulated_trades: SmallVec<[AggTrade; 512]>,
 }
 
 impl RangeBarState {
@@ -969,7 +972,7 @@ impl RangeBarState {
             bar,
             upper_threshold,
             lower_threshold,
-            accumulated_trades: Vec::new(),
+            accumulated_trades: SmallVec::new(),
         }
     }
 
@@ -987,7 +990,11 @@ impl RangeBarState {
             bar,
             upper_threshold,
             lower_threshold,
-            accumulated_trades: vec![trade.clone()],
+            accumulated_trades: {
+                let mut sv = SmallVec::new();
+                sv.push(trade.clone());
+                sv
+            },
         }
     }
 
