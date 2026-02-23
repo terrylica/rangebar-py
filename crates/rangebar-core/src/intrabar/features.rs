@@ -78,52 +78,6 @@ pub struct IntraBarFeatures {
     pub intra_permutation_entropy: Option<f64>,
 }
 
-/// Issue #96 Task #56: Compute volume moments (skewness and kurtosis) in single pass.
-/// Helper function that encapsulates volume statistics accumulation for reusability.
-///
-/// Computes all volume moments (mean, m2, m3, m4) with Welford's online algorithm.
-/// Returns (volume_skewness, volume_kurtosis) where each is Option<f64>.
-fn compute_volume_moments(volumes: &[f64]) -> (Option<f64>, Option<f64>) {
-    let n = volumes.len();
-
-    if n < 3 {
-        return (None, None);
-    }
-
-    // Phase 1: Compute mean
-    let sum_vol = volumes.iter().sum::<f64>();
-    let mean_v = sum_vol / n as f64;
-
-    // Phase 2: Compute central moments (m2, m3, m4) in single pass
-    let (m2, m3, m4) = volumes.iter().fold((0.0, 0.0, 0.0), |(m2, m3, m4), &v| {
-        let d = v - mean_v;
-        let d2 = d * d;
-        (m2 + d2, m3 + d2 * d, m4 + d2 * d2)
-    });
-
-    let m2_norm = m2 / n as f64;
-    let m3_norm = m3 / n as f64;
-    let m4_norm = m4 / n as f64;
-
-    let std_v = m2_norm.sqrt();
-
-    if std_v > f64::EPSILON {
-        // Issue #96 Task #181: Memoize power exponentiation (extend Task #170 pattern)
-        // Replace powi(3) and powi(4) with multiplication for ~2-3x speedup on math operations
-        // powi() calls: ~20-30 CPU cycles each
-        // Multiplication: ~5-10 CPU cycles total (std_v² + std_v³ = 3 muls, std_v⁴ = 2 muls)
-        let std_v2 = std_v * std_v;     // σ²
-        let std_v3 = std_v2 * std_v;    // σ³ = std_v² * std_v
-        let std_v4 = std_v2 * std_v2;   // σ⁴ = std_v² * std_v²
-
-        let skew = Some(m3_norm / std_v3);
-        let kurt = Some(m4_norm / std_v4 - 3.0); // Excess kurtosis
-        (skew, kurt)
-    } else {
-        (None, None)
-    }
-}
-
 /// Compute all intra-bar features from constituent trades.
 ///
 /// This is the main entry point for computing ITH and statistical features
