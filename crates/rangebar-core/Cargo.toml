@@ -112,5 +112,9 @@ harness = false  # Disable test harness for Phase 7 production validation with r
 name = "tier_breakdown_real_data"
 harness = false  # Disable test harness for Tier-by-Tier breakdown on real data (Issue #96 Task #140)
 
+[[bench]]
+name = "epsilon_branch_prediction_benchmark"
+harness = false  # Disable test harness for epsilon branch prediction optimization (Issue #96 Task #177)
+
 [lints]
 workspace = true
