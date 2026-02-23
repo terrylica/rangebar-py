@@ -80,7 +80,21 @@ pub(crate) fn dict_to_agg_trade(
     })
 }
 
+/// Batch set multiple dict items (helper to reduce FFI boundary crossings)
+/// Issue #96 Task #81: Group related dict operations for better CPU cache locality
+#[inline]
+fn batch_set_dict_items(
+    dict: &Bound<PyDict>,
+    items: &[(&str, PyObject)],
+) -> PyResult<()> {
+    for (key, value) in items {
+        dict.set_item(key, value)?;
+    }
+    Ok(())
+}
+
 /// Convert Rust `RangeBar` to Python dict
+/// Issue #96 Task #81: Optimized with batched field setting (reduced FFI boundary crossings)
 pub(crate) fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject> {
     let dict = PyDict::new_bound(py);
 
@@ -92,153 +106,169 @@ pub(crate) fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject>
     )
     .ok_or_else(|| PyValueError::new_err("Invalid timestamp"))?;
 
-    dict.set_item("timestamp", datetime.to_rfc3339())?;
+    // Batch 1: Timestamp + OHLCV Core (6 items)
+    let ohlcv_items = vec![
+        ("timestamp", datetime.to_rfc3339().into_py(py)),
+        ("open", bar.open.to_f64().into_py(py)),
+        ("high", bar.high.to_f64().into_py(py)),
+        ("low", bar.low.to_f64().into_py(py)),
+        ("close", bar.close.to_f64().into_py(py)),
+        ("volume", (bar.volume as f64 / VOLUME_SCALE).into_py(py)),
+    ];
+    batch_set_dict_items(&dict, &ohlcv_items)?;
 
-    // Convert OHLCV from FixedPoint to f64
-    dict.set_item("open", bar.open.to_f64())?;
-    dict.set_item("high", bar.high.to_f64())?;
-    dict.set_item("low", bar.low.to_f64())?;
-    dict.set_item("close", bar.close.to_f64())?;
-    // Issue #88: i128 volume → f64 (FixedPoint scale)
-    dict.set_item("volume", bar.volume as f64 / VOLUME_SCALE)?;
+    // Batch 2: Volume Accumulators (3 items)
+    let volume_items = vec![
+        ("vwap", bar.vwap.to_f64().into_py(py)),
+        ("buy_volume", (bar.buy_volume as f64 / VOLUME_SCALE).into_py(py)),
+        ("sell_volume", (bar.sell_volume as f64 / VOLUME_SCALE).into_py(py)),
+    ];
+    batch_set_dict_items(&dict, &volume_items)?;
 
-    // Optional: Include market microstructure data
-    dict.set_item("vwap", bar.vwap.to_f64())?;
-    dict.set_item("buy_volume", bar.buy_volume as f64 / VOLUME_SCALE)?;
-    dict.set_item("sell_volume", bar.sell_volume as f64 / VOLUME_SCALE)?;
-    dict.set_item("individual_trade_count", bar.individual_trade_count)?;
-    dict.set_item("agg_record_count", bar.agg_record_count)?;
+    // Batch 3: Trade Tracking (4 items)
+    let trade_tracking_items = vec![
+        ("individual_trade_count", bar.individual_trade_count.into_py(py)),
+        ("agg_record_count", bar.agg_record_count.into_py(py)),
+        ("first_agg_trade_id", bar.first_agg_trade_id.into_py(py)),
+        ("last_agg_trade_id", bar.last_agg_trade_id.into_py(py)),
+    ];
+    batch_set_dict_items(&dict, &trade_tracking_items)?;
 
-    // Trade ID range (Issue #72)
-    dict.set_item("first_agg_trade_id", bar.first_agg_trade_id)?;
-    dict.set_item("last_agg_trade_id", bar.last_agg_trade_id)?;
+    // Batch 4: Microstructure Features (10 items)
+    let microstructure_items = vec![
+        ("duration_us", bar.duration_us.into_py(py)),
+        ("ofi", bar.ofi.into_py(py)),
+        ("vwap_close_deviation", bar.vwap_close_deviation.into_py(py)),
+        ("price_impact", bar.price_impact.into_py(py)),
+        ("kyle_lambda_proxy", bar.kyle_lambda_proxy.into_py(py)),
+        ("trade_intensity", bar.trade_intensity.into_py(py)),
+        ("volume_per_trade", bar.volume_per_trade.into_py(py)),
+        ("aggression_ratio", bar.aggression_ratio.into_py(py)),
+        ("aggregation_density", bar.aggregation_density_f64.into_py(py)),
+        ("turnover_imbalance", bar.turnover_imbalance.into_py(py)),
+    ];
+    batch_set_dict_items(&dict, &microstructure_items)?;
 
-    // Microstructure features (Issue #25)
-    dict.set_item("duration_us", bar.duration_us)?;
-    dict.set_item("ofi", bar.ofi)?;
-    dict.set_item("vwap_close_deviation", bar.vwap_close_deviation)?;
-    dict.set_item("price_impact", bar.price_impact)?;
-    dict.set_item("kyle_lambda_proxy", bar.kyle_lambda_proxy)?;
-    dict.set_item("trade_intensity", bar.trade_intensity)?;
-    dict.set_item("volume_per_trade", bar.volume_per_trade)?;
-    dict.set_item("aggression_ratio", bar.aggression_ratio)?;
-    dict.set_item("aggregation_density", bar.aggregation_density_f64)?;
-    dict.set_item("turnover_imbalance", bar.turnover_imbalance)?;
+    // Batch 5: Inter-Bar Core Features (7 items)
+    let lookback_core_items = vec![
+        ("lookback_trade_count", bar.lookback_trade_count.into_py(py)),
+        ("lookback_ofi", bar.lookback_ofi.into_py(py)),
+        ("lookback_duration_us", bar.lookback_duration_us.into_py(py)),
+        ("lookback_intensity", bar.lookback_intensity.into_py(py)),
+        ("lookback_vwap_raw", bar.lookback_vwap_raw.into_py(py)),
+        ("lookback_vwap_position", bar.lookback_vwap_position.into_py(py)),
+        ("lookback_count_imbalance", bar.lookback_count_imbalance.into_py(py)),
+    ];
+    batch_set_dict_items(&dict, &lookback_core_items)?;
 
-    // Inter-bar features (Issue #59) - computed from lookback window BEFORE bar opens
-    // Tier 1: Core features
-    dict.set_item("lookback_trade_count", bar.lookback_trade_count)?;
-    dict.set_item("lookback_ofi", bar.lookback_ofi)?;
-    dict.set_item("lookback_duration_us", bar.lookback_duration_us)?;
-    dict.set_item("lookback_intensity", bar.lookback_intensity)?;
-    dict.set_item("lookback_vwap_raw", bar.lookback_vwap_raw)?;
-    dict.set_item("lookback_vwap_position", bar.lookback_vwap_position)?;
-    dict.set_item("lookback_count_imbalance", bar.lookback_count_imbalance)?;
-
-    // Issue #96 Task #70: Batch optional field setting to reduce Python→Rust boundary crossings
-    // Tier 2: Statistical features (skip None values to reduce set_item overhead)
+    // Batch 6: Inter-Bar Optional Features (Tiers 2-3, ~9 items)
+    let mut lookback_optional_items: Vec<(&str, PyObject)> = Vec::with_capacity(9);
     if let Some(v) = bar.lookback_kyle_lambda {
-        dict.set_item("lookback_kyle_lambda", v)?;
+        lookback_optional_items.push(("lookback_kyle_lambda", v.into_py(py)));
     }
     if let Some(v) = bar.lookback_burstiness {
-        dict.set_item("lookback_burstiness", v)?;
+        lookback_optional_items.push(("lookback_burstiness", v.into_py(py)));
     }
     if let Some(v) = bar.lookback_volume_skew {
-        dict.set_item("lookback_volume_skew", v)?;
+        lookback_optional_items.push(("lookback_volume_skew", v.into_py(py)));
     }
     if let Some(v) = bar.lookback_volume_kurt {
-        dict.set_item("lookback_volume_kurt", v)?;
+        lookback_optional_items.push(("lookback_volume_kurt", v.into_py(py)));
     }
     if let Some(v) = bar.lookback_price_range {
-        dict.set_item("lookback_price_range", v)?;
+        lookback_optional_items.push(("lookback_price_range", v.into_py(py)));
     }
-
-    // Tier 3: trading-fitness features
     if let Some(v) = bar.lookback_kaufman_er {
-        dict.set_item("lookback_kaufman_er", v)?;
+        lookback_optional_items.push(("lookback_kaufman_er", v.into_py(py)));
     }
     if let Some(v) = bar.lookback_garman_klass_vol {
-        dict.set_item("lookback_garman_klass_vol", v)?;
+        lookback_optional_items.push(("lookback_garman_klass_vol", v.into_py(py)));
     }
     if let Some(v) = bar.lookback_hurst {
-        dict.set_item("lookback_hurst", v)?;
+        lookback_optional_items.push(("lookback_hurst", v.into_py(py)));
     }
     if let Some(v) = bar.lookback_permutation_entropy {
-        dict.set_item("lookback_permutation_entropy", v)?;
+        lookback_optional_items.push(("lookback_permutation_entropy", v.into_py(py)));
     }
+    batch_set_dict_items(&dict, &lookback_optional_items)?;
 
-    // Intra-bar features (Issue #59) - computed from trades WITHIN each bar
-    // ITH features (Investment Time Horizon)
+    // Batch 7: Intra-Bar ITH Features (~8 items)
+    let mut intra_ith_items: Vec<(&str, PyObject)> = Vec::with_capacity(8);
     if let Some(v) = bar.intra_bull_epoch_density {
-        dict.set_item("intra_bull_epoch_density", v)?;
+        intra_ith_items.push(("intra_bull_epoch_density", v.into_py(py)));
     }
     if let Some(v) = bar.intra_bear_epoch_density {
-        dict.set_item("intra_bear_epoch_density", v)?;
+        intra_ith_items.push(("intra_bear_epoch_density", v.into_py(py)));
     }
     if let Some(v) = bar.intra_bull_excess_gain {
-        dict.set_item("intra_bull_excess_gain", v)?;
+        intra_ith_items.push(("intra_bull_excess_gain", v.into_py(py)));
     }
     if let Some(v) = bar.intra_bear_excess_gain {
-        dict.set_item("intra_bear_excess_gain", v)?;
+        intra_ith_items.push(("intra_bear_excess_gain", v.into_py(py)));
     }
     if let Some(v) = bar.intra_bull_cv {
-        dict.set_item("intra_bull_cv", v)?;
+        intra_ith_items.push(("intra_bull_cv", v.into_py(py)));
     }
     if let Some(v) = bar.intra_bear_cv {
-        dict.set_item("intra_bear_cv", v)?;
+        intra_ith_items.push(("intra_bear_cv", v.into_py(py)));
     }
     if let Some(v) = bar.intra_max_drawdown {
-        dict.set_item("intra_max_drawdown", v)?;
+        intra_ith_items.push(("intra_max_drawdown", v.into_py(py)));
     }
     if let Some(v) = bar.intra_max_runup {
-        dict.set_item("intra_max_runup", v)?;
+        intra_ith_items.push(("intra_max_runup", v.into_py(py)));
     }
+    batch_set_dict_items(&dict, &intra_ith_items)?;
 
-    // Statistical features
+    // Batch 8: Intra-Bar Statistical Features (~12 items)
+    let mut intra_stat_items: Vec<(&str, PyObject)> = Vec::with_capacity(12);
     if let Some(v) = bar.intra_trade_count {
-        dict.set_item("intra_trade_count", v)?;
+        intra_stat_items.push(("intra_trade_count", v.into_py(py)));
     }
     if let Some(v) = bar.intra_ofi {
-        dict.set_item("intra_ofi", v)?;
+        intra_stat_items.push(("intra_ofi", v.into_py(py)));
     }
     if let Some(v) = bar.intra_duration_us {
-        dict.set_item("intra_duration_us", v)?;
+        intra_stat_items.push(("intra_duration_us", v.into_py(py)));
     }
     if let Some(v) = bar.intra_intensity {
-        dict.set_item("intra_intensity", v)?;
+        intra_stat_items.push(("intra_intensity", v.into_py(py)));
     }
     if let Some(v) = bar.intra_vwap_position {
-        dict.set_item("intra_vwap_position", v)?;
+        intra_stat_items.push(("intra_vwap_position", v.into_py(py)));
     }
     if let Some(v) = bar.intra_count_imbalance {
-        dict.set_item("intra_count_imbalance", v)?;
+        intra_stat_items.push(("intra_count_imbalance", v.into_py(py)));
     }
     if let Some(v) = bar.intra_kyle_lambda {
-        dict.set_item("intra_kyle_lambda", v)?;
+        intra_stat_items.push(("intra_kyle_lambda", v.into_py(py)));
     }
     if let Some(v) = bar.intra_burstiness {
-        dict.set_item("intra_burstiness", v)?;
+        intra_stat_items.push(("intra_burstiness", v.into_py(py)));
     }
     if let Some(v) = bar.intra_volume_skew {
-        dict.set_item("intra_volume_skew", v)?;
+        intra_stat_items.push(("intra_volume_skew", v.into_py(py)));
     }
     if let Some(v) = bar.intra_volume_kurt {
-        dict.set_item("intra_volume_kurt", v)?;
+        intra_stat_items.push(("intra_volume_kurt", v.into_py(py)));
     }
     if let Some(v) = bar.intra_kaufman_er {
-        dict.set_item("intra_kaufman_er", v)?;
+        intra_stat_items.push(("intra_kaufman_er", v.into_py(py)));
     }
     if let Some(v) = bar.intra_garman_klass_vol {
-        dict.set_item("intra_garman_klass_vol", v)?;
+        intra_stat_items.push(("intra_garman_klass_vol", v.into_py(py)));
     }
+    batch_set_dict_items(&dict, &intra_stat_items)?;
 
-    // Complexity features
+    // Batch 9: Intra-Bar Complexity Features (2 items)
+    let mut intra_complexity_items: Vec<(&str, PyObject)> = Vec::with_capacity(2);
     if let Some(v) = bar.intra_hurst {
-        dict.set_item("intra_hurst", v)?;
+        intra_complexity_items.push(("intra_hurst", v.into_py(py)));
     }
     if let Some(v) = bar.intra_permutation_entropy {
-        dict.set_item("intra_permutation_entropy", v)?;
+        intra_complexity_items.push(("intra_permutation_entropy", v.into_py(py)));
     }
+    batch_set_dict_items(&dict, &intra_complexity_items)?;
 
     Ok(dict.into())
 }
