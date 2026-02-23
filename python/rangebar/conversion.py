@@ -185,8 +185,10 @@ def normalize_arrow_dtypes(
     if columns is None:
         columns = ["Open", "High", "Low", "Close", "Volume"]
 
-    for col in columns:
-        if col in df.columns:
-            df[col] = df[col].astype("float64")
+    # Issue #96 Task #40: Vectorize dtype conversion in single operation
+    # Build dict of columns to convert, then call astype once (not per-column)
+    cols_to_convert = {col: "float64" for col in columns if col in df.columns}
+    if cols_to_convert:
+        df = df.astype(cols_to_convert)  # noqa: PD901
 
     return df
