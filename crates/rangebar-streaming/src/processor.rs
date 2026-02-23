@@ -103,6 +103,7 @@ enum CircuitBreakerState {
 }
 
 /// Streaming metrics for observability
+/// Issue #96 Task #6: Extended with queue depth and block time tracking
 #[derive(Debug, Default)]
 pub struct StreamingMetrics {
     pub trades_processed: AtomicU64,
@@ -111,6 +112,8 @@ pub struct StreamingMetrics {
     pub backpressure_events: AtomicU64,
     pub circuit_breaker_trips: AtomicU64,
     pub memory_usage_bytes: AtomicU64,
+    pub max_queue_depth: AtomicU64,       // Issue #96 Task #6: Max observed queue depth
+    pub total_block_time_ms: AtomicU64,   // Issue #96 Task #6: Accumulated block time
 }
 
 impl StreamingProcessor {

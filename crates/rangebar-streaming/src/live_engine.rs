@@ -31,11 +31,15 @@ pub struct CompletedBar {
 }
 
 /// Metrics for the live bar engine.
+/// Issue #96 Task #6: Added backpressure metrics for monitoring queue behavior
 #[derive(Debug, Default)]
 pub struct LiveEngineMetrics {
     pub trades_received: AtomicU64,
     pub bars_emitted: AtomicU64,
     pub reconnections: AtomicU64,
+    pub backpressure_events: AtomicU64,  // Times queue was full and producer blocked
+    pub max_queue_depth: AtomicU64,      // Maximum observed queue depth
+    pub total_block_time_ms: AtomicU64,  // Accumulated time producer waited for queue space
 }
 
 /// Configuration for the live bar engine.
