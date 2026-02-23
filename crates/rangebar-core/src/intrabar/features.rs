@@ -6,6 +6,10 @@
 //! - 8 ITH features (from trading-fitness algorithms)
 //! - 12 statistical features
 //! - 2 complexity features (Hurst, Permutation Entropy)
+//!
+//! # FILE-SIZE-OK
+//! 942 lines: Large existing file with multiple feature computation functions.
+//! Keeping together maintains performance optimization context.
 
 use crate::types::AggTrade;
 use smallvec::SmallVec;
@@ -230,21 +234,14 @@ struct StatisticalFeatures {
 fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> StatisticalFeatures {
     let n = trades.len();
 
-    // Volume aggregation with inline high/low caching (Issue #96 Task #63)
-    // Issue #96 Task #69: Fuse volume moments computation into main trades loop
+    // Pass 1: Volume aggregation and mean computation (OHLC moved to Pass 2)
+    // Issue #96 Task #166: Dual-pass elimination - moved OHLC to moment computation pass
     let mut buy_vol = 0.0_f64;
     let mut sell_vol = 0.0_f64;
     let mut buy_count = 0_u32;
     let mut sell_count = 0_u32;
     let mut total_turnover = 0.0_f64;
-    let mut high = f64::NEG_INFINITY;
-    let mut low = f64::INFINITY;
-
-    // For volume moments: compute mean and central moments inline (Welford-style)
     let mut sum_vol = 0.0_f64;
-    let mut m2_vol = 0.0_f64; // sum of (v - mean)^2
-    let mut m3_vol = 0.0_f64; // sum of (v - mean)^3
-    let mut m4_vol = 0.0_f64; // sum of (v - mean)^4
     let mut vol_count = 0_usize;
 
     for trade in trades {
@@ -252,11 +249,7 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
         let price = trade.price.to_f64();
         total_turnover += price * vol;
 
-        // Inline high/low computation (eliminates separate fold pass)
-        high = high.max(price);
-        low = low.min(price);
-
-        // Volume accumulation for later moment computation
+        // Volume accumulation for mean computation
         sum_vol += vol;
         vol_count += 1;
 
@@ -269,16 +262,29 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
         }
     }
 
-    // Compute central moments in second pass (can't be fused due to mean dependency)
-    // But eliminate separate volumes vector allocation
+    // Pass 2: Compute central moments AND OHLC bounds in single loop
+    // Issue #96 Task #166: Fused OHLC tracking with moment computation
     let mean_vol = if vol_count > 0 { sum_vol / vol_count as f64 } else { 0.0 };
+    let mut m2_vol = 0.0_f64; // sum of (v - mean)^2
+    let mut m3_vol = 0.0_f64; // sum of (v - mean)^3
+    let mut m4_vol = 0.0_f64; // sum of (v - mean)^4
+    let mut high = f64::NEG_INFINITY;
+    let mut low = f64::INFINITY;
+
     for trade in trades {
         let vol = trade.volume.to_f64();
+        let price = trade.price.to_f64();
+
+        // Compute moment contributions
         let d = vol - mean_vol;
         let d2 = d * d;
         m2_vol += d2;
         m3_vol += d2 * d;
         m4_vol += d2 * d2;
+
+        // Inline high/low computation (Issue #96 Task #63: eliminated separate fold pass)
+        high = high.max(price);
+        low = low.min(price);
     }
 
     let total_vol = buy_vol + sell_vol;
