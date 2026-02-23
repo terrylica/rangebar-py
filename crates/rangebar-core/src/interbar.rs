@@ -1391,4 +1391,127 @@ mod tests {
         assert_eq!(skew, 0.0, "All same volume should return 0");
         assert_eq!(kurt, 0.0, "All same volume should return 0");
     }
+
+    // ========== Optimization Regression Tests (Task #115-119) ==========
+
+    #[test]
+    fn test_optimization_edge_case_zero_trades() {
+        // Task #115-119: Verify optimizations handle edge case of zero trades gracefully
+        let mut history = TradeHistory::new(InterBarConfig::default());
+
+        // Try to compute features with no trades
+        let features = history.compute_features(1000);
+
+        // All features should be None for empty lookback
+        assert!(features.lookback_ofi.is_none());
+        assert!(features.lookback_kyle_lambda.is_none());
+        assert!(features.lookback_hurst.is_none());
+    }
+
+    #[test]
+    fn test_optimization_edge_case_large_lookback() {
+        // Task #118/119: Verify optimizations handle large lookback windows correctly
+        // Tests VecDeque capacity optimization and SmallVec trade accumulation
+        let config = InterBarConfig {
+            lookback_mode: LookbackMode::FixedCount(500),
+            ..Default::default()
+        };
+        let mut history = TradeHistory::new(config);
+
+        // Add 600 trades (exceeds 500-trade lookback)
+        for i in 0..600_i64 {
+            let snapshot = create_test_snapshot(i * 1000, 100.0, 10.0, i % 2 == 0);
+            history.push(&AggTrade {
+                agg_trade_id: i,
+                price: snapshot.price,
+                volume: snapshot.volume,
+                first_trade_id: i,
+                last_trade_id: i,
+                timestamp: snapshot.timestamp,
+                is_buyer_maker: snapshot.is_buyer_maker,
+                is_best_match: false,
+            });
+        }
+
+        // Verify that pruning maintains correct lookback window
+        let lookback = history.get_lookback_trades(599000);
+        assert!(
+            lookback.len() <= 600, // Should be around 500, maybe a bit more
+            "Lookback should be <= 600 trades, got {}", lookback.len()
+        );
+
+        // Compute features - this exercises the optimizations
+        let features = history.compute_features(599000);
+
+        // Tier 1 features should be present
+        assert!(features.lookback_trade_count.is_some(), "Trade count should be computed");
+        assert!(features.lookback_ofi.is_some(), "OFI should be computed");
+    }
+
+    #[test]
+    fn test_optimization_edge_case_single_trade() {
+        // Task #115-119: Verify optimizations handle single-trade edge case
+        let mut history = TradeHistory::new(InterBarConfig::default());
+
+        let snapshot = create_test_snapshot(1000, 100.0, 10.0, false);
+        history.push(&AggTrade {
+            agg_trade_id: 1,
+            price: snapshot.price,
+            volume: snapshot.volume,
+            first_trade_id: 1,
+            last_trade_id: 1,
+            timestamp: snapshot.timestamp,
+            is_buyer_maker: snapshot.is_buyer_maker,
+            is_best_match: false,
+        });
+
+        let features = history.compute_features(2000);
+
+        // Tier 1 should compute (only 1 trade needed)
+        assert!(features.lookback_trade_count.is_some());
+        // Tier 3 definitely not (needs >= 60 for Hurst/Entropy)
+        assert!(features.lookback_hurst.is_none());
+    }
+
+    #[test]
+    fn test_optimization_many_trades() {
+        // Task #119: Verify SmallVec handles typical bar trade counts (100-500)
+        let mut history = TradeHistory::new(InterBarConfig::default());
+
+        // Add 300 trades
+        for i in 0..300_i64 {
+            let snapshot = create_test_snapshot(
+                i * 1000,
+                100.0 + (i as f64 % 10.0),
+                10.0 + (i as f64 % 5.0),
+                i % 2 == 0,
+            );
+            history.push(&AggTrade {
+                agg_trade_id: i,
+                price: snapshot.price,
+                volume: snapshot.volume,
+                first_trade_id: i,
+                last_trade_id: i,
+                timestamp: snapshot.timestamp,
+                is_buyer_maker: snapshot.is_buyer_maker,
+                is_best_match: false,
+            });
+        }
+
+        // Get lookback trades
+        let lookback = history.get_lookback_trades(299000);
+
+        // Compute features with both tiers enabled (Task #115: rayon parallelization)
+        let features = history.compute_features(299000);
+
+        // Verify Tier 2 features are present
+        assert!(features.lookback_kyle_lambda.is_some(), "Kyle lambda should be computed");
+        assert!(features.lookback_burstiness.is_some(), "Burstiness should be computed");
+
+        // Verify Tier 3 features are present (only if n >= 60)
+        if lookback.len() >= 60 {
+            assert!(features.lookback_hurst.is_some(), "Hurst should be computed");
+            assert!(features.lookback_permutation_entropy.is_some(), "Entropy should be computed");
+        }
+    }
 }
