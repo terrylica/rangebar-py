@@ -200,12 +200,28 @@ impl TradeHistory {
     ///
     /// # Performance
     ///
-    /// Returns SmallVec with 256 inline capacity. Typical lookback windows (100-500 trades)
-    /// avoid heap allocation entirely. Issue #96 Task #10: TradeHistory allocation optimization.
+    /// Uses binary search to find cutoff index (trades are timestamp-sorted).
+    /// O(log n) vs O(n) for linear scan. Returns SmallVec with 256 inline capacity.
+    /// Typical lookback windows (100-500 trades) avoid heap allocation entirely.
+    /// Issue #96 Task #41: Binary search optimization for lookback filter.
     pub fn get_lookback_trades(&self, bar_open_time: i64) -> SmallVec<[&TradeSnapshot; 256]> {
+        use std::cmp::Ordering;
+
+        // Binary search to find first index where timestamp >= bar_open_time
+        let cutoff_idx = match self.trades.binary_search_by(|trade| {
+            if trade.timestamp < bar_open_time {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            }
+        }) {
+            Ok(idx) => idx,  // Found exact match - exclude trades at bar_open_time
+            Err(idx) => idx, // Insertion point - all trades before this are < bar_open_time
+        };
+
         self.trades
             .iter()
-            .filter(|t| t.timestamp < bar_open_time)
+            .take(cutoff_idx)
             .collect()
     }
 
