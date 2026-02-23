@@ -90,5 +90,9 @@ harness = false  # Disable test harness for SmallVec buffer sizing profiling (Is
 name = "cumulative_performance_validation"
 harness = false  # Disable test harness for comprehensive Phase 2-6 performance validation (Issue #96 Task #137)
 
+[[bench]]
+name = "production_validation"
+harness = false  # Disable test harness for Phase 7 production validation with real Binance data (Issue #96 Task #138)
+
 [lints]
 workspace = true
