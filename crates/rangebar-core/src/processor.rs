@@ -186,6 +186,9 @@ impl RangeBarProcessor {
     /// computed from trades that occurred BEFORE each bar's open_time, ensuring
     /// no lookahead bias.
     ///
+    /// Uses a local entropy cache (default behavior, backward compatible).
+    /// For multi-symbol workloads, use `with_inter_bar_config_and_cache()` with a global cache.
+    ///
     /// # Arguments
     ///
     /// * `config` - Configuration controlling lookback mode and feature tiers
@@ -203,8 +206,41 @@ impl RangeBarProcessor {
     ///         compute_tier3: true,
     ///     });
     /// ```
-    pub fn with_inter_bar_config(mut self, config: InterBarConfig) -> Self {
-        self.trade_history = Some(TradeHistory::new(config.clone()));
+    pub fn with_inter_bar_config(self, config: InterBarConfig) -> Self {
+        self.with_inter_bar_config_and_cache(config, None)
+    }
+
+    /// Enable inter-bar feature computation with optional external entropy cache
+    ///
+    /// Issue #145 Phase 3: Multi-Symbol Entropy Cache Sharing
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Configuration controlling lookback mode and feature tiers
+    /// * `external_cache` - Optional shared entropy cache from `get_global_entropy_cache()`
+    ///   - If provided: Uses the shared global cache (recommended for multi-symbol)
+    ///   - If None: Creates a local 128-entry cache (default, backward compatible)
+    ///
+    /// # Usage
+    ///
+    /// ```ignore
+    /// use rangebar_core::{processor::RangeBarProcessor, entropy_cache_global::get_global_entropy_cache, interbar::InterBarConfig};
+    ///
+    /// // Single-symbol: use local cache (default)
+    /// let processor = RangeBarProcessor::new(1000)?
+    ///     .with_inter_bar_config(config);
+    ///
+    /// // Multi-symbol: share global cache
+    /// let global_cache = get_global_entropy_cache();
+    /// let processor = RangeBarProcessor::new(1000)?
+    ///     .with_inter_bar_config_and_cache(config, Some(global_cache));
+    /// ```
+    pub fn with_inter_bar_config_and_cache(
+        mut self,
+        config: InterBarConfig,
+        external_cache: Option<std::sync::Arc<parking_lot::RwLock<crate::interbar_math::EntropyCache>>>,
+    ) -> Self {
+        self.trade_history = Some(TradeHistory::new_with_cache(config.clone(), external_cache));
         self.inter_bar_config = Some(config);
         self
     }
@@ -246,9 +282,23 @@ impl RangeBarProcessor {
     /// Re-enable inter-bar features on an existing processor (Issue #97).
     ///
     /// Used after `from_checkpoint()` to restore microstructure config that
-    /// is not preserved in checkpoint state.
+    /// is not preserved in checkpoint state. Uses a local entropy cache by default.
+    /// For multi-symbol workloads, use `set_inter_bar_config_with_cache()` with a global cache.
     pub fn set_inter_bar_config(&mut self, config: InterBarConfig) {
-        self.trade_history = Some(TradeHistory::new(config.clone()));
+        self.set_inter_bar_config_with_cache(config, None);
+    }
+
+    /// Re-enable inter-bar features with optional external entropy cache (Issue #145 Phase 3).
+    ///
+    /// Used after `from_checkpoint()` to restore microstructure config that
+    /// is not preserved in checkpoint state. Allows specifying a shared entropy cache
+    /// for multi-symbol processors.
+    pub fn set_inter_bar_config_with_cache(
+        &mut self,
+        config: InterBarConfig,
+        external_cache: Option<std::sync::Arc<parking_lot::RwLock<crate::interbar_math::EntropyCache>>>,
+    ) {
+        self.trade_history = Some(TradeHistory::new_with_cache(config.clone(), external_cache));
         self.inter_bar_config = Some(config);
     }
 
