@@ -400,22 +400,23 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
         return 0.5; // Default to random walk for insufficient data
     }
 
+    // Issue #96 Task #57: Use SmallVec for cumulative deviations
     // Compute cumulative deviation from mean
     let mean: f64 = prices.iter().sum::<f64>() / n as f64;
-    let y: Vec<f64> = prices
-        .iter()
-        .scan(0.0, |acc, &p| {
-            *acc += p - mean;
-            Some(*acc)
-        })
-        .collect();
+    let mut y = SmallVec::<[f64; 256]>::new();
+    let mut cumsum = 0.0;
+    for &p in prices.iter() {
+        cumsum += p - mean;
+        y.push(cumsum);
+    }
 
     // Scale range from n/4 to n/2 (using powers of 2 for efficiency)
     let min_scale = (n / 4).max(8);
     let max_scale = n / 2;
 
-    let mut log_scales = Vec::new();
-    let mut log_fluctuations = Vec::new();
+    // Issue #96 Task #57: Pre-size log vectors to typical capacity (8-12 scale points)
+    let mut log_scales = Vec::with_capacity(12);
+    let mut log_fluctuations = Vec::with_capacity(12);
 
     let mut scale = min_scale;
     while scale <= max_scale {
