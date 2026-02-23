@@ -143,5 +143,9 @@ harness = false  # Disable test harness for lookahead binary search benchmark (I
 name = "cumulative_optimization_validation"
 harness = false  # Disable test harness for cumulative optimization validation (Issue #96 Tasks #187-191, #167)
 
+[[bench]]
+name = "hurst_dfa_memoization_benchmark"
+harness = false  # Disable test harness for Hurst DFA memoization benchmark (Issue #96 Task #192)
+
 [lints]
 workspace = true

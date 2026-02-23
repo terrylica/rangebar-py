@@ -518,6 +518,10 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
             break;
         }
 
+        // Issue #96 Task #192: Memoize x_mean computation outside segment loop
+        // Only depends on scale, not on segment index, so compute once and reuse
+        let x_mean = (scale - 1) as f64 / 2.0;
+
         let mut total_fluctuation = 0.0;
         let mut segment_count = 0;
 
@@ -529,7 +533,6 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
             }
 
             // Linear detrend via least squares
-            let x_mean = (scale - 1) as f64 / 2.0;
             let mut xy_sum = 0.0;
             let mut xx_sum = 0.0;
             let mut y_sum = 0.0;
