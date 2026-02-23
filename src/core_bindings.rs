@@ -310,8 +310,9 @@ impl PyRangeBarProcessor {
             .map(|(i, trade_dict)| dict_to_agg_trade(py, trade_dict, i))
             .collect::<PyResult<Vec<_>>>()?;
 
-        // Process each trade individually to maintain state (Issue #16 fix)
-        let mut bars = Vec::new();
+        // Issue #96 Task #84: Process each trade individually to maintain state (Issue #16 fix)
+        // Pre-allocate Vec with capacity estimate: typical bar completion is 2-10 trades per bar
+        let mut bars = Vec::with_capacity((agg_trades.len() + 9) / 10);
         for trade in agg_trades {
             match self.processor.process_single_trade(&trade) {
                 Ok(Some(bar)) => bars.push(rangebar_to_dict(py, &bar)?),
@@ -370,8 +371,9 @@ impl PyRangeBarProcessor {
             .map(|(i, trade_dict)| dict_to_agg_trade(py, trade_dict, i))
             .collect::<PyResult<Vec<_>>>()?;
 
-        // Process each trade individually to maintain state
-        let mut bars = Vec::new();
+        // Issue #96 Task #84: Process each trade individually to maintain state
+        // Pre-allocate Vec with capacity estimate: typical bar completion is 2-10 trades per bar
+        let mut bars = Vec::with_capacity((agg_trades.len() + 9) / 10);
         for trade in agg_trades {
             match self.processor.process_single_trade(&trade) {
                 Ok(Some(bar)) => bars.push(bar),
