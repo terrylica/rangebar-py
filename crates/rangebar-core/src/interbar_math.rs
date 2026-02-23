@@ -1442,17 +1442,97 @@ fn patterns_within_distance_simd(p1: &[f64], p2: &[f64], r: f64, m: usize) -> bo
     }
 }
 
+/// Adaptive pattern sampling for large windows
+/// Issue #96 Task #161 Phase 3: Algorithm optimization via pattern sampling
+///
+/// For large windows, sample patterns at intervals to reduce O(n²) cost.
+/// Scales match count quadratically to approximate full comparison.
+///
+/// # Accuracy
+/// Assumes uniform pattern distribution. Works well for random/high-entropy sequences.
+/// May underestimate entropy for highly structured data.
+///
+/// # Strategy
+/// - n < 300: full computation (O(n²) manageable)
+/// - 300 ≤ n < 500: sample every 2nd pattern (4x reduction)
+/// - 500 ≤ n < 1000: sample every 3rd pattern (9x reduction)
+/// - n ≥ 1000: sample every 4th pattern (16x reduction)
+fn compute_phi_sampled(prices: &[f64], m: usize, r: f64) -> f64 {
+    let n = prices.len();
+    if n < m {
+        return 0.0;
+    }
+
+    let num_patterns = n - m + 1;
+
+    // Adaptive sampling: sample interval based on window size
+    let sample_interval = if num_patterns >= 1000 {
+        4  // 16x reduction for very large windows
+    } else if num_patterns >= 500 {
+        3  // 9x reduction for large windows
+    } else if num_patterns >= 300 {
+        2  // 4x reduction for medium windows
+    } else {
+        1  // No sampling for smaller windows
+    };
+
+    let mut count = 0usize;
+
+    if sample_interval == 1 {
+        // Full computation: no sampling
+        for i in 0..num_patterns {
+            let p1 = &prices[i..i + m];
+            for j in (i + 1)..num_patterns {
+                let p2 = &prices[j..j + m];
+                if patterns_within_distance_simd(p1, p2, r, m) {
+                    count += 1;
+                }
+            }
+        }
+    } else {
+        // Sampled computation: only compare patterns at intervals
+        for i in (0..num_patterns).step_by(sample_interval) {
+            let p1 = &prices[i..i + m];
+            for j in ((i + sample_interval)..num_patterns).step_by(sample_interval) {
+                let p2 = &prices[j..j + m];
+                if patterns_within_distance_simd(p1, p2, r, m) {
+                    count += 1;
+                }
+            }
+        }
+
+        // Scale count up: if we sampled every k patterns, we compared ~(n/k)² pairs
+        // Scale back to approximate full comparison: count *= k²
+        count = (count as f64 * (sample_interval as f64).powi(2)).round() as usize;
+    }
+
+    // Avoid log(0)
+    if count == 0 {
+        return 0.0;
+    }
+
+    let c = count as f64 / (num_patterns * (num_patterns - 1) / 2) as f64;
+    -c * libm::log(c)  // Issue #116: Use libm for 1.2-1.5x speedup
+}
+
 fn compute_phi(prices: &[f64], m: usize, r: f64) -> f64 {
     let n = prices.len();
     if n < m {
         return 0.0;
     }
 
-    let mut count = 0usize;
     let num_patterns = n - m + 1;
 
-    // Issue #96 Task #161 Phase 2: SIMD-accelerated pattern matching
-    // Direct Chebyshev distance with optional SIMD for m=2 case
+    // Issue #96 Task #161 Phase 3: Adaptive algorithm selection
+    // Use sampled computation for large windows (> 300 patterns)
+    // Reduces O(n²) cost while maintaining accuracy via quadratic scaling
+    if num_patterns > 300 {
+        return compute_phi_sampled(prices, m, r);
+    }
+
+    // Fallback: full SIMD-accelerated computation for smaller windows
+    let mut count = 0usize;
+
     for i in 0..num_patterns {
         let p1 = &prices[i..i + m];
         for j in (i + 1)..num_patterns {
