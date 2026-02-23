@@ -52,6 +52,8 @@ pub struct ExportRangeBarProcessor {
     threshold_decimal_bps: u32,
     current_bar: Option<InternalRangeBar>,
     completed_bars: Vec<RangeBar>,
+    /// Issue #96 Task #71: Reuse pool for completed_bars vec (streaming hot path)
+    completed_bars_pool: Option<Vec<RangeBar>>,
     /// Prevent bars from closing on same timestamp as they opened (Issue #36)
     prevent_same_timestamp_close: bool,
     /// Deferred bar open flag (Issue #46) - next trade opens new bar after breach
@@ -101,6 +103,7 @@ impl ExportRangeBarProcessor {
             threshold_decimal_bps,
             current_bar: None,
             completed_bars: Vec::new(),
+            completed_bars_pool: None,
             prevent_same_timestamp_close,
             defer_open: false,
         })
@@ -269,7 +272,23 @@ impl ExportRangeBarProcessor {
     /// Get all completed bars accumulated so far
     /// This drains the internal buffer to avoid memory leaks
     pub fn get_all_completed_bars(&mut self) -> Vec<RangeBar> {
-        std::mem::take(&mut self.completed_bars)
+        // Issue #96 Task #71: Vec reuse pool to reduce allocation overhead on hot path
+        let mut result = if let Some(mut pool_vec) = self.completed_bars_pool.take() {
+            // Reuse pool vec for next batch
+            pool_vec.clear();
+            pool_vec
+        } else {
+            // First call or pool was None
+            Vec::new()
+        };
+
+        // Swap current completed bars with pool vec
+        std::mem::swap(&mut result, &mut self.completed_bars);
+
+        // Store the now-empty completed_bars in pool for next cycle
+        self.completed_bars_pool = Some(std::mem::take(&mut self.completed_bars));
+
+        result
     }
 
     /// Get incomplete bar if exists (for final bar processing)
