@@ -259,24 +259,30 @@ struct StatisticalFeatures {
 fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> StatisticalFeatures {
     let n = trades.len();
 
-    // Pass 1: Volume aggregation and mean computation (OHLC moved to Pass 2)
-    // Issue #96 Task #166: Dual-pass elimination - moved OHLC to moment computation pass
+    // Issue #96 Task #188: Conversion caching - eliminate redundant FixedPoint-to-f64 conversions
+    // Cache volume conversions in SmallVec to reuse across passes (avoid 2x conversions per trade)
+    // Expected speedup: 3-5% on statistical feature computation (eliminates ~n volume.to_f64() calls)
+
+    // Pre-allocate volume cache with inline capacity for typical bar sizes (< 128 trades)
+    let mut cached_volumes = SmallVec::<[f64; 128]>::with_capacity(n);
+
     let mut buy_vol = 0.0_f64;
     let mut sell_vol = 0.0_f64;
     let mut buy_count = 0_u32;
     let mut sell_count = 0_u32;
     let mut total_turnover = 0.0_f64;
     let mut sum_vol = 0.0_f64;
-    let mut vol_count = 0_usize;
+    let mut high = f64::NEG_INFINITY;
+    let mut low = f64::INFINITY;
 
+    // Pass 1: Convert volumes once, accumulate, track high/low
     for trade in trades {
-        let vol = trade.volume.to_f64();
-        let price = trade.price.to_f64();
-        total_turnover += price * vol;
+        let vol = trade.volume.to_f64();  // Converted once only
+        cached_volumes.push(vol);  // Cache for Pass 2
+        let price = prices[cached_volumes.len() - 1];  // Use pre-converted prices (Issue #96 Task #173)
 
-        // Volume accumulation for mean computation
+        total_turnover += price * vol;
         sum_vol += vol;
-        vol_count += 1;
 
         if trade.is_buyer_maker {
             sell_vol += vol;
@@ -285,31 +291,27 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
             buy_vol += vol;
             buy_count += trade.individual_trade_count() as u32;
         }
+
+        // Track high/low during first pass (Issue #96 Task #63: eliminated separate fold pass)
+        high = high.max(price);
+        low = low.min(price);
     }
 
-    // Pass 2: Compute central moments AND OHLC bounds in single loop
-    // Issue #96 Task #166: Fused OHLC tracking with moment computation
+    let vol_count = n;
     let mean_vol = if vol_count > 0 { sum_vol / vol_count as f64 } else { 0.0 };
+
+    // Pass 2: Compute central moments using cached volumes (no conversion, no indexing overhead)
     let mut m2_vol = 0.0_f64; // sum of (v - mean)^2
     let mut m3_vol = 0.0_f64; // sum of (v - mean)^3
     let mut m4_vol = 0.0_f64; // sum of (v - mean)^4
-    let mut high = f64::NEG_INFINITY;
-    let mut low = f64::INFINITY;
 
-    for trade in trades {
-        let vol = trade.volume.to_f64();
-        let price = trade.price.to_f64();
-
-        // Compute moment contributions
+    for &vol in cached_volumes.iter() {
+        // Compute moment contributions using pre-cached volumes
         let d = vol - mean_vol;
         let d2 = d * d;
         m2_vol += d2;
         m3_vol += d2 * d;
         m4_vol += d2 * d2;
-
-        // Inline high/low computation (Issue #96 Task #63: eliminated separate fold pass)
-        high = high.max(price);
-        low = low.min(price);
     }
 
     let total_vol = buy_vol + sell_vol;

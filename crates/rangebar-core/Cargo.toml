@@ -117,6 +117,10 @@ name = "epsilon_branch_prediction_benchmark"
 harness = false  # Disable test harness for epsilon branch prediction optimization (Issue #96 Task #177)
 
 [[bench]]
+name = "conversion_caching_benchmark"
+harness = false  # Disable test harness for conversion caching benchmark (Issue #96 Task #188)
+
+[[bench]]
 name = "kyle_lambda_branchless_benchmark"
 harness = false  # Disable test harness for Kyle Lambda branchless optimization (Issue #96 Task #184)
 
