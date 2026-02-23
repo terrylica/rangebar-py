@@ -287,27 +287,34 @@ pub fn compute_burstiness(lookback: &[&TradeSnapshot]) -> f64 {
 }
 
 /// Scalar implementation of burstiness computation (fallback).
+/// Uses Welford's algorithm for online variance computation (single pass, no intermediate allocation).
 #[inline]
 fn compute_burstiness_scalar(lookback: &[&TradeSnapshot]) -> f64 {
     if lookback.len() < 2 {
         return 0.0;
     }
 
-    // Compute inter-arrival times (microseconds) using SmallVec for stack allocation (typical lookback < 32 trades)
-    let mut inter_arrivals: SmallVec<[f64; 32]> = SmallVec::new();
+    // Compute mean and variance in a single pass using Welford's algorithm (Issue #96 Task #50)
+    // Eliminates intermediate SmallVec allocation and second-pass variance computation
+    let mut mean = 0.0;
+    let mut m2 = 0.0; // Sum of squared deviations
+    let mut count = 0.0;
+
     for i in 1..lookback.len() {
-        inter_arrivals.push((lookback[i].timestamp - lookback[i - 1].timestamp) as f64);
+        let delta_t = (lookback[i].timestamp - lookback[i - 1].timestamp) as f64;
+        count += 1.0;
+        let delta = delta_t - mean;
+        mean += delta / count;
+        let delta2 = delta_t - mean;
+        m2 += delta * delta2;
     }
 
-    let n = inter_arrivals.len() as f64;
-    let mu = inter_arrivals.iter().sum::<f64>() / n;
-
-    let variance = inter_arrivals.iter().map(|t| (t - mu).powi(2)).sum::<f64>() / n;
+    let variance = m2 / count;
     let sigma = variance.sqrt();
 
-    let denominator = sigma + mu;
+    let denominator = sigma + mean;
     if denominator > f64::EPSILON {
-        (sigma - mu) / denominator
+        (sigma - mean) / denominator
     } else {
         0.0 // All trades at same timestamp
     }
