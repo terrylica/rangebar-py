@@ -52,6 +52,13 @@ const PRICE_WINDOW_SIZE: usize = 8;
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Checkpoint {
+    // === VERSIONING (1 field) ===
+    /// Schema version for checkpoint format (Issue #85: Phase 2)
+    /// v1: Original format (default for old checkpoints)
+    /// v2: Field-reordered RangeBar (no behavioral changes, safe for deserialization)
+    #[serde(default = "default_checkpoint_version")]
+    pub version: u32,
+
     // === IDENTIFICATION (2 fields) ===
     /// Symbol being processed (e.g., "BTCUSDT", "EURUSD")
     pub symbol: String,
@@ -106,6 +113,11 @@ pub struct Checkpoint {
     pub defer_open: bool,
 }
 
+/// Default checkpoint version (v1 for backward compatibility)
+fn default_checkpoint_version() -> u32 {
+    1
+}
+
 /// Default value for prevent_same_timestamp_close (true = timestamp gating enabled)
 fn default_prevent_same_timestamp_close() -> bool {
     true
@@ -125,6 +137,7 @@ impl Checkpoint {
         prevent_same_timestamp_close: bool,
     ) -> Self {
         Self {
+            version: 2, // New checkpoints created with current version
             symbol,
             threshold_decimal_bps,
             incomplete_bar,
@@ -506,5 +519,71 @@ mod tests {
         // Should be a valid semver string
         assert!(version.contains('.'));
         println!("Library version: {}", version);
+    }
+
+    #[test]
+    fn test_checkpoint_versioning() {
+        let checkpoint = Checkpoint::new(
+            "BTCUSDT".to_string(),
+            250, // 25bps
+            None,
+            None,
+            1640995200000000,
+            Some(12345),
+            0,
+            true,
+        );
+
+        // New checkpoints should have v2
+        assert_eq!(checkpoint.version, 2);
+    }
+
+    #[test]
+    fn test_checkpoint_v1_backward_compat() {
+        // Issue #85: Simulate old v1 checkpoint (without version field)
+        let json = r#"{
+            "symbol": "BTCUSDT",
+            "threshold_decimal_bps": 100,
+            "incomplete_bar": null,
+            "thresholds": null,
+            "last_timestamp_us": 1640995200000000,
+            "last_trade_id": 12345,
+            "price_hash": 0,
+            "anomaly_summary": {"gaps_detected": 0, "overlaps_detected": 0, "timestamp_anomalies": 0},
+            "prevent_same_timestamp_close": true,
+            "defer_open": false
+        }"#;
+
+        // Old v1 checkpoints should deserialize with version defaulting to 1
+        let checkpoint: Checkpoint = serde_json::from_str(json).unwrap();
+        assert_eq!(checkpoint.version, 1); // Deserialized from default
+        assert_eq!(checkpoint.symbol, "BTCUSDT");
+        assert_eq!(checkpoint.threshold_decimal_bps, 100);
+
+        // Migration is applied by RangeBarProcessor::from_checkpoint()
+        // which is tested in processor.rs::test_checkpoint_v1_to_v2_migration
+    }
+
+    #[test]
+    fn test_checkpoint_v2_serialization() {
+        let checkpoint = Checkpoint::new(
+            "EURUSD".to_string(),
+            10,
+            None,
+            None,
+            1640995200000000,
+            None,
+            12345678,
+            true,
+        );
+
+        // Serialize v2 checkpoint
+        let json = serde_json::to_string(&checkpoint).unwrap();
+        assert!(json.contains("\"version\":2"));
+
+        // Deserialize back
+        let restored: Checkpoint = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.version, 2);
+        assert_eq!(restored.symbol, "EURUSD");
     }
 }

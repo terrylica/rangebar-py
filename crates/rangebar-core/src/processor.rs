@@ -681,6 +681,9 @@ impl RangeBarProcessor {
     /// let bars = processor.process_agg_trade_records(&next_file_trades)?;
     /// ```
     pub fn from_checkpoint(checkpoint: Checkpoint) -> Result<Self, CheckpointError> {
+        // Issue #85 Phase 2: Apply checkpoint schema migration if needed
+        let checkpoint = Self::migrate_checkpoint(checkpoint);
+
         // Issue #62: Validate threshold range before restoring from checkpoint
         // Valid range: 1-100,000 dbps (0.0001% to 10%)
         const THRESHOLD_MIN: u32 = 1;
@@ -727,6 +730,33 @@ impl RangeBarProcessor {
             inter_bar_config: None,            // Issue #59: Must be re-enabled after restore
             include_intra_bar_features: false, // Issue #59: Must be re-enabled after restore
         })
+    }
+
+    /// Migrate checkpoint between schema versions
+    /// Issue #85 Phase 2: Handle v1 → v2 migration
+    /// Safe: JSON deserialization is field-name-based, so old v1 checkpoints load correctly
+    fn migrate_checkpoint(mut checkpoint: Checkpoint) -> Checkpoint {
+        match checkpoint.version {
+            1 => {
+                // v1 → v2: RangeBar struct field reordering (no behavioral changes)
+                // JSON serialization is position-independent, so no transformation needed
+                checkpoint.version = 2;
+                checkpoint
+            }
+            2 => {
+                // Already current version
+                checkpoint
+            }
+            _ => {
+                // Unknown version - log warning and continue with best effort
+                eprintln!(
+                    "Warning: Checkpoint has unknown version {}, treating as v2",
+                    checkpoint.version
+                );
+                checkpoint.version = 2;
+                checkpoint
+            }
+        }
     }
 
     /// Verify we're at the right position in the data stream
@@ -1643,5 +1673,54 @@ mod tests {
         assert_eq!(cp1.close, cp2.close);
         assert_eq!(cp1.high, cp2.high);
         assert_eq!(cp1.low, cp2.low);
+    }
+
+    #[test]
+    fn test_checkpoint_v1_to_v2_migration() {
+        // Issue #85 Phase 2: Verify v1→v2 checkpoint migration
+        // Simulate loading an old v1 checkpoint (without version field)
+        let v1_json = r#"{
+            "symbol": "BTCUSDT",
+            "threshold_decimal_bps": 250,
+            "incomplete_bar": null,
+            "thresholds": null,
+            "last_timestamp_us": 1640995200000000,
+            "last_trade_id": 5000,
+            "price_hash": 0,
+            "anomaly_summary": {"gaps_detected": 0, "overlaps_detected": 0, "timestamp_anomalies": 0},
+            "prevent_same_timestamp_close": true,
+            "defer_open": false
+        }"#;
+
+        // Deserialize old v1 checkpoint
+        let mut checkpoint: Checkpoint = serde_json::from_str(v1_json).unwrap();
+        assert_eq!(checkpoint.version, 1, "Old checkpoints should default to v1");
+        assert_eq!(checkpoint.symbol, "BTCUSDT");
+        assert_eq!(checkpoint.threshold_decimal_bps, 250);
+
+        // Restore processor from v1 checkpoint (triggers migration)
+        let mut processor = RangeBarProcessor::from_checkpoint(checkpoint).unwrap();
+
+        // Verify processor is ready to continue
+        assert!(!processor.get_incomplete_bar().is_some(), "No incomplete bar before processing");
+
+        // Process some trades to verify migration worked
+        let trades = scenarios::single_breach_sequence(250);
+        let bars = processor.process_agg_trade_records(&trades).unwrap();
+
+        // Should produce a bar after migration
+        assert!(!bars.is_empty(), "Should produce bars after v1→v2 migration");
+        assert_eq!(bars[0].symbol, "BTCUSDT");
+
+        // Create new checkpoint from processor after migration
+        let new_checkpoint = processor.create_checkpoint("BTCUSDT");
+        assert_eq!(new_checkpoint.version, 2, "New checkpoints should be v2");
+        assert_eq!(new_checkpoint.symbol, "BTCUSDT");
+
+        // Verify new checkpoint can be serialized and deserialized
+        let json = serde_json::to_string(&new_checkpoint).unwrap();
+        let restored: Checkpoint = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.version, 2);
+        assert_eq!(restored.symbol, "BTCUSDT");
     }
 }

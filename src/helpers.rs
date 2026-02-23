@@ -465,7 +465,14 @@ pub(crate) fn dict_to_checkpoint(py: Python, dict: &Bound<PyDict>) -> PyResult<C
         .and_then(|v| v.extract().ok())
         .unwrap_or(false);
 
+    // Issue #85 Phase 2: Extract version field for checkpoint schema migration
+    let version: u32 = dict
+        .get_item("version")?
+        .and_then(|v| v.extract().ok())
+        .unwrap_or(1); // Default to v1 for backward compatibility
+
     Ok(Checkpoint {
+        version,
         symbol,
         threshold_decimal_bps,
         incomplete_bar,
