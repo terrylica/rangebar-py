@@ -574,6 +574,14 @@ pub fn compute_kaufman_er(prices: &[f64]) -> f64 {
 /// Exact value: 0.3862943611198906
 const GARMAN_KLASS_COEFFICIENT: f64 = 0.3862943611198906;
 
+/// Precomputed ln(2!) for M=2 permutation entropy normalization
+/// Exact value: ln(2) ≈ 0.693147180559945
+const LN_2_FACTORIAL: f64 = 0.6931471805599453;
+
+/// Precomputed ln(3!) for M=3 permutation entropy normalization
+/// Exact value: ln(6) ≈ 1.791759469228055
+const LN_3_FACTORIAL: f64 = 1.791759469228055;
+
 /// Compute Garman-Klass volatility estimator
 ///
 /// Formula: sigma^2 = 0.5 * ln(H/L)^2 - (2*ln(2) - 1) * ln(C/O)^2
@@ -760,11 +768,11 @@ fn compute_permutation_entropy_m2(prices: &[f64]) -> f64 {
         .filter(|&&c| c > 0)
         .map(|&c| {
             let p = c as f64 / total;
-            -p * p.ln()
+            -p * libm::log(p)  // Issue #116: Use libm for 1.2-1.5x speedup
         })
         .sum();
 
-    entropy / 2.0_f64.ln() // ln(2!)
+    entropy / LN_2_FACTORIAL  // ln(2!) - precomputed constant
 }
 
 /// Issue #108 Phase 2: SIMD-optimized pattern batch processor
@@ -842,11 +850,11 @@ fn compute_permutation_entropy_m3_simd_batch(prices: &[f64]) -> f64 {
         .filter(|&&count| count > 0)
         .map(|&count| {
             let p = count as f64 / total;
-            -p * p.ln()
+            -p * libm::log(p)  // Issue #116: Use libm for 1.2-1.5x speedup
         })
         .sum();
 
-    entropy / 6.0_f64.ln() // ln(3!)
+    entropy / LN_3_FACTORIAL  // ln(3!) - precomputed constant
 }
 
 /// Get ordinal pattern index for m=3 (0-5) - Branchless SIMD-friendly version
@@ -993,8 +1001,8 @@ pub fn compute_approximate_entropy(prices: &[f64], m: usize, r: f64) -> f64 {
     let phi_m1 = compute_phi(prices, m + 1, r);
 
     // ApEn = φ(m) - φ(m+1)
-    // Normalized by ln(n) for [0,1] range
-    ((phi_m - phi_m1) / (n as f64).ln()).max(0.0).min(1.0)
+    // Normalized by ln(n) for [0,1] range (Issue #116: Use libm for optimization)
+    ((phi_m - phi_m1) / libm::log(n as f64)).max(0.0).min(1.0)
 }
 
 /// Helper: Compute φ(m) for ApEn
@@ -1025,7 +1033,7 @@ fn compute_phi(prices: &[f64], m: usize, r: f64) -> f64 {
     }
 
     let c = count as f64 / (num_patterns * (num_patterns - 1) / 2) as f64;
-    -c * c.ln()
+    -c * libm::log(c)  // Issue #116: Use libm for 1.2-1.5x speedup
 }
 
 /// Check if two patterns are within distance r
