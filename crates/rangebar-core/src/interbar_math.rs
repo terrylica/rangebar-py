@@ -1173,7 +1173,7 @@ mod hurst_accuracy_tests {
     fn test_burstiness_bounds() {
         use crate::interbar_types::TradeSnapshot;
         // Create regular arrivals (approximately)
-        let mut trades = Vec::new();
+        let mut trades = Vec::with_capacity(20);
         for i in 0..20 {
             trades.push(TradeSnapshot {
                 timestamp: 1000000 + (i * 100) as i64,
@@ -1192,7 +1192,7 @@ mod hurst_accuracy_tests {
     #[test]
     fn test_kaufman_er_trending_market() {
         // Strong uptrend
-        let mut prices = Vec::new();
+        let mut prices = Vec::with_capacity(50);
         let mut price = 100.0;
         for _ in 0..50 {
             price += 0.1; // Consistent uptrend
@@ -1205,7 +1205,7 @@ mod hurst_accuracy_tests {
     #[test]
     fn test_kaufman_er_ranging_market() {
         // Oscillating prices (ranging)
-        let mut prices = Vec::new();
+        let mut prices = Vec::with_capacity(50);
         for i in 0..50 {
             let price = 100.0 + if (i % 2) == 0 { 0.1 } else { -0.1 };
             prices.push(price);
@@ -1326,7 +1326,7 @@ mod hurst_accuracy_tests {
     fn test_burstiness_clustered_arrivals() {
         use crate::interbar_types::TradeSnapshot;
         // Trades clustered at start, then gap
-        let mut trades = Vec::new();
+        let mut trades = Vec::with_capacity(15);
         // Cluster: 10 trades in 100ms
         for i in 0..10 {
             trades.push(TradeSnapshot {
@@ -1358,7 +1358,7 @@ mod hurst_accuracy_tests {
     fn test_burstiness_perfectly_regular() {
         use crate::interbar_types::TradeSnapshot;
         // Perfectly regular 100ms intervals
-        let mut trades = Vec::new();
+        let mut trades = Vec::with_capacity(20);
         for i in 0..20 {
             trades.push(TradeSnapshot {
                 timestamp: 1000000 + (i * 100) as i64,
@@ -1378,7 +1378,7 @@ mod hurst_accuracy_tests {
     fn test_burstiness_extreme_gap() {
         use crate::interbar_types::TradeSnapshot;
         // One large burst followed by extreme gap
-        let mut trades = Vec::new();
+        let mut trades = Vec::with_capacity(5);
         // Initial burst: 5 trades
         for i in 0..5 {
             trades.push(TradeSnapshot {
@@ -1473,7 +1473,7 @@ mod hurst_accuracy_tests {
     #[test]
     fn test_permutation_entropy_oscillating_pattern() {
         // Simple oscillating pattern (should have repeating permutations)
-        let mut prices = Vec::new();
+        let mut prices = Vec::with_capacity(100);
         for i in 0..100 {
             prices.push(if i % 3 == 0 { 100.0 } else if i % 3 == 1 { 101.0 } else { 99.0 });
         }
@@ -1487,7 +1487,7 @@ mod hurst_accuracy_tests {
     #[test]
     fn test_kaufman_er_single_large_move() {
         // Single direction move with no noise
-        let mut prices = Vec::new();
+        let mut prices = Vec::with_capacity(50);
         for i in 0..50 {
             prices.push(100.0 + i as f64); // Perfect linear trend
         }
