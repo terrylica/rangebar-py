@@ -452,13 +452,14 @@ mod simd {
         let variance = variance_f64_simd(&inter_arrivals, mu);
         let sigma = variance.sqrt();
 
-        // Goh-Barabási burstiness formula
+        // Issue #96 Task #213: Branchless epsilon check in burstiness (SIMD path)
+        // Avoid branch misprediction by using .max() to guard division
+        // Pattern: (sigma - mu) / denominator.max(f64::EPSILON) only divides if denominator valid
         let denominator = sigma + mu;
-        if denominator > f64::EPSILON {
-            (sigma - mu) / denominator
-        } else {
-            0.0
-        }
+        let numerator = sigma - mu;
+
+        // Branchless: max ensures denominator >= EPSILON, avoiding division by near-zero
+        numerator / denominator.max(f64::EPSILON)
     }
 
     /// Compute inter-arrival times using SIMD vectorization.
@@ -1003,12 +1004,11 @@ fn compute_burstiness_scalar(lookback: &[&TradeSnapshot]) -> f64 {
     let variance = m2 / count;
     let sigma = variance.sqrt();
 
+    // Issue #96 Task #213: Branchless epsilon check in burstiness (scalar path)
+    // Eliminate branch on denominator > EPSILON by using .max() guard
     let denominator = sigma + mean;
-    if denominator > f64::EPSILON {
-        (sigma - mean) / denominator
-    } else {
-        0.0 // All trades at same timestamp
-    }
+    let numerator = sigma - mean;
+    numerator / denominator.max(f64::EPSILON)
 }
 
 /// Compute volume moments (skewness and excess kurtosis)
