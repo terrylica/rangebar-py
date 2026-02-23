@@ -11,6 +11,7 @@
 use crate::interbar_types::TradeSnapshot;
 use libm; // Issue #96 Task #14: Optimized math functions for Garman-Klass
 use smallvec::SmallVec; // Issue #96 Task #48: Stack-allocated inter-arrival times for burstiness
+use rangebar_hurst; // Issue #96 Task #149/150: Internal MIT-licensed Hurst (GPL-3.0 conflict resolution)
 
 /// Memoized lookback trade data (Issue #96 Task #99: Float conversion memoization)
 ///
@@ -814,8 +815,8 @@ pub fn compute_hurst_dfa(prices: &[f64]) -> f64 {
     }
 
     // Use evrom/hurst R/S Analysis (O(n log n), 4-5x faster than DFA)
-    // Note: hurst::rssimple() takes owned Vec, so clone prices
-    let h = hurst::rssimple(prices.to_vec());
+    // Note: rangebar_hurst::rssimple() takes owned Vec, so clone prices
+    let h = rangebar_hurst::rssimple(prices.to_vec());
 
     // Soft clamp to [0, 1] using tanh (matches DFA output normalization)
     soft_clamp_hurst(h)
@@ -1406,7 +1407,7 @@ mod hurst_accuracy_tests {
         }
 
         let dfa_h = compute_hurst_dfa(&prices);
-        let rs_h = hurst::rssimple(prices.clone());
+        let rs_h = rangebar_hurst::rssimple(prices.clone());
 
         println!("Trending series:");
         println!("  DFA H = {:.4}", dfa_h);
@@ -1427,7 +1428,7 @@ mod hurst_accuracy_tests {
         }
 
         let dfa_h = compute_hurst_dfa(&prices);
-        let rs_h = hurst::rssimple(prices.clone());
+        let rs_h = rangebar_hurst::rssimple(prices.clone());
 
         println!("Mean-reverting series:");
         println!("  DFA H = {:.4}", dfa_h);
@@ -1453,7 +1454,7 @@ mod hurst_accuracy_tests {
         }
 
         let dfa_h = compute_hurst_dfa(&prices);
-        let rs_h = hurst::rssimple(prices.clone());
+        let rs_h = rangebar_hurst::rssimple(prices.clone());
 
         println!("Random walk series:");
         println!("  DFA H = {:.4}", dfa_h);

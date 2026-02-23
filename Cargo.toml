@@ -8,6 +8,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/rangebar-hurst",  # Internal MIT-licensed Hurst (GPL-3.0 conflict resolution)
     "crates/rangebar-core",
     "crates/rangebar-providers",
     "crates/rangebar-config",
@@ -168,10 +169,10 @@ binance = ["data-providers"]
 [dev-dependencies]
 criterion = { workspace = true }
 rangebar = { path = "crates/rangebar" }
-hurst = "0.1.0"
+rangebar-hurst = { path = "crates/rangebar-hurst" }  # Issue #96 Task #149/150: GPL-3.0 conflict resolution
 
 [build-dependencies]
-hurst = "0.1.0"
+rangebar-hurst = { path = "crates/rangebar-hurst" }  # Issue #96 Task #149/150: GPL-3.0 conflict resolution
 pyo3-build-config = "0.22"
 
 [lints]

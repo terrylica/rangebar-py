@@ -1,0 +1,18 @@
+[package]
+name = "rangebar-hurst"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT"  # Internal MIT-licensed fork of evrom/hurst (GPL-3.0) to enable PyPI distribution
+repository.workspace = true
+homepage.workspace = true
+description = "Hurst Exponent estimator functions for range bar financial analysis"
+keywords = ["finance", "hurst", "exponent", "time-series", "analysis"]
+categories = ["algorithms", "mathematics"]
+
+[dependencies]
+linreg = "0.2.0"
+
+[lints]
+workspace = true
