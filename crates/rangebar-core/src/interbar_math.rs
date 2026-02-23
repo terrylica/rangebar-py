@@ -2,7 +2,11 @@
 //! Extracted from interbar.rs (Phase 2e refactoring)
 //!
 //! GitHub Issue: https://github.com/terrylica/rangebar-py/issues/59
+//! Issue #96 Task #4: SIMD burstiness acceleration (feature-gated)
 //! # FILE-SIZE-OK (565 lines - organized by feature module)
+
+#[cfg(feature = "simd-burstiness")]
+pub(crate) mod simd;
 
 use crate::interbar_types::TradeSnapshot;
 
@@ -58,6 +62,21 @@ pub(crate) fn compute_kyle_lambda(lookback: &[&TradeSnapshot]) -> f64 {
 /// - B = 0: Poisson process
 /// - B = +1: Maximally bursty
 pub(crate) fn compute_burstiness(lookback: &[&TradeSnapshot]) -> f64 {
+    // Issue #96 Task #4: Dispatch to SIMD or scalar based on feature flag
+    #[cfg(feature = "simd-burstiness")]
+    {
+        simd::compute_burstiness_simd(lookback)
+    }
+
+    #[cfg(not(feature = "simd-burstiness"))]
+    {
+        compute_burstiness_scalar(lookback)
+    }
+}
+
+/// Scalar implementation of burstiness computation (fallback).
+#[inline]
+fn compute_burstiness_scalar(lookback: &[&TradeSnapshot]) -> f64 {
     if lookback.len() < 2 {
         return 0.0;
     }

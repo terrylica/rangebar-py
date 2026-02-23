@@ -37,6 +37,7 @@ test-utils = ["dep:csv"]  # Real data loading requires csv crate
 python = ["pyo3"]  # Python bindings via PyO3 (future phase)
 api = ["utoipa"]     # API schemas via utoipa (future phase)
 arrow = ["dep:arrow", "dep:arrow-array", "dep:arrow-schema"]  # Arrow export for streaming architecture
+simd-burstiness = []  # SIMD-accelerated burstiness computation (nightly-only, portable_simd)
 
 [lints]
 workspace = true
