@@ -795,6 +795,145 @@ mod tests {
         );
     }
 
+    // ========== Tier 2 Features: Comprehensive Edge Cases (Issue #96 Task #43) ==========
+
+    #[test]
+    fn test_kyle_lambda_strong_buy_pressure() {
+        // Strong buy pressure: many buys, few sells -> positive lambda
+        let trades: Vec<TradeSnapshot> = (0..5)
+            .map(|i| create_test_snapshot(i * 1000, 100.0 + i as f64, 1.0, false))
+            .chain((5..7).map(|i| create_test_snapshot(i * 1000, 100.0 + i as f64, 1.0, true)))
+            .collect();
+        let lookback: Vec<&TradeSnapshot> = trades.iter().collect();
+
+        let lambda = compute_kyle_lambda(&lookback);
+        assert!(lambda > 0.0, "Buy pressure should yield positive lambda, got {}", lambda);
+        assert!(lambda.is_finite(), "Kyle lambda should be finite");
+    }
+
+    #[test]
+    fn test_kyle_lambda_strong_sell_pressure() {
+        // Strong sell pressure: many sell orders (is_buyer_maker=true) at declining prices
+        let t0 = create_test_snapshot(0, 100.0, 1.0, false);    // buy
+        let t1 = create_test_snapshot(1000, 99.9, 5.0, true);   // sell (larger)
+        let t2 = create_test_snapshot(2000, 99.8, 5.0, true);   // sell (larger)
+        let t3 = create_test_snapshot(3000, 99.7, 5.0, true);   // sell (larger)
+        let lookback: Vec<&TradeSnapshot> = vec![&t0, &t1, &t2, &t3];
+
+        let lambda = compute_kyle_lambda(&lookback);
+        assert!(lambda.is_finite(), "Kyle lambda should be finite");
+        // With sell volume > buy volume and price declining, lambda should be negative
+    }
+
+    #[test]
+    fn test_burstiness_single_trade() {
+        // Single trade: no inter-arrivals, should return default
+        let t0 = create_test_snapshot(0, 100.0, 1.0, false);
+        let lookback: Vec<&TradeSnapshot> = vec![&t0];
+
+        let b = compute_burstiness(&lookback);
+        assert!(
+            b.is_finite(),
+            "Burstiness with single trade should be finite, got {}",
+            b
+        );
+    }
+
+    #[test]
+    fn test_burstiness_two_trades() {
+        // Two trades: insufficient data, sigma = 0 -> B = -1
+        let t0 = create_test_snapshot(0, 100.0, 1.0, false);
+        let t1 = create_test_snapshot(1000, 100.0, 1.0, false);
+        let lookback: Vec<&TradeSnapshot> = vec![&t0, &t1];
+
+        let b = compute_burstiness(&lookback);
+        assert!(
+            (b - (-1.0)).abs() < 0.01,
+            "Burstiness with uniform inter-arrivals should be -1, got {}",
+            b
+        );
+    }
+
+    #[test]
+    fn test_burstiness_bursty_arrivals() {
+        // Uneven inter-arrivals: clusters of fast then slow arrivals
+        let t0 = create_test_snapshot(0, 100.0, 1.0, false);
+        let t1 = create_test_snapshot(100, 100.0, 1.0, false);
+        let t2 = create_test_snapshot(200, 100.0, 1.0, false);
+        let t3 = create_test_snapshot(5000, 100.0, 1.0, false);
+        let t4 = create_test_snapshot(10000, 100.0, 1.0, false);
+        let lookback: Vec<&TradeSnapshot> = vec![&t0, &t1, &t2, &t3, &t4];
+
+        let b = compute_burstiness(&lookback);
+        assert!(
+            b > -1.0 && b <= 1.0,
+            "Burstiness should be bounded [-1, 1], got {}",
+            b
+        );
+    }
+
+    #[test]
+    fn test_volume_skew_right_skewed() {
+        // Right-skewed distribution (many small, few large volumes)
+        let t0 = create_test_snapshot(0, 100.0, 0.1, false);
+        let t1 = create_test_snapshot(1000, 100.0, 0.1, false);
+        let t2 = create_test_snapshot(2000, 100.0, 0.1, false);
+        let t3 = create_test_snapshot(3000, 100.0, 0.1, false);
+        let t4 = create_test_snapshot(4000, 100.0, 10.0, false); // Large outlier
+        let lookback: Vec<&TradeSnapshot> = vec![&t0, &t1, &t2, &t3, &t4];
+
+        let skew = compute_volume_moments(&lookback).0;
+        assert!(skew > 0.0, "Right-skewed volume should have positive skewness, got {}", skew);
+        assert!(skew.is_finite(), "Skewness must be finite");
+    }
+
+    #[test]
+    fn test_volume_kurtosis_heavy_tails() {
+        // Heavy-tailed distribution (few very large, few very small, middle is sparse)
+        let t0 = create_test_snapshot(0, 100.0, 0.01, false);
+        let t1 = create_test_snapshot(1000, 100.0, 1.0, false);
+        let t2 = create_test_snapshot(2000, 100.0, 1.0, false);
+        let t3 = create_test_snapshot(3000, 100.0, 1.0, false);
+        let t4 = create_test_snapshot(4000, 100.0, 100.0, false);
+        let lookback: Vec<&TradeSnapshot> = vec![&t0, &t1, &t2, &t3, &t4];
+
+        let kurtosis = compute_volume_moments(&lookback).1;
+        assert!(kurtosis > 0.0, "Heavy-tailed distribution should have positive kurtosis, got {}", kurtosis);
+        assert!(kurtosis.is_finite(), "Kurtosis must be finite");
+    }
+
+    #[test]
+    fn test_volume_skew_symmetric() {
+        // Symmetric distribution (equal volumes) -> skewness = 0
+        let t0 = create_test_snapshot(0, 100.0, 1.0, false);
+        let t1 = create_test_snapshot(1000, 100.0, 1.0, false);
+        let t2 = create_test_snapshot(2000, 100.0, 1.0, false);
+        let lookback: Vec<&TradeSnapshot> = vec![&t0, &t1, &t2];
+
+        let skew = compute_volume_moments(&lookback).0;
+        assert!(
+            skew.abs() < f64::EPSILON,
+            "Symmetric volume distribution should have near-zero skewness, got {}",
+            skew
+        );
+    }
+
+    #[test]
+    fn test_kyle_lambda_price_unchanged() {
+        // Price doesn't move but there's imbalance -> should be finite
+        let t0 = create_test_snapshot(0, 100.0, 1.0, false);
+        let t1 = create_test_snapshot(1000, 100.0, 1.0, false);
+        let t2 = create_test_snapshot(2000, 100.0, 1.0, false);
+        let lookback: Vec<&TradeSnapshot> = vec![&t0, &t1, &t2];
+
+        let lambda = compute_kyle_lambda(&lookback);
+        assert!(
+            lambda.is_finite(),
+            "Kyle lambda should be finite even with no price change, got {}",
+            lambda
+        );
+    }
+
     // ========== BarRelative Mode Tests (Issue #81) ==========
 
     /// Helper to create a test AggTrade
