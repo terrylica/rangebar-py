@@ -35,16 +35,16 @@ use utils::*;
 /// # Returns
 ///
 /// Hurst exponent value, typically in range [0, 1]
-pub fn rssimple(x: Vec<f64>) -> f64 {
+pub fn rssimple(x: &[f64]) -> f64 {
     let n: f64 = x.len() as f64;
-    let x_mean: f64 = mean(&x);
+    let x_mean: f64 = mean(x);
     let y: Vec<f64> = x
         .iter()
         .map(|x| x - x_mean)
         .collect();
     let s: Vec<f64> = cumsum(&y);
     let (min, max) = minmax(&s);
-    let rs: f64 = (max - min) / standard_deviation(&x);
+    let rs: f64 = (max - min) / standard_deviation(x);
     rs.log2() / n.log2()
 }
 

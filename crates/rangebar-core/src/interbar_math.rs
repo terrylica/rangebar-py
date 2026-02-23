@@ -989,8 +989,8 @@ pub fn compute_hurst_dfa(prices: &[f64]) -> f64 {
     }
 
     // Use evrom/hurst R/S Analysis (O(n log n), 4-5x faster than DFA)
-    // Note: rangebar_hurst::rssimple() takes owned Vec, so clone prices
-    let h = rangebar_hurst::rssimple(prices.to_vec());
+    // Issue #96 Task #168: Eliminate .to_vec() clone - pass &[f64] directly (1-2% speedup)
+    let h = rangebar_hurst::rssimple(prices);
 
     // Soft clamp to [0, 1] using tanh (matches DFA output normalization)
     soft_clamp_hurst(h)
