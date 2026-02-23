@@ -15,9 +15,6 @@ Related: Issue #84 (Checkpoint Race), Issue #90 (Dedup Hardening)
 from __future__ import annotations
 
 import contextlib
-import json
-import tempfile
-from pathlib import Path
 
 import pytest
 from rangebar.processors.core import RangeBarProcessor
@@ -65,8 +62,8 @@ class TestCorruptedCheckpointRecovery:
         processor.process_trades(sample_trades[:2])
         valid_cp = processor.create_checkpoint("BTCUSDT")
 
-        # Corrupt it by removing required fields
-        corrupted_cp = {k: v for k, v in valid_cp.items() if k != "processor_state"}
+        # Corrupt it by removing required fields (last_timestamp_us)
+        corrupted_cp = {k: v for k, v in valid_cp.items() if k != "last_timestamp_us"}
 
         # Attempt to load should fail gracefully
         with pytest.raises((KeyError, ValueError, AttributeError)):
@@ -74,48 +71,41 @@ class TestCorruptedCheckpointRecovery:
 
     def test_partial_json_truncation(self, processor, sample_trades):
         """Checkpoint truncated mid-write should be rejected."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_path = Path(tmpdir) / "truncated.json"
+        # Simulate incomplete JSON data by corrupting a valid checkpoint dict
+        processor.process_trades(sample_trades[:2])
+        valid_cp = processor.create_checkpoint("BTCUSDT")
 
-            # Write incomplete JSON (missing closing braces)
-            checkpoint_path.write_text('{"version": "1.0", "processor_state": {')
+        # Corrupt by removing threshold_decimal_bps (truncated checkpoint)
+        corrupted_cp = {k: v for k, v in valid_cp.items() if k != "threshold_decimal_bps"}
 
-            with pytest.raises((json.JSONDecodeError, ValueError, FileNotFoundError)):
-                processor.from_checkpoint(str(checkpoint_path))
+        with pytest.raises((KeyError, ValueError, AttributeError)):
+            RangeBarProcessor.from_checkpoint(corrupted_cp)
 
     def test_missing_required_fields(self, processor, sample_trades):
         """Checkpoint missing critical fields should be rejected."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_path = Path(tmpdir) / "missing_fields.json"
+        # Create incomplete checkpoint dict
+        valid_but_incomplete = {
+            "version": "1.0",
+            # Missing "processor_state" and other required fields
+            "metadata": {"symbol": "BTCUSDT"}
+        }
 
-            # Write valid JSON but missing required processor state
-            valid_but_incomplete = {
-                "version": "1.0",
-                # Missing "processor_state" and other required fields
-                "metadata": {"symbol": "BTCUSDT"}
-            }
-            checkpoint_path.write_text(json.dumps(valid_but_incomplete))
-
-            with pytest.raises((KeyError, ValueError)):
-                processor.from_checkpoint(str(checkpoint_path))
+        with pytest.raises((KeyError, ValueError)):
+            RangeBarProcessor.from_checkpoint(valid_but_incomplete)
 
     def test_version_mismatch_detection(self, processor, sample_trades):
         """Checkpoint with incompatible version should be rejected."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_path = Path(tmpdir) / "wrong_version.json"
+        # Create checkpoint with incompatible version
+        processor.process_trades(sample_trades[:2])
+        valid_cp = processor.create_checkpoint("BTCUSDT")
 
-            # Write valid JSON but with incompatible version
-            incompatible = {
-                "version": "0.5.0",  # Incompatible version
-                "processor_state": {"bars": [], "defer_open": False},
-                "metadata": {"symbol": "BTCUSDT"}
-            }
-            checkpoint_path.write_text(json.dumps(incompatible))
+        # Modify version to incompatible one
+        valid_cp["version"] = "0.5.0"
 
-            # Should either reject or handle gracefully
-            with contextlib.suppress(ValueError):
-                processor.from_checkpoint(str(checkpoint_path))
-                # If it loads, it should be with appropriate warnings
+        # Should either reject or handle gracefully
+        with contextlib.suppress(ValueError):
+            RangeBarProcessor.from_checkpoint(valid_cp)
+            # If it loads, it should be with appropriate warnings
 
 
 # =============================================================================
@@ -131,35 +121,30 @@ class TestPartialWriteRecovery:
         bars = processor.process_trades(sample_trades[:3])
         assert len(bars) >= 0
 
-        # Simulate checkpoint write failure by attempting to load from bad file
-        with tempfile.TemporaryDirectory() as tmpdir:
-            bad_checkpoint = Path(tmpdir) / "incomplete.json"
-            bad_checkpoint.write_text('{"version": "1.0"')  # Incomplete
+        # Simulate checkpoint write failure with incomplete dict
+        bad_checkpoint = {"version": "1.0"}  # Missing processor_state
 
-            # Loading should fail safely, not corrupt state
-            with pytest.raises((json.JSONDecodeError, ValueError)):
-                processor.from_checkpoint(str(bad_checkpoint))
+        # Loading should fail safely, not corrupt state
+        with pytest.raises((KeyError, ValueError)):
+            RangeBarProcessor.from_checkpoint(bad_checkpoint)
 
-            # Processor should still be usable
-            bars_after = processor.process_trades(sample_trades[3:5])
-            assert len(bars_after) >= 0
+        # Processor should still be usable
+        bars_after = processor.process_trades(sample_trades[3:5])
+        assert len(bars_after) >= 0
 
     def test_checkpoint_rollback_on_failure(self, processor, sample_trades):
         """Failed checkpoint should not leave partial state."""
         bars_before = processor.process_trades(sample_trades[:2])
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_path = Path(tmpdir) / "test.json"
+        # Process more trades
+        processor.process_trades(sample_trades[2:5])
 
-            # Process more trades and save checkpoint
-            processor.process_trades(sample_trades[2:5])
+        # Intentionally create corrupted checkpoint dict
+        corrupted_checkpoint = {"corrupted": True}
 
-            # Intentionally corrupt the checkpoint file after creation
-            checkpoint_path.write_text('{"corrupted": true}')
-
-            # Loading corrupt checkpoint should not overwrite working state
-            with pytest.raises((KeyError, ValueError)):
-                processor.from_checkpoint(str(checkpoint_path))
+        # Loading corrupt checkpoint should not overwrite working state
+        with pytest.raises((KeyError, ValueError)):
+            RangeBarProcessor.from_checkpoint(corrupted_checkpoint)
 
 
 # =============================================================================
@@ -220,13 +205,12 @@ class TestCheckpointBoundaryConditions:
     """Verify checkpoint behavior at system boundaries."""
 
     def test_empty_checkpoint_load(self, processor):
-        """Loading checkpoint from empty/nonexistent file should handle gracefully."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            nonexistent = Path(tmpdir) / "nonexistent.json"
+        """Loading checkpoint from empty dict should handle gracefully."""
+        # Empty checkpoint should raise KeyError or similar
+        empty_checkpoint = {}
 
-            # Should raise FileNotFoundError or similar, not crash
-            with pytest.raises((FileNotFoundError, IOError)):
-                processor.from_checkpoint(str(nonexistent))
+        with pytest.raises((KeyError, ValueError, AttributeError)):
+            RangeBarProcessor.from_checkpoint(empty_checkpoint)
 
     def test_zero_trades_processing(self, processor):
         """Processing empty trade list should not crash."""
