@@ -298,11 +298,12 @@ def has_ticks(
     )
 
     # Aggregate: only reads min/max of timestamp column
+    # Issue #96 Task #33: Add limit(1) to help Polars optimize query execution
     stats = lazy.select(
         pl.col(timestamp_col).min().alias("min_ts"),
         pl.col(timestamp_col).max().alias("max_ts"),
         pl.col(timestamp_col).count().alias("count"),
-    ).collect()
+    ).limit(1).collect()
 
     if stats["count"][0] == 0:
         return False
