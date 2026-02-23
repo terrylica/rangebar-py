@@ -181,8 +181,9 @@ class QueryOperationsMixin:
         if df.empty:
             return None, available_count
 
+        # Issue #96 Task #38: Skip reset_index after reversal (set_index handles it)
         # Reverse to chronological order (oldest first)
-        df = df.iloc[::-1].reset_index(drop=True)
+        df = df.iloc[::-1]
 
         # Convert to TZ-aware UTC DatetimeIndex (Issue #20: match get_range_bars output)
         df["timestamp"] = pd.to_datetime(df["timestamp_ms"], unit="ms", utc=True)
