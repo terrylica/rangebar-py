@@ -618,29 +618,73 @@ impl TradeHistory {
             None
         };
 
-        // === Tier 2 & 3: Adaptive Parallelization with rayon (Issue #115, #164) ===
-        // Issue #96 Task #164: Skip rayon fork overhead for small windows
-        // Rayon fork cost (~1-2µs) exceeds computation time for <20 trades
-        // Most bars in consolidation have small lookback, so this benefits 30-50% of cases
-        let should_parallelize = self.config.compute_tier2 && self.config.compute_tier3 && lookback.len() >= 20;
+        // === Tier 2 & 3: Dynamic Parallelization with CPU-Aware Dispatch (Issue #96 Task #189) ===
+        // Adaptive dispatch based on window size, tier complexity, and CPU availability
+        // Tier 2: Lower threshold (simpler computation, parallelization benefits earlier)
+        // Tier 3: Higher threshold (complex computation, parallelization justified for larger windows)
+        // CPU-aware: Avoid oversubscription on systems with few cores
 
-        if should_parallelize {
-            // Parallel: rayon fork overhead justified by computation time
-            let (tier2_features, tier3_features) = join(
-                || self.compute_tier2_features(&lookback, cache.as_ref()),
-                || self.compute_tier3_features(&lookback, cache.as_ref()),
-            );
-            features.merge_tier2(&tier2_features);
-            features.merge_tier3(&tier3_features);
+        // Issue #96 Task #189: Dynamic threshold calculation
+        // Base thresholds: Tier 2 can parallelize with fewer trades than Tier 3
+        const TIER2_PARALLEL_THRESHOLD_BASE: usize = 80;   // Tier 2 parallelizes at 80+ trades
+        const TIER3_PARALLEL_THRESHOLD_BASE: usize = 150;  // Tier 3 parallelizes at 150+ trades
+
+        // Adjust thresholds based on CPU count (avoid oversubscription)
+        let cpu_count = num_cpus::get();
+        let tier2_threshold = if cpu_count == 1 {
+            usize::MAX  // Never parallelize on single-core
         } else {
-            // Sequential: avoid fork overhead for single tier or small windows
-            if self.config.compute_tier2 {
-                let tier2 = self.compute_tier2_features(&lookback, cache.as_ref());
-                features.merge_tier2(&tier2);
+            TIER2_PARALLEL_THRESHOLD_BASE / cpu_count.max(2)
+        };
+
+        let tier3_threshold = if cpu_count == 1 {
+            usize::MAX  // Never parallelize on single-core
+        } else {
+            TIER3_PARALLEL_THRESHOLD_BASE / cpu_count.max(2)
+        };
+
+        // Dispatch Tier 2 & 3 with independent parallelization decisions
+        let tier2_can_parallelize = self.config.compute_tier2 && lookback.len() >= tier2_threshold;
+        let tier3_can_parallelize = self.config.compute_tier3 && lookback.len() >= tier3_threshold;
+
+        match (tier2_can_parallelize, tier3_can_parallelize) {
+            // Both parallelizable: use rayon join for both
+            (true, true) => {
+                let (tier2_features, tier3_features) = join(
+                    || self.compute_tier2_features(&lookback, cache.as_ref()),
+                    || self.compute_tier3_features(&lookback, cache.as_ref()),
+                );
+                features.merge_tier2(&tier2_features);
+                features.merge_tier3(&tier3_features);
             }
-            if self.config.compute_tier3 {
-                let tier3 = self.compute_tier3_features(&lookback, cache.as_ref());
-                features.merge_tier3(&tier3);
+            // Only Tier 2 parallelizable: parallel Tier 2, sequential Tier 3
+            (true, false) => {
+                let tier2_features = self.compute_tier2_features(&lookback, cache.as_ref());
+                features.merge_tier2(&tier2_features);
+                if self.config.compute_tier3 {
+                    let tier3_features = self.compute_tier3_features(&lookback, cache.as_ref());
+                    features.merge_tier3(&tier3_features);
+                }
+            }
+            // Only Tier 3 parallelizable: sequential Tier 2, parallel Tier 3
+            (false, true) => {
+                if self.config.compute_tier2 {
+                    let tier2_features = self.compute_tier2_features(&lookback, cache.as_ref());
+                    features.merge_tier2(&tier2_features);
+                }
+                let tier3_features = self.compute_tier3_features(&lookback, cache.as_ref());
+                features.merge_tier3(&tier3_features);
+            }
+            // Neither parallelizable: sequential for both
+            (false, false) => {
+                if self.config.compute_tier2 {
+                    let tier2_features = self.compute_tier2_features(&lookback, cache.as_ref());
+                    features.merge_tier2(&tier2_features);
+                }
+                if self.config.compute_tier3 {
+                    let tier3_features = self.compute_tier3_features(&lookback, cache.as_ref());
+                    features.merge_tier3(&tier3_features);
+                }
             }
         }
 
