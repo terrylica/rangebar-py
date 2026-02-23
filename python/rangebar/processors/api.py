@@ -46,13 +46,17 @@ def _arrow_bars_to_pandas(
     result = result.drop(columns=["open_time", "close_time"], errors="ignore")
 
     # Rename to backtesting.py format
-    result = result.rename(columns={
+    # Issue #96 Task #32: Use Polars batch rename (more efficient than Pandas)
+    import polars as pl
+    result_pl = pl.from_pandas(result)
+    result_pl = result_pl.rename({
         "open": "Open",
         "high": "High",
         "low": "Low",
         "close": "Close",
         "volume": "Volume",
     })
+    result = result_pl.to_pandas()
 
     if include_microstructure:
         return result
