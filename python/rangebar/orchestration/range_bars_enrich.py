@@ -64,19 +64,27 @@ def enrich_exchange_sessions(bars_df: pd.DataFrame) -> pd.DataFrame:
             flags = get_active_exchange_sessions(hour_ts.to_pydatetime())
             session_map[hour_ts] = flags
 
-    # 4. Map hourly flags to all bars in that hour
-    bars_df["exchange_session_sydney"] = hourly_index.map(session_map).apply(
-        lambda x: x.sydney if x is not None else False
+    # 4. Issue #96 Task #36: Batch consolidate map/apply chains into single pass
+    # Extract all 4 flags from session_map in one map operation (not 4 separate)
+    def extract_all_sessions(flags_obj: object) -> tuple[bool, bool, bool, bool]:
+        if flags_obj is None:
+            return False, False, False, False
+        return (flags_obj.sydney, flags_obj.tokyo,
+                flags_obj.london, flags_obj.newyork)
+
+    # Single map pass returns Series of tuples
+    sessions_series = hourly_index.map(session_map).map(extract_all_sessions)
+
+    # Convert tuples to individual columns in one operation
+    sessions_array = pd.DataFrame(
+        sessions_series.tolist(),
+        columns=["exchange_session_sydney", "exchange_session_tokyo",
+                 "exchange_session_london", "exchange_session_newyork"],
+        index=bars_df.index,
     )
-    bars_df["exchange_session_tokyo"] = hourly_index.map(session_map).apply(
-        lambda x: x.tokyo if x is not None else False
-    )
-    bars_df["exchange_session_london"] = hourly_index.map(session_map).apply(
-        lambda x: x.london if x is not None else False
-    )
-    bars_df["exchange_session_newyork"] = hourly_index.map(session_map).apply(
-        lambda x: x.newyork if x is not None else False
-    )
+
+    # Assign all 4 columns at once (1 operation instead of 4)
+    bars_df[sessions_array.columns] = sessions_array
 
     return bars_df
 
