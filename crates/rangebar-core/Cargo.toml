@@ -46,6 +46,10 @@ parking_lot = "0.12"
 # moka for production-grade LRU caching (Issue #96 Task #125 - automatic eviction, metrics)
 moka = { version = "0.12", features = ["sync"] }
 
+# wide for stable Rust SIMD support (Issue #96 Task #127 - burstiness SIMD acceleration)
+# Provides portable SIMD without nightly requirement
+wide = "0.7"
+
 [dev-dependencies]
 csv.workspace = true  # Required for test_data_loader during test compilation
 
@@ -65,6 +69,10 @@ harness = false  # Disable test harness to run custom benchmark code
 [[bench]]
 name = "tier2_profiling"
 harness = false  # Disable test harness for custom profiling code (Phase 5A - Issue #96 Task #126)
+
+[[bench]]
+name = "burstiness_simd_detail"
+harness = false  # Disable test harness for SIMD burstiness microbenchmark (Phase 5B - Issue #96 Task #127)
 
 [lints]
 workspace = true
