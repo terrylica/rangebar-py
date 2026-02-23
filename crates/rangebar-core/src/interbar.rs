@@ -33,6 +33,7 @@
 use crate::fixed_point::FixedPoint;
 use crate::interbar_math::*;
 use crate::types::AggTrade;
+use rayon::join; // Issue #115: Parallelization of Tier 2/3 features
 use smallvec::SmallVec;
 use std::collections::VecDeque;
 
@@ -324,14 +325,25 @@ impl TradeHistory {
             None
         };
 
-        // === Tier 2: Statistical Features ===
-        if self.config.compute_tier2 {
-            self.compute_tier2_features(&lookback, &mut features, cache.as_ref());
-        }
-
-        // === Tier 3: Advanced Features ===
-        if self.config.compute_tier3 {
-            self.compute_tier3_features(&lookback, &mut features, cache.as_ref());
+        // === Tier 2 & 3: Parallelization with rayon (Issue #115) ===
+        // Only parallelize if both tiers are computed (rayon overhead significant for single tier)
+        if self.config.compute_tier2 && self.config.compute_tier3 {
+            let (tier2_features, tier3_features) = join(
+                || self.compute_tier2_features(&lookback, cache.as_ref()),
+                || self.compute_tier3_features(&lookback, cache.as_ref()),
+            );
+            features.merge_tier2(&tier2_features);
+            features.merge_tier3(&tier3_features);
+        } else {
+            // Sequential fallback for single tier or disabled tiers
+            if self.config.compute_tier2 {
+                let tier2 = self.compute_tier2_features(&lookback, cache.as_ref());
+                features.merge_tier2(&tier2);
+            }
+            if self.config.compute_tier3 {
+                let tier3 = self.compute_tier3_features(&lookback, cache.as_ref());
+                features.merge_tier3(&tier3);
+            }
         }
 
         features
@@ -440,12 +452,13 @@ impl TradeHistory {
     /// Issue #96 Task #99: Optimized with memoized float conversions.
     /// Uses pre-computed cache passed from compute_features() to avoid
     /// redundant float conversions across multiple feature functions.
+    /// Issue #115: Refactored to return InterBarFeatures for rayon parallelization support
     fn compute_tier2_features(
         &self,
         lookback: &[&TradeSnapshot],
-        features: &mut InterBarFeatures,
         cache: Option<&crate::interbar_math::LookbackCache>,
-    ) {
+    ) -> InterBarFeatures {
+        let mut features = InterBarFeatures::default();
         let n = lookback.len();
 
         // Issue #96 Task #99: Use cache passed from compute_features()
@@ -483,20 +496,26 @@ impl TradeHistory {
                 0.0
             });
         }
+
+        features
     }
 
+    /// Compute Tier 3 features (4 features, higher min trades)
+    ///
+    /// Issue #96 Task #77: Single-pass OHLC + prices extraction for 1.3-1.6x speedup
     /// Compute Tier 3 features (4 features, higher min trades)
     ///
     /// Issue #96 Task #77: Single-pass OHLC + prices extraction for 1.3-1.6x speedup
     /// Combines price collection with OHLC computation (eliminates double-pass)
     /// Issue #96 Task #10: SmallVec optimization for price allocation (typical 100-500 trades)
     /// Issue #96 Task #99: Reuses memoized float conversions from shared cache
+    /// Issue #115: Refactored to return InterBarFeatures for rayon parallelization support
     fn compute_tier3_features(
         &self,
         lookback: &[&TradeSnapshot],
-        features: &mut InterBarFeatures,
         cache: Option<&crate::interbar_math::LookbackCache>,
-    ) {
+    ) -> InterBarFeatures {
+        let mut features = InterBarFeatures::default();
         let n = lookback.len();
 
         // Issue #96 Task #99: Use cache passed from compute_features()
@@ -528,6 +547,8 @@ impl TradeHistory {
         if n >= 60 {
             features.lookback_permutation_entropy = Some(compute_entropy_adaptive(prices));
         }
+
+        features
     }
 
     /// Reset bar boundary tracking (Issue #81)

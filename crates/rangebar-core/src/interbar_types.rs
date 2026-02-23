@@ -117,3 +117,22 @@ pub struct InterBarFeatures {
     /// Permutation entropy (normalized), range [0, 1]
     pub lookback_permutation_entropy: Option<f64>,
 }
+
+impl InterBarFeatures {
+    /// Merge Tier 2 features from another InterBarFeatures struct
+    pub fn merge_tier2(&mut self, other: &InterBarFeatures) {
+        self.lookback_kyle_lambda = other.lookback_kyle_lambda;
+        self.lookback_burstiness = other.lookback_burstiness;
+        self.lookback_volume_skew = other.lookback_volume_skew;
+        self.lookback_volume_kurt = other.lookback_volume_kurt;
+        self.lookback_price_range = other.lookback_price_range;
+    }
+
+    /// Merge Tier 3 features from another InterBarFeatures struct
+    pub fn merge_tier3(&mut self, other: &InterBarFeatures) {
+        self.lookback_kaufman_er = other.lookback_kaufman_er;
+        self.lookback_garman_klass_vol = other.lookback_garman_klass_vol;
+        self.lookback_hurst = other.lookback_hurst;
+        self.lookback_permutation_entropy = other.lookback_permutation_entropy;
+    }
+}

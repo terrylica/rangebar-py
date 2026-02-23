@@ -37,6 +37,9 @@ smallvec = "1.13"
 # libm for optimized math functions (Issue #96 Task #14 - Garman-Klass ln optimization)
 libm = "0.2"
 
+# rayon for parallelization of Tier 2/3 feature computation (Issue #115)
+rayon = "1.10"
+
 [features]
 default = ["simd-burstiness"]  # Issue #96 Task #102: Enable SIMD burstiness by default for 2-4x speedup
 test-utils = ["dep:csv"]  # Real data loading requires csv crate
