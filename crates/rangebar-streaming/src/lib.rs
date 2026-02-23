@@ -6,6 +6,7 @@
 
 pub mod processor;
 pub mod replay_buffer;
+pub mod ring_buffer;  // Issue #96 Task #9: Fixed-size ring buffer for streaming
 
 #[cfg(feature = "stats")]
 pub mod stats;

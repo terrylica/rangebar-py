@@ -36,6 +36,9 @@ tracing.workspace = true
 # Graceful shutdown
 tokio-util.workspace = true
 
+# Issue #89: parking_lot for faster synchronization in FFI
+parking_lot = "0.12"
+
 # Optional features
 rolling-stats = { workspace = true, optional = true }
 tdigests = { workspace = true, optional = true }
