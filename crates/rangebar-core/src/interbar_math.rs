@@ -1377,11 +1377,14 @@ fn compute_permutation_entropy_m2(prices: &[f64]) -> f64 {
 
     // Shannon entropy
     let total = n_patterns as f64;
+    // Issue #96 Task #212: Pre-compute reciprocal to avoid repeated division in hot loop
+    // Division (~10-15 cycles) replaced with multiplication (~1 cycle) for each pattern
+    let reciprocal = 1.0 / total;
     let entropy: f64 = counts
         .iter()
         .filter(|&&c| c > 0)
         .map(|&c| {
-            let p = c as f64 / total;
+            let p = (c as f64) * reciprocal;
             -p * libm::log(p)  // Issue #116: Use libm for 1.2-1.5x speedup
         })
         .sum();
