@@ -140,13 +140,18 @@ pub(crate) fn compute_kaufman_er(prices: &[f64]) -> f64 {
     }
 }
 
+/// Garman-Klass volatility coefficient: 2*ln(2) - 1
+/// Precomputed to avoid repeated calculation in every call
+/// Exact value: 0.3862943611198906
+const GARMAN_KLASS_COEFFICIENT: f64 = 0.3862943611198906;
+
 /// Compute Garman-Klass volatility estimator
 ///
 /// Formula: sigma^2 = 0.5 * ln(H/L)^2 - (2*ln(2) - 1) * ln(C/O)^2
 ///
 /// Reference: Garman & Klass (1980), Journal of Business, vol. 53, no. 1
 ///
-/// Exact coefficient: (2*ln(2) - 1) ~ 0.386294 (computed, not hardcoded)
+/// Coefficient precomputed: (2*ln(2) - 1) = 0.386294...
 pub(crate) fn compute_garman_klass(lookback: &[&TradeSnapshot]) -> f64 {
     if lookback.is_empty() {
         return 0.0;
@@ -168,10 +173,7 @@ pub(crate) fn compute_garman_klass(lookback: &[&TradeSnapshot]) -> f64 {
     let log_hl = (h / l).ln();
     let log_co = (c / o).ln();
 
-    // Use exact coefficient derivation, not magic number
-    let coef = 2.0 * 2.0_f64.ln() - 1.0; // ~ 0.386294
-
-    let variance = 0.5 * log_hl.powi(2) - coef * log_co.powi(2);
+    let variance = 0.5 * log_hl.powi(2) - GARMAN_KLASS_COEFFICIENT * log_co.powi(2);
 
     // Variance can be negative due to the subtractive term
     if variance > 0.0 {

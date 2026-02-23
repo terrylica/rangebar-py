@@ -338,6 +338,52 @@ fn bench_hurst_crate_comparison(c: &mut Criterion) {
     group.finish();
 }
 
+/// Garman-Klass volatility optimization benchmark
+/// Phase 4a: Coefficient pre-computation optimization
+/// Issue #96: Performance optimization for inter-bar features
+fn bench_garman_klass(c: &mut Criterion) {
+    use rangebar_core::interbar_math::compute_garman_klass;
+
+    let mut group = c.benchmark_group("garman_klass_optimization");
+    group.sample_size(100);
+
+    // Generate synthetic trades for different lookback sizes
+    for lookback_size in [10, 50, 100, 256].iter() {
+        let mut trades = Vec::with_capacity(*lookback_size);
+        let mut price = 50000.0;
+
+        for i in 0..*lookback_size {
+            let noise = ((i * 7919) % 1000) as f64 / 1000.0 - 0.5;
+            price += noise * 10.0;
+
+            trades.push(AggTrade {
+                agg_trade_id: i as i64,
+                price: FixedPoint::from_str(&format!("{:.8}", price)).unwrap(),
+                volume: FixedPoint::from_str("1.0").unwrap(),
+                first_trade_id: i as i64,
+                last_trade_id: i as i64,
+                timestamp: 1640995200000 + (i as i64 * 100),
+                is_buyer_maker: (i % 2) == 0,
+                is_best_match: None,
+            });
+        }
+
+        group.bench_with_input(
+            BenchmarkId::new("compute_garman_klass", lookback_size),
+            lookback_size,
+            |b, _| {
+                let trade_refs: Vec<&AggTrade> = trades.iter().collect();
+                b.iter(|| {
+                    let vol = compute_garman_klass(black_box(&trade_refs));
+                    black_box(vol);
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_range_bar_processing,
@@ -347,6 +393,7 @@ criterion_group!(
     bench_extreme_cases,
     bench_bar_close_take,
     bench_hurst_dfa_scaling,
-    bench_hurst_crate_comparison
+    bench_hurst_crate_comparison,
+    bench_garman_klass
 );
 criterion_main!(benches);
