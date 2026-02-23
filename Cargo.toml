@@ -194,6 +194,10 @@ harness = false
 name = "concurrent_streaming_bench"
 harness = false
 
+[[bench]]
+name = "kyle_lambda_profiling"
+harness = false  # Issue #96 Task #148: Kyle Lambda profiling to determine SIMD viability
+
 # =============================================================================
 # Build Profiles
 # =============================================================================
