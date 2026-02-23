@@ -179,9 +179,25 @@ impl EntropyCache {
         // ahash is optimized for hash-only use cases and faster initialization
         let mut hasher = AHasher::default();
 
-        // Hash each price as bits to capture exact floating-point values
-        for &price in prices {
-            price.to_bits().hash(&mut hasher);
+        // Issue #96 Task #176: Optimize hash computation by directly hashing price bits
+        // instead of per-element .to_bits() calls. Convert slice to u64 array view
+        // and hash raw bytes for better cache locality and fewer function calls.
+        // Safety: f64 and u64 have same size (8 bytes), f64::to_bits() is just bitcast,
+        // so we can safely view [f64] as [u64] and hash directly without per-element calls
+        #[allow(unsafe_code)]
+        {
+            // SAFETY: f64 and u64 are both 64-bit values. We're converting a slice
+            // of f64 to a slice of u64 with the same byte representation. The data
+            // is valid for both interpretations since we're just reading the bit patterns.
+            let price_bits: &[u64] = unsafe {
+                std::slice::from_raw_parts(
+                    prices.as_ptr() as *const u64,
+                    prices.len(),
+                )
+            };
+
+            // Hash all price bits at once instead of per-element
+            price_bits.hash(&mut hasher);
         }
 
         hasher.finish()
