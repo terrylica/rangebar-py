@@ -694,8 +694,20 @@ mod simd {
             0.0
         };
 
-        if normalized_imbalance.abs() > f64::EPSILON && first_price_abs > f64::EPSILON {
-            ((last_price - first_price) / first_price) / normalized_imbalance
+        // Issue #96 Task #203: Branchless epsilon handling in SIMD path
+        let imbalance_abs = normalized_imbalance.abs();
+        let imbalance_valid = if imbalance_abs > f64::EPSILON { 1.0 } else { 0.0 };
+        let price_valid = if first_price_abs > f64::EPSILON { 1.0 } else { 0.0 };
+        let both_valid = imbalance_valid * price_valid;
+
+        let price_change = if first_price_abs > f64::EPSILON {
+            (last_price - first_price) / first_price
+        } else {
+            0.0
+        };
+
+        if both_valid > 0.0 {
+            price_change / normalized_imbalance
         } else {
             0.0
         }
@@ -893,11 +905,29 @@ fn compute_kyle_lambda_scalar(lookback: &[&TradeSnapshot]) -> f64 {
         0.0
     };
 
-    // Division by zero guards (matches existing codebase pattern)
-    if normalized_imbalance.abs() > f64::EPSILON && first_price.abs() > f64::EPSILON {
-        ((last_price - first_price) / first_price) / normalized_imbalance
+    // Issue #96 Task #203: Branchless epsilon handling using masks
+    // Avoids branch misprediction penalties by checking preconditions once
+    // Pattern: similar to Task #200 (OFI branchless), mask-based arithmetic
+    let imbalance_abs = normalized_imbalance.abs();
+    let first_price_abs = first_price.abs();
+
+    // Branchless precondition checks: convert booleans to 0.0/1.0 masks
+    let imbalance_valid = if imbalance_abs > f64::EPSILON { 1.0 } else { 0.0 };
+    let price_valid = if first_price_abs > f64::EPSILON { 1.0 } else { 0.0 };
+    let both_valid = imbalance_valid * price_valid;  // 1.0 iff both valid
+
+    // Compute price change with guard against division by zero
+    let price_change = if first_price_abs > f64::EPSILON {
+        (last_price - first_price) / first_price
     } else {
-        0.0 // No information when imbalance is zero
+        0.0
+    };
+
+    // Final result: only divide if both preconditions satisfied
+    if both_valid > 0.0 {
+        price_change / normalized_imbalance
+    } else {
+        0.0
     }
 }
 
