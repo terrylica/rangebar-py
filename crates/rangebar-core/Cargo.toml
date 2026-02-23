@@ -34,6 +34,9 @@ hurst = "0.1.0"
 # SmallVec for allocation-efficient lookback trade tracking (Issue #96 Task #10)
 smallvec = "1.13"
 
+# libm for optimized math functions (Issue #96 Task #14 - Garman-Klass ln optimization)
+libm = "0.2"
+
 [features]
 default = []
 test-utils = ["dep:csv"]  # Real data loading requires csv crate
