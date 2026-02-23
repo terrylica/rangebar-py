@@ -230,14 +230,16 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
         n as f64 // Instant bar
     };
 
-    // VWAP position
+    // VWAP position (Issue #96 Task #51: single-pass high/low computation)
     let vwap = if total_vol > f64::EPSILON {
         total_turnover / total_vol
     } else {
         prices.first().copied().unwrap_or(0.0)
     };
-    let high = prices.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let low = prices.iter().cloned().fold(f64::INFINITY, f64::min);
+    // Single pass for both high and low (instead of two folds)
+    let (high, low) = prices.iter().fold((f64::NEG_INFINITY, f64::INFINITY), |(h, l), &p| {
+        (h.max(p), l.min(p))
+    });
     let range = high - low;
     let vwap_position = if range > f64::EPSILON {
         ((vwap - low) / range).clamp(0.0, 1.0)
