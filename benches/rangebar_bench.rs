@@ -304,9 +304,36 @@ fn bench_hurst_crate_comparison(c: &mut Criterion) {
         });
     });
 
-    // TODO: Add evrom/hurst R/S benchmarks once API is validated
-    // Expected: 5-10x speedup for larger series due to O(n log n) vs O(n²)
-    // Note: hurst crate API differs from initial assumption, needs documentation review
+    // evrom/hurst R/S Analysis — O(n log n) vs DFA O(n²)
+    // Issue #96: Phase 3a - crate comparison for Hurst bottleneck optimization
+    // rssimple: uncorrected R/S (faster), rs_corrected: Anis-Okon corrected R/S
+    group.bench_function("hurst_rssimple_512", |b| {
+        b.iter(|| {
+            let h = hurst::rssimple(black_box(prices_512.to_vec()));
+            black_box(h);
+        });
+    });
+
+    group.bench_function("hurst_rssimple_1024", |b| {
+        b.iter(|| {
+            let h = hurst::rssimple(black_box(prices_1024.to_vec()));
+            black_box(h);
+        });
+    });
+
+    group.bench_function("hurst_rs_corrected_512", |b| {
+        b.iter(|| {
+            let h = hurst::rs_corrected(black_box(prices_512.to_vec()));
+            black_box(h);
+        });
+    });
+
+    group.bench_function("hurst_rs_corrected_1024", |b| {
+        b.iter(|| {
+            let h = hurst::rs_corrected(black_box(prices_1024.to_vec()));
+            black_box(h);
+        });
+    });
 
     group.finish();
 }
