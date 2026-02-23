@@ -191,13 +191,28 @@ class TickStorage:
                 else:
                     # Append to existing valid file
                     existing_df = pl.read_parquet(parquet_path)
-                    combined_df = pl.concat([existing_df, write_df])
                     # Issue #78: Deduplicate on agg_trade_id to prevent accumulation
                     # when same date range is fetched multiple times (retry, resume)
-                    if "agg_trade_id" in combined_df.columns:
-                        combined_df = combined_df.unique(
+                    # Issue #96 Task #29: Optimize dedup - deduplicate BEFORE concat
+                    if "agg_trade_id" in write_df.columns:
+                        # Deduplicate each independently (O(n) + O(m) instead of O(n+m))
+                        existing_deduped = existing_df.unique(
                             subset=["agg_trade_id"], maintain_order=True
                         )
+                        write_deduped = write_df.unique(
+                            subset=["agg_trade_id"], maintain_order=True
+                        )
+                        # Only concat NEW trade IDs (not already in existing)
+                        existing_ids = set(existing_deduped["agg_trade_id"].to_list())
+                        write_new = write_deduped.filter(
+                            ~pl.col("agg_trade_id").is_in(existing_ids)
+                        )
+                        combined_df = pl.concat(
+                            [existing_deduped, write_new], rechunk=False
+                        )
+                    else:
+                        # No trade ID column, fallback to post-concat dedup
+                        combined_df = pl.concat([existing_df, write_df])
                     _atomic_write_parquet(combined_df, parquet_path)
             else:
                 # Write new file atomically
