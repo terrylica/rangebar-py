@@ -86,5 +86,9 @@ harness = false  # Disable test harness for entropy SIMD microbenchmark (Phase 5
 name = "smallvec_profiling"
 harness = false  # Disable test harness for SmallVec buffer sizing profiling (Issue #96 Task #136)
 
+[[bench]]
+name = "cumulative_performance_validation"
+harness = false  # Disable test harness for comprehensive Phase 2-6 performance validation (Issue #96 Task #137)
+
 [lints]
 workspace = true
