@@ -35,14 +35,30 @@ pub struct CompletedBar {
 
 /// Metrics for the live bar engine.
 /// Issue #96 Task #6: Added backpressure metrics for monitoring queue behavior
-#[derive(Debug, Default)]
+/// Issue #96 Task #12: Expose ring buffer metrics (dropped bars, queue depth)
+#[derive(Debug)]
 pub struct LiveEngineMetrics {
     pub trades_received: AtomicU64,
     pub bars_emitted: AtomicU64,
     pub reconnections: AtomicU64,
-    pub backpressure_events: AtomicU64,  // Times queue was full and producer blocked
+    pub backpressure_events: AtomicU64,  // Times ring buffer was full and bar dropped
+    pub dropped_bars: AtomicU64,         // Total bars dropped due to full ring buffer
     pub max_queue_depth: AtomicU64,      // Maximum observed queue depth
     pub total_block_time_ms: AtomicU64,  // Accumulated time producer waited for queue space
+}
+
+impl Default for LiveEngineMetrics {
+    fn default() -> Self {
+        Self {
+            trades_received: AtomicU64::new(0),
+            bars_emitted: AtomicU64::new(0),
+            reconnections: AtomicU64::new(0),
+            backpressure_events: AtomicU64::new(0),
+            dropped_bars: AtomicU64::new(0),
+            max_queue_depth: AtomicU64::new(0),
+            total_block_time_ms: AtomicU64::new(0),
+        }
+    }
 }
 
 /// Configuration for the live bar engine.
@@ -330,6 +346,24 @@ impl LiveEngineMetrics {
             trades_received: self.trades_received.load(Ordering::Relaxed),
             bars_emitted: self.bars_emitted.load(Ordering::Relaxed),
             reconnections: self.reconnections.load(Ordering::Relaxed),
+            dropped_bars: self.dropped_bars.load(Ordering::Relaxed),
+            max_queue_depth: self.max_queue_depth.load(Ordering::Relaxed),
+            backpressure_events: self.backpressure_events.load(Ordering::Relaxed),
+        }
+    }
+
+    /// Get ring buffer queue depth estimate (from snapshot timing).
+    /// Note: This is approximate due to concurrent updates.
+    pub fn estimate_queue_depth(&self) -> u64 {
+        let emitted = self.bars_emitted.load(Ordering::Relaxed);
+        let dropped = self.dropped_bars.load(Ordering::Relaxed);
+        let received = self.trades_received.load(Ordering::Relaxed);
+        // Rough estimate: bars emitted + dropped vs trades received
+        // This is not exact but gives a sense of queue pressure
+        if emitted + dropped > received {
+            0
+        } else {
+            received - emitted - dropped
         }
     }
 }
@@ -340,6 +374,9 @@ pub struct LiveEngineMetricsSnapshot {
     pub trades_received: u64,
     pub bars_emitted: u64,
     pub reconnections: u64,
+    pub dropped_bars: u64,
+    pub max_queue_depth: u64,
+    pub backpressure_events: u64,
 }
 
 /// Per-symbol WebSocket task with independent reconnection.
@@ -395,8 +432,13 @@ async fn symbol_task(
                                     let was_added = bar_buffer.push(completed);
                                     if !was_added {
                                         // Ring buffer was full, old bar was dropped
+                                        metrics.dropped_bars.fetch_add(1, Ordering::Relaxed);
+                                        metrics.backpressure_events.fetch_add(1, Ordering::Relaxed);
                                         tracing::warn!(%symbol, threshold, "ring buffer full, old bar dropped");
                                     }
+                                    // Issue #96 Task #12: Track queue depth metrics
+                                    let current_depth = bar_buffer.len() as u64;
+                                    let _ = metrics.max_queue_depth.fetch_max(current_depth, Ordering::Relaxed);
                                 }
                                 Ok(None) => {
                                     // Trade absorbed, no bar completed yet
@@ -497,11 +539,43 @@ mod tests {
         metrics.trades_received.store(100, Ordering::Relaxed);
         metrics.bars_emitted.store(5, Ordering::Relaxed);
         metrics.reconnections.store(2, Ordering::Relaxed);
+        metrics.dropped_bars.store(1, Ordering::Relaxed);
+        metrics.max_queue_depth.store(50, Ordering::Relaxed);
+        metrics.backpressure_events.store(3, Ordering::Relaxed);
 
         let snap = metrics.snapshot();
         assert_eq!(snap.trades_received, 100);
         assert_eq!(snap.bars_emitted, 5);
         assert_eq!(snap.reconnections, 2);
+        assert_eq!(snap.dropped_bars, 1);
+        assert_eq!(snap.max_queue_depth, 50);
+        assert_eq!(snap.backpressure_events, 3);
+    }
+
+    #[test]
+    fn test_ring_buffer_metrics() {
+        // Issue #96 Task #12: Verify ring buffer metrics tracking
+        let metrics = LiveEngineMetrics::default();
+
+        // Initially all zeros
+        assert_eq!(metrics.dropped_bars.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.backpressure_events.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.max_queue_depth.load(Ordering::Relaxed), 0);
+
+        // Simulate ring buffer drops
+        metrics.dropped_bars.fetch_add(5, Ordering::Relaxed);
+        metrics.backpressure_events.fetch_add(5, Ordering::Relaxed);
+        let _ = metrics.max_queue_depth.fetch_max(100, Ordering::Relaxed);
+
+        assert_eq!(metrics.dropped_bars.load(Ordering::Relaxed), 5);
+        assert_eq!(metrics.backpressure_events.load(Ordering::Relaxed), 5);
+        assert_eq!(metrics.max_queue_depth.load(Ordering::Relaxed), 100);
+
+        // Verify snapshot captures all metrics
+        let snap = metrics.snapshot();
+        assert_eq!(snap.dropped_bars, 5);
+        assert_eq!(snap.backpressure_events, 5);
+        assert_eq!(snap.max_queue_depth, 100);
     }
 
     #[tokio::test]
@@ -568,5 +642,72 @@ mod tests {
 
         assert!(p.inter_bar_enabled());
         assert!(p.intra_bar_enabled());
+    }
+
+    #[test]
+    fn test_ring_buffer_drop_tracking() {
+        // Issue #96 Task #12: Verify ring buffer correctly tracks dropped bars
+        use crate::ring_buffer::ConcurrentRingBuffer;
+
+        let ring_buf = ConcurrentRingBuffer::new(3);
+        let metrics = LiveEngineMetrics::default();
+
+        // Fill the buffer
+        let bar1 = CompletedBar {
+            symbol: "BTC".into(),
+            threshold_decimal_bps: 250,
+            bar: RangeBar::new(&make_trade(1, 50000.0, 1700000000000, false)),
+        };
+        let bar2 = CompletedBar {
+            symbol: "BTC".into(),
+            threshold_decimal_bps: 250,
+            bar: RangeBar::new(&make_trade(2, 50001.0, 1700000000001, false)),
+        };
+        let bar3 = CompletedBar {
+            symbol: "BTC".into(),
+            threshold_decimal_bps: 250,
+            bar: RangeBar::new(&make_trade(3, 50002.0, 1700000000002, false)),
+        };
+        let bar4 = CompletedBar {
+            symbol: "BTC".into(),
+            threshold_decimal_bps: 250,
+            bar: RangeBar::new(&make_trade(4, 50003.0, 1700000000003, false)),
+        };
+
+        assert!(ring_buf.push(bar1));
+        assert!(ring_buf.push(bar2));
+        assert!(ring_buf.push(bar3));
+
+        // Buffer is full (capacity=3), so next push should fail and drop oldest
+        assert!(!ring_buf.push(bar4));
+
+        // Simulate metrics tracking (as symbol_task would do)
+        metrics.dropped_bars.fetch_add(1, Ordering::Relaxed);
+        metrics.backpressure_events.fetch_add(1, Ordering::Relaxed);
+        let current_depth = ring_buf.len() as u64;
+        let _ = metrics.max_queue_depth.fetch_max(current_depth, Ordering::Relaxed);
+
+        assert_eq!(metrics.dropped_bars.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.backpressure_events.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.max_queue_depth.load(Ordering::Relaxed), 3);
+
+        // Verify we can still retrieve bars
+        assert_eq!(ring_buf.pop().is_some(), true); // bar2
+        assert_eq!(ring_buf.pop().is_some(), true); // bar3
+        assert_eq!(ring_buf.pop().is_some(), true); // bar4
+        assert_eq!(ring_buf.pop().is_none(), true);  // empty
+    }
+
+    #[test]
+    fn test_live_engine_metrics_estimate_queue_depth() {
+        // Issue #96 Task #12: Verify queue depth estimation
+        let metrics = LiveEngineMetrics::default();
+
+        metrics.trades_received.store(1000, Ordering::Relaxed);
+        metrics.bars_emitted.store(500, Ordering::Relaxed);
+        metrics.dropped_bars.store(0, Ordering::Relaxed);
+
+        let estimated = metrics.estimate_queue_depth();
+        assert_eq!(estimated, 500); // 1000 - 500 - 0
     }
 }
