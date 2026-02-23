@@ -583,43 +583,53 @@ fn compute_permutation_entropy(prices: &[f64], m: usize) -> f64 {
     }
 }
 
-/// Convert ordinal indices to pattern index using Lehmer code
+/// Issue #96 Task #58: Convert ordinal indices to pattern index using Lehmer code
+/// Optimized with specialization for m=2,3 to avoid unnecessary iterations
 /// For m=3: [0,1,2]→0, [0,2,1]→1, [1,0,2]→2, [1,2,0]→3, [2,0,1]→4, [2,1,0]→5
 #[inline]
 fn ordinal_indices_to_pattern_index(indices: &smallvec::SmallVec<[usize; 4]>) -> usize {
     match indices.len() {
         2 => {
-            // m=2: 2 patterns
+            // m=2: 2 patterns - optimized to skip sort entirely
             if indices[0] < indices[1] { 0 } else { 1 }
         }
         3 => {
-            // m=3: 6 patterns (3!) - compute Lehmer code
+            // m=3: 6 patterns (3!) - unrolled Lehmer code for performance
+            // Manually unroll to avoid nested loop overhead
             let mut code = 0usize;
             let factors = [1, 2, 1];
-            for (i, &idx) in indices.iter().enumerate() {
-                let mut lesser = 0;
-                for j in (i + 1)..3 {
-                    if indices[j] < idx {
-                        lesser += 1;
-                    }
-                }
-                code += lesser * factors[i];
-            }
+
+            // Position 0: count smaller elements in [1,2]
+            let lesser_0 = (indices[1] < indices[0]) as usize + (indices[2] < indices[0]) as usize;
+            code += lesser_0 * factors[0];
+
+            // Position 1: count smaller elements in [2]
+            let lesser_1 = (indices[2] < indices[1]) as usize;
+            code += lesser_1 * factors[1];
+
+            // Position 2: always 0 (no elements after it)
             code
         }
         4 => {
-            // m=4: 24 patterns (4!) - compute Lehmer code
+            // m=4: 24 patterns (4!) - unrolled Lehmer code for performance
             let mut code = 0usize;
             let factors = [6, 2, 1, 1];
-            for (i, &idx) in indices.iter().enumerate() {
-                let mut lesser = 0;
-                for j in (i + 1)..4 {
-                    if indices[j] < idx {
-                        lesser += 1;
-                    }
-                }
-                code += lesser * factors[i];
-            }
+
+            // Position 0: count smaller elements in [1,2,3]
+            let lesser_0 = (indices[1] < indices[0]) as usize
+                         + (indices[2] < indices[0]) as usize
+                         + (indices[3] < indices[0]) as usize;
+            code += lesser_0 * factors[0];
+
+            // Position 1: count smaller elements in [2,3]
+            let lesser_1 = (indices[2] < indices[1]) as usize
+                         + (indices[3] < indices[1]) as usize;
+            code += lesser_1 * factors[1];
+
+            // Position 2: count smaller element in [3]
+            let lesser_2 = (indices[3] < indices[2]) as usize;
+            code += lesser_2 * factors[2];
+
             code
         }
         _ => 0, // Shouldn't happen
