@@ -74,5 +74,9 @@ harness = false  # Disable test harness for custom profiling code (Phase 5A - Is
 name = "burstiness_simd_detail"
 harness = false  # Disable test harness for SIMD burstiness microbenchmark (Phase 5B - Issue #96 Task #127)
 
+[[bench]]
+name = "tier3_profiling"
+harness = false  # Disable test harness for Tier 3 feature profiling (Phase 5B+ - Issue #96 Task #128)
+
 [lints]
 workspace = true
