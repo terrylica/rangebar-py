@@ -74,6 +74,44 @@ pub struct IntraBarFeatures {
     pub intra_permutation_entropy: Option<f64>,
 }
 
+/// Issue #96 Task #56: Compute volume moments (skewness and kurtosis) in single pass.
+/// Helper function that encapsulates volume statistics accumulation for reusability.
+///
+/// Computes all volume moments (mean, m2, m3, m4) with Welford's online algorithm.
+/// Returns (volume_skewness, volume_kurtosis) where each is Option<f64>.
+fn compute_volume_moments(volumes: &[f64]) -> (Option<f64>, Option<f64>) {
+    let n = volumes.len();
+
+    if n < 3 {
+        return (None, None);
+    }
+
+    // Phase 1: Compute mean
+    let sum_vol = volumes.iter().sum::<f64>();
+    let mean_v = sum_vol / n as f64;
+
+    // Phase 2: Compute central moments (m2, m3, m4) in single pass
+    let (m2, m3, m4) = volumes.iter().fold((0.0, 0.0, 0.0), |(m2, m3, m4), &v| {
+        let d = v - mean_v;
+        let d2 = d * d;
+        (m2 + d2, m3 + d2 * d, m4 + d2 * d2)
+    });
+
+    let m2_norm = m2 / n as f64;
+    let m3_norm = m3 / n as f64;
+    let m4_norm = m4 / n as f64;
+
+    let std_v = m2_norm.sqrt();
+
+    if std_v > f64::EPSILON {
+        let skew = Some(m3_norm / std_v.powi(3));
+        let kurt = Some(m4_norm / std_v.powi(4) - 3.0); // Excess kurtosis
+        (skew, kurt)
+    } else {
+        (None, None)
+    }
+}
+
 /// Compute all intra-bar features from constituent trades.
 ///
 /// This is the main entry point for computing ITH and statistical features
@@ -303,36 +341,9 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
         None
     };
 
-    // Issue #96 Task #55: Consolidate volume skewness and kurtosis in single pass
-    // Compute all volume moments (mean, m2, m3, m4) with minimal allocations
-    let (volume_skew, volume_kurt) = if n >= 3 {
-        // Phase 1: Compute mean
-        let sum_vol = volumes.iter().sum::<f64>();
-        let mean_v = sum_vol / n as f64;
-
-        // Phase 2: Compute central moments (m2, m3, m4) in single pass
-        let (m2, m3, m4) = volumes.iter().fold((0.0, 0.0, 0.0), |(m2, m3, m4), &v| {
-            let d = v - mean_v;
-            let d2 = d * d;
-            (m2 + d2, m3 + d2 * d, m4 + d2 * d2)
-        });
-
-        let m2_norm = m2 / n as f64;
-        let m3_norm = m3 / n as f64;
-        let m4_norm = m4 / n as f64;
-
-        let std_v = m2_norm.sqrt();
-
-        if std_v > f64::EPSILON {
-            let skew = Some(m3_norm / std_v.powi(3));
-            let kurt = Some(m4_norm / std_v.powi(4) - 3.0); // Excess kurtosis
-            (skew, kurt)
-        } else {
-            (None, None)
-        }
-    } else {
-        (None, None)
-    };
+    // Issue #96 Task #55+56: Use consolidated helper for volume moments
+    // Encapsulates 2-pass computation (mean + all central moments)
+    let (volume_skew, volume_kurt) = compute_volume_moments(&volumes);
 
     // Kaufman Efficiency Ratio (requires >= 2 trades)
     let kaufman_er = if n >= 2 {
