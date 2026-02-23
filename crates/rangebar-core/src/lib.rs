@@ -23,6 +23,7 @@ pub mod errors;
 pub mod export_processor; // Export-oriented processor (extracted Phase 2d)
 pub mod fixed_point;
 pub mod interbar; // Issue #59: Inter-bar microstructure features (lookback window BEFORE bar)
+pub mod interbar_cache; // Issue #96 Task #144 Phase 4: Inter-bar feature result caching for streaming
 pub mod interbar_math; // Issue #59: Inter-bar math helpers (extracted Phase 2e) - public for profiling/benchmarking
 pub mod interbar_types; // Issue #59: Inter-bar type definitions (extracted Phase 2b)
 pub mod intrabar; // Issue #59: Intra-bar features (trades WITHIN bar)
@@ -54,6 +55,9 @@ pub use entropy_cache_global::{
 }; // Issue #145: Global entropy cache API
 pub use fixed_point::FixedPoint;
 pub use interbar::{InterBarConfig, InterBarFeatures, LookbackMode, TradeHistory, TradeSnapshot};
+pub use interbar_cache::{
+    InterBarCacheKey, InterBarFeatureCache, INTERBAR_FEATURE_CACHE_CAPACITY,
+}; // Issue #96 Task #144 Phase 4: Inter-bar feature result cache API
 pub use interbar_math::EntropyCache; // Issue #145 Phase 2: Export for external cache parameters
 pub use intrabar::{IntraBarFeatures, compute_intra_bar_features};
 pub use processor::{ExportRangeBarProcessor, ProcessingError, RangeBarProcessor};
