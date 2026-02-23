@@ -234,6 +234,10 @@ harness = false  # Issue #96 Task #158: Allocator buffer size tuning (post-Phase
 name = "pe_threshold_tuning_benchmark"
 harness = false  # Issue #96 Task #157: PE threshold optimization for real workloads
 
+[[bench]]
+name = "zero_copy_trade_snapshot_benchmark"
+harness = false  # Issue #96 Task #159: Zero-copy trade snapshot optimization analysis
+
 # =============================================================================
 # Build Profiles
 # =============================================================================
