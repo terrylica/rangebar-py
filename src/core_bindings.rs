@@ -1,3 +1,4 @@
+// FILE-SIZE-OK: Core bindings hub, multi-domain consolidation justified (see Issue #94)
 use super::*;
 
 /// Return the raw TOML feature manifest string (Issue #95).
@@ -210,37 +211,67 @@ impl PyRangeBarProcessor {
     ///
     /// Args:
     ///     trades: List of trade dicts with keys: timestamp (ms), price, quantity
+    ///     return_format: Format for returned bars: "dict" (default) or "arrow" (3-5x faster)
     ///
     /// Returns:
-    ///     List of range bar dicts with OHLCV data
+    ///     List of range bar dicts with OHLCV data (dict mode) or PyRecordBatch (arrow mode)
     ///
     /// Raises:
     ///     `KeyError`: If required trade fields are missing
     ///     `RuntimeError`: If trade processing fails (e.g., unsorted trades)
+    ///     `ValueError`: If return_format is not "dict" or "arrow"
+    #[pyo3(signature = (trades, return_format = "dict"))]
     fn process_trades(
         &mut self,
         py: Python,
         trades: Vec<Bound<PyDict>>,
-    ) -> PyResult<Vec<PyObject>> {
+        return_format: &str,
+    ) -> PyResult<PyObject> {
         if trades.is_empty() {
-            return Ok(Vec::new());
+            match return_format {
+                "dict" => Ok(Vec::<PyObject>::new().into_py(py)),
+                "arrow" => {
+                    let empty_batch = rangebar_vec_to_record_batch(&[]);
+                    Ok(PyRecordBatch::new(empty_batch).into_py(py))
+                }
+                _ => Err(PyValueError::new_err(
+                    format!("Invalid return_format: '{}'. Must be 'dict' or 'arrow'", return_format)
+                ))
+            }
+        } else {
+            // Convert Python dicts to AggTrade
+            let agg_trades: Vec<AggTrade> = trades
+                .iter()
+                .enumerate()
+                .map(|(i, trade_dict)| dict_to_agg_trade(py, trade_dict, i))
+                .collect::<PyResult<Vec<_>>>()?;
+
+            // Process through rangebar-core
+            let bars = self
+                .processor
+                .process_agg_trade_records(&agg_trades)
+                .map_err(|e| PyRuntimeError::new_err(format!("Processing failed: {e}")))?;
+
+            // Return in requested format
+            match return_format {
+                "dict" => {
+                    // Convert RangeBars to Python dicts
+                    let dicts: Vec<PyObject> = bars
+                        .iter()
+                        .map(|bar| rangebar_to_dict(py, bar))
+                        .collect::<PyResult<Vec<_>>>()?;
+                    Ok(dicts.into_py(py))
+                }
+                "arrow" => {
+                    // Convert RangeBars to Arrow RecordBatch (3-5x faster)
+                    let batch = rangebar_vec_to_record_batch(&bars);
+                    Ok(PyRecordBatch::new(batch).into_py(py))
+                }
+                _ => Err(PyValueError::new_err(
+                    format!("Invalid return_format: '{}'. Must be 'dict' or 'arrow'", return_format)
+                ))
+            }
         }
-
-        // Convert Python dicts to AggTrade
-        let agg_trades: Vec<AggTrade> = trades
-            .iter()
-            .enumerate()
-            .map(|(i, trade_dict)| dict_to_agg_trade(py, trade_dict, i))
-            .collect::<PyResult<Vec<_>>>()?;
-
-        // Process through rangebar-core
-        let bars = self
-            .processor
-            .process_agg_trade_records(&agg_trades)
-            .map_err(|e| PyRuntimeError::new_err(format!("Processing failed: {e}")))?;
-
-        // Convert RangeBars to Python dicts
-        bars.iter().map(|bar| rangebar_to_dict(py, bar)).collect()
     }
 
     /// Process aggregated trades into range bars (streaming mode - preserves state)
