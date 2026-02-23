@@ -1,0 +1,41 @@
+{
+  "PositionVerification": {
+    "methods": [
+      "gap_details",
+      "has_gap",
+      "is_exact",
+      "timestamp_gap_ms"
+    ],
+    "properties": {
+      "has_gap": "getset_descriptor",
+      "is_exact": "getset_descriptor"
+    },
+    "type": "class"
+  },
+  "PyRangeBarProcessor": {
+    "methods": [
+      "create_checkpoint",
+      "enable_microstructure",
+      "from_checkpoint",
+      "get_incomplete_bar",
+      "has_incomplete_bar",
+      "prevent_same_timestamp_close",
+      "process_trades",
+      "process_trades_arrow",
+      "process_trades_arrow_native",
+      "process_trades_streaming",
+      "process_trades_streaming_arrow",
+      "reset_at_ouroboros",
+      "symbol",
+      "threshold_decimal_bps",
+      "verify_position"
+    ],
+    "properties": {
+      "has_incomplete_bar": "getset_descriptor",
+      "prevent_same_timestamp_close": "getset_descriptor",
+      "symbol": "getset_descriptor",
+      "threshold_decimal_bps": "getset_descriptor"
+    },
+    "type": "class"
+  }
+}

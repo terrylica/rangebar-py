@@ -179,6 +179,10 @@ workspace = true
 name = "rangebar_bench"
 harness = false
 
+[[bench]]
+name = "profiling_analysis"
+harness = false
+
 # =============================================================================
 # Build Profiles
 # =============================================================================
