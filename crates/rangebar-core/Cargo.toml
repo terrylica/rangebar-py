@@ -78,5 +78,9 @@ harness = false  # Disable test harness for SIMD burstiness microbenchmark (Phas
 name = "tier3_profiling"
 harness = false  # Disable test harness for Tier 3 feature profiling (Phase 5B+ - Issue #96 Task #128)
 
+[[bench]]
+name = "entropy_simd_detail"
+harness = false  # Disable test harness for entropy SIMD microbenchmark (Phase 5B+ - Issue #96 Task #129)
+
 [lints]
 workspace = true
