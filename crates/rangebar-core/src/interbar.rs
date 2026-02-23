@@ -585,14 +585,20 @@ impl TradeHistory {
             return InterBarFeatures::default();
         }
 
-        // Issue #96 Task #144 Phase 4: Check feature result cache before computation
+        // Issue #96 Task #183: Check feature result cache with try-lock to reduce contention
+        // Fast path: Non-blocking read attempt (typical case in multi-symbol streaming)
+        // Slow path: Skip cache check if lock is held (cache miss is acceptable)
         if let Some(cache) = &self.feature_result_cache {
             let cache_key = crate::interbar_cache::InterBarCacheKey::from_lookback(&lookback);
-            let cache_guard = cache.read();
-            if let Some(cached_features) = cache_guard.get(&cache_key) {
-                return cached_features;
+            // Try non-blocking read first (parking_lot feature for reduced contention)
+            if let Some(cache_guard) = cache.try_read() {
+                if let Some(cached_features) = cache_guard.get(&cache_key) {
+                    return cached_features;
+                }
+                drop(cache_guard); // Release read lock before computation
             }
-            drop(cache_guard); // Release read lock before computation
+            // If try_read failed (lock held by writer), skip cache check
+            // This is safe: cache miss in high-contention scenario, will recompute
         }
 
         let mut features = InterBarFeatures::default();
@@ -634,11 +640,16 @@ impl TradeHistory {
             }
         }
 
-        // Issue #96 Task #144 Phase 4: Store computed features in cache
+        // Issue #96 Task #183: Store computed features in cache with try-write
+        // Non-blocking write attempt to reduce contention in multi-symbol streaming
+        // If write-lock held by other thread, skip cache insert (cache miss on concurrent access)
         if let Some(cache) = &self.feature_result_cache {
             let cache_key = crate::interbar_cache::InterBarCacheKey::from_lookback(&lookback);
-            let cache_guard = cache.write();
-            cache_guard.insert(cache_key, features.clone());
+            // Try non-blocking write (avoid blocking on contention)
+            if let Some(cache_guard) = cache.try_write() {
+                cache_guard.insert(cache_key, features.clone());
+            }
+            // If try_write fails, skip cache insert (trade-off: miss cache opportunity for reduced lock wait)
         }
 
         features
