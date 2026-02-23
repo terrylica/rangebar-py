@@ -214,6 +214,10 @@ harness = false  # GitHub Issue #145: Multi-symbol entropy cache sharing benchma
 name = "tier1_optimization"
 harness = false  # Issue #96 Task #153: Tier 1 inter-bar SIMD optimization baseline
 
+[[bench]]
+name = "interbar_cache_benchmark"
+harness = false  # Issue #96 Task #144 Phase 4: Inter-bar feature result caching for streaming
+
 # =============================================================================
 # Build Profiles
 # =============================================================================

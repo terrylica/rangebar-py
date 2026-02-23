@@ -65,6 +65,10 @@ pub struct TradeHistory {
     /// Avoids redundant computation on identical price sequences
     /// Uses parking_lot::RwLock for lower-latency locking (Issue #96 Task #124)
     entropy_cache: std::sync::Arc<parking_lot::RwLock<crate::interbar_math::EntropyCache>>,
+    /// Issue #96 Task #144 Phase 4: Cache for complete inter-bar feature results
+    /// Avoids redundant feature computation for similar trade patterns
+    /// Enabled by default, can be disabled via config
+    feature_result_cache: Option<std::sync::Arc<parking_lot::RwLock<crate::interbar_cache::InterBarFeatureCache>>>,
 }
 
 impl TradeHistory {
@@ -131,6 +135,13 @@ impl TradeHistory {
             std::sync::Arc::new(parking_lot::RwLock::new(crate::interbar_math::EntropyCache::new()))
         });
 
+        // Issue #96 Task #144 Phase 4: Create feature result cache (enabled by default)
+        let feature_result_cache = Some(
+            std::sync::Arc::new(parking_lot::RwLock::new(
+                crate::interbar_cache::InterBarFeatureCache::new()
+            ))
+        );
+
         Self {
             trades: VecDeque::with_capacity(capacity),
             config,
@@ -140,6 +151,7 @@ impl TradeHistory {
             pushes_since_prune_check: 0,
             max_safe_capacity,
             entropy_cache,
+            feature_result_cache,
         }
     }
 
@@ -362,6 +374,16 @@ impl TradeHistory {
             return InterBarFeatures::default();
         }
 
+        // Issue #96 Task #144 Phase 4: Check feature result cache before computation
+        if let Some(cache) = &self.feature_result_cache {
+            let cache_key = crate::interbar_cache::InterBarCacheKey::from_lookback(&lookback);
+            let cache_guard = cache.read();
+            if let Some(cached_features) = cache_guard.get(&cache_key) {
+                return cached_features;
+            }
+            drop(cache_guard); // Release read lock before computation
+        }
+
         let mut features = InterBarFeatures::default();
 
         // === Tier 1: Core Features ===
@@ -394,6 +416,13 @@ impl TradeHistory {
                 let tier3 = self.compute_tier3_features(&lookback, cache.as_ref());
                 features.merge_tier3(&tier3);
             }
+        }
+
+        // Issue #96 Task #144 Phase 4: Store computed features in cache
+        if let Some(cache) = &self.feature_result_cache {
+            let cache_key = crate::interbar_cache::InterBarCacheKey::from_lookback(&lookback);
+            let cache_guard = cache.write();
+            cache_guard.insert(cache_key, features.clone());
         }
 
         features
@@ -1581,5 +1610,167 @@ mod tests {
         // Should work without issues - uses provided cache
 
         // Both constructors work correctly and can be created without panicking
+    }
+
+    #[test]
+    fn test_feature_result_cache_hit_miss() {
+        // Issue #96 Task #144 Phase 4: Verify cache hit/miss behavior
+        use crate::types::AggTrade;
+
+        fn create_test_trade(price: f64, volume: f64, is_buyer_maker: bool) -> AggTrade {
+            AggTrade {
+                agg_trade_id: 1,
+                timestamp: 1000000,
+                price: FixedPoint((price * 1e8) as i64),
+                volume: FixedPoint((volume * 1e8) as i64),
+                first_trade_id: 1,
+                last_trade_id: 1,
+                is_buyer_maker,
+                is_best_match: Some(true),
+            }
+        }
+
+        // Create trade history with Tier 1 only for speed
+        let mut history = TradeHistory::new(InterBarConfig {
+            lookback_mode: LookbackMode::FixedCount(50),
+            compute_tier2: false,
+            compute_tier3: false,
+        });
+
+        // Create test trades
+        let trades = vec![
+            create_test_trade(100.0, 1.0, false),
+            create_test_trade(100.5, 1.5, true),
+            create_test_trade(100.2, 1.2, false),
+        ];
+
+        for trade in &trades {
+            history.push(trade);
+        }
+
+        // First call: cache miss (computes features and stores in cache)
+        let features1 = history.compute_features(2000000);
+        assert!(features1.lookback_trade_count == Some(3));
+
+        // Second call: cache hit (retrieves from cache)
+        let features2 = history.compute_features(2000000);
+        assert!(features2.lookback_trade_count == Some(3));
+
+        // Both should produce identical results
+        assert_eq!(features1.lookback_ofi, features2.lookback_ofi);
+        assert_eq!(features1.lookback_count_imbalance, features2.lookback_count_imbalance);
+    }
+
+    #[test]
+    fn test_feature_result_cache_multiple_computations() {
+        // Issue #96 Task #144 Phase 4: Verify cache works across multiple computations
+        use crate::types::AggTrade;
+
+        fn create_test_trade(price: f64, volume: f64, timestamp: i64, is_buyer_maker: bool) -> AggTrade {
+            AggTrade {
+                agg_trade_id: 1,
+                timestamp,
+                price: FixedPoint((price * 1e8) as i64),
+                volume: FixedPoint((volume * 1e8) as i64),
+                first_trade_id: 1,
+                last_trade_id: 1,
+                is_buyer_maker,
+                is_best_match: Some(true),
+            }
+        }
+
+        let mut history = TradeHistory::new(InterBarConfig {
+            lookback_mode: LookbackMode::FixedCount(50),
+            compute_tier2: false,
+            compute_tier3: false,
+        });
+
+        // Create trades with specific timestamps
+        let trades = vec![
+            create_test_trade(100.0, 1.0, 1000000, false),
+            create_test_trade(100.5, 1.5, 2000000, true),
+            create_test_trade(100.2, 1.2, 3000000, false),
+            create_test_trade(100.1, 1.1, 4000000, true),
+        ];
+
+        for trade in &trades {
+            history.push(trade);
+        }
+
+        // First computation - cache miss
+        let features1 = history.compute_features(5000000); // Bar open after all trades
+        assert_eq!(features1.lookback_trade_count, Some(4));
+        let ofi1 = features1.lookback_ofi;
+
+        // Second computation with same bar_open_time - cache hit
+        let features2 = history.compute_features(5000000);
+        assert_eq!(features2.lookback_trade_count, Some(4));
+        assert_eq!(features2.lookback_ofi, ofi1, "Cache hit should return identical OFI");
+
+        // Third computation - different bar_open_time, different window
+        let features3 = history.compute_features(3500000); // Gets trades before 3.5M (3 trades)
+        assert_eq!(features3.lookback_trade_count, Some(3));
+
+        // Fourth computation - same as first, should reuse cache
+        let features4 = history.compute_features(5000000);
+        assert_eq!(features4.lookback_ofi, ofi1, "Cache reuse should return identical results");
+    }
+
+    #[test]
+    fn test_feature_result_cache_different_windows() {
+        // Issue #96 Task #144 Phase 4: Verify cache distinguishes different windows
+        use crate::types::AggTrade;
+
+        fn create_test_trade(price: f64, volume: f64, timestamp: i64, is_buyer_maker: bool) -> AggTrade {
+            AggTrade {
+                agg_trade_id: 1,
+                timestamp,
+                price: FixedPoint((price * 1e8) as i64),
+                volume: FixedPoint((volume * 1e8) as i64),
+                first_trade_id: 1,
+                last_trade_id: 1,
+                is_buyer_maker,
+                is_best_match: Some(true),
+            }
+        }
+
+        let mut history = TradeHistory::new(InterBarConfig {
+            lookback_mode: LookbackMode::FixedCount(100),
+            compute_tier2: false,
+            compute_tier3: false,
+        });
+
+        // Add 10 trades with sequential timestamps
+        for i in 0..10 {
+            let trade = create_test_trade(
+                100.0 + (i as f64 * 0.1),
+                1.0 + (i as f64 * 0.01),
+                1000000 + (i as i64 * 100000), // Timestamps: 1M, 1.1M, 1.2M, ..., 1.9M
+                i % 2 == 0,
+            );
+            history.push(&trade);
+        }
+
+        // Compute features at bar_open_time=2M (gets all 10 trades, all have ts < 2M)
+        let features1 = history.compute_features(2000000);
+        assert_eq!(features1.lookback_trade_count, Some(10));
+
+        // Add more trades beyond the bar_open_time cutoff (timestamps >= 2M)
+        for i in 10..15 {
+            let trade = create_test_trade(
+                100.0 + (i as f64 * 0.1),
+                1.0 + (i as f64 * 0.01),
+                2000000 + (i as i64 * 100000), // Timestamps: 2M, 2.1M, ..., 2.4M (after bar_open_time)
+                i % 2 == 0,
+            );
+            history.push(&trade);
+        }
+
+        // Compute features at same bar_open_time=2M - should still get only 10 trades (same lookback cutoff)
+        let features2 = history.compute_features(2000000);
+        assert_eq!(features2.lookback_trade_count, Some(10));
+
+        // Results should be identical (same window)
+        assert_eq!(features1.lookback_ofi, features2.lookback_ofi);
     }
 }
