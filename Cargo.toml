@@ -210,6 +210,10 @@ harness = false  # Issue #96 Task #144 Phase 2: Feature attribution analysis
 name = "entropy_cache_comparison"
 harness = false  # GitHub Issue #145: Multi-symbol entropy cache sharing benchmarks
 
+[[bench]]
+name = "tier1_optimization"
+harness = false  # Issue #96 Task #153: Tier 1 inter-bar SIMD optimization baseline
+
 # =============================================================================
 # Build Profiles
 # =============================================================================
