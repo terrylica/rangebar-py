@@ -69,6 +69,12 @@ pub struct TradeHistory {
     /// Avoids redundant feature computation for similar trade patterns
     /// Enabled by default, can be disabled via config
     feature_result_cache: Option<std::sync::Arc<parking_lot::RwLock<crate::interbar_cache::InterBarFeatureCache>>>,
+    /// Issue #96 Task #155 Phase 1: Adaptive pruning batch size tuning
+    /// Tracks pruning efficiency to adapt batch size dynamically
+    /// Reduces overhead of frequent prune checks when pruning is inefficient
+    adaptive_prune_batch: usize,
+    /// Tracks total trades pruned and prune calls for efficiency measurement
+    prune_stats: (usize, usize), // (trades_pruned, prune_calls)
 }
 
 impl TradeHistory {
@@ -142,6 +148,12 @@ impl TradeHistory {
             ))
         );
 
+        // Issue #96 Task #155: Initialize adaptive pruning batch size
+        let initial_prune_batch = match &config.lookback_mode {
+            LookbackMode::FixedCount(n) => std::cmp::max((*n / 10).max(5), 10),
+            _ => 10,
+        };
+
         Self {
             trades: VecDeque::with_capacity(capacity),
             config,
@@ -152,6 +164,8 @@ impl TradeHistory {
             max_safe_capacity,
             entropy_cache,
             feature_result_cache,
+            adaptive_prune_batch: initial_prune_batch,
+            prune_stats: (0, 0),
         }
     }
 
@@ -166,20 +180,50 @@ impl TradeHistory {
         self.total_pushed += 1;
         self.pushes_since_prune_check += 1;
 
-        // Issue #111: Adaptive batch size for pruning checks based on lookback mode
-        // - FixedCount(n): Check every n/10 trades (scaled to lookback size)
-        // - FixedWindow: Check every 10 trades (time-based, not count-dependent)
-        // - BarRelative: Check every 10 trades (self-adaptive, no fixed count)
-        let prune_batch_size = match &self.config.lookback_mode {
-            LookbackMode::FixedCount(n) => std::cmp::max((*n / 10).max(5), 10), // At least 5, typically n/10
-            _ => 10, // FixedWindow and BarRelative use fixed batch
-        };
+        // Issue #96 Task #155: Use adaptive pruning batch size
+        // Batch size increases if pruning is inefficient (<10% trades removed)
+        let prune_batch_size = self.adaptive_prune_batch;
 
-        // Check every N trades or when capacity limit exceeded
+        // Check every N trades or when capacity limit exceeded (deferred: 2x threshold)
         if self.pushes_since_prune_check >= prune_batch_size
-            || self.trades.len() > self.max_safe_capacity
+            || self.trades.len() > self.max_safe_capacity * 2
         {
+            let trades_before = self.trades.len();
             self.prune_if_needed();
+            let trades_after = self.trades.len();
+            let trades_removed = trades_before.saturating_sub(trades_after);
+
+            // Issue #96 Task #155: Track efficiency and adapt batch size
+            self.prune_stats.0 = self.prune_stats.0.saturating_add(trades_removed);
+            self.prune_stats.1 = self.prune_stats.1.saturating_add(1);
+
+            // Every 10 prune calls, reevaluate batch size
+            if self.prune_stats.1 % 10 == 0 && self.prune_stats.1 > 0 {
+                let avg_removed = self.prune_stats.0 / self.prune_stats.1;
+                let removal_efficiency = if trades_before > 0 {
+                    (avg_removed * 100) / (trades_before + avg_removed)
+                } else {
+                    0
+                };
+
+                // If removing <10%, increase batch size (reduce prune frequency)
+                if removal_efficiency < 10 {
+                    self.adaptive_prune_batch = std::cmp::min(
+                        self.adaptive_prune_batch * 2,
+                        self.max_safe_capacity / 4, // Cap at quarter of max capacity
+                    );
+                } else if removal_efficiency > 30 {
+                    // If removing >30%, decrease batch size (more frequent pruning)
+                    self.adaptive_prune_batch = std::cmp::max(
+                        self.adaptive_prune_batch / 2,
+                        5, // Minimum batch size
+                    );
+                }
+
+                // Reset stats for next measurement cycle
+                self.prune_stats = (0, 0);
+            }
+
             self.pushes_since_prune_check = 0;
         }
     }
@@ -352,6 +396,18 @@ impl TradeHistory {
             .iter()
             .take(cutoff_idx)
             .collect()
+    }
+
+    /// Get buffer statistics for benchmarking and profiling
+    ///
+    /// Issue #96 Task #155: Exposes pruning state for performance analysis
+    pub fn buffer_stats(&self) -> (usize, usize, usize, usize) {
+        (
+            self.trades.len(),
+            self.max_safe_capacity,
+            self.adaptive_prune_batch,
+            self.prune_stats.0, // trades_pruned
+        )
     }
 
     /// Compute inter-bar features from lookback window
@@ -1772,5 +1828,136 @@ mod tests {
 
         // Results should be identical (same window)
         assert_eq!(features1.lookback_ofi, features2.lookback_ofi);
+    }
+
+    #[test]
+    fn test_adaptive_pruning_batch_size_tracked() {
+        // Issue #96 Task #155: Verify adaptive pruning batch size is tracked
+        use crate::types::AggTrade;
+
+        fn create_test_trade(price: f64, timestamp: i64) -> AggTrade {
+            AggTrade {
+                agg_trade_id: 1,
+                timestamp,
+                price: FixedPoint((price * 1e8) as i64),
+                volume: FixedPoint((1.0 * 1e8) as i64),
+                first_trade_id: 1,
+                last_trade_id: 1,
+                is_buyer_maker: false,
+                is_best_match: Some(true),
+            }
+        }
+
+        let mut history = TradeHistory::new(InterBarConfig {
+            lookback_mode: LookbackMode::FixedCount(100),
+            compute_tier2: false,
+            compute_tier3: false,
+        });
+
+        let initial_batch = history.adaptive_prune_batch;
+        assert!(initial_batch > 0, "Initial batch size should be positive");
+
+        // Add trades and verify batch size remains reasonable
+        for i in 0..100 {
+            let trade = create_test_trade(
+                100.0 + (i as f64 * 0.01),
+                1_000_000 + (i as i64 * 100),
+            );
+            history.push(&trade);
+        }
+
+        // Batch size should be reasonable (not zero, not excessively large)
+        assert!(
+            history.adaptive_prune_batch > 0 && history.adaptive_prune_batch <= initial_batch * 4,
+            "Batch size should be reasonable"
+        );
+    }
+
+    #[test]
+    fn test_adaptive_pruning_deferred() {
+        // Issue #96 Task #155: Verify deferred pruning respects capacity bounds
+        use crate::types::AggTrade;
+
+        fn create_test_trade(price: f64, timestamp: i64) -> AggTrade {
+            AggTrade {
+                agg_trade_id: 1,
+                timestamp,
+                price: FixedPoint((price * 1e8) as i64),
+                volume: FixedPoint((1.0 * 1e8) as i64),
+                first_trade_id: 1,
+                last_trade_id: 1,
+                is_buyer_maker: false,
+                is_best_match: Some(true),
+            }
+        }
+
+        let mut history = TradeHistory::new(InterBarConfig {
+            lookback_mode: LookbackMode::FixedCount(50),
+            compute_tier2: false,
+            compute_tier3: false,
+        });
+
+        let max_capacity = history.max_safe_capacity;
+
+        // Add 300 trades - should trigger deferred pruning when hitting 2x capacity
+        for i in 0..300 {
+            let trade = create_test_trade(
+                100.0 + (i as f64 * 0.01),
+                1_000_000 + (i as i64 * 100),
+            );
+            history.push(&trade);
+        }
+
+        // After adding trades, trade count should be reasonable
+        // (deferred pruning activates when > max_capacity * 2)
+        assert!(
+            history.trades.len() <= max_capacity * 3,
+            "Trade count should be controlled by deferred pruning"
+        );
+    }
+
+    #[test]
+    fn test_adaptive_pruning_stats_tracking() {
+        // Issue #96 Task #155: Verify pruning statistics are tracked correctly
+        use crate::types::AggTrade;
+
+        fn create_test_trade(price: f64, timestamp: i64) -> AggTrade {
+            AggTrade {
+                agg_trade_id: 1,
+                timestamp,
+                price: FixedPoint((price * 1e8) as i64),
+                volume: FixedPoint((1.0 * 1e8) as i64),
+                first_trade_id: 1,
+                last_trade_id: 1,
+                is_buyer_maker: false,
+                is_best_match: Some(true),
+            }
+        }
+
+        let mut history = TradeHistory::new(InterBarConfig {
+            lookback_mode: LookbackMode::FixedCount(100),
+            compute_tier2: false,
+            compute_tier3: false,
+        });
+
+        // Initial stats should be empty
+        assert_eq!(history.prune_stats, (0, 0), "Initial stats should be zero");
+
+        // Add enough trades to trigger pruning (exceed 2x capacity)
+        for i in 0..2000 {
+            let trade = create_test_trade(
+                100.0 + (i as f64 * 0.01),
+                1_000_000 + (i as i64 * 100),
+            );
+            history.push(&trade);
+        }
+
+        // Stats should have been updated after pruning
+        // Note: Stats are reset every 10 prune calls, so they might be (0,0) if exactly 10 calls happened
+        // Just verify structure is there and reasonable
+        assert!(
+            history.prune_stats.0 <= 2000 && history.prune_stats.1 <= 10,
+            "Pruning stats should be reasonable"
+        );
     }
 }

@@ -218,6 +218,10 @@ harness = false  # Issue #96 Task #153: Tier 1 inter-bar SIMD optimization basel
 name = "interbar_cache_benchmark"
 harness = false  # Issue #96 Task #144 Phase 4: Inter-bar feature result caching for streaming
 
+[[bench]]
+name = "vecdeque_pruning_benchmark"
+harness = false  # Issue #96 Task #155: VecDeque adaptive pruning optimization
+
 # =============================================================================
 # Build Profiles
 # =============================================================================
