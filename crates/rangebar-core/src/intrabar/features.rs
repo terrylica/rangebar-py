@@ -151,9 +151,21 @@ pub fn compute_intra_bar_features_with_scratch(
 ) -> IntraBarFeatures {
     let n = trades.len();
 
-    if n < 2 {
+    // Issue #96 Task #193: Early-exit dispatcher for small intra-bar feature computation
+    // Skip only expensive complexity features (Hurst, PE) for bars with insufficient data
+    // ITH computation is linear and inexpensive, always included for n >= 2
+    if n == 0 {
         return IntraBarFeatures {
-            intra_trade_count: Some(n as u32),
+            intra_trade_count: Some(0),
+            ..Default::default()
+        };
+    }
+    if n == 1 {
+        return IntraBarFeatures {
+            intra_trade_count: Some(1),
+            intra_duration_us: Some(0),
+            intra_intensity: Some(0.0),
+            intra_ofi: Some(0.0),
             ..Default::default()
         };
     }
