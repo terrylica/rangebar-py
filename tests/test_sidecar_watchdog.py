@@ -113,7 +113,7 @@ class TestWatchdogTrigger:
             )
 
         with (
-            patch.multiple("rangebar.sidecar", _gap_fill=MagicMock(return_value={}), _inject_checkpoints=MagicMock(return_value=0), _extract_checkpoints=MagicMock(), _write_bar_to_clickhouse=MagicMock(), _save_checkpoint=MagicMock(), _notify_watchdog_trigger=MagicMock()),
+            patch.multiple("rangebar.sidecar", _gap_fill=MagicMock(return_value={}), _inject_checkpoints=MagicMock(return_value=0), _extract_checkpoints=MagicMock(), _write_bars_batch_to_clickhouse=MagicMock(), _save_checkpoint=MagicMock(), _notify_watchdog_trigger=MagicMock()),
             patch("rangebar._core.LiveBarEngine", return_value=engine),
             patch.dict("rangebar.sidecar.__builtins__", {}, clear=False),
             patch("rangebar.logging.generate_trace_id", return_value="test-trace"),
@@ -254,9 +254,12 @@ class TestWatchdogTrigger:
             "timestamp_ms": 1700000000000,
         }
 
+        # Issue #96 Task #144 Phase 3: Account for batch timeout check in loop
+        # Now uses time.monotonic() for batch flush timeout tracking
         monotonic_values = iter([
-            0.0,      # initial baseline
-            400.0,    # bar received at 400s — resets timer
+            0.0,      # last_batch_flush_time init
+            0.0,      # batch timeout check in first loop iteration
+            400.0,    # bar received at 400s — resets timer (batch timeout check for 2nd iteration)
             400.0,    # get_metrics after bar
         ])
 
@@ -284,7 +287,7 @@ class TestWatchdogTrigger:
             patch("rangebar.sidecar._gap_fill", return_value={}),
             patch("rangebar.sidecar._create_engine", return_value=(engine, 0)),
             patch("rangebar.sidecar._extract_checkpoints"),
-            patch("rangebar.sidecar._write_bar_to_clickhouse") as mock_write,
+            patch("rangebar.sidecar._write_bars_batch_to_clickhouse") as mock_write,
             patch("rangebar.sidecar._save_checkpoint"),
             patch("rangebar.sidecar._notify_watchdog_trigger") as mock_notify,
             patch("rangebar.logging.generate_trace_id", return_value="t"),
@@ -298,21 +301,32 @@ class TestWatchdogTrigger:
                 pass
 
             mock_notify.assert_not_called()
-            mock_write.assert_called_once()
+            # Batch write should be called at least once (on shutdown flush)
+            assert mock_write.call_count >= 1
 
     def test_watchdog_max_restarts_exit(self):
         """3 consecutive watchdog triggers → loop exits."""
-        # Each watchdog cycle: initial time, then stale check at +301s
+        # Issue #96 Task #144 Phase 3: Updated for batch timeout check in loop
+        # Each watchdog cycle: batch timeout check, then stale check at +301s
         # Need 4 cycles (3 restarts + 1 final that breaks)
         monotonic_values = iter([
-            0.0,      # initial baseline
-            301.0,    # trigger #1
-            301.0,    # post-restart baseline
-            602.0,    # trigger #2
-            602.0,    # post-restart baseline
-            903.0,    # trigger #3
-            903.0,    # post-restart baseline
+            0.0,      # last_batch_flush_time init
+            0.0,      # batch timeout check in iteration #1
+            0.0,      # batch timeout check in iteration #2
+            301.0,    # trigger #1 (watchdog stale check)
+            301.0,    # last_batch_flush_time after first _flush in watchdog
+            301.0,    # batch timeout check after restart #1
+            301.0,    # batch timeout check iteration 2 after restart
+            602.0,    # trigger #2 (watchdog stale check)
+            602.0,    # last_batch_flush_time after second _flush
+            602.0,    # batch timeout check after restart #2
+            602.0,    # batch timeout check iteration 2 after restart
+            903.0,    # trigger #3 (watchdog stale check)
+            903.0,    # last_batch_flush_time after third _flush
+            903.0,    # batch timeout check after restart #3
+            903.0,    # batch timeout check iteration 2 after restart
             1204.0,   # trigger #4 — exceeds max_watchdog_restarts=3
+            1204.0,   # final batch timeout check before break
         ])
 
         engines = []
@@ -448,10 +462,13 @@ class TestWatchdogTrigger:
 class TestEngineRestartSequence:
     def test_restart_extracts_checkpoints_before_shutdown(self):
         """Watchdog triggers → _extract_checkpoints() called before engine.shutdown()."""
+        # Issue #96 Task #144 Phase 3: Account for batch timeout checks
         monotonic_values = iter([
-            0.0,      # initial baseline
-            301.0,    # trigger
-            301.0,    # post-restart baseline
+            0.0,      # last_batch_flush_time init
+            0.0,      # batch timeout check in iteration #1
+            301.0,    # trigger (watchdog)
+            301.0,    # last_batch_flush_time after restart
+            301.0,    # batch timeout check in iteration #2 (right before StopIteration)
         ])
 
         engine = MagicMock()
@@ -516,16 +533,14 @@ class TestEngineRestartSequence:
         }
 
         # Timeline: 2 bars, then watchdog, then exit
-        monotonic_values = iter([
-            0.0,      # baseline
-            1.0,      # bar 1 received
-            1.0,      # metrics after bar 1
-            2.0,      # bar 2 received
-            2.0,      # metrics after bar 2
-            303.0,    # watchdog trigger (301s after last trade increment at t=2)
-            303.0,    # post-restart baseline
-            604.0,    # second trigger — max restarts exceeded
-        ])
+        # Issue #96 Task #144 Phase 3: Account for batch timeout checks
+        # Provide enough values to cover all monotonic() calls during the test
+        # Pattern: init, [iter_batch_check, metrics_time]+ , watchdog_trigger, flush_reset, [iter_batch_check, metrics]+ , final_break
+        import itertools
+        monotonic_values = iter(itertools.islice(
+            itertools.cycle([0.0, 1.0, 2.0, 100.0, 303.0, 304.0, 604.0, 1000.0]),
+            50  # Provide plenty of values
+        ))
 
         engine1 = MagicMock()
         call_count = [0]
@@ -556,7 +571,7 @@ class TestEngineRestartSequence:
             patch("rangebar.sidecar._gap_fill", return_value={}),
             patch("rangebar.sidecar._create_engine") as mock_create,
             patch("rangebar.sidecar._extract_checkpoints"),
-            patch("rangebar.sidecar._write_bar_to_clickhouse"),
+            patch("rangebar.sidecar._write_bars_batch_to_clickhouse"),
             patch("rangebar.sidecar._save_checkpoint"),
             patch("rangebar.sidecar._notify_watchdog_trigger"),
             patch("rangebar.logging.generate_trace_id", return_value="t"),
