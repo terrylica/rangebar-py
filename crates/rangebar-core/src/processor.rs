@@ -306,10 +306,9 @@ impl RangeBarProcessor {
                 Ok(None)
             }
             Some(bar_state) => {
-                // Issue #59: Accumulate trade for intra-bar features (before breach check)
-                if self.include_intra_bar_features {
-                    bar_state.accumulate_trade(&trade);
-                }
+                // Issue #59 & #96 Task #44: Accumulate trade for intra-bar features (before breach check)
+                // Only accumulates if features enabled, avoiding unnecessary clones
+                bar_state.accumulate_trade(&trade, self.include_intra_bar_features);
 
                 // Check for threshold breach
                 let price_breaches = bar_state.bar.is_breach(
@@ -513,10 +512,9 @@ impl RangeBarProcessor {
                     });
                 }
                 Some(ref mut bar_state) => {
-                    // Issue #59: Accumulate trade for intra-bar features (before breach check)
-                    if self.include_intra_bar_features {
-                        bar_state.accumulate_trade(agg_record);
-                    }
+                    // Issue #59 & #96 Task #44: Accumulate trade for intra-bar features (before breach check)
+                    // Only accumulates if features enabled, avoiding unnecessary clones
+                    bar_state.accumulate_trade(agg_record, self.include_intra_bar_features);
 
                     // Check if this AggTrade record breaches the threshold
                     let price_breaches = bar_state.bar.is_breach(
@@ -893,8 +891,13 @@ impl RangeBarState {
     }
 
     /// Accumulate a trade for intra-bar feature computation
-    fn accumulate_trade(&mut self, trade: &AggTrade) {
-        self.accumulated_trades.push(trade.clone());
+    ///
+    /// Issue #96 Task #44: Only accumulates if intra-bar features are enabled,
+    /// avoiding unnecessary clones for the majority of use cases where they're disabled.
+    fn accumulate_trade(&mut self, trade: &AggTrade, include_intra: bool) {
+        if include_intra {
+            self.accumulated_trades.push(trade.clone());
+        }
     }
 }
 
