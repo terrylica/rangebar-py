@@ -149,9 +149,10 @@ def try_cache_write(
         with RangeBarCache() as cache:
             # Phase 3+4: Route through store_bars_batch (Arrow path, 2-3 copies)
             # instead of store_bars_bulk (pandas path, 5-7 copies)
+            # Issue #96 Task #18: Use include_index=True to avoid reset_index() copy (1.3-1.5x speedup)
             import polars as pl
 
-            bars_pl = pl.from_pandas(bars_df.reset_index())
+            bars_pl = pl.from_pandas(bars_df, include_index=True)
             written = cache.store_bars_batch(
                 symbol=symbol,
                 threshold_decimal_bps=threshold_decimal_bps,
@@ -227,12 +228,14 @@ def fatal_cache_write(
         from rangebar.clickhouse import RangeBarCache
 
         with RangeBarCache() as cache:
-            # Issue #96 Task #13: Skip conversion when already Polars (1.3-1.5x speedup)
+            # Issue #96 Task #13/#18: Skip conversion when already Polars (1.3-1.5x speedup)
+            # Task #18: Use include_index=True to avoid reset_index() copy
             if isinstance(bars, pl.DataFrame):
                 bars_pl = bars
             else:
                 # Pandas path: convert to Polars (fallback)
-                bars_pl = pl.from_pandas(bars.reset_index())
+                # Use include_index=True to avoid unnecessary reset_index() copy
+                bars_pl = pl.from_pandas(bars, include_index=True)
             written = cache.store_bars_batch(
                 symbol=symbol,
                 threshold_decimal_bps=threshold_decimal_bps,
