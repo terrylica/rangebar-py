@@ -224,18 +224,24 @@ struct StatisticalFeatures {
 fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> StatisticalFeatures {
     let n = trades.len();
 
-    // Volume aggregation
+    // Volume aggregation with inline high/low caching (Issue #96 Task #63)
     let mut buy_vol = 0.0_f64;
     let mut sell_vol = 0.0_f64;
     let mut buy_count = 0_u32;
     let mut sell_count = 0_u32;
     let mut total_turnover = 0.0_f64;
+    let mut high = f64::NEG_INFINITY;
+    let mut low = f64::INFINITY;
     let volumes: Vec<f64> = trades.iter().map(|t| t.volume.to_f64()).collect();
 
     for trade in trades {
         let vol = trade.volume.to_f64();
         let price = trade.price.to_f64();
         total_turnover += price * vol;
+
+        // Inline high/low computation (eliminates separate fold pass)
+        high = high.max(price);
+        low = low.min(price);
 
         if trade.is_buyer_maker {
             sell_vol += vol;
@@ -269,16 +275,13 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
         n as f64 // Instant bar
     };
 
-    // VWAP position (Issue #96 Task #51: single-pass high/low computation)
+    // VWAP position (Issue #96 Task #63: high/low cached inline during trades loop)
     let vwap = if total_vol > f64::EPSILON {
         total_turnover / total_vol
     } else {
         prices.first().copied().unwrap_or(0.0)
     };
-    // Single pass for both high and low (instead of two folds)
-    let (high, low) = prices.iter().fold((f64::NEG_INFINITY, f64::INFINITY), |(h, l), &p| {
-        (h.max(p), l.min(p))
-    });
+    // High/low already computed inline during main trades loop (eliminates fold pass)
     let range = high - low;
     let vwap_position = if range > f64::EPSILON {
         ((vwap - low) / range).clamp(0.0, 1.0)
