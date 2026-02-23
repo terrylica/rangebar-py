@@ -8,6 +8,7 @@
 
 use crate::interbar_types::TradeSnapshot;
 use libm; // Issue #96 Task #14: Optimized math functions for Garman-Klass
+use smallvec::SmallVec; // Issue #96 Task #48: Stack-allocated inter-arrival times for burstiness
 
 #[cfg(feature = "simd-burstiness")]
 mod simd {
@@ -292,8 +293,8 @@ fn compute_burstiness_scalar(lookback: &[&TradeSnapshot]) -> f64 {
         return 0.0;
     }
 
-    // Compute inter-arrival times (microseconds) using direct indexing for better performance
-    let mut inter_arrivals: Vec<f64> = Vec::with_capacity(lookback.len() - 1);
+    // Compute inter-arrival times (microseconds) using SmallVec for stack allocation (typical lookback < 32 trades)
+    let mut inter_arrivals: SmallVec<[f64; 32]> = SmallVec::new();
     for i in 1..lookback.len() {
         inter_arrivals.push((lookback[i].timestamp - lookback[i - 1].timestamp) as f64);
     }
