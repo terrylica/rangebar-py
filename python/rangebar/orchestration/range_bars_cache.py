@@ -87,7 +87,8 @@ def try_cache_read(
                 f"cache_query: {symbol}@{threshold_decimal_bps} "
                 f"{'HIT' if _hit else 'MISS'} ({_query_ms:.1f}ms)"
             )
-            if cached_bars is not None and len(cached_bars) > 0:
+            # Issue #96 Task #21: Reuse _hit instead of redundant condition check
+            if _hit:
                 # Tier 0 validation: Content-based staleness detection (Issue #39)
                 # This catches stale cached data from pre-v7.0 (e.g., VWAP=0)
                 if include_microstructure:
