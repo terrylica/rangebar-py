@@ -56,13 +56,22 @@ pub struct LiveEngineConfig {
 }
 
 impl LiveEngineConfig {
+    /// Get bar channel capacity from environment or use default (10K)
+    /// Issue #96 Task #6: RANGEBAR_MAX_PENDING_BARS env var support
+    fn get_bar_channel_capacity() -> usize {
+        std::env::var("RANGEBAR_MAX_PENDING_BARS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(10_000)
+    }
+
     /// Create config with sensible defaults.
     pub fn new(symbols: Vec<String>, thresholds: Vec<u32>) -> Self {
         Self {
             symbols,
             thresholds,
             include_microstructure: true,
-            bar_channel_capacity: 10_000,  // Issue #96 Task #6: 10K bars backpressure bound
+            bar_channel_capacity: Self::get_bar_channel_capacity(),
             reconnection_policy: ReconnectionPolicy::default(),
             initial_checkpoints: HashMap::new(),
         }
@@ -72,6 +81,12 @@ impl LiveEngineConfig {
     /// Must be called before `LiveBarEngine::start()`.
     pub fn with_checkpoint(mut self, symbol: String, threshold: u32, checkpoint: Checkpoint) -> Self {
         self.initial_checkpoints.insert((symbol, threshold), checkpoint);
+        self
+    }
+
+    /// Set bar channel capacity explicitly (overrides env var)
+    pub fn with_bar_channel_capacity(mut self, capacity: usize) -> Self {
+        self.bar_channel_capacity = capacity;
         self
     }
 }

@@ -1,5 +1,6 @@
 use futures::Stream;
 /// Production-ready streaming architecture with bounded memory and backpressure
+/// # FILE-SIZE-OK
 ///
 /// This module implements true infinite streaming capabilities addressing critical failures:
 /// - Eliminates Vec<RangeBar> accumulation (unbounded memory growth)
@@ -32,12 +33,23 @@ pub struct StreamingProcessorConfig {
     pub circuit_breaker_timeout: Duration,
 }
 
+impl StreamingProcessorConfig {
+    /// Get bar channel capacity from environment or use default (10K)
+    /// Issue #96 Task #6: RANGEBAR_MAX_PENDING_BARS env var support
+    fn get_bar_channel_capacity() -> usize {
+        std::env::var("RANGEBAR_MAX_PENDING_BARS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(10_000)
+    }
+}
+
 impl Default for StreamingProcessorConfig {
     fn default() -> Self {
         Self {
-            trade_channel_capacity: 5_000,       // Based on consensus analysis
-            bar_channel_capacity: 100,           // Bounded per consumer
-            memory_threshold_bytes: 100_000_000, // 100MB limit
+            trade_channel_capacity: 5_000,                              // Based on consensus analysis
+            bar_channel_capacity: StreamingProcessorConfig::get_bar_channel_capacity(), // Issue #96: 10K backpressure bound
+            memory_threshold_bytes: 100_000_000,                        // 100MB limit
             backpressure_timeout: Duration::from_millis(100),
             circuit_breaker_threshold: 0.5, // 50% error rate
             circuit_breaker_timeout: Duration::from_secs(30),

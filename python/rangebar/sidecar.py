@@ -58,7 +58,11 @@ def _env_bool(key: str, default: bool) -> bool:
 
 @dataclass
 class SidecarConfig:
-    """Configuration for the streaming sidecar."""
+    """Configuration for the streaming sidecar.
+
+    Environment Variables (Issue #96 Task #6):
+    - RANGEBAR_MAX_PENDING_BARS: Max queued bars before backpressure (default: 10000)
+    """
 
     symbols: list[str] = field(default_factory=list)
     thresholds: list[int] = field(default_factory=lambda: [250, 500, 750, 1000])
@@ -66,29 +70,42 @@ class SidecarConfig:
     gap_fill_on_startup: bool = True
     verbose: bool = False
     timeout_ms: int = 5000
-    watchdog_timeout_s: int = 300       # 5 min of zero trade increment → dead
-    max_watchdog_restarts: int = 3      # Max engine restarts before exit
+    watchdog_timeout_s: int = 300  # 5 min of zero trade increment → dead
+    max_watchdog_restarts: int = 3  # Max engine restarts before exit
+    max_pending_bars: int = 10_000  # Issue #96 Task #6: Backpressure bound
 
     @classmethod
     def from_env(cls) -> SidecarConfig:
-        """Load config from RANGEBAR_STREAMING_* env vars."""
+        """Load config from environment variables.
+
+        Issue #96 Task #6: RANGEBAR_MAX_PENDING_BARS controls backpressure.
+        """
         symbols_str = os.environ.get("RANGEBAR_STREAMING_SYMBOLS", "")
         symbols = [s.strip() for s in symbols_str.split(",") if s.strip()]
 
         thresholds_str = os.environ.get(
             "RANGEBAR_STREAMING_THRESHOLDS", "250,500,750,1000",
         )
-        thresholds = [int(t.strip()) for t in thresholds_str.split(",") if t.strip()]
+        thresholds = [
+            int(t.strip()) for t in thresholds_str.split(",") if t.strip()
+        ]
 
         return cls(
             symbols=symbols,
             thresholds=thresholds,
-            include_microstructure=_env_bool("RANGEBAR_STREAMING_MICROSTRUCTURE", True),
+            include_microstructure=_env_bool(
+                "RANGEBAR_STREAMING_MICROSTRUCTURE", True
+            ),
             gap_fill_on_startup=_env_bool("RANGEBAR_STREAMING_GAP_FILL", True),
             verbose=_env_bool("RANGEBAR_STREAMING_VERBOSE", False),
             timeout_ms=_env_int("RANGEBAR_STREAMING_TIMEOUT_MS", 5000),
-            watchdog_timeout_s=_env_int("RANGEBAR_STREAMING_WATCHDOG_TIMEOUT_S", 300),
-            max_watchdog_restarts=_env_int("RANGEBAR_STREAMING_MAX_WATCHDOG_RESTARTS", 3),
+            watchdog_timeout_s=_env_int(
+                "RANGEBAR_STREAMING_WATCHDOG_TIMEOUT_S", 300
+            ),
+            max_watchdog_restarts=_env_int(
+                "RANGEBAR_STREAMING_MAX_WATCHDOG_RESTARTS", 3
+            ),
+            max_pending_bars=_env_int("RANGEBAR_MAX_PENDING_BARS", 10_000),
         )
 
 
@@ -387,7 +404,8 @@ def _notify_watchdog_trigger(
 # Main sidecar loop
 # =============================================================================
 
-def run_sidecar(config: SidecarConfig) -> None:
+
+def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
     """Main sidecar entry point. Blocks until interrupted.
 
     Parameters
