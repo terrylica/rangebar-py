@@ -952,9 +952,10 @@ struct RangeBarState {
     /// When intra-bar features are enabled, trades are accumulated here
     /// during bar construction and used to compute features at bar close.
     /// Cleared when bar closes to free memory.
-    /// Issue #119: Uses SmallVec to inline up to 512 trades (99% of bars),
-    /// avoiding heap allocation for typical bar sizes.
-    pub accumulated_trades: SmallVec<[AggTrade; 512]>,
+    /// Issue #136: Optimized from 512 to 64 slots (saves 87.5% stack memory).
+    /// Profile data: max trades/bar = 26 (P99 = 14), so 64 slots provides
+    /// 2.5x safety margin while reducing from 32KB to 4KB per bar.
+    pub accumulated_trades: SmallVec<[AggTrade; 64]>,
 }
 
 impl RangeBarState {
