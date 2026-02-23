@@ -348,7 +348,12 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
     // Kaufman Efficiency Ratio (requires >= 2 trades)
     let kaufman_er = if n >= 2 {
         let net_move = (prices[n - 1] - prices[0]).abs();
-        let path_length: f64 = prices.windows(2).map(|w| (w[1] - w[0]).abs()).sum();
+
+        // Issue #96 Task #59: Replace .windows(2) with direct indexing to avoid iterator overhead
+        let mut path_length = 0.0;
+        for i in 0..n - 1 {
+            path_length += (prices[i + 1] - prices[i]).abs();
+        }
 
         if path_length > f64::EPSILON {
             Some((net_move / path_length).clamp(0.0, 1.0))
