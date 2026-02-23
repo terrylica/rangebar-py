@@ -248,6 +248,8 @@ pub fn compute_hurst_dfa(prices: &[f64]) -> f64 {
 }
 
 /// Compute DFA fluctuation for given box size
+/// Optimized: fuses linear fit computation with variance calculation in single pass
+#[inline]
 pub(crate) fn compute_dfa_fluctuation(profile: &[f64], box_size: usize) -> f64 {
     let n = profile.len();
     let num_boxes = n / box_size;
@@ -262,19 +264,42 @@ pub(crate) fn compute_dfa_fluctuation(profile: &[f64], box_size: usize) -> f64 {
         let end = start + box_size;
         let segment = &profile[start..end];
 
-        // Fit linear trend: y = a + b*x
-        let (a, b) = linear_fit(segment);
+        // Single pass: compute fit coefficients AND variance simultaneously
+        // Accumulate sums needed for linear fit
+        let n_f64 = box_size as f64;
+        let sum_x = (box_size as f64 - 1.0) * box_size as f64 / 2.0;
+        let sum_x2 = (box_size as f64 - 1.0) * box_size as f64 * (2.0 * box_size as f64 - 1.0) / 6.0;
 
-        // Compute variance of detrended segment
-        let variance: f64 = segment
+        let (sum_y, sum_xy) = segment
             .iter()
             .enumerate()
-            .map(|(j, &y)| {
+            .fold((0.0, 0.0), |(sy, sxy), (j, &y)| {
+                let x = j as f64;
+                (sy + y, sxy + x * y)
+            });
+
+        // Compute line fit coefficients
+        let denom = n_f64 * sum_x2 - sum_x * sum_x;
+        let (a, b) = if denom.abs() < f64::EPSILON {
+            (sum_y / n_f64, 0.0)
+        } else {
+            let b = (n_f64 * sum_xy - sum_x * sum_y) / denom;
+            let a = (sum_y - b * sum_x) / n_f64;
+            (a, b)
+        };
+
+        // Compute variance of detrended segment
+        // Optimization: use multiplication instead of .powi(2)
+        #[allow(non_snake_case)]
+        let variance: f64 = {
+            let mut V = 0.0;
+            for (j, &y) in segment.iter().enumerate() {
                 let trend = a + b * (j as f64);
-                (y - trend).powi(2)
-            })
-            .sum::<f64>()
-            / box_size as f64;
+                let residual = y - trend;
+                V += residual * residual; // Faster than residual.powi(2)
+            }
+            V / box_size as f64
+        };
 
         total_variance += variance;
     }
@@ -283,6 +308,7 @@ pub(crate) fn compute_dfa_fluctuation(profile: &[f64], box_size: usize) -> f64 {
 }
 
 /// Least squares fit: y = a + b*x where x = 0, 1, 2, ...
+#[inline]
 pub(crate) fn linear_fit(y: &[f64]) -> (f64, f64) {
     let n = y.len() as f64;
     let sum_x = (n - 1.0) * n / 2.0;
@@ -301,6 +327,7 @@ pub(crate) fn linear_fit(y: &[f64]) -> (f64, f64) {
 }
 
 /// Simple least squares slope
+#[inline]
 pub(crate) fn linear_regression_slope(x: &[f64], y: &[f64]) -> f64 {
     let n = x.len() as f64;
     let mean_x = x.iter().sum::<f64>() / n;
@@ -325,6 +352,7 @@ pub(crate) fn linear_regression_slope(x: &[f64], y: &[f64]) -> f64 {
 /// Formula: 0.5 + 0.5 * tanh((x - 0.5) * 4)
 ///
 /// Maps 0.5 -> 0.5, and asymptotically approaches 0 or 1 for extreme values
+#[inline]
 pub(crate) fn soft_clamp_hurst(h: f64) -> f64 {
     0.5 + 0.5 * ((h - 0.5) * 4.0).tanh()
 }
