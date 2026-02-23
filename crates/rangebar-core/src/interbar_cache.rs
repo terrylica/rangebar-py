@@ -33,10 +33,14 @@ pub const INTERBAR_FEATURE_CACHE_CAPACITY: u64 = 256;
 
 /// Compute a hash of trade window characteristics (optimized single-pass version)
 /// Issue #96 Task #162: Eliminated redundant iteration in hash_trade_window
+/// Issue #96 Task #171: Early-exit for insufficient lookback windows
 /// Used as part of the cache key to identify similar trade sequences
 fn hash_trade_window(lookback: &[&TradeSnapshot]) -> u64 {
-    if lookback.is_empty() {
-        return 0;
+    // Early-exit: windows with < 2 trades have no Tier 2/3 features anyway
+    // (Kaufman ER requires 2+ trades; Hurst, PE, ApEn require 60+ or 500+)
+    // Avoid hash computation overhead for ~10-30% of calls
+    if lookback.len() < 2 {
+        return lookback.len() as u64;  // Return count as sentinel for cache miss
     }
 
     let mut hasher = DefaultHasher::new();
