@@ -63,8 +63,8 @@ pub struct TradeHistory {
     max_safe_capacity: usize,
     /// Issue #96 Task #117: Cache for permutation entropy results
     /// Avoids redundant computation on identical price sequences
-    /// Uses Arc<RwLock> for thread-safe interior mutability (needed for rayon parallelization)
-    entropy_cache: std::sync::Arc<std::sync::RwLock<crate::interbar_math::EntropyCache>>,
+    /// Uses parking_lot::RwLock for lower-latency locking (Issue #96 Task #124)
+    entropy_cache: std::sync::Arc<parking_lot::RwLock<crate::interbar_math::EntropyCache>>,
 }
 
 impl TradeHistory {
@@ -97,7 +97,7 @@ impl TradeHistory {
             bar_close_indices: VecDeque::with_capacity(bar_capacity),
             pushes_since_prune_check: 0,
             max_safe_capacity,
-            entropy_cache: std::sync::Arc::new(std::sync::RwLock::new(crate::interbar_math::EntropyCache::new())),
+            entropy_cache: std::sync::Arc::new(parking_lot::RwLock::new(crate::interbar_math::EntropyCache::new())),
         }
     }
 
@@ -553,8 +553,8 @@ impl TradeHistory {
         // - Large windows (n >= 500): Approximate Entropy (5-10x faster on large n)
         // Minimum 60 trades for permutation entropy (m=3, need 10 * m! = 60)
         if n >= 60 {
-            // Use RwLock for thread-safe interior mutability (needed for rayon parallelization)
-            let mut cache_guard = self.entropy_cache.write().expect("entropy cache lock poisoned");
+            // Issue #96 Task #124: Use parking_lot::RwLock for lower-latency locking
+            let mut cache_guard = self.entropy_cache.write();
             features.lookback_permutation_entropy = Some(
                 crate::interbar_math::compute_entropy_adaptive_cached(prices, &mut cache_guard)
             );

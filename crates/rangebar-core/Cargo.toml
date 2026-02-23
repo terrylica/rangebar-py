@@ -40,6 +40,9 @@ libm = "0.2"
 # rayon for parallelization of Tier 2/3 feature computation (Issue #115)
 rayon = "1.10"
 
+# parking_lot for optimized RwLock (Issue #96 Task #124 - lower latency than std::sync::RwLock)
+parking_lot = "0.12"
+
 [dev-dependencies]
 csv.workspace = true  # Required for test_data_loader during test compilation
 
