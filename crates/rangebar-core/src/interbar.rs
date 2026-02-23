@@ -69,7 +69,43 @@ pub struct TradeHistory {
 
 impl TradeHistory {
     /// Create new trade history with given configuration
+    ///
+    /// Uses a local entropy cache (default behavior, backward compatible).
+    /// For multi-symbol workloads, use `new_with_cache()` to provide a shared global cache.
     pub fn new(config: InterBarConfig) -> Self {
+        Self::new_with_cache(config, None)
+    }
+
+    /// Create new trade history with optional external entropy cache
+    ///
+    /// Issue #145 Phase 2: Multi-Symbol Entropy Cache Sharing
+    ///
+    /// ## Parameters
+    ///
+    /// - `config`: Lookback configuration (FixedCount, FixedWindow, or BarRelative)
+    /// - `external_cache`: Optional shared entropy cache from `get_global_entropy_cache()`
+    ///   - If provided: Uses the shared global cache (recommended for multi-symbol)
+    ///   - If None: Creates a local 128-entry cache (default, backward compatible)
+    ///
+    /// ## Usage
+    ///
+    /// ```ignore
+    /// // Single-symbol: use local cache (default)
+    /// let history = TradeHistory::new(config);
+    ///
+    /// // Multi-symbol: share global cache
+    /// let global_cache = get_global_entropy_cache();
+    /// let history = TradeHistory::new_with_cache(config, Some(global_cache));
+    /// ```
+    ///
+    /// ## Thread Safety
+    ///
+    /// Both local and external caches are thread-safe via Arc<RwLock<>>.
+    /// Multiple processors can safely share the same external cache concurrently.
+    pub fn new_with_cache(
+        config: InterBarConfig,
+        external_cache: Option<std::sync::Arc<parking_lot::RwLock<crate::interbar_math::EntropyCache>>>,
+    ) -> Self {
         // Issue #118: Optimized capacity sizing based on lookback config
         // Reduces memory overhead by 20-30% while maintaining safety margins
         let capacity = match &config.lookback_mode {
@@ -89,6 +125,12 @@ impl TradeHistory {
             LookbackMode::BarRelative(n_bars) => (*n_bars + 1).min(128),
             _ => 128,
         };
+
+        // Issue #145 Phase 2: Use external cache if provided, otherwise create local
+        let entropy_cache = external_cache.unwrap_or_else(|| {
+            std::sync::Arc::new(parking_lot::RwLock::new(crate::interbar_math::EntropyCache::new()))
+        });
+
         Self {
             trades: VecDeque::with_capacity(capacity),
             config,
@@ -97,7 +139,7 @@ impl TradeHistory {
             bar_close_indices: VecDeque::with_capacity(bar_capacity),
             pushes_since_prune_check: 0,
             max_safe_capacity,
-            entropy_cache: std::sync::Arc::new(parking_lot::RwLock::new(crate::interbar_math::EntropyCache::new())),
+            entropy_cache,
         }
     }
 
@@ -1522,5 +1564,22 @@ mod tests {
             assert!(features.lookback_hurst.is_some(), "Hurst should be computed");
             assert!(features.lookback_permutation_entropy.is_some(), "Entropy should be computed");
         }
+    }
+
+    #[test]
+    fn test_trade_history_with_external_cache() {
+        // Issue #145 Phase 2: Test that TradeHistory accepts optional external cache
+        use crate::entropy_cache_global::get_global_entropy_cache;
+
+        // Test 1: Local cache (backward compatible)
+        let _local_history = TradeHistory::new(InterBarConfig::default());
+        // Should work without issues - backward compatible
+
+        // Test 2: External global cache
+        let global_cache = get_global_entropy_cache();
+        let _shared_history = TradeHistory::new_with_cache(InterBarConfig::default(), Some(global_cache.clone()));
+        // Should work without issues - uses provided cache
+
+        // Both constructors work correctly and can be created without panicking
     }
 }

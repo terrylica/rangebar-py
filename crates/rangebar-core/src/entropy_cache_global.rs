@@ -32,7 +32,8 @@
 
 use crate::interbar_math::EntropyCache;
 use once_cell::sync::Lazy;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use parking_lot::RwLock;
 
 /// Maximum capacity for the global entropy cache (tunable via this constant)
 ///

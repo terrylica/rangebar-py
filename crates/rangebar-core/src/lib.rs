@@ -54,6 +54,7 @@ pub use entropy_cache_global::{
 }; // Issue #145: Global entropy cache API
 pub use fixed_point::FixedPoint;
 pub use interbar::{InterBarConfig, InterBarFeatures, LookbackMode, TradeHistory, TradeSnapshot};
+pub use interbar_math::EntropyCache; // Issue #145 Phase 2: Export for external cache parameters
 pub use intrabar::{IntraBarFeatures, compute_intra_bar_features};
 pub use processor::{ExportRangeBarProcessor, ProcessingError, RangeBarProcessor};
 pub use timestamp::{
