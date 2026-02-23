@@ -219,6 +219,23 @@ impl TradeHistory {
             Err(idx) => idx, // Insertion point - all trades before this are < bar_open_time
         };
 
+        // Issue #96 Task #68: Early-exit for tiny lookbacks to avoid collect() overhead
+        // If cutoff_idx < 3, we have 0-2 trades: direct inline collection is more efficient
+        if cutoff_idx == 0 {
+            return SmallVec::new();
+        }
+        if cutoff_idx == 1 {
+            let mut result = SmallVec::new();
+            result.push(&self.trades[0]);
+            return result;
+        }
+        if cutoff_idx == 2 {
+            let mut result = SmallVec::new();
+            result.push(&self.trades[0]);
+            result.push(&self.trades[1]);
+            return result;
+        }
+
         self.trades
             .iter()
             .take(cutoff_idx)
