@@ -42,30 +42,41 @@ def enrich_exchange_sessions(bars_df: pd.DataFrame) -> pd.DataFrame:
 
     from rangebar.ouroboros import get_active_exchange_sessions
 
-    session_data = {
-        "exchange_session_sydney": [],
-        "exchange_session_tokyo": [],
-        "exchange_session_london": [],
-        "exchange_session_newyork": [],
-    }
-    for ts in bars_df.index:
-        # Ensure timezone-aware UTC timestamp
-        if ts.tzinfo is None:
-            ts_utc = ts.tz_localize("UTC")
-        else:
-            ts_utc = ts.tz_convert("UTC")
-        # Suppress nanosecond warning - session detection is hour-granularity
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "Discarding nonzero nanoseconds")
-            flags = get_active_exchange_sessions(ts_utc.to_pydatetime())
-        session_data["exchange_session_sydney"].append(flags.sydney)
-        session_data["exchange_session_tokyo"].append(flags.tokyo)
-        session_data["exchange_session_london"].append(flags.london)
-        session_data["exchange_session_newyork"].append(flags.newyork)
+    # Issue #96 Task #30: Vectorize timezone conversion and batch session lookups
+    # Instead of 500+ function calls, use unique hourly timestamps (~24 calls)
 
-    # Add columns to DataFrame
-    for col, values in session_data.items():
-        bars_df[col] = values
+    # 1. Vectorize timezone conversion (single operation instead of per-row)
+    index = bars_df.index
+    if index.tzinfo is None:
+        index_utc = index.tz_localize("UTC")
+    else:
+        index_utc = index.tz_convert("UTC")
+
+    # 2. Get unique hourly timestamps (session boundaries don't change minute-to-minute)
+    hourly_index = index_utc.floor("1H")
+    unique_hours = hourly_index.unique()
+
+    # 3. Batch compute sessions for unique hours
+    session_map = {}
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "Discarding nonzero nanoseconds")
+        for hour_ts in unique_hours:
+            flags = get_active_exchange_sessions(hour_ts.to_pydatetime())
+            session_map[hour_ts] = flags
+
+    # 4. Map hourly flags to all bars in that hour
+    bars_df["exchange_session_sydney"] = hourly_index.map(session_map).apply(
+        lambda x: x.sydney if x is not None else False
+    )
+    bars_df["exchange_session_tokyo"] = hourly_index.map(session_map).apply(
+        lambda x: x.tokyo if x is not None else False
+    )
+    bars_df["exchange_session_london"] = hourly_index.map(session_map).apply(
+        lambda x: x.london if x is not None else False
+    )
+    bars_df["exchange_session_newyork"] = hourly_index.map(session_map).apply(
+        lambda x: x.newyork if x is not None else False
+    )
 
     return bars_df
 
