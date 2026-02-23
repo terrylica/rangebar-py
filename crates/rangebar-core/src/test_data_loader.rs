@@ -184,9 +184,15 @@ fn load_test_data<P: AsRef<Path>>(
         source: e,
     })?;
 
+    // Issue #96 Task #74: Pre-size CSV reader buffer based on record count (1-3% speedup)
+    // Typical AggTrade record is ~50-80 bytes, so buffer = expected_count * 100 bytes
+    // Minimum 64KB (default), maximum 2MB
+    let csv_buffer_size = (expected_count * 100).max(64 * 1024).min(2 * 1024 * 1024);
+
     // SLO: Maintainability - Use csv crate (off-the-shelf)
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
+        .buffer_capacity(csv_buffer_size)
         .from_reader(file);
 
     let mut trades = Vec::with_capacity(expected_count);
