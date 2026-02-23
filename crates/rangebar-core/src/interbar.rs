@@ -33,6 +33,7 @@
 use crate::fixed_point::FixedPoint;
 use crate::interbar_math::*;
 use crate::types::AggTrade;
+use smallvec::SmallVec;
 use std::collections::VecDeque;
 
 // Re-export types from interbar_types.rs (Phase 2b extraction)
@@ -196,7 +197,12 @@ impl TradeHistory {
     ///
     /// This is CRITICAL for temporal integrity - we only use trades that
     /// occurred BEFORE the current bar opened.
-    pub fn get_lookback_trades(&self, bar_open_time: i64) -> Vec<&TradeSnapshot> {
+    ///
+    /// # Performance
+    ///
+    /// Returns SmallVec with 256 inline capacity. Typical lookback windows (100-500 trades)
+    /// avoid heap allocation entirely. Issue #96 Task #10: TradeHistory allocation optimization.
+    pub fn get_lookback_trades(&self, bar_open_time: i64) -> SmallVec<[&TradeSnapshot; 256]> {
         self.trades
             .iter()
             .filter(|t| t.timestamp < bar_open_time)
@@ -214,7 +220,7 @@ impl TradeHistory {
     /// `InterBarFeatures` with computed values, or `None` for features that
     /// cannot be computed due to insufficient data.
     pub fn compute_features(&self, bar_open_time: i64) -> InterBarFeatures {
-        let lookback: Vec<&TradeSnapshot> = self.get_lookback_trades(bar_open_time);
+        let lookback = self.get_lookback_trades(bar_open_time);
 
         if lookback.is_empty() {
             return InterBarFeatures::default();
@@ -371,11 +377,13 @@ impl TradeHistory {
     ///
     /// Issue #96 Task #7 Phase 2: Batch OHLC extraction for 5-10% overhead reduction
     /// Extracts prices and OHLC once, reuses across multiple feature computations
+    /// Issue #96 Task #10: SmallVec optimization for price allocation (typical 100-500 trades)
     fn compute_tier3_features(&self, lookback: &[&TradeSnapshot], features: &mut InterBarFeatures) {
         let n = lookback.len();
 
         // Phase 2 optimization: Extract OHLC and prices in single pass
-        let prices: Vec<f64> = lookback.iter().map(|t| t.price.to_f64()).collect();
+        // Task #10: Use SmallVec with 256 inline capacity to avoid heap allocation for typical windows
+        let prices: SmallVec<[f64; 256]> = lookback.iter().map(|t| t.price.to_f64()).collect();
         let (open, high, low, close) = extract_ohlc_batch(lookback);
 
         // Kaufman Efficiency Ratio (min 2 trades)

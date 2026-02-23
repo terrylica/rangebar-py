@@ -31,6 +31,9 @@ arrow-array = { workspace = true, optional = true }
 arrow-schema = { workspace = true, optional = true }
 hurst = "0.1.0"
 
+# SmallVec for allocation-efficient lookback trade tracking (Issue #96 Task #10)
+smallvec = "1.13"
+
 [features]
 default = []
 test-utils = ["dep:csv"]  # Real data loading requires csv crate
