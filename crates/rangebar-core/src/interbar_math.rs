@@ -357,4 +357,208 @@ mod hurst_accuracy_tests {
         println!("  R/S H = {:.4}", rs_h);
         println!("  Both ≈ 0.5? DFA={:.2}, RS={:.2}", dfa_h, rs_h);
     }
+
+    // Edge case tests for inter-bar features (Issue #96: Test expansion)
+    // Validates robustness on boundary conditions and stress scenarios
+
+    #[test]
+    fn test_hurst_edge_case_empty() {
+        let prices: Vec<f64> = vec![];
+        let h = compute_hurst_dfa(&prices);
+        assert_eq!(h, 0.5, "Empty prices should return neutral (0.5)");
+    }
+
+    #[test]
+    fn test_hurst_edge_case_insufficient_samples() {
+        // Less than MIN_SAMPLES (64) should return neutral
+        let prices: Vec<f64> = (0..32).map(|i| 100.0 + i as f64).collect();
+        let h = compute_hurst_dfa(&prices);
+        assert_eq!(
+            h, 0.5,
+            "Less than 64 samples should return neutral (0.5)"
+        );
+    }
+
+    #[test]
+    fn test_hurst_edge_case_constant_prices() {
+        // All same price should handle gracefully (no variation)
+        // With R/S analysis, constant series results in NaN (0/0 case)
+        let prices = vec![100.0; 100];
+        let h = compute_hurst_dfa(&prices);
+        // Constant prices may result in NaN after soft clamping, which is acceptable
+        // The important thing is no panic/crash
+        if !h.is_nan() {
+            assert!(h >= 0.0 && h <= 1.0, "Hurst should be in [0,1] if not NaN");
+        }
+    }
+
+    #[test]
+    fn test_hurst_bounds_stress() {
+        // Verify Hurst stays bounded across diverse scenarios
+        let scenarios = vec![
+            ("linear", (0..256).map(|i| 100.0 + i as f64).collect::<Vec<_>>()),
+            (
+                "sawtooth",
+                (0..256)
+                    .map(|i| if i % 2 == 0 { 100.0 } else { 101.0 })
+                    .collect::<Vec<_>>(),
+            ),
+        ];
+
+        for (name, prices) in scenarios {
+            let h = compute_hurst_dfa(&prices);
+            assert!(
+                h >= 0.0 && h <= 1.0,
+                "Hurst({}) must be in [0,1], got {}",
+                name,
+                h
+            );
+            assert!(!h.is_nan(), "Hurst({}) must not be NaN", name);
+        }
+    }
+
+    #[test]
+    fn test_garman_klass_edge_case_empty() {
+        use crate::{FixedPoint, interbar_types::TradeSnapshot};
+
+        // Empty lookback should return 0
+        let snapshot: Vec<TradeSnapshot> = vec![];
+        let snapshot_refs: Vec<&TradeSnapshot> = snapshot.iter().collect();
+        let vol = compute_garman_klass(&snapshot_refs);
+        assert_eq!(vol, 0.0, "Empty lookback should return 0");
+    }
+
+    #[test]
+    fn test_garman_klass_edge_case_constant_price() {
+        use crate::{FixedPoint, interbar_types::TradeSnapshot};
+
+        // All same price: H=L, C=O, variance should be 0
+        let prices = vec![100.0; 50];
+        let snapshots: Vec<TradeSnapshot> = prices
+            .iter()
+            .enumerate()
+            .map(|(i, &price)| {
+                let price_fp =
+                    FixedPoint::from_str(&format!("{:.8}", price)).expect("valid price");
+                let vol_fp = FixedPoint::from_str("1.00000000").expect("valid volume");
+                let turnover_f64 = price_fp.to_f64() * vol_fp.to_f64();
+                TradeSnapshot {
+                    price: price_fp,
+                    volume: vol_fp,
+                    timestamp: 1000 + (i as i64 * 100),
+                    is_buyer_maker: false,
+                    turnover: (turnover_f64 * 1e8) as i128,
+                }
+            })
+            .collect();
+        let snapshot_refs: Vec<&TradeSnapshot> = snapshots.iter().collect();
+        let vol = compute_garman_klass(&snapshot_refs);
+        assert_eq!(vol, 0.0, "Constant price should give 0 volatility");
+    }
+
+    #[test]
+    fn test_garman_klass_bounds() {
+        use crate::{FixedPoint, interbar_types::TradeSnapshot};
+
+        // Garman-Klass should be non-negative
+        let prices = vec![100.0, 105.0, 103.0, 108.0, 102.0];
+        let snapshots: Vec<TradeSnapshot> = prices
+            .iter()
+            .enumerate()
+            .map(|(i, &price)| {
+                let price_fp =
+                    FixedPoint::from_str(&format!("{:.8}", price)).expect("valid price");
+                let vol_fp = FixedPoint::from_str("1.00000000").expect("valid volume");
+                let turnover_f64 = price_fp.to_f64() * vol_fp.to_f64();
+                TradeSnapshot {
+                    price: price_fp,
+                    volume: vol_fp,
+                    timestamp: 1000 + (i as i64 * 100),
+                    is_buyer_maker: false,
+                    turnover: (turnover_f64 * 1e8) as i128,
+                }
+            })
+            .collect();
+        let snapshot_refs: Vec<&TradeSnapshot> = snapshots.iter().collect();
+        let vol = compute_garman_klass(&snapshot_refs);
+        assert!(vol >= 0.0, "Garman-Klass volatility must be non-negative");
+        assert!(!vol.is_nan(), "Garman-Klass must not be NaN");
+    }
+
+    #[test]
+    fn test_permutation_entropy_edge_case_empty() {
+        let prices: Vec<f64> = vec![];
+        let entropy = compute_permutation_entropy(&prices);
+        assert_eq!(
+            entropy, 1.0,
+            "Empty prices should return max entropy (1.0)"
+        );
+    }
+
+    #[test]
+    fn test_permutation_entropy_edge_case_insufficient_data() {
+        // Less than MIN_SAMPLES (60) should return max entropy
+        let prices: Vec<f64> = (0..30).map(|i| 100.0 + i as f64).collect();
+        let entropy = compute_permutation_entropy(&prices);
+        assert_eq!(entropy, 1.0, "Insufficient data should return max entropy");
+    }
+
+    #[test]
+    fn test_permutation_entropy_bounds() {
+        // Entropy should be in [0, 1]
+        let prices: Vec<f64> = (0..100).map(|i| 100.0 + (i % 3) as f64).collect();
+        let entropy = compute_permutation_entropy(&prices);
+        assert!(
+            entropy >= 0.0 && entropy <= 1.0,
+            "Entropy must be in [0,1], got {}",
+            entropy
+        );
+        assert!(!entropy.is_nan(), "Entropy must not be NaN");
+    }
+
+    #[test]
+    fn test_kaufman_er_edge_case_empty() {
+        let prices: Vec<f64> = vec![];
+        let er = compute_kaufman_er(&prices);
+        assert_eq!(er, 0.0, "Empty prices should give ER=0");
+    }
+
+    #[test]
+    fn test_kaufman_er_edge_case_constant_prices() {
+        let prices = vec![100.0; 50];
+        let er = compute_kaufman_er(&prices);
+        assert_eq!(er, 0.0, "Constant prices should give ER=0");
+    }
+
+    #[test]
+    fn test_kaufman_er_bounds() {
+        // Kaufman ER should be in [0, 1]
+        let prices: Vec<f64> = (0..100).map(|i| 100.0 + i as f64).collect();
+        let er = compute_kaufman_er(&prices);
+        assert!(er >= 0.0 && er <= 1.0, "ER must be in [0,1], got {}", er);
+        assert!(!er.is_nan(), "ER must not be NaN");
+    }
+
+    #[test]
+    fn test_ordinal_pattern_index_coverage() {
+        // Test ordinal pattern mappings for m=3
+        // All 6 patterns from algorithm in ordinal_pattern_index_m3
+        let test_cases = vec![
+            (0.0, 1.0, 2.0, 0), // a<=b<=c → 0
+            (0.0, 2.0, 1.0, 1), // a<=c<b → 1
+            (1.0, 0.0, 2.0, 2), // b<a<=c → 2
+            (2.0, 0.0, 1.0, 3), // a>b, a>c, b<=c → 3
+            (1.0, 2.0, 0.0, 4), // a<=b, b>c, a>c → 4
+            (2.0, 1.0, 0.0, 5), // a>b>c → 5
+        ];
+
+        for (a, b, c, expected) in test_cases {
+            let idx = ordinal_pattern_index_m3(a, b, c);
+            assert_eq!(
+                idx, expected,
+                "Pattern ({},{},{}) should map to index {} but got {}",
+                a, b, c, expected, idx
+            );
+        }
+    }
 }
