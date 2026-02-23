@@ -216,6 +216,40 @@ fn bench_bar_close_take(c: &mut Criterion) {
     group.finish();
 }
 
+/// Dedicated Hurst DFA profiling to validate O(n²) complexity
+/// This isolates the bottleneck identified in Issue #96
+fn bench_hurst_dfa_scaling(c: &mut Criterion) {
+    use rangebar_core::interbar_math::compute_hurst_dfa;
+
+    let mut group = c.benchmark_group("hurst_dfa_scaling");
+    group.sample_size(50); // Reduce samples due to longer compute times
+
+    // Test different series lengths to confirm O(n²) scaling
+    for series_len in [64, 128, 256, 512, 1024].iter() {
+        // Generate synthetic price series
+        let mut prices = Vec::with_capacity(*series_len);
+        let mut price = 50000.0;
+        for i in 0..*series_len {
+            let noise = ((i * 7919) % 1000) as f64 / 1000.0 - 0.5;
+            price += noise * 10.0;
+            prices.push(price);
+        }
+
+        group.bench_with_input(
+            BenchmarkId::new("compute_hurst_dfa", series_len),
+            series_len,
+            |b, _| {
+                b.iter(|| {
+                    let h = compute_hurst_dfa(black_box(&prices));
+                    black_box(h);
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_range_bar_processing,
@@ -223,6 +257,7 @@ criterion_group!(
     bench_breach_detection,
     bench_memory_efficiency,
     bench_extreme_cases,
-    bench_bar_close_take
+    bench_bar_close_take,
+    bench_hurst_dfa_scaling
 );
 criterion_main!(benches);

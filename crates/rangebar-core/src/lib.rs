@@ -16,7 +16,7 @@ pub mod errors;
 pub mod export_processor; // Export-oriented processor (extracted Phase 2d)
 pub mod fixed_point;
 pub mod interbar; // Issue #59: Inter-bar microstructure features (lookback window BEFORE bar)
-pub(crate) mod interbar_math; // Issue #59: Inter-bar math helpers (extracted Phase 2e)
+pub mod interbar_math; // Issue #59: Inter-bar math helpers (extracted Phase 2e) - public for profiling/benchmarking
 pub mod interbar_types; // Issue #59: Inter-bar type definitions (extracted Phase 2b)
 pub mod intrabar; // Issue #59: Intra-bar features (trades WITHIN bar)
 pub mod processor;

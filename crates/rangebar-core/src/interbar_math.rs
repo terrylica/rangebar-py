@@ -191,7 +191,7 @@ pub(crate) fn compute_garman_klass(lookback: &[&TradeSnapshot]) -> f64 {
 /// - H > 0.5: Positively correlated (trending)
 ///
 /// Output: soft-clamped to [0, 1] for ML consumption
-pub(crate) fn compute_hurst_dfa(prices: &[f64]) -> f64 {
+pub fn compute_hurst_dfa(prices: &[f64]) -> f64 {
     const MIN_SAMPLES: usize = 64;
     if prices.len() < MIN_SAMPLES {
         return 0.5; // Neutral (insufficient data)
