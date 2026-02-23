@@ -242,6 +242,10 @@ harness = false  # Issue #96 Task #159: Zero-copy trade snapshot optimization an
 name = "hurst_early_exit_benchmark"
 harness = false  # Issue #96 Task #160: Hurst early-exit via entropy threshold
 
+[[bench]]
+name = "apen_simd_optimization_benchmark"
+harness = false  # Issue #96 Task #161: ApEn SIMD optimization analysis
+
 # =============================================================================
 # Build Profiles
 # =============================================================================

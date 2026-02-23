@@ -1405,6 +1405,10 @@ pub fn compute_approximate_entropy(prices: &[f64], m: usize, r: f64) -> f64 {
 /// Helper: Compute φ(m) for ApEn
 ///
 /// Counts matching patterns within tolerance r
+/// Issue #96 Task #161: Phase 1 scalar optimization (1-2x speedup)
+/// - Direct Chebyshev distance instead of zip+all()
+/// - Single pass through pattern elements
+/// - Avoid iterator overhead
 #[inline]
 fn compute_phi(prices: &[f64], m: usize, r: f64) -> f64 {
     let n = prices.len();
@@ -1415,10 +1419,23 @@ fn compute_phi(prices: &[f64], m: usize, r: f64) -> f64 {
     let mut count = 0usize;
     let num_patterns = n - m + 1;
 
-    // Count patterns within distance r
+    // Issue #96 Task #161: Optimized pattern matching
+    // Direct Chebyshev distance (max abs difference) without iterator overhead
     for i in 0..num_patterns {
+        let p1 = &prices[i..i + m];
         for j in (i + 1)..num_patterns {
-            if patterns_within_distance(&prices[i..i + m], &prices[j..j + m], r) {
+            let p2 = &prices[j..j + m];
+
+            // Chebyshev distance: max(abs(p1[k] - p2[k])) <= r
+            // Short-circuit on first violation for faster rejection
+            let mut is_within_distance = true;
+            for k in 0..m {
+                if (p1[k] - p2[k]).abs() > r {
+                    is_within_distance = false;
+                    break;
+                }
+            }
+            if is_within_distance {
                 count += 1;
             }
         }
@@ -1431,15 +1448,6 @@ fn compute_phi(prices: &[f64], m: usize, r: f64) -> f64 {
 
     let c = count as f64 / (num_patterns * (num_patterns - 1) / 2) as f64;
     -c * libm::log(c)  // Issue #116: Use libm for 1.2-1.5x speedup
-}
-
-/// Check if two patterns are within distance r
-#[inline]
-fn patterns_within_distance(p1: &[f64], p2: &[f64], r: f64) -> bool {
-    debug_assert_eq!(p1.len(), p2.len());
-    p1.iter()
-        .zip(p2.iter())
-        .all(|(a, b)| (a - b).abs() <= r)
 }
 
 /// Adaptive entropy computation: Permutation Entropy for small windows, ApEn for large
