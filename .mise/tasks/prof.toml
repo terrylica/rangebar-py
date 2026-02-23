@@ -16,3 +16,182 @@ run = "CARGO_PROFILE_RELEASE_DEBUG=true cargo build --release"
 ["prof:full"]
 description = "Comprehensive profiling suite (uses script for platform detection)"
 run = "./scripts/profiling_tools.sh full"
+
+# =============================================================================
+# Profile-Guided Optimization (PGO) Tasks (Issue #96 Task #97)
+# =============================================================================
+# Automate 3-step PGO workflow: collect → merge → optimize
+# Expected speedup: 10-20% cumulative with LTO (20-35% total)
+#
+# Prerequisites: Rust 1.90+, llvm-tools-preview, 2GB free disk space
+# Profiling data: Real Binance trade data for representative workload
+#
+# References: ./.claude/pgo-workflow.md, Cargo.toml profiles.pgo-collect/pgo-use
+
+["pgo:collect"]
+description = "Collect PGO profiling data with instrumented binary"
+run = """
+set -e
+echo "=== PGO Phase 1: Collect Profiling Data ==="
+mkdir -p pgo-data
+
+# Find LLVM profdata tool (comes with Rust toolchain)
+LLVM_PROFDATA_PATH=$(rustc --print sysroot)/lib/rustlib/$(rustc -Vv | grep host | awk '{print $NF}')/bin/llvm-profdata
+if [ ! -f "$LLVM_PROFDATA_PATH" ]; then
+    echo "ERROR: llvm-profdata not found at $LLVM_PROFDATA_PATH"
+    echo "Run: rustup component add llvm-tools-preview"
+    exit 1
+fi
+
+# Clean old profraw files
+rm -f pgo-data/*.profraw pgo-data/*.profdata
+
+# Build instrumented binary with profile-generate
+echo "Building instrumented binary with PGO..."
+RUSTFLAGS="-Cprofile-generate=./pgo-data -Cllvm-args=-pgo-warn-missing-function" \
+    cargo build -p rangebar-py --release --profile pgo-collect 2>&1 | tail -10
+
+# Run profiling workload on representative data
+echo ""
+echo "Running profiling workload (Tier 1: 1 day BTCUSDT)..."
+
+# Set LLVM_PROFILE_FILE and run Python in same shell context
+LLVM_PROFILE_FILE="pgo-data/rangebar-%m.profraw" \
+uv run python3 << 'PYEOF'
+import os
+from rangebar import get_range_bars
+import time
+
+# Verify LLVM_PROFILE_FILE is set in subprocess
+profile_file = os.environ.get('LLVM_PROFILE_FILE', 'NOT SET')
+print(f'LLVM_PROFILE_FILE={profile_file}')
+
+start = time.time()
+try:
+    df = get_range_bars('BTCUSDT', '2024-06-15', '2024-06-15')
+    elapsed = time.time() - start
+    print(f'Processed {len(df)} bars in {elapsed:.2f}s')
+except Exception as e:
+    # May fail if ClickHouse unavailable, but profiling data might still be collected
+    elapsed = time.time() - start
+    print(f'Warning: {type(e).__name__} (profiling may still have occurred)')
+    print(f'Elapsed: {elapsed:.2f}s')
+
+print('PGO profiling workload complete')
+PYEOF
+
+# Verify profraw files were created
+echo ""
+PROFRAW_COUNT=$(ls -1 pgo-data/*.profraw 2>/dev/null | wc -l || echo 0)
+if [ "$PROFRAW_COUNT" -eq 0 ]; then
+    echo "⚠  WARNING: No profraw files generated"
+    echo "This may indicate:"
+    echo "  1. The instrumented binary didn't collect profiles"
+    echo "  2. LLVM_PROFILE_FILE wasn't propagated correctly"
+    echo "  3. The profiling workload didn't exercise the instrumented code"
+    echo ""
+    echo "Continuing with empty PGO data (next steps will create no-op profdata)"
+else
+    echo "✓ Generated $PROFRAW_COUNT profraw files"
+fi
+"""
+depends = []
+
+["pgo:merge"]
+description = "Merge PGO profiling data into single profdata file"
+run = """
+set -e
+echo "=== PGO Phase 2: Merge Profiling Data ==="
+
+# Find LLVM profdata tool
+LLVM_PROFDATA_PATH=$(rustc --print sysroot)/lib/rustlib/$(rustc -Vv | grep host | awk '{print $NF}')/bin/llvm-profdata
+if [ ! -f "$LLVM_PROFDATA_PATH" ]; then
+    echo "ERROR: llvm-profdata not found at $LLVM_PROFDATA_PATH"
+    exit 1
+fi
+
+PROFRAW_COUNT=$(ls -1 pgo-data/*.profraw 2>/dev/null | wc -l)
+if [ "$PROFRAW_COUNT" -eq 0 ]; then
+    echo "ERROR: No profraw files found in pgo-data/"
+    echo "Run: mise run pgo:collect"
+    exit 1
+fi
+
+echo "Merging $PROFRAW_COUNT profraw files..."
+"$LLVM_PROFDATA_PATH" merge -o pgo-data/merged.profdata pgo-data/*.profraw
+
+# Verify merged.profdata was created
+if [ ! -f "pgo-data/merged.profdata" ]; then
+    echo "ERROR: merged.profdata not created"
+    exit 1
+fi
+
+PROFDATA_SIZE=$(du -sh pgo-data/merged.profdata | awk '{print $1}')
+echo "✓ Merged profdata: $PROFDATA_SIZE"
+"""
+depends = ["pgo:collect"]
+
+["pgo:optimize"]
+description = "Build optimized binary using PGO data"
+run = """
+set -e
+echo "=== PGO Phase 3: Optimize with Profiling Data ==="
+
+if [ ! -f "pgo-data/merged.profdata" ]; then
+    echo "ERROR: merged.profdata not found"
+    echo "Run: mise run pgo:merge"
+    exit 1
+fi
+
+echo "Building optimized binary with PGO data..."
+RUSTFLAGS="-Cprofile-use=./pgo-data/merged.profdata -Cllvm-args=-pgo-warn-missing-function" \
+    cargo build -p rangebar-py --release --profile pgo-use 2>&1 | tail -10
+
+echo ""
+echo "Installing optimized wheel..."
+maturin develop --release
+
+echo "✓ PGO optimization complete"
+echo ""
+echo "Next: Run benchmarks to measure speedup"
+echo "  mise run bench:pgo"
+"""
+depends = ["pgo:merge"]
+
+["pgo:full"]
+description = "Complete PGO workflow: collect → merge → optimize"
+run = """
+set -e
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║  Profile-Guided Optimization (PGO) - Full Workflow        ║"
+echo "║  Expected Speedup: 10-20% (cumulative 20-35% with LTO)    ║"
+echo "╚════════════════════════════════════════════════════════════╝"
+echo ""
+
+mise run pgo:collect
+echo ""
+mise run pgo:merge
+echo ""
+mise run pgo:optimize
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+echo "✓ PGO optimization complete!"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+echo "To measure speedup, run benchmarks:"
+echo "  mise run bench:pgo"
+echo ""
+echo "To commit PGO-optimized wheels:"
+echo "  git add Cargo.lock"
+echo "  git commit -m 'build: PGO-optimized wheels'"
+"""
+depends = ["pgo:optimize"]
+
+["pgo:clean"]
+description = "Clean PGO data (profraw, profdata, etc.)"
+run = """
+echo "Cleaning PGO data..."
+rm -rf pgo-data/
+echo "✓ PGO data cleaned"
+"""

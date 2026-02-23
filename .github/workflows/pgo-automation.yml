@@ -1,0 +1,175 @@
+name: Profile-Guided Optimization (Weekly)
+
+on:
+  schedule:
+    # Run PGO profiling every Sunday at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:  # Allow manual triggering
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  pgo-collect:
+    name: Collect PGO Profiles
+    runs-on: macos-latest-xlarge  # Use macOS ARM64 for native performance testing
+    timeout-minutes: 60  # PGO profiling can take 20-30 minutes
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.90
+
+      - name: Install Python 3.13
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Verify environment
+        run: |
+          rustc --version
+          python3 --version
+          uv --version
+          mise --version
+
+      - name: Install dependencies
+        run: |
+          uv pip install -e . --quiet
+
+      - name: Create pgo-data directory
+        run: mkdir -p pgo-data
+
+      - name: Build instrumented binary
+        run: |
+          RUSTFLAGS="-Cprofile-generate=./pgo-data -Cllvm-args=-pgo-warn-missing-function" \
+            cargo build -p rangebar-py --release --profile pgo-collect 2>&1 | grep -E "Compiling|Finished"
+        timeout-minutes: 30
+
+      - name: Run PGO profiling workload
+        run: |
+          export LLVM_PROFILE_FILE="pgo-data/rangebar-%m.profraw"
+
+          python3 << 'EOF'
+          from rangebar import get_range_bars
+          import time
+
+          print("Starting PGO profiling on real Binance data...")
+          start = time.time()
+
+          # Tier 1: Fast profiling (1 day BTCUSDT)
+          try:
+              df = get_range_bars('BTCUSDT', '2024-06-15', '2024-06-15',
+                                include_microstructure=True)
+              elapsed = time.time() - start
+              print(f'✓ Processed {len(df)} bars in {elapsed:.2f}s')
+          except Exception as e:
+              print(f'⚠ Error during profiling: {e}')
+              print('Note: This may occur in CI if ClickHouse is unavailable')
+
+          print('PGO profiling complete')
+          EOF
+        timeout-minutes: 10
+
+      - name: Verify profraw files
+        run: |
+          PROFRAW_COUNT=$(ls -1 pgo-data/*.profraw 2>/dev/null | wc -l)
+          if [ "$PROFRAW_COUNT" -eq 0 ]; then
+            echo "WARNING: No profraw files generated (data collection may have failed)"
+            echo "This can occur if ClickHouse cache is unavailable in CI"
+            # Don't fail - continue to merge step with empty data
+          else
+            echo "✓ Generated $PROFRAW_COUNT profraw files"
+          fi
+
+      - name: Merge profiling data
+        run: |
+          LLVM_PROFDATA_PATH=$(rustc --print sysroot)/lib/rustlib/$(rustc -Vv | grep host | awk '{print $NF}')/bin/llvm-profdata
+
+          if [ ! -f "$LLVM_PROFDATA_PATH" ]; then
+            echo "Installing llvm-tools-preview..."
+            rustup component add llvm-tools-preview
+          fi
+
+          PROFRAW_COUNT=$(ls -1 pgo-data/*.profraw 2>/dev/null | wc -l)
+          if [ "$PROFRAW_COUNT" -gt 0 ]; then
+            echo "Merging $PROFRAW_COUNT profraw files..."
+            "$LLVM_PROFDATA_PATH" merge -o pgo-data/merged.profdata pgo-data/*.profraw
+
+            if [ -f "pgo-data/merged.profdata" ]; then
+              PROFDATA_SIZE=$(du -sh pgo-data/merged.profdata | awk '{print $1}')
+              echo "✓ Merged profdata: $PROFDATA_SIZE"
+            fi
+          else
+            echo "⚠ No profraw files to merge (skipping merge step)"
+          fi
+
+      - name: Upload PGO data as artifact
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: pgo-data-${{ github.run_id }}
+          path: pgo-data/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Create status comment
+        if: always()
+        run: |
+          if [ -f "pgo-data/merged.profdata" ]; then
+            echo "## ✅ PGO Profiling Complete" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Profdata size: $(du -sh pgo-data/merged.profdata | awk '{print $1}')" >> $GITHUB_STEP_SUMMARY
+            echo "Profraw files: $(ls -1 pgo-data/*.profraw 2>/dev/null | wc -l)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ⚠️ PGO Profiling Incomplete" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Note: Data collection may fail if ClickHouse is unavailable." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  notify:
+    name: Notify on Completion
+    runs-on: ubuntu-latest
+    needs: pgo-collect
+    if: always()
+
+    steps:
+      - name: Check completion
+        run: |
+          if [ "${{ needs.pgo-collect.result }}" == "success" ]; then
+            echo "PGO profiling completed successfully"
+          else
+            echo "PGO profiling completed with warnings (check artifacts)"
+          fi
+
+      - name: Download PGO data
+        uses: actions/download-artifact@v3
+        with:
+          name: pgo-data-${{ github.run_id }}
+          path: pgo-data/
+        if-no-files-found: ignore
+
+      - name: Comment on release
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "PGO profiling complete. Check artifacts for profdata."
