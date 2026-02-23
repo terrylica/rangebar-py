@@ -155,11 +155,9 @@ def _concat_pandas_via_polars(dfs: list[pd.DataFrame]) -> pd.DataFrame:
     combined = combined.sort(index_col)
 
     # Convert back to pandas with proper index
+    # Issue #96 Task #26: index_col always in result (from include_index=True)
     result = combined.to_pandas()
-    if index_col in result.columns:
-        result = result.set_index(index_col)
-
-    return result
+    return result.set_index(index_col)
 
 
 def normalize_arrow_dtypes(
