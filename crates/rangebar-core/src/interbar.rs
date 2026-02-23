@@ -1429,7 +1429,7 @@ mod tests {
                 last_trade_id: i,
                 timestamp: snapshot.timestamp,
                 is_buyer_maker: snapshot.is_buyer_maker,
-                is_best_match: false,
+                is_best_match: Some(false),
             });
         }
 
@@ -1462,7 +1462,7 @@ mod tests {
             last_trade_id: 1,
             timestamp: snapshot.timestamp,
             is_buyer_maker: snapshot.is_buyer_maker,
-            is_best_match: false,
+            is_best_match: Some(false),
         });
 
         let features = history.compute_features(2000);
@@ -1494,7 +1494,7 @@ mod tests {
                 last_trade_id: i,
                 timestamp: snapshot.timestamp,
                 is_buyer_maker: snapshot.is_buyer_maker,
-                is_best_match: false,
+                is_best_match: Some(false),
             });
         }
 

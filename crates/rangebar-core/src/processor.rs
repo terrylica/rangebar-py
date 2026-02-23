@@ -1395,8 +1395,8 @@ mod tests {
         let trade1 = test_utils::create_test_agg_trade(100, "50000.0", "1.0", 1640995200000000);
         let trade2 = test_utils::create_test_agg_trade(101, "50010.0", "1.0", 1640995201000000);
 
-        let _ = processor.process_single_trade(trade1);
-        let _ = processor.process_single_trade(trade2);
+        let _ = processor.process_single_trade(&trade1);
+        let _ = processor.process_single_trade(&trade2);
 
         // Create next trade in sequence
         let next_trade = test_utils::create_test_agg_trade(102, "50020.0", "1.0", 1640995202000000);
@@ -1415,8 +1415,8 @@ mod tests {
         let trade1 = test_utils::create_test_agg_trade(100, "50000.0", "1.0", 1640995200000000);
         let trade2 = test_utils::create_test_agg_trade(101, "50010.0", "1.0", 1640995201000000);
 
-        let _ = processor.process_single_trade(trade1);
-        let _ = processor.process_single_trade(trade2);
+        let _ = processor.process_single_trade(&trade1);
+        let _ = processor.process_single_trade(&trade2);
 
         // Create next trade with gap (skip IDs 102-104)
         let next_trade = test_utils::create_test_agg_trade(105, "50020.0", "1.0", 1640995202000000);
@@ -1528,7 +1528,7 @@ mod tests {
         let mut stream_bars: Vec<RangeBar> = Vec::new();
         for trade in &trades {
             if let Some(bar) = stream_processor
-                .process_single_trade(trade.clone())
+                .process_single_trade(trade)
                 .unwrap()
             {
                 stream_bars.push(bar);
@@ -1594,11 +1594,11 @@ mod tests {
 
         // Trade 1: Opens bar at 50000
         let t1 = test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1000);
-        assert!(processor.process_single_trade(t1).unwrap().is_none());
+        assert!(processor.process_single_trade(&t1).unwrap().is_none());
 
         // Trade 2: Breaches threshold (+0.3%)
         let t2 = test_utils::create_test_agg_trade(2, "50150.0", "2.0", 2000);
-        let bar = processor.process_single_trade(t2).unwrap();
+        let bar = processor.process_single_trade(&t2).unwrap();
         assert!(bar.is_some(), "Should close bar on breach");
 
         let closed_bar = bar.unwrap();
@@ -1613,7 +1613,7 @@ mod tests {
 
         // Trade 3: Should open NEW bar (not the breaching trade)
         let t3 = test_utils::create_test_agg_trade(3, "50100.0", "3.0", 3000);
-        assert!(processor.process_single_trade(t3).unwrap().is_none());
+        assert!(processor.process_single_trade(&t3).unwrap().is_none());
 
         let incomplete = processor.get_incomplete_bar().unwrap();
         assert_eq!(
@@ -1633,13 +1633,13 @@ mod tests {
         let trades = scenarios::single_breach_sequence(250);
 
         for trade in &trades[..trades.len() - 1] {
-            let result = processor.process_single_trade(trade.clone()).unwrap();
+            let result = processor.process_single_trade(trade).unwrap();
             assert!(result.is_none());
         }
 
         // Last trade triggers breach
         let bar = processor
-            .process_single_trade(trades.last().unwrap().clone())
+            .process_single_trade(trades.last().unwrap())
             .unwrap()
             .expect("Should produce completed bar");
 
