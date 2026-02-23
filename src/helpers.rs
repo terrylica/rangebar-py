@@ -130,47 +130,110 @@ pub(crate) fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject>
     dict.set_item("lookback_vwap_position", bar.lookback_vwap_position)?;
     dict.set_item("lookback_count_imbalance", bar.lookback_count_imbalance)?;
 
-    // Tier 2: Statistical features
-    dict.set_item("lookback_kyle_lambda", bar.lookback_kyle_lambda)?;
-    dict.set_item("lookback_burstiness", bar.lookback_burstiness)?;
-    dict.set_item("lookback_volume_skew", bar.lookback_volume_skew)?;
-    dict.set_item("lookback_volume_kurt", bar.lookback_volume_kurt)?;
-    dict.set_item("lookback_price_range", bar.lookback_price_range)?;
+    // Issue #96 Task #70: Batch optional field setting to reduce Python→Rust boundary crossings
+    // Tier 2: Statistical features (skip None values to reduce set_item overhead)
+    if let Some(v) = bar.lookback_kyle_lambda {
+        dict.set_item("lookback_kyle_lambda", v)?;
+    }
+    if let Some(v) = bar.lookback_burstiness {
+        dict.set_item("lookback_burstiness", v)?;
+    }
+    if let Some(v) = bar.lookback_volume_skew {
+        dict.set_item("lookback_volume_skew", v)?;
+    }
+    if let Some(v) = bar.lookback_volume_kurt {
+        dict.set_item("lookback_volume_kurt", v)?;
+    }
+    if let Some(v) = bar.lookback_price_range {
+        dict.set_item("lookback_price_range", v)?;
+    }
 
     // Tier 3: trading-fitness features
-    dict.set_item("lookback_kaufman_er", bar.lookback_kaufman_er)?;
-    dict.set_item("lookback_garman_klass_vol", bar.lookback_garman_klass_vol)?;
-    dict.set_item("lookback_hurst", bar.lookback_hurst)?;
-    dict.set_item("lookback_permutation_entropy", bar.lookback_permutation_entropy)?;
+    if let Some(v) = bar.lookback_kaufman_er {
+        dict.set_item("lookback_kaufman_er", v)?;
+    }
+    if let Some(v) = bar.lookback_garman_klass_vol {
+        dict.set_item("lookback_garman_klass_vol", v)?;
+    }
+    if let Some(v) = bar.lookback_hurst {
+        dict.set_item("lookback_hurst", v)?;
+    }
+    if let Some(v) = bar.lookback_permutation_entropy {
+        dict.set_item("lookback_permutation_entropy", v)?;
+    }
 
     // Intra-bar features (Issue #59) - computed from trades WITHIN each bar
     // ITH features (Investment Time Horizon)
-    dict.set_item("intra_bull_epoch_density", bar.intra_bull_epoch_density)?;
-    dict.set_item("intra_bear_epoch_density", bar.intra_bear_epoch_density)?;
-    dict.set_item("intra_bull_excess_gain", bar.intra_bull_excess_gain)?;
-    dict.set_item("intra_bear_excess_gain", bar.intra_bear_excess_gain)?;
-    dict.set_item("intra_bull_cv", bar.intra_bull_cv)?;
-    dict.set_item("intra_bear_cv", bar.intra_bear_cv)?;
-    dict.set_item("intra_max_drawdown", bar.intra_max_drawdown)?;
-    dict.set_item("intra_max_runup", bar.intra_max_runup)?;
+    if let Some(v) = bar.intra_bull_epoch_density {
+        dict.set_item("intra_bull_epoch_density", v)?;
+    }
+    if let Some(v) = bar.intra_bear_epoch_density {
+        dict.set_item("intra_bear_epoch_density", v)?;
+    }
+    if let Some(v) = bar.intra_bull_excess_gain {
+        dict.set_item("intra_bull_excess_gain", v)?;
+    }
+    if let Some(v) = bar.intra_bear_excess_gain {
+        dict.set_item("intra_bear_excess_gain", v)?;
+    }
+    if let Some(v) = bar.intra_bull_cv {
+        dict.set_item("intra_bull_cv", v)?;
+    }
+    if let Some(v) = bar.intra_bear_cv {
+        dict.set_item("intra_bear_cv", v)?;
+    }
+    if let Some(v) = bar.intra_max_drawdown {
+        dict.set_item("intra_max_drawdown", v)?;
+    }
+    if let Some(v) = bar.intra_max_runup {
+        dict.set_item("intra_max_runup", v)?;
+    }
 
     // Statistical features
-    dict.set_item("intra_trade_count", bar.intra_trade_count)?;
-    dict.set_item("intra_ofi", bar.intra_ofi)?;
-    dict.set_item("intra_duration_us", bar.intra_duration_us)?;
-    dict.set_item("intra_intensity", bar.intra_intensity)?;
-    dict.set_item("intra_vwap_position", bar.intra_vwap_position)?;
-    dict.set_item("intra_count_imbalance", bar.intra_count_imbalance)?;
-    dict.set_item("intra_kyle_lambda", bar.intra_kyle_lambda)?;
-    dict.set_item("intra_burstiness", bar.intra_burstiness)?;
-    dict.set_item("intra_volume_skew", bar.intra_volume_skew)?;
-    dict.set_item("intra_volume_kurt", bar.intra_volume_kurt)?;
-    dict.set_item("intra_kaufman_er", bar.intra_kaufman_er)?;
-    dict.set_item("intra_garman_klass_vol", bar.intra_garman_klass_vol)?;
+    if let Some(v) = bar.intra_trade_count {
+        dict.set_item("intra_trade_count", v)?;
+    }
+    if let Some(v) = bar.intra_ofi {
+        dict.set_item("intra_ofi", v)?;
+    }
+    if let Some(v) = bar.intra_duration_us {
+        dict.set_item("intra_duration_us", v)?;
+    }
+    if let Some(v) = bar.intra_intensity {
+        dict.set_item("intra_intensity", v)?;
+    }
+    if let Some(v) = bar.intra_vwap_position {
+        dict.set_item("intra_vwap_position", v)?;
+    }
+    if let Some(v) = bar.intra_count_imbalance {
+        dict.set_item("intra_count_imbalance", v)?;
+    }
+    if let Some(v) = bar.intra_kyle_lambda {
+        dict.set_item("intra_kyle_lambda", v)?;
+    }
+    if let Some(v) = bar.intra_burstiness {
+        dict.set_item("intra_burstiness", v)?;
+    }
+    if let Some(v) = bar.intra_volume_skew {
+        dict.set_item("intra_volume_skew", v)?;
+    }
+    if let Some(v) = bar.intra_volume_kurt {
+        dict.set_item("intra_volume_kurt", v)?;
+    }
+    if let Some(v) = bar.intra_kaufman_er {
+        dict.set_item("intra_kaufman_er", v)?;
+    }
+    if let Some(v) = bar.intra_garman_klass_vol {
+        dict.set_item("intra_garman_klass_vol", v)?;
+    }
 
     // Complexity features
-    dict.set_item("intra_hurst", bar.intra_hurst)?;
-    dict.set_item("intra_permutation_entropy", bar.intra_permutation_entropy)?;
+    if let Some(v) = bar.intra_hurst {
+        dict.set_item("intra_hurst", v)?;
+    }
+    if let Some(v) = bar.intra_permutation_entropy {
+        dict.set_item("intra_permutation_entropy", v)?;
+    }
 
     Ok(dict.into())
 }
