@@ -113,6 +113,11 @@ RANGEBAR_STREAMING_MICROSTRUCTURE = "true"
 RANGEBAR_STREAMING_GAP_FILL = "true"
 RANGEBAR_STREAMING_VERBOSE = "false"
 RANGEBAR_STREAMING_TIMEOUT_MS = "5000"
+# Issue #107: Watchdog detects half-open TCP via trade flow staleness.
+# 300s (5 min) of zero trade increment → engine restart.
+RANGEBAR_STREAMING_WATCHDOG_TIMEOUT_S = "300"
+# Max engine restarts before sidecar exits (systemd restarts the process).
+RANGEBAR_STREAMING_MAX_WATCHDOG_RESTARTS = "3"
 
 # =============================================================================
 # GitHub Account Isolation

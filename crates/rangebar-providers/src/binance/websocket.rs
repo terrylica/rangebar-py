@@ -1,3 +1,4 @@
+// FILE-SIZE-OK: Tests are inline per Rust convention, splitting would lose #[cfg(test)] gating
 //! WebSocket streaming for real-time Binance market data (Issue #91)
 //!
 //! This module provides asynchronous WebSocket connections to Binance streams
@@ -70,6 +71,7 @@ impl From<tokio_tungstenite::tungstenite::Error> for WebSocketError {
 
 /// Reconnection policy with exponential backoff.
 /// Issue #91: Adapted from barter-rs `ReconnectingStream` pattern.
+/// Issue #107: Added `data_timeout_secs` for half-open TCP detection.
 #[derive(Debug, Clone)]
 pub struct ReconnectionPolicy {
     /// Initial backoff duration in milliseconds (default: 125ms)
@@ -78,6 +80,10 @@ pub struct ReconnectionPolicy {
     pub backoff_multiplier: u64,
     /// Maximum backoff duration in milliseconds (default: 60s)
     pub backoff_ms_max: u64,
+    /// Max seconds of silence before treating connection as dead (default: 90s).
+    /// Binance sends pings every ~180s, BTCUSDT trades every ~50ms.
+    /// 90s of total silence is unambiguously dead.
+    pub data_timeout_secs: u64,
 }
 
 impl Default for ReconnectionPolicy {
@@ -86,6 +92,7 @@ impl Default for ReconnectionPolicy {
             backoff_ms_initial: 125,
             backoff_multiplier: 2,
             backoff_ms_max: 60_000,
+            data_timeout_secs: 90,
         }
     }
 }
@@ -191,14 +198,21 @@ impl BinanceWebSocketStream {
         )
     }
 
-    /// Connect and stream trades until disconnection or shutdown.
+    /// Connect and stream trades until disconnection, timeout, or shutdown.
     ///
     /// Returns `Ok(())` on clean shutdown, `Err` on any failure.
     /// The caller (typically `run_with_reconnect`) decides whether to retry.
+    ///
+    /// Issue #107: `data_timeout` detects half-open TCP connections. If no
+    /// WebSocket frames arrive within `data_timeout`, the connection is
+    /// treated as dead and `ConnectionClosed` is returned (recoverable).
+    /// The `tokio::select!` sleep is recreated each loop iteration, so every
+    /// received frame implicitly resets the timer.
     pub async fn connect_and_stream(
         symbol: &str,
         trade_tx: &mpsc::Sender<AggTrade>,
         shutdown: &CancellationToken,
+        data_timeout: Duration,
     ) -> Result<(), WebSocketError> {
         let symbol_lower = symbol.to_lowercase();
         let url = format!("wss://stream.binance.com:9443/ws/{symbol_lower}@aggTrade");
@@ -257,6 +271,11 @@ impl BinanceWebSocketStream {
                         }
                     }
                 }
+                () = tokio::time::sleep(data_timeout) => {
+                    tracing::warn!(%symbol, timeout_secs = data_timeout.as_secs(),
+                        "data timeout — no WebSocket frames, treating as dead");
+                    return Err(WebSocketError::ConnectionClosed);
+                }
                 () = shutdown.cancelled() => {
                     tracing::info!(%symbol, "shutdown requested, closing WebSocket");
                     return Ok(());
@@ -287,11 +306,12 @@ impl BinanceWebSocketStream {
         }
 
         let mut backoff_ms = policy.backoff_ms_initial;
+        let data_timeout = Duration::from_secs(policy.data_timeout_secs);
 
         loop {
             // Reset backoff on each new connection attempt start
             // (if we get data, backoff resets below)
-            match Self::connect_and_stream(symbol, &trade_tx, &shutdown).await {
+            match Self::connect_and_stream(symbol, &trade_tx, &shutdown, data_timeout).await {
                 Ok(()) => {
                     // Clean shutdown requested via CancellationToken
                     tracing::info!(%symbol, "clean shutdown");
@@ -410,6 +430,7 @@ mod tests {
         assert_eq!(policy.backoff_ms_initial, 125);
         assert_eq!(policy.backoff_multiplier, 2);
         assert_eq!(policy.backoff_ms_max, 60_000);
+        assert_eq!(policy.data_timeout_secs, 90);
     }
 
     #[test]
@@ -453,5 +474,38 @@ mod tests {
         BinanceWebSocketStream::run_with_reconnect("BTC-USD", tx, Default::default(), shutdown)
             .await;
         // If we get here, the function correctly detected terminal error
+    }
+
+    /// Issue #107: Regression guard — ConnectionClosed must stay non-terminal
+    /// so that data timeout triggers reconnection via run_with_reconnect.
+    #[test]
+    fn test_connection_closed_is_not_terminal() {
+        assert!(!WebSocketError::ConnectionClosed.is_terminal());
+    }
+
+    /// Issue #107: Custom data_timeout_secs is accessible and used.
+    #[test]
+    fn test_custom_data_timeout() {
+        let policy = ReconnectionPolicy {
+            data_timeout_secs: 30,
+            ..Default::default()
+        };
+        assert_eq!(policy.data_timeout_secs, 30);
+        assert_eq!(policy.backoff_ms_initial, 125); // others unchanged
+    }
+
+    /// Issue #107: Verify data_timeout Duration construction from policy.
+    #[test]
+    fn test_data_timeout_duration_from_policy() {
+        let policy = ReconnectionPolicy::default();
+        let timeout = Duration::from_secs(policy.data_timeout_secs);
+        assert_eq!(timeout, Duration::from_secs(90));
+
+        let custom = ReconnectionPolicy {
+            data_timeout_secs: 30,
+            ..Default::default()
+        };
+        let timeout = Duration::from_secs(custom.data_timeout_secs);
+        assert_eq!(timeout, Duration::from_secs(30));
     }
 }
