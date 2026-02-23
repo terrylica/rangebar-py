@@ -135,5 +135,9 @@ harness = false  # Disable test harness for Kyle Lambda branchless optimization 
 name = "entropy_cache_warmup_benchmark"
 harness = false  # Disable test harness for entropy cache warm-up benchmark (Issue #96 Task #191)
 
+[[bench]]
+name = "lookahead_binary_search_benchmark"
+harness = false  # Disable test harness for lookahead binary search benchmark (Issue #96 Task #167 Phase 2)
+
 [lints]
 workspace = true
