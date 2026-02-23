@@ -12,7 +12,12 @@ pub fn mean(x: &[f64]) -> f64 {
 /// Calculate standard deviation
 pub fn standard_deviation(x: &[f64]) -> f64 {
     let mean_x: f64 = mean(x);
-    let sum_x_minus_mean: f64 = x.iter().map(|a| (a - mean_x).powi(2)).sum();
+    // Issue #96 Task #209: Replace expensive .powi(2) with direct multiplication
+    // powi(2) costs ~30 CPU cycles, direct multiplication costs ~1-2 cycles
+    let sum_x_minus_mean: f64 = x.iter().map(|a| {
+        let diff = a - mean_x;
+        diff * diff  // Faster than .powi(2)
+    }).sum();
     (sum_x_minus_mean / (x.len() as f64)).sqrt()
 }
 
