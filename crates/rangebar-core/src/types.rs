@@ -8,9 +8,18 @@ use serde::{Deserialize, Serialize};
 pub use crate::trade::{AggTrade, DataSource};
 
 /// Range bar with OHLCV data and market microstructure enhancements
+///
+/// Field ordering optimized for cache locality (Issue #96 Task #85):
+/// - Tier 1: OHLCV Core (48B, 1 CL)
+/// - Tier 2: Volume Accumulators (96B, 1.5 CL)
+/// - Tier 3: Trade Tracking (48B, 1 CL)
+/// - Tier 4: Price Context (24B, partial CL)
+/// - Tier 5: Microstructure (80B, 1.25 CL)
+/// - Tier 6-7: Inter-Bar & Intra-Bar Features
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "api", derive(utoipa::ToSchema))]
 pub struct RangeBar {
+    // === TIER 1: OHLCV CORE (48 bytes, 1 cache line) ===
     /// Opening timestamp in microseconds (first trade)
     pub open_time: i64,
 
@@ -29,20 +38,28 @@ pub struct RangeBar {
     /// Closing price (breach trade price)
     pub close: FixedPoint,
 
+    // === TIER 2: VOLUME ACCUMULATORS (96 bytes, 1.5 cache lines) ===
     /// Total volume (i128 accumulator to prevent overflow, Issue #88)
     pub volume: i128,
 
     /// Total turnover (sum of price * volume)
     pub turnover: i128,
 
-    /// Total number of individual exchange trades in this range bar
-    /// Sum of individual_trade_count() from all processed AggTrade records
-    pub individual_trade_count: u32,
+    /// Volume from buy-side trades (is_buyer_maker = false)
+    /// Represents aggressive buying pressure (i128 accumulator, Issue #88)
+    pub buy_volume: i128,
 
-    /// Number of AggTrade records processed to create this range bar
-    /// NEW: Enables tracking of aggregation efficiency
-    pub agg_record_count: u32,
+    /// Volume from sell-side trades (is_buyer_maker = true)
+    /// Represents aggressive selling pressure (i128 accumulator, Issue #88)
+    pub sell_volume: i128,
 
+    /// Turnover from buy-side trades (buy pressure)
+    pub buy_turnover: i128,
+
+    /// Turnover from sell-side trades (sell pressure)
+    pub sell_turnover: i128,
+
+    // === TIER 3: TRADE TRACKING (48 bytes, 1 cache line) ===
     /// First individual trade ID in this range bar
     pub first_trade_id: i64,
 
@@ -57,17 +74,13 @@ pub struct RangeBar {
     /// Tracks the last AggTrade record processed in this bar
     pub last_agg_trade_id: i64,
 
-    /// Data source this range bar was created from
-    pub data_source: DataSource,
+    /// Total number of individual exchange trades in this range bar
+    /// Sum of individual_trade_count() from all processed AggTrade records
+    pub individual_trade_count: u32,
 
-    // === MARKET MICROSTRUCTURE ENHANCEMENTS ===
-    /// Volume from buy-side trades (is_buyer_maker = false)
-    /// Represents aggressive buying pressure (i128 accumulator, Issue #88)
-    pub buy_volume: i128,
-
-    /// Volume from sell-side trades (is_buyer_maker = true)
-    /// Represents aggressive selling pressure (i128 accumulator, Issue #88)
-    pub sell_volume: i128,
+    /// Number of AggTrade records processed to create this range bar
+    /// NEW: Enables tracking of aggregation efficiency
+    pub agg_record_count: u32,
 
     /// Number of individual buy-side trades (aggressive buying)
     pub buy_trade_count: u32,
@@ -75,18 +88,15 @@ pub struct RangeBar {
     /// Number of individual sell-side trades (aggressive selling)
     pub sell_trade_count: u32,
 
+    // === TIER 4: PRICE CONTEXT (24 bytes, partial cache line) ===
     /// Volume Weighted Average Price for the bar
     /// Calculated incrementally as: sum(price * volume) / sum(volume)
     pub vwap: FixedPoint,
 
-    /// Turnover from buy-side trades (buy pressure)
-    pub buy_turnover: i128,
+    /// Data source this range bar was created from
+    pub data_source: DataSource,
 
-    /// Turnover from sell-side trades (sell pressure)
-    pub sell_turnover: i128,
-
-    // === MICROSTRUCTURE FEATURES (Issue #25) ===
-    // Computed at bar finalization via compute_microstructure_features()
+    // === TIER 5: MICROSTRUCTURE (80 bytes, 1.25 cache lines) ===
     /// Bar duration in microseconds (close_time - open_time)
     /// Reference: Easley et al. (2012) "Volume Clock"
     #[serde(default)]
@@ -138,7 +148,7 @@ pub struct RangeBar {
     #[serde(default)]
     pub turnover_imbalance: f64,
 
-    // === INTER-BAR FEATURES (Issue #59) ===
+    // === TIER 6: INTER-BAR FEATURES (Issue #59) ===
     // Computed from lookback trade window BEFORE each bar opens.
     // All fields are Option<T> to indicate when computation wasn't possible.
 
@@ -209,7 +219,7 @@ pub struct RangeBar {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lookback_permutation_entropy: Option<f64>,
 
-    // === INTRA-BAR FEATURES (Issue #59) ===
+    // === TIER 7: INTRA-BAR FEATURES (Issue #59) ===
     // Computed from trades WITHIN each bar (open_time to close_time).
     // All fields are Option<T> to indicate when computation wasn't possible.
 
