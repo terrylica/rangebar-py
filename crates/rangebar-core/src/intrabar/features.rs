@@ -126,7 +126,21 @@ fn compute_volume_moments(volumes: &[f64]) -> (Option<f64>, Option<f64>) {
 ///
 /// # Returns
 /// `IntraBarFeatures` struct with all 22 features (or None for insufficient data)
+///
+/// Issue #96 Task #173: Uses reusable scratch buffers if available for zero-copy extraction
 pub fn compute_intra_bar_features(trades: &[AggTrade]) -> IntraBarFeatures {
+    let mut scratch_prices = Vec::new();
+    let mut scratch_volumes = Vec::new();
+    compute_intra_bar_features_with_scratch(trades, &mut scratch_prices, &mut scratch_volumes)
+}
+
+/// Optimized version accepting reusable scratch buffers
+/// Issue #96 Task #173: Avoids per-bar heap allocation by reusing buffers across bars
+pub fn compute_intra_bar_features_with_scratch(
+    trades: &[AggTrade],
+    scratch_prices: &mut Vec<f64>,
+    scratch_volumes: &mut Vec<f64>,
+) -> IntraBarFeatures {
     let n = trades.len();
 
     if n < 2 {
@@ -136,25 +150,28 @@ pub fn compute_intra_bar_features(trades: &[AggTrade]) -> IntraBarFeatures {
         };
     }
 
-    // Extract price series from trades with pre-allocation (Issue #96 Task #64)
-    let mut prices = Vec::with_capacity(n);
+    // Extract price series from trades, reusing scratch buffer (Issue #96 Task #173)
+    scratch_prices.clear();
+    scratch_prices.reserve(n);
     for trade in trades {
-        prices.push(trade.price.to_f64());
+        scratch_prices.push(trade.price.to_f64());
     }
 
     // Normalize prices to start at 1.0 for ITH computation
-    let first_price = prices[0];
+    let first_price = scratch_prices[0];
     if first_price <= 0.0 || !first_price.is_finite() {
         return IntraBarFeatures {
             intra_trade_count: Some(n as u32),
             ..Default::default()
         };
     }
-    // Pre-allocate normalized prices vector (Issue #96 Task #64)
-    let mut normalized = Vec::with_capacity(n);
-    for &p in &prices {
-        normalized.push(p / first_price);
+    // Reuse scratch buffer for normalized prices (Issue #96 Task #173)
+    scratch_volumes.clear();
+    scratch_volumes.reserve(n);
+    for &p in scratch_prices.iter() {
+        scratch_volumes.push(p / first_price);
     }
+    let normalized = scratch_volumes;  // Rebind for clarity
 
     // Compute max_drawdown and max_runup in single pass (Issue #96 Task #66: merged computation)
     let (max_dd, max_ru) = compute_max_drawdown_and_runup(&normalized);
@@ -170,7 +187,7 @@ pub fn compute_intra_bar_features(trades: &[AggTrade]) -> IntraBarFeatures {
     let bear_excess_sum: f64 = bear_result.excess_gains.iter().sum();
 
     // Compute statistical features
-    let stats = compute_statistical_features(trades, &prices);
+    let stats = compute_statistical_features(trades, scratch_prices);
 
     // Compute complexity features (only if enough trades)
     let hurst = if n >= 64 {
@@ -179,7 +196,7 @@ pub fn compute_intra_bar_features(trades: &[AggTrade]) -> IntraBarFeatures {
         None
     };
     let pe = if n >= 60 {
-        Some(compute_permutation_entropy(&prices, 3))
+        Some(compute_permutation_entropy(scratch_prices, 3))
     } else {
         None
     };

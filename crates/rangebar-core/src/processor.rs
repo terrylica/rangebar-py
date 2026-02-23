@@ -9,7 +9,7 @@ use crate::checkpoint::{
 };
 use crate::fixed_point::FixedPoint;
 use crate::interbar::{InterBarConfig, TradeHistory}; // Issue #59
-use crate::intrabar::compute_intra_bar_features; // Issue #59: Intra-bar features
+// Issue #59: Intra-bar features - using compute_intra_bar_features_with_scratch (Task #173)
 use crate::types::{AggTrade, RangeBar};
 use smallvec::SmallVec; // Issue #119: Trade accumulation with inline buffer (512 slots ≈ 29KB)
 #[cfg(feature = "python")]
@@ -416,8 +416,12 @@ impl RangeBarProcessor {
 
                     // Issue #59: Compute intra-bar features from accumulated trades
                     if self.include_intra_bar_features {
-                        let intra_bar_features =
-                            compute_intra_bar_features(&bar_state.accumulated_trades);
+                        // Issue #96 Task #173: Use reusable scratch buffers from bar_state
+                        let intra_bar_features = crate::intrabar::compute_intra_bar_features_with_scratch(
+                            &bar_state.accumulated_trades,
+                            &mut bar_state.scratch_prices,
+                            &mut bar_state.scratch_volumes,
+                        );
                         bar_state.bar.set_intra_bar_features(&intra_bar_features);
                     }
 
@@ -624,8 +628,12 @@ impl RangeBarProcessor {
 
                         // Issue #59: Compute intra-bar features from accumulated trades
                         if self.include_intra_bar_features {
-                            let intra_bar_features =
-                                compute_intra_bar_features(&bar_state.accumulated_trades);
+                            // Issue #96 Task #173: Use reusable scratch buffers from bar_state
+                            let intra_bar_features = crate::intrabar::compute_intra_bar_features_with_scratch(
+                                &bar_state.accumulated_trades,
+                                &mut bar_state.scratch_prices,
+                                &mut bar_state.scratch_volumes,
+                            );
                             bar_state.bar.set_intra_bar_features(&intra_bar_features);
                         }
 
@@ -669,8 +677,12 @@ impl RangeBarProcessor {
 
                 // Issue #59: Compute intra-bar features from accumulated trades
                 if self.include_intra_bar_features {
-                    let intra_bar_features =
-                        compute_intra_bar_features(&bar_state.accumulated_trades);
+                    // Issue #96 Task #173: Use reusable scratch buffers from bar_state
+                    let intra_bar_features = crate::intrabar::compute_intra_bar_features_with_scratch(
+                        &bar_state.accumulated_trades,
+                        &mut bar_state.scratch_prices,
+                        &mut bar_state.scratch_volumes,
+                    );
                     bar_state.bar.set_intra_bar_features(&intra_bar_features);
                 }
 
@@ -778,6 +790,8 @@ impl RangeBarProcessor {
                 upper_threshold: upper,
                 lower_threshold: lower,
                 accumulated_trades: SmallVec::new(), // Lost on checkpoint - features may be partial
+                scratch_prices: Vec::new(),  // Issue #96 Task #173: Initialize scratch buffers
+                scratch_volumes: Vec::new(),
             }),
             _ => None,
         };
@@ -1006,6 +1020,16 @@ struct RangeBarState {
     /// Profile data: max trades/bar = 26 (P99 = 14), so 64 slots provides
     /// 2.5x safety margin while reducing from 32KB to 4KB per bar.
     pub accumulated_trades: SmallVec<[AggTrade; 64]>,
+
+    /// Scratch buffer for intra-bar price extraction (Issue #96 Task #173)
+    /// Reused across bars to avoid per-bar heap allocation
+    /// Cleared and reserved on each use for efficient memory reuse
+    pub scratch_prices: Vec<f64>,
+
+    /// Scratch buffer for intra-bar volume extraction (Issue #96 Task #173)
+    /// Reused across bars to avoid per-bar heap allocation
+    /// Cleared and reserved on each use for efficient memory reuse
+    pub scratch_volumes: Vec<f64>,
 }
 
 impl RangeBarState {
@@ -1024,6 +1048,8 @@ impl RangeBarState {
             upper_threshold,
             lower_threshold,
             accumulated_trades: SmallVec::new(),
+            scratch_prices: Vec::new(),  // Issue #96 Task #173: Initialize scratch buffers
+            scratch_volumes: Vec::new(),
         }
     }
 
@@ -1046,6 +1072,8 @@ impl RangeBarState {
                 sv.push(trade.clone());
                 sv
             },
+            scratch_prices: Vec::new(),  // Issue #96 Task #173: Initialize scratch buffers
+            scratch_volumes: Vec::new(),
         }
     }
 
