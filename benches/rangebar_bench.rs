@@ -250,6 +250,53 @@ fn bench_hurst_dfa_scaling(c: &mut Criterion) {
     group.finish();
 }
 
+/// Compare our optimized Hurst DFA across different use cases
+/// Issue #96: Memory Efficiency - Performance enhancement survey Phase 3
+fn bench_hurst_crate_comparison(c: &mut Criterion) {
+    use rangebar_core::interbar_math::compute_hurst_dfa;
+
+    let mut group = c.benchmark_group("hurst_optimization_analysis");
+    group.sample_size(30);
+
+    // Test case 1: Typical trading window (trending + noise)
+    let mut prices_512 = Vec::with_capacity(512);
+    let mut price = 50000.0;
+    for i in 0..512 {
+        let trend = (i as f64 / 512.0) * 100.0;
+        let noise = ((i * 7919) % 1000) as f64 / 1000.0 - 0.5;
+        price += trend / 512.0 + noise * 10.0;
+        prices_512.push(price);
+    }
+
+    // Test case 2: Longer series (full hour lookback)
+    let mut prices_1024 = Vec::with_capacity(1024);
+    price = 50000.0;
+    for i in 0..1024 {
+        let trend = (i as f64 / 1024.0) * 200.0;
+        let noise = ((i * 7919) % 1000) as f64 / 1000.0 - 0.5;
+        price += trend / 1024.0 + noise * 10.0;
+        prices_1024.push(price);
+    }
+
+    // Benchmark typical lookback window
+    group.bench_function("optimized_dfa_512", |b| {
+        b.iter(|| {
+            let h = compute_hurst_dfa(black_box(&prices_512));
+            black_box(h);
+        });
+    });
+
+    // Benchmark larger lookback
+    group.bench_function("optimized_dfa_1024", |b| {
+        b.iter(|| {
+            let h = compute_hurst_dfa(black_box(&prices_1024));
+            black_box(h);
+        });
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_range_bar_processing,
@@ -258,6 +305,7 @@ criterion_group!(
     bench_memory_efficiency,
     bench_extreme_cases,
     bench_bar_close_take,
-    bench_hurst_dfa_scaling
+    bench_hurst_dfa_scaling,
+    bench_hurst_crate_comparison
 );
 criterion_main!(benches);

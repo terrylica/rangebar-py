@@ -162,8 +162,10 @@ binance = ["data-providers"]
 [dev-dependencies]
 criterion = { workspace = true }
 rangebar = { path = "crates/rangebar" }
+hurst = "0.1.0"
 
 [build-dependencies]
+hurst = "0.1.0"
 pyo3-build-config = "0.22"
 
 [lints]
