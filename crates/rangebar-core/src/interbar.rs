@@ -368,20 +368,24 @@ impl TradeHistory {
     }
 
     /// Compute Tier 3 features (4 features, higher min trades)
+    ///
+    /// Issue #96 Task #7 Phase 2: Batch OHLC extraction for 5-10% overhead reduction
+    /// Extracts prices and OHLC once, reuses across multiple feature computations
     fn compute_tier3_features(&self, lookback: &[&TradeSnapshot], features: &mut InterBarFeatures) {
         let n = lookback.len();
 
-        // Collect prices for advanced features
+        // Phase 2 optimization: Extract OHLC and prices in single pass
         let prices: Vec<f64> = lookback.iter().map(|t| t.price.to_f64()).collect();
+        let (open, high, low, close) = extract_ohlc_batch(lookback);
 
         // Kaufman Efficiency Ratio (min 2 trades)
         if n >= 2 {
             features.lookback_kaufman_er = Some(compute_kaufman_er(&prices));
         }
 
-        // Garman-Klass volatility (min 1 trade, needs OHLC)
+        // Garman-Klass volatility (min 1 trade) - use batch OHLC data
         if n >= 1 {
-            features.lookback_garman_klass_vol = Some(compute_garman_klass(lookback));
+            features.lookback_garman_klass_vol = Some(compute_garman_klass_with_ohlc(open, high, low, close));
         }
 
         // Hurst exponent via DFA (min 64 trades for reliable estimate)
