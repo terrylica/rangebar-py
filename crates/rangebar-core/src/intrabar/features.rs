@@ -500,6 +500,7 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
 ///
 /// Requires at least `m! + (m-1)` observations where m is the embedding dimension.
 /// Issue #96 Task #53: Optimized to use bounded array instead of HashMap<String>
+/// Issue #96 Task #54: Hoisted SmallVec allocation and added early-exit for sorted sequences
 fn compute_permutation_entropy(prices: &[f64], m: usize) -> f64 {
     let n = prices.len();
     let required = factorial(m) + m - 1;
@@ -520,23 +521,36 @@ fn compute_permutation_entropy(prices: &[f64], m: usize) -> f64 {
     let mut pattern_counts = [0usize; 24]; // Fixed size for all reasonable m values
     let num_patterns = n - m + 1;
 
+    // OPTIMIZATION: Hoist SmallVec allocation outside loop for reuse with .clear()
+    let mut indices = SmallVec::<[usize; 4]>::new();
+
     for i in 0..num_patterns {
         let window = &prices[i..i + m];
 
         // Create sorted indices (ordinal pattern) using SmallVec
-        let mut indices = SmallVec::<[usize; 4]>::new();
+        indices.clear();
         for j in 0..m {
             indices.push(j);
         }
-        indices.sort_by(|&a, &b| {
-            window[a]
-                .partial_cmp(&window[b])
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
 
-        // Convert sorted indices to pattern index (0 to m!-1)
-        let pattern_idx = ordinal_indices_to_pattern_index(&indices);
-        pattern_counts[pattern_idx] += 1;
+        // OPTIMIZATION: Early-exit if already sorted (common in trending data)
+        // Check if indices == [0, 1, 2, ..., m-1] without allocation
+        let is_sorted = indices.iter().enumerate().all(|(pos, &idx)| idx == pos);
+        if is_sorted {
+            // Pattern index is 0 (identity permutation - perfect ascending order)
+            pattern_counts[0] += 1;
+        } else {
+            // Perform sort and compute pattern index
+            indices.sort_by(|&a, &b| {
+                window[a]
+                    .partial_cmp(&window[b])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            // Convert sorted indices to pattern index (0 to m!-1)
+            let pattern_idx = ordinal_indices_to_pattern_index(&indices);
+            pattern_counts[pattern_idx] += 1;
+        }
     }
 
     // Compute Shannon entropy from pattern counts
