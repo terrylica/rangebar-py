@@ -170,30 +170,39 @@ fn dict_to_rangebar_full(
     let aggregation_density_f64 = get_f64_optional(dict, "aggregation_density", 0.0)?;
     let turnover_imbalance = get_f64_optional(dict, "turnover_imbalance", 0.0)?;
 
+    // Issue #85 Phase 3: Reorganize RangeBar construction to match tier-based field ordering
     Ok(RangeBar {
+        // Tier 1: OHLCV Core
         open_time,
         close_time,
         open: f64_to_fixed_point(open),
         high: f64_to_fixed_point(high),
         low: f64_to_fixed_point(low),
         close: f64_to_fixed_point(close),
-        // Issue #88: volume fields are i128, not FixedPoint
+
+        // Tier 2: Volume Accumulators (Issue #88: i128, not FixedPoint)
         volume: (volume * VOLUME_SCALE).round() as i128,
         turnover: 0, // Not typically stored in dict
-        individual_trade_count,
-        agg_record_count,
+        buy_volume: (buy_volume * VOLUME_SCALE).round() as i128,
+        sell_volume: (sell_volume * VOLUME_SCALE).round() as i128,
+        buy_turnover: 0, // Not typically stored in dict
+        sell_turnover: 0,
+
+        // Tier 3: Trade Tracking
         first_trade_id,
         last_trade_id,
         first_agg_trade_id, // Issue #72
         last_agg_trade_id,  // Issue #72
-        data_source: rangebar_core::DataSource::BinanceFuturesUM,
-        buy_volume: (buy_volume * VOLUME_SCALE).round() as i128,
-        sell_volume: (sell_volume * VOLUME_SCALE).round() as i128,
+        individual_trade_count,
+        agg_record_count,
         buy_trade_count,
         sell_trade_count,
+
+        // Tier 4: Price Context
         vwap: f64_to_fixed_point(vwap),
-        buy_turnover: 0, // Not typically stored in dict
-        sell_turnover: 0,
+        data_source: rangebar_core::DataSource::BinanceFuturesUM,
+
+        // Tier 5: Microstructure features
         duration_us,
         ofi,
         vwap_close_deviation,
@@ -204,7 +213,8 @@ fn dict_to_rangebar_full(
         aggression_ratio,
         aggregation_density_f64,
         turnover_imbalance,
-        // Inter-bar features (Issue #59) - initialized to None from dict parsing
+
+        // Tier 6: Inter-bar features (Issue #59) - initialized to None from dict parsing
         lookback_trade_count: None,
         lookback_ofi: None,
         lookback_duration_us: None,
@@ -221,7 +231,8 @@ fn dict_to_rangebar_full(
         lookback_garman_klass_vol: None,
         lookback_hurst: None,
         lookback_permutation_entropy: None,
-        // Intra-bar features (Issue #59) - initialized to None from dict parsing
+
+        // Tier 7: Intra-bar features (Issue #59) - initialized to None from dict parsing
         intra_bull_epoch_density: None,
         intra_bear_epoch_density: None,
         intra_bull_excess_gain: None,

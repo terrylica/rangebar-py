@@ -554,31 +554,39 @@ pub(crate) fn dict_to_rangebar(_py: Python, dict: &Bound<PyDict>) -> PyResult<Ra
     let buy_turnover_i128 = (buy_turnover_f64 * SCALE).round() as i128;
     let sell_turnover_i128 = (sell_turnover_f64 * SCALE).round() as i128;
 
+    // Issue #85 Phase 3: Reorganize RangeBar construction to match tier-based field ordering
     Ok(RangeBar {
+        // Tier 1: OHLCV Core
         open_time,
         close_time,
         open: f64_to_fixed_point(open),
         high: f64_to_fixed_point(high),
         low: f64_to_fixed_point(low),
         close: f64_to_fixed_point(close),
-        // Issue #88: volume fields are i128, not FixedPoint
+
+        // Tier 2: Volume Accumulators (Issue #88: i128, not FixedPoint)
         volume: volume_i128,
         turnover: turnover_i128,
-        individual_trade_count,
-        agg_record_count,
+        buy_volume: buy_volume_i128,
+        sell_volume: sell_volume_i128,
+        buy_turnover: buy_turnover_i128,
+        sell_turnover: sell_turnover_i128,
+
+        // Tier 3: Trade Tracking
         first_trade_id: 0,
         last_trade_id: 0,
         first_agg_trade_id,
         last_agg_trade_id,
-        data_source: rangebar_core::DataSource::BinanceSpot,
-        buy_volume: buy_volume_i128,
-        sell_volume: sell_volume_i128,
+        individual_trade_count,
+        agg_record_count,
         buy_trade_count,
         sell_trade_count,
+
+        // Tier 4: Price Context
         vwap: f64_to_fixed_point(vwap_f64),
-        buy_turnover: buy_turnover_i128,
-        sell_turnover: sell_turnover_i128,
-        // Microstructure features (Issue #25) - initialized to defaults
+        data_source: rangebar_core::DataSource::BinanceSpot,
+
+        // Tier 5: Microstructure features (Issue #25) - initialized to defaults
         duration_us: 0,
         ofi: 0.0,
         vwap_close_deviation: 0.0,
@@ -589,7 +597,8 @@ pub(crate) fn dict_to_rangebar(_py: Python, dict: &Bound<PyDict>) -> PyResult<Ra
         aggression_ratio: 0.0,
         aggregation_density_f64: 0.0,
         turnover_imbalance: 0.0,
-        // Inter-bar features: initialized to None (Issue #59)
+
+        // Tier 6: Inter-bar features (Issue #59) - initialized to None
         // Checkpoint restoration doesn't include inter-bar features
         lookback_trade_count: None,
         lookback_ofi: None,
@@ -607,7 +616,8 @@ pub(crate) fn dict_to_rangebar(_py: Python, dict: &Bound<PyDict>) -> PyResult<Ra
         lookback_garman_klass_vol: None,
         lookback_hurst: None,
         lookback_permutation_entropy: None,
-        // Intra-bar features (Issue #59) - initialized to None
+
+        // Tier 7: Intra-bar features (Issue #59) - initialized to None
         intra_bull_epoch_density: None,
         intra_bear_epoch_density: None,
         intra_bull_excess_gain: None,
