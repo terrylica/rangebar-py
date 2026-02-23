@@ -312,15 +312,16 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
         None
     };
 
-    // Burstiness (requires >= 2 trades for inter-arrival times)
-    let burstiness = if n >= 2 {
-        let timestamps: Vec<i64> = trades.iter().map(|t| t.timestamp).collect();
-        let intervals: Vec<f64> = timestamps
-            .windows(2)
-            .map(|w| (w[1] - w[0]) as f64)
-            .collect();
+    // Issue #96 Task #61: Optimize burstiness with early-exit and SmallVec
+    // Burstiness (requires >= 3 trades for meaningful inter-arrival times)
+    let burstiness = if n >= 3 {
+        // Compute inter-arrival intervals using direct indexing with SmallVec (no Vec allocation)
+        let mut intervals = SmallVec::<[f64; 64]>::new();
+        for i in 0..n - 1 {
+            intervals.push((trades[i + 1].timestamp - trades[i].timestamp) as f64);
+        }
 
-        if !intervals.is_empty() {
+        if intervals.len() >= 2 {
             let mean_tau: f64 = intervals.iter().sum::<f64>() / intervals.len() as f64;
             let variance: f64 = intervals
                 .iter()
@@ -329,7 +330,10 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
                 / intervals.len() as f64;
             let std_tau = variance.sqrt();
 
-            if (std_tau + mean_tau).abs() > f64::EPSILON {
+            // Early-exit if intervals are uniform (common in tick data)
+            if std_tau <= f64::EPSILON {
+                None // Uniform spacing = undefined burstiness
+            } else if (std_tau + mean_tau).abs() > f64::EPSILON {
                 Some((std_tau - mean_tau) / (std_tau + mean_tau))
             } else {
                 None
