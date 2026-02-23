@@ -232,9 +232,12 @@ pub fn compute_ofi_branchless(trades: &[&TradeSnapshot]) -> f64 {
     // Branchless epsilon handling: avoid branch prediction on epsilon check
     // Use conditional assignment instead of if-else branch
     // If total_vol > EPSILON: ofi = (buy - sell) / total, else ofi = 0.0
+    // Issue #96 Task #200: Cache reciprocal to eliminate redundant division
     // Mask pattern: (condition as 0.0 or 1.0) * value
     let is_nonzero = (total_vol > f64::EPSILON) as u32 as f64;
-    let reciprocal = (1.0 / total_vol).is_finite() as u32 as f64 * (1.0 / total_vol);
+    let reciprocal_computed = 1.0 / total_vol;  // Compute once
+    let is_finite_mask = reciprocal_computed.is_finite() as u32 as f64;
+    let reciprocal = reciprocal_computed * is_finite_mask;
 
     (buy_vol - sell_vol) * reciprocal * is_nonzero
 }
