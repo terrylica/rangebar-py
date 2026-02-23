@@ -519,7 +519,8 @@ def _process_binance_trades(
     inter_bar_lookback_count: int | None = None,
     include_intra_bar_features: bool = False,
     inter_bar_lookback_bars: int | None = None,
-) -> tuple[pd.DataFrame, RangeBarProcessor]:
+    return_format: str = "pandas",  # Issue #96 Task #13: Arrow optimization
+) -> tuple[pd.DataFrame | pl.DataFrame, RangeBarProcessor]:
     """Process Binance trades to range bars (internal).
 
     Parameters
@@ -597,7 +598,13 @@ def _process_binance_trades(
     from rangebar.processors.api import _arrow_bars_to_pandas
 
     result_pl = pl.concat(bar_batches)
-    result = _arrow_bars_to_pandas(result_pl, include_microstructure=True)
+
+    # Issue #96 Task #13: Arrow optimization for cache pipeline
+    # Skip Pandas conversion when return_format="arrow" (1.3-1.5x speedup)
+    if return_format == "arrow":
+        result = result_pl
+    else:
+        result = _arrow_bars_to_pandas(result_pl, include_microstructure=True)
 
     # Issue #75: Always return all available columns including trade IDs
     # The caller (get_range_bars) handles filtering for user-facing output AFTER cache write.

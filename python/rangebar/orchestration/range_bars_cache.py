@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import pandas as pd
+    import polars as pl
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +180,7 @@ def try_cache_write(
 
 
 def fatal_cache_write(
-    bars_df: pd.DataFrame,
+    bars: pd.DataFrame | pl.DataFrame,  # Issue #96 Task #13: Accept both formats
     symbol: str,
     threshold_decimal_bps: int,
     ouroboros: str,
@@ -195,8 +196,9 @@ def fatal_cache_write(
 
     Parameters
     ----------
-    bars_df : pd.DataFrame
-        Range bar DataFrame to write.
+    bars : pd.DataFrame | pl.DataFrame
+        Range bar data to write (Pandas or Polars DataFrame).
+        Issue #96 Task #13: Arrow optimization - accepts both formats.
     symbol : str
         Trading symbol (e.g., "BTCUSDT").
     threshold_decimal_bps : int
@@ -216,7 +218,7 @@ def fatal_cache_write(
     """
     from rangebar.exceptions import CacheWriteError
 
-    if bars_df is None or bars_df.empty:
+    if bars is None or (hasattr(bars, "is_empty") and bars.is_empty()) or (hasattr(bars, "empty") and bars.empty):
         return 0
 
     try:
@@ -225,7 +227,12 @@ def fatal_cache_write(
         from rangebar.clickhouse import RangeBarCache
 
         with RangeBarCache() as cache:
-            bars_pl = pl.from_pandas(bars_df.reset_index())
+            # Issue #96 Task #13: Skip conversion when already Polars (1.3-1.5x speedup)
+            if isinstance(bars, pl.DataFrame):
+                bars_pl = bars
+            else:
+                # Pandas path: convert to Polars (fallback)
+                bars_pl = pl.from_pandas(bars.reset_index())
             written = cache.store_bars_batch(
                 symbol=symbol,
                 threshold_decimal_bps=threshold_decimal_bps,
