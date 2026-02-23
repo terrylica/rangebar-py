@@ -97,7 +97,9 @@ def normalize_temporal_precision(pldf: pl.DataFrame) -> pl.DataFrame:
     """
     import polars as pl
 
-    for col in pldf.columns:
+    # Issue #96 Task #28: Cache .columns property to avoid repeated access
+    cols = pldf.columns
+    for col in cols:
         if pldf[col].dtype.is_temporal():
             pldf = pldf.with_columns(pl.col(col).dt.cast_time_unit("us"))
     return pldf

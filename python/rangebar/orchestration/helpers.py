@@ -14,11 +14,12 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 import pandas as pd
+import polars as pl
 
 from rangebar.processors.core import RangeBarProcessor
 
 if TYPE_CHECKING:
-    import polars as pl
+    pass  # polars already imported above
 
 
 # =============================================================================
@@ -168,7 +169,7 @@ def _select_trade_columns(
     trade ID columns (Issue #75).
     Works with both LazyFrame (predicate pushdown) and DataFrame.
     """
-    import polars as pl
+    # polars imported at module level
 
     # Determine volume column name (works for both DataFrame and LazyFrame)
     if isinstance(trades, pl.LazyFrame):
@@ -278,7 +279,7 @@ def _stream_range_bars_binance(
     Peak: ~50 MB (6-hour trade chunk + bar buffer)
     Per yield: ~500 KB (10,000 bars)
     """
-    import polars as pl
+    # polars imported at module level
 
     try:
         from rangebar._core import MarketType, stream_binance_trades_arrow
@@ -364,7 +365,7 @@ def _fetch_binance(
     import warnings
     from datetime import datetime
 
-    import polars as pl
+    # polars imported at module level
 
     # MEM-007: Guard deprecated batch path with date range limit (Issue #49)
     # This function loads ALL trades into a single DataFrame. For high-volume
@@ -474,7 +475,7 @@ def _stream_bars_from_trades(
     Peak: ~60 MB per batch (10K bars x 58 columns)
     vs. Previous: 2.9 GB for 50K bars (unbounded accumulation)
     """
-    import polars as pl
+    # polars imported at module level
 
     # MEM-002 + MEM-011: Adaptive chunk size based on output features
     # Base: 100K trades (~15 MB dicts, ~50 MB with OHLCV bars)
@@ -555,7 +556,7 @@ def _process_binance_trades(
         (bars DataFrame, processor with updated state)
         The processor can be used to create a checkpoint for the next file.
     """
-    import polars as pl
+    # polars imported at module level
 
     # MEM-003: Apply column selection BEFORE collecting LazyFrame
     trades_selected = _select_trade_columns(trades)
