@@ -38,12 +38,12 @@ smallvec = "1.13"
 libm = "0.2"
 
 [features]
-default = []
+default = ["simd-burstiness"]  # Issue #96 Task #102: Enable SIMD burstiness by default for 2-4x speedup
 test-utils = ["dep:csv"]  # Real data loading requires csv crate
 python = ["pyo3"]  # Python bindings via PyO3 (future phase)
 api = ["utoipa"]     # API schemas via utoipa (future phase)
 arrow = ["dep:arrow", "dep:arrow-array", "dep:arrow-schema"]  # Arrow export for streaming architecture
-simd-burstiness = []  # SIMD-accelerated burstiness computation (nightly-only, portable_simd)
+simd-burstiness = []  # Issue #96 Task #102: SIMD-accelerated burstiness computation (2-4x speedup on Tier 2 features)
 simd-permutation-entropy = []  # Task #93: SIMD-accelerated permutation entropy (3-6x speedup)
 
 [lints]
