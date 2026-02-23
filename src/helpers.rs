@@ -19,22 +19,20 @@ pub(crate) fn dict_to_agg_trade(
     trade_dict: &Bound<PyDict>,
     index: usize,
 ) -> PyResult<AggTrade> {
-    // Extract required fields
-    let timestamp_value: PyObject = trade_dict
+    // Issue #106: Combine get_item + extract in single operation to reduce FFI calls
+    // This avoids intermediate PyObject creation. extract() doesn't take py parameter.
+    let timestamp_ms: i64 = trade_dict
         .get_item("timestamp")?
         .ok_or_else(|| PyKeyError::new_err(format!("Trade {index}: missing 'timestamp'")))?
         .extract()?;
 
-    let price_value: PyObject = trade_dict
+    let price: f64 = trade_dict
         .get_item("price")?
         .ok_or_else(|| PyKeyError::new_err(format!("Trade {index}: missing 'price'")))?
         .extract()?;
 
-    // Extract as i64/f64
-    let timestamp_ms: i64 = timestamp_value.extract(py)?;
-    let price: f64 = price_value.extract(py)?;
-
     // Support both "quantity" and "volume" keys
+    // Issue #106: Extract directly without intermediate PyObject
     let volume: f64 = match trade_dict.get_item("quantity")? {
         Some(val) => val.extract()?,
         None => trade_dict
@@ -45,7 +43,8 @@ pub(crate) fn dict_to_agg_trade(
             .extract()?,
     };
 
-    // Extract optional fields
+    // Extract optional fields with defaults in a single pass
+    // Issue #106: Use get_item().and_then(|v| v.extract::<T>().ok()) pattern for safety
     let agg_trade_id: i64 = trade_dict
         .get_item("agg_trade_id")?
         .and_then(|v| v.extract().ok())
