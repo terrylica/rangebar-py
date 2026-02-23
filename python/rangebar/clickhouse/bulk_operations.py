@@ -330,7 +330,11 @@ class BulkStoreMixin:
             return 0
 
         # Normalize column names (lowercase)
-        df = bars.rename({c: c.lower() for c in bars.columns if c != c.lower()})
+        # Issue #96 Task #34: Fast-path skip rename when all columns lowercase
+        if any(c != c.lower() for c in bars.columns):
+            df = bars.rename({c: c.lower() for c in bars.columns if c != c.lower()})
+        else:
+            df = bars
 
         # Handle timestamp conversion from datetime to milliseconds
         if "timestamp" in df.columns:
