@@ -758,8 +758,13 @@ def populate_cache_resumable(
                 logger.debug("%s %s: no tick data", symbol, date)
                 bars_today = 0
             else:
+                # Issue #96 Task #13 Phase D: Arrow optimization
+                # Arrow: include_microstructure=False (skip Pandas, 1.3-1.5x speedup)
+                # Pandas: include_microstructure=True (plugins need Pandas)
+                return_format = "arrow" if not include_microstructure else "pandas"
+
                 # Process ticks with threaded processor
-                bars_df, active_processor = _process_binance_trades(
+                bars_result, active_processor = _process_binance_trades(
                     day_ticks,
                     threshold_decimal_bps,
                     False,  # include_incomplete
@@ -769,13 +774,27 @@ def populate_cache_resumable(
                     inter_bar_lookback_count=eff_count,
                     include_intra_bar_features=enable_intra,
                     inter_bar_lookback_bars=eff_bars,
+                    return_format=return_format,
                 )
 
-                # Issue #98: Plugin feature enrichment (post-Rust, pre-cache)
-                if bars_df is not None and not bars_df.empty:
-                    from rangebar.plugins.loader import enrich_bars
+                # Normalize return type for consistent downstream handling
+                if return_format == "arrow":
+                    import polars as pl
+                    bars_df = bars_result  # Already Polars
+                else:
+                    bars_df = bars_result  # Already Pandas
 
-                    bars_df = enrich_bars(bars_df, symbol, threshold_decimal_bps)
+                # Issue #98: Plugin feature enrichment (post-Rust, pre-cache)
+                # Plugins operate on Pandas, so convert if needed for enrichment
+                if include_microstructure and bars_df is not None:
+                    if isinstance(bars_df, pl.DataFrame):
+                        # Convert Polars → Pandas for plugin enrichment
+                        bars_df = bars_df.to_pandas()
+
+                    if not bars_df.empty:
+                        from rangebar.plugins.loader import enrich_bars
+
+                        bars_df = enrich_bars(bars_df, symbol, threshold_decimal_bps)
 
                 # Write to ClickHouse cache (fatal — ClickHouse IS the destination)
                 if bars_df is not None and not bars_df.empty:
