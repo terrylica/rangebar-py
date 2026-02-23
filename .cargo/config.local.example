@@ -1,0 +1,53 @@
+# .cargo/config.local.example
+# Profile-Guided Optimization (PGO) Configuration
+#
+# Copy to .cargo/config.local and modify as needed.
+# DO NOT commit .cargo/config.local to version control.
+#
+# See .claude/pgo-workflow.md for detailed instructions.
+
+# ============================================================================
+# PGO Collection Phase
+# ============================================================================
+# Use this configuration when collecting profiling data.
+#
+# Usage:
+#   cp .cargo/config.local.example .cargo/config.local
+#   # Uncomment PGO collection section below
+#   cargo build -p rangebar-py --release
+
+# [build]
+# rustflags = [
+#     "-Cprofile-generate=./pgo-data",
+#     "-Cllvm-args=-pgo-warn-missing-function",
+# ]
+
+# ============================================================================
+# PGO Optimization Phase
+# ============================================================================
+# Use this configuration after collecting and merging profiling data.
+#
+# Prerequisites:
+#   - Run PGO collection phase (see above)
+#   - Merge profdata: llvm-profdata merge -o pgo-data/merged.profdata pgo-data/*.profraw
+#
+# Usage:
+#   # Uncomment PGO use section below
+#   cargo build -p rangebar-py --release
+#   maturin develop --release
+
+# [build]
+# rustflags = [
+#     "-Cprofile-use=./pgo-data/merged.profdata",
+#     "-Cllvm-args=-pgo-warn-missing-function",
+# ]
+
+# ============================================================================
+# Development Configuration (Optional)
+# ============================================================================
+# For faster incremental development builds with debug symbols
+
+# [build]
+# rustflags = [
+#     "-Coverflow-checks=true",
+# ]

@@ -83,6 +83,8 @@ examples/data/
 # Benchmark and profiling data (generated locally via mise tasks)
 bench-data/
 profile-data/
+pgo-data/
+pgo-*.profdata
 
 # Crate output directories (validation data, test outputs)
 **/output/

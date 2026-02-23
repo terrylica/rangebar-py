@@ -6,23 +6,24 @@
 
 ## Quick Reference
 
-| Task                    | Entry Point                                                                   | Details                                               |
-| ----------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------- |
-| Generate range bars     | `get_range_bars()`                                                            | [Python API](#python-api)                             |
-| Real-time streaming     | `run_sidecar()` / `scripts/streaming_sidecar.py`                              | [ADR](/docs/adr/2026-01-31-realtime-streaming-api.md) |
-| Understand architecture | [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)                                 | 8-crate workspace                                     |
-| Work with Rust crates   | [crates/CLAUDE.md](/crates/CLAUDE.md)                                         | Core algorithm, microstructure, inter-bar features    |
-| Work with Python layer  | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)                       | API, caching, validation, symbol registry             |
-| ClickHouse cache ops    | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | Schema, population, remote setup, dedup hardening     |
-| Plugin system           | [python/rangebar/plugins/CLAUDE.md](/python/rangebar/plugins/CLAUDE.md)       | FeatureProvider protocol, entry-point discovery       |
-| Operations & scripts    | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue, cache population, per-year parallelism         |
-| Release workflow        | [docs/development/RELEASE.md](/docs/development/RELEASE.md)                   | Zig cross-compile, mise tasks                         |
-| Deploy to bigblack      | `mise run deploy:bigblack`                                                    | Git pull + PyPI install + verify                      |
-| Performance monitoring  | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md)           | Benchmarks, metrics                                   |
-| Project context         | [docs/CONTEXT.md](/docs/CONTEXT.md)                                           | Why this project exists                               |
-| API reference           | [docs/api/INDEX.md](/docs/api/INDEX.md)                                       | Full Python API docs                                  |
-| Research                | [docs/research/INDEX.md](/docs/research/INDEX.md)                             | ML labeling, regime patterns, TDA                     |
-| Oracle verification     | [docs/verification/](/docs/verification/)                                     | Bit-exact cross-reference reports                     |
+| Task                     | Entry Point                                                                   | Details                                               |
+| ------------------------ | ----------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Generate range bars      | `get_range_bars()`                                                            | [Python API](#python-api)                             |
+| Real-time streaming      | `run_sidecar()` / `scripts/streaming_sidecar.py`                              | [ADR](/docs/adr/2026-01-31-realtime-streaming-api.md) |
+| Understand architecture  | [docs/ARCHITECTURE.md](/docs/ARCHITECTURE.md)                                 | 8-crate workspace                                     |
+| Work with Rust crates    | [crates/CLAUDE.md](/crates/CLAUDE.md)                                         | Core algorithm, microstructure, inter-bar features    |
+| Work with Python layer   | [python/rangebar/CLAUDE.md](/python/rangebar/CLAUDE.md)                       | API, caching, validation, symbol registry             |
+| ClickHouse cache ops     | [python/rangebar/clickhouse/CLAUDE.md](/python/rangebar/clickhouse/CLAUDE.md) | Schema, population, remote setup, dedup hardening     |
+| Plugin system            | [python/rangebar/plugins/CLAUDE.md](/python/rangebar/plugins/CLAUDE.md)       | FeatureProvider protocol, entry-point discovery       |
+| Operations & scripts     | [scripts/CLAUDE.md](/scripts/CLAUDE.md)                                       | Pueue, cache population, per-year parallelism         |
+| Release workflow         | [docs/development/RELEASE.md](/docs/development/RELEASE.md)                   | Zig cross-compile, mise tasks                         |
+| Deploy to bigblack       | `mise run deploy:bigblack`                                                    | Git pull + PyPI install + verify                      |
+| Performance monitoring   | [docs/development/PERFORMANCE.md](/docs/development/PERFORMANCE.md)           | Benchmarks, metrics                                   |
+| Performance optimization | [.claude/pgo-workflow.md](/.claude/pgo-workflow.md)                           | LTO, PGO, SIMD, GPU strategies (Issue #96)            |
+| Project context          | [docs/CONTEXT.md](/docs/CONTEXT.md)                                           | Why this project exists                               |
+| API reference            | [docs/api/INDEX.md](/docs/api/INDEX.md)                                       | Full Python API docs                                  |
+| Research                 | [docs/research/INDEX.md](/docs/research/INDEX.md)                             | ML labeling, regime patterns, TDA                     |
+| Oracle verification      | [docs/verification/](/docs/verification/)                                     | Bit-exact cross-reference reports                     |
 
 ---
 
