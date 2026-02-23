@@ -1483,6 +1483,26 @@ pub fn compute_entropy_adaptive(prices: &[f64]) -> f64 {
 /// # Performance
 /// - Consolidation periods: 1.5-2.5x speedup (high repetition)
 /// - Trending markets: 1.0-1.2x speedup (low repetition, more cache misses)
+/// Read-only entropy cache lookup for try-lock fast-path optimization
+///
+/// Issue #96 Task #156: Enables lock-free fast-path by checking cache
+/// with read-lock only. Returns Some(entropy) if cached, None if miss
+/// or requires computation.
+pub fn compute_entropy_adaptive_cached_readonly(
+    prices: &[f64],
+    cache: &EntropyCache,
+) -> Option<f64> {
+    let n = prices.len();
+
+    // Only check cache for small/medium windows (caching window)
+    if n < 500 {
+        cache.get(prices)
+    } else {
+        // Large windows use ApEn (not cached), so no fast-path
+        None
+    }
+}
+
 pub fn compute_entropy_adaptive_cached(
     prices: &[f64],
     cache: &mut EntropyCache,

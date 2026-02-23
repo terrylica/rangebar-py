@@ -222,6 +222,10 @@ harness = false  # Issue #96 Task #144 Phase 4: Inter-bar feature result caching
 name = "vecdeque_pruning_benchmark"
 harness = false  # Issue #96 Task #155: VecDeque adaptive pruning optimization
 
+[[bench]]
+name = "entropy_cache_trylock_benchmark"
+harness = false  # Issue #96 Task #156: Entropy cache try-lock fast-path optimization
+
 # =============================================================================
 # Build Profiles
 # =============================================================================

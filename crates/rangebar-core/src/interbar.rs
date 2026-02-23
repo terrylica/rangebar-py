@@ -680,11 +680,32 @@ impl TradeHistory {
         // - Large windows (n >= 500): Approximate Entropy (5-10x faster on large n)
         // Minimum 60 trades for permutation entropy (m=3, need 10 * m! = 60)
         if n >= 60 {
-            // Issue #96 Task #124: Use parking_lot::RwLock for lower-latency locking
-            let mut cache_guard = self.entropy_cache.write();
-            features.lookback_permutation_entropy = Some(
+            // Issue #96 Task #156: Try-lock fast-path for entropy cache
+            // Attempt read-lock first to check cache without exclusive access.
+            // Fall back to write-lock only if miss to reduce lock contention overhead.
+            let entropy = if let Some(cache) = self.entropy_cache.try_read() {
+                // Fast path: Read lock acquired, check cache
+                let cache_result = crate::interbar_math::compute_entropy_adaptive_cached_readonly(
+                    prices,
+                    &cache,
+                );
+
+                if let Some(result) = cache_result {
+                    // Cache hit: return immediately without lock
+                    result
+                } else {
+                    // Cache miss: drop read lock and acquire write lock
+                    drop(cache);
+                    let mut cache_guard = self.entropy_cache.write();
+                    crate::interbar_math::compute_entropy_adaptive_cached(prices, &mut cache_guard)
+                }
+            } else {
+                // Contended: fall back to write-lock (rare, preserves correctness)
+                let mut cache_guard = self.entropy_cache.write();
                 crate::interbar_math::compute_entropy_adaptive_cached(prices, &mut cache_guard)
-            );
+            };
+
+            features.lookback_permutation_entropy = Some(entropy);
         }
 
         features
