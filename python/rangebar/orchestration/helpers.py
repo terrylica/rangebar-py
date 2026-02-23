@@ -332,8 +332,10 @@ def _stream_range_bars_binance(
             combined = pl.concat(bar_frames)
             yield combined.head(batch_size)
             remainder = combined.slice(batch_size)
-            bar_frames = [remainder] if not remainder.is_empty() else []
-            total_buffered = len(remainder) if not remainder.is_empty() else 0
+            # Issue #96 Task #22: Cache .is_empty() result to avoid redundant calls
+            is_remainder_empty = remainder.is_empty()
+            bar_frames = [remainder] if not is_remainder_empty else []
+            total_buffered = len(remainder) if not is_remainder_empty else 0
 
     # Handle incomplete bar at end
     if include_incomplete:
@@ -499,8 +501,10 @@ def _stream_bars_from_trades(
             combined = pl.concat(bar_frames)
             yield combined.head(bar_batch_size)
             remainder = combined.slice(bar_batch_size)
-            bar_frames = [remainder] if not remainder.is_empty() else []
-            total_buffered = len(remainder) if not remainder.is_empty() else 0
+            # Issue #96 Task #22: Cache .is_empty() result to avoid redundant calls
+            is_remainder_empty = remainder.is_empty()
+            bar_frames = [remainder] if not is_remainder_empty else []
+            total_buffered = len(remainder) if not is_remainder_empty else 0
 
     # Yield remaining bars
     if bar_frames:
