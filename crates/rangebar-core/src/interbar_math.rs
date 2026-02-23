@@ -931,7 +931,8 @@ pub fn compute_garman_klass(lookback: &[&TradeSnapshot]) -> f64 {
     let log_hl = libm::log(h / l);
     let log_co = libm::log(c / o);
 
-    let variance = 0.5 * log_hl.powi(2) - GARMAN_KLASS_COEFFICIENT * log_co.powi(2);
+    // Issue #96 Task #168: Optimize powi(2) to direct multiplication (0.5-1% speedup)
+    let variance = 0.5 * (log_hl * log_hl) - GARMAN_KLASS_COEFFICIENT * (log_co * log_co);
 
     // Variance can be negative due to the subtractive term
     if variance > 0.0 {
@@ -958,7 +959,8 @@ pub fn compute_garman_klass_with_ohlc(open: f64, high: f64, low: f64, close: f64
     let log_hl = libm::log(high / low);
     let log_co = libm::log(close / open);
 
-    let variance = 0.5 * log_hl.powi(2) - GARMAN_KLASS_COEFFICIENT * log_co.powi(2);
+    // Issue #96 Task #168: Optimize powi(2) to direct multiplication (0.5-1% speedup)
+    let variance = 0.5 * (log_hl * log_hl) - GARMAN_KLASS_COEFFICIENT * (log_co * log_co);
 
     if variance > 0.0 {
         variance.sqrt()
@@ -1503,7 +1505,9 @@ fn compute_phi_sampled(prices: &[f64], m: usize, r: f64) -> f64 {
 
         // Scale count up: if we sampled every k patterns, we compared ~(n/k)² pairs
         // Scale back to approximate full comparison: count *= k²
-        count = (count as f64 * (sample_interval as f64).powi(2)).round() as usize;
+        // Issue #96 Task #168: Optimize powi(2) to direct multiplication (0.5-1% speedup)
+        let interval_f64 = sample_interval as f64;
+        count = (count as f64 * (interval_f64 * interval_f64)).round() as usize;
     }
 
     // Avoid log(0)
@@ -1579,7 +1583,8 @@ pub fn compute_entropy_adaptive(prices: &[f64]) -> f64 {
 
     // Large windows: use ApEn with adaptive tolerance
     let mean = prices.iter().sum::<f64>() / n as f64;
-    let variance = prices.iter().map(|p| (p - mean).powi(2)).sum::<f64>() / n as f64;
+    // Issue #96 Task #168: Optimize powi(2) to direct multiplication (0.5-1% speedup)
+    let variance = prices.iter().map(|p| { let d = p - mean; d * d }).sum::<f64>() / n as f64;
     let std = variance.sqrt();
     let r = 0.2 * std;
 
@@ -1636,7 +1641,8 @@ pub fn compute_entropy_adaptive_cached(
 
     // Large windows: use ApEn (no caching benefit, too variable)
     let mean = prices.iter().sum::<f64>() / n as f64;
-    let variance = prices.iter().map(|p| (p - mean).powi(2)).sum::<f64>() / n as f64;
+    // Issue #96 Task #168: Optimize powi(2) to direct multiplication (0.5-1% speedup)
+    let variance = prices.iter().map(|p| { let d = p - mean; d * d }).sum::<f64>() / n as f64;
     let std = variance.sqrt();
     let r = 0.2 * std;
 
