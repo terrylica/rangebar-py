@@ -103,7 +103,8 @@ def get_cache_coverage(
     entries = get_symbol_entries()
 
     if symbols is not None:
-        symbol_set = set(symbols)
+        # Issue #96 Task #35: Use frozenset for O(1) membership testing
+        symbol_set = frozenset(symbols)
         entries = {k: v for k, v in entries.items() if k in symbol_set}
 
     # Try connecting to ClickHouse
@@ -174,13 +175,15 @@ def get_available_symbols(
     results: list[dict[str, Any]] = []
 
     coverage = get_cache_coverage() if cached_only else {}
+    # Issue #96 Task #35: Pre-compute coverage keys as frozenset for O(1) lookups
+    coverage_keys = frozenset(coverage) if coverage else frozenset()
 
     for sym, entry in entries.items():
         if asset_class and entry.asset_class != asset_class:
             continue
         if min_tier is not None and (entry.tier is None or entry.tier > min_tier):
             continue
-        if cached_only and (sym not in coverage or not coverage[sym].thresholds_cached):
+        if cached_only and (sym not in coverage_keys or not coverage[sym].thresholds_cached):
             continue
 
         info: dict[str, Any] = {
@@ -192,7 +195,7 @@ def get_available_symbols(
             "effective_start": _entry_effective_start(entry),
         }
 
-        if sym in coverage:
+        if sym in coverage_keys:
             info["thresholds_cached"] = coverage[sym].thresholds_cached
             info["bar_counts"] = coverage[sym].bar_counts
 
