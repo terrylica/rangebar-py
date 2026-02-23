@@ -285,6 +285,10 @@ def get_range_bars(
 
     from rangebar.storage.parquet import TickStorage
 
+    # Issue #96 Task #79: Normalize symbol ONCE to eliminate 3-4 redundant .upper() calls
+    # downstream (validate_symbol_registered, resolve_and_validate_threshold, cache lookups)
+    symbol = symbol.upper()
+
     # -------------------------------------------------------------------------
     # Symbol registry gate + start date clamping (Issue #79)
     # -------------------------------------------------------------------------
