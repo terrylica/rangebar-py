@@ -230,6 +230,10 @@ harness = false  # Issue #96 Task #156: Entropy cache try-lock fast-path optimiz
 name = "allocator_tuning_benchmark"
 harness = false  # Issue #96 Task #158: Allocator buffer size tuning (post-Phase 9)
 
+[[bench]]
+name = "pe_threshold_tuning_benchmark"
+harness = false  # Issue #96 Task #157: PE threshold optimization for real workloads
+
 # =============================================================================
 # Build Profiles
 # =============================================================================
