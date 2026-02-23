@@ -183,6 +183,10 @@ harness = false
 name = "profiling_analysis"
 harness = false
 
+[[bench]]
+name = "concurrent_streaming_bench"
+harness = false
+
 # =============================================================================
 # Build Profiles
 # =============================================================================
