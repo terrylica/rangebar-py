@@ -56,6 +56,10 @@ pub struct TradeHistory {
     /// `bar_close_indices[i]` = `total_pushed` value when bar i closed.
     /// Used by `BarRelative` mode to determine how many trades to keep.
     bar_close_indices: VecDeque<usize>,
+    /// Issue #104: Pushes since last prune check (reduces check frequency)
+    pushes_since_prune_check: usize,
+    /// Issue #104: Maximum safe capacity (computed once at init)
+    max_safe_capacity: usize,
 }
 
 impl TradeHistory {
@@ -64,6 +68,12 @@ impl TradeHistory {
         let capacity = match &config.lookback_mode {
             LookbackMode::FixedCount(n) => *n * 2, // 2x capacity to hold pre-bar + in-bar trades
             LookbackMode::FixedWindow(_) | LookbackMode::BarRelative(_) => 2000, // Dynamic initial capacity
+        };
+        // Issue #104: Compute max safe capacity once to avoid repeated computation
+        let max_safe_capacity = match &config.lookback_mode {
+            LookbackMode::FixedCount(n) => *n * 3,  // 1.5x safety margin
+            LookbackMode::FixedWindow(_) => 3000,    // Peak capacity before pruning
+            LookbackMode::BarRelative(_) => 5000,    // Peak capacity before pruning
         };
         // Task #91: Pre-allocate bar_close_indices buffer
         // Typical lookback: 10-100 bars, so capacity 128 avoids most re-allocations
@@ -77,6 +87,8 @@ impl TradeHistory {
             protected_until: None,
             total_pushed: 0,
             bar_close_indices: VecDeque::with_capacity(bar_capacity),
+            pushes_since_prune_check: 0,
+            max_safe_capacity,
         }
     }
 
@@ -84,11 +96,18 @@ impl TradeHistory {
     ///
     /// Automatically prunes old entries based on lookback mode, but preserves
     /// trades needed for lookback computation (timestamp < protected_until).
+    /// Issue #104: Uses batched pruning check to reduce frequency
     pub fn push(&mut self, trade: &AggTrade) {
         let snapshot = TradeSnapshot::from(trade);
         self.trades.push_back(snapshot);
         self.total_pushed += 1;
-        self.prune_if_needed();
+        self.pushes_since_prune_check += 1;
+
+        // Issue #104: Only check prune every 10 trades (batch) or when significantly over capacity
+        if self.pushes_since_prune_check >= 10 || self.trades.len() > self.max_safe_capacity {
+            self.prune_if_needed();
+            self.pushes_since_prune_check = 0;
+        }
     }
 
     /// Notify that a new bar has opened at the given timestamp
@@ -123,18 +142,11 @@ impl TradeHistory {
     ///
     /// Only calls the full prune() when approaching capacity limits.
     /// This reduces function call overhead while maintaining correctness.
+    /// Issue #104: Use pre-computed max_safe_capacity for branch-free check
     fn prune_if_needed(&mut self) {
-        let should_prune = match &self.config.lookback_mode {
-            LookbackMode::FixedCount(n) => {
-                // Prune only if we've substantially exceeded capacity
-                // This amortizes the cost across multiple pushes
-                self.trades.len() > *n * 3
-            }
-            LookbackMode::FixedWindow(_) => self.trades.len() > 3000,
-            LookbackMode::BarRelative(_) => self.trades.len() > 5000,
-        };
-
-        if should_prune {
+        // Issue #104: Simple threshold check using pre-computed capacity
+        // Reduces function call overhead and enables better branch prediction
+        if self.trades.len() > self.max_safe_capacity {
             self.prune();
         }
     }
