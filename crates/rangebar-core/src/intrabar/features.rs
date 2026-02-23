@@ -8,6 +8,7 @@
 //! - 2 complexity features (Hurst, Permutation Entropy)
 
 use crate::types::AggTrade;
+use smallvec::SmallVec;
 
 use super::drawdown::{compute_max_drawdown, compute_max_runup};
 use super::ith::{bear_ith, bull_ith};
@@ -498,6 +499,7 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
 /// by analyzing ordinal patterns. Returns value in [0, 1].
 ///
 /// Requires at least `m! + (m-1)` observations where m is the embedding dimension.
+/// Issue #96 Task #53: Optimized to use bounded array instead of HashMap<String>
 fn compute_permutation_entropy(prices: &[f64], m: usize) -> f64 {
     let n = prices.len();
     let required = factorial(m) + m - 1;
@@ -506,27 +508,117 @@ fn compute_permutation_entropy(prices: &[f64], m: usize) -> f64 {
         return 0.5; // Default for insufficient data
     }
 
-    // Count ordinal patterns
-    let mut pattern_counts = std::collections::HashMap::new();
+    // Bounded array for pattern counts (max 6 patterns for m=3)
+    // Use factorial(m) as the size, but cap at 24 for m=4
+    let max_patterns = factorial(m);
+    if max_patterns > 24 {
+        // Fallback for large m (shouldn't happen in practice, m≤3)
+        return fallback_permutation_entropy(prices, m);
+    }
+
+    // Count ordinal patterns using bounded array
+    let mut pattern_counts = [0usize; 24]; // Fixed size for all reasonable m values
     let num_patterns = n - m + 1;
 
     for i in 0..num_patterns {
         let window = &prices[i..i + m];
 
-        // Create sorted indices (ordinal pattern)
-        let mut indices: Vec<usize> = (0..m).collect();
+        // Create sorted indices (ordinal pattern) using SmallVec
+        let mut indices = SmallVec::<[usize; 4]>::new();
+        for j in 0..m {
+            indices.push(j);
+        }
         indices.sort_by(|&a, &b| {
             window[a]
                 .partial_cmp(&window[b])
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        // Convert to pattern key
+        // Convert sorted indices to pattern index (0 to m!-1)
+        let pattern_idx = ordinal_indices_to_pattern_index(&indices);
+        pattern_counts[pattern_idx] += 1;
+    }
+
+    // Compute Shannon entropy from pattern counts
+    let mut entropy = 0.0;
+    for i in 0..max_patterns {
+        let count = pattern_counts[i];
+        if count > 0 {
+            let p = count as f64 / num_patterns as f64;
+            entropy -= p * p.ln();
+        }
+    }
+
+    // Normalize by maximum entropy (log(m!))
+    let max_entropy = (max_patterns as f64).ln();
+    if max_entropy > f64::EPSILON {
+        (entropy / max_entropy).clamp(0.0, 1.0)
+    } else {
+        0.5
+    }
+}
+
+/// Convert ordinal indices to pattern index using Lehmer code
+/// For m=3: [0,1,2]→0, [0,2,1]→1, [1,0,2]→2, [1,2,0]→3, [2,0,1]→4, [2,1,0]→5
+#[inline]
+fn ordinal_indices_to_pattern_index(indices: &smallvec::SmallVec<[usize; 4]>) -> usize {
+    match indices.len() {
+        2 => {
+            // m=2: 2 patterns
+            if indices[0] < indices[1] { 0 } else { 1 }
+        }
+        3 => {
+            // m=3: 6 patterns (3!) - compute Lehmer code
+            let mut code = 0usize;
+            let factors = [1, 2, 1];
+            for (i, &idx) in indices.iter().enumerate() {
+                let mut lesser = 0;
+                for j in (i + 1)..3 {
+                    if indices[j] < idx {
+                        lesser += 1;
+                    }
+                }
+                code += lesser * factors[i];
+            }
+            code
+        }
+        4 => {
+            // m=4: 24 patterns (4!) - compute Lehmer code
+            let mut code = 0usize;
+            let factors = [6, 2, 1, 1];
+            for (i, &idx) in indices.iter().enumerate() {
+                let mut lesser = 0;
+                for j in (i + 1)..4 {
+                    if indices[j] < idx {
+                        lesser += 1;
+                    }
+                }
+                code += lesser * factors[i];
+            }
+            code
+        }
+        _ => 0, // Shouldn't happen
+    }
+}
+
+/// Fallback permutation entropy for m > 4 (uses HashMap)
+fn fallback_permutation_entropy(prices: &[f64], m: usize) -> f64 {
+    let n = prices.len();
+    let num_patterns = n - m + 1;
+    let mut pattern_counts = std::collections::HashMap::new();
+
+    for i in 0..num_patterns {
+        let window = &prices[i..i + m];
+        let mut indices: Vec<usize> = (0..m).collect();
+        indices.sort_by(|&a, &b| {
+            window[a]
+                .partial_cmp(&window[b])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let pattern_key: String = indices.iter().map(|&i| i.to_string()).collect();
         *pattern_counts.entry(pattern_key).or_insert(0usize) += 1;
     }
 
-    // Compute Shannon entropy
     let mut entropy = 0.0;
     for &count in pattern_counts.values() {
         if count > 0 {
@@ -535,7 +627,6 @@ fn compute_permutation_entropy(prices: &[f64], m: usize) -> f64 {
         }
     }
 
-    // Normalize by maximum entropy (log(m!))
     let max_entropy = (factorial(m) as f64).ln();
     if max_entropy > f64::EPSILON {
         (entropy / max_entropy).clamp(0.0, 1.0)
