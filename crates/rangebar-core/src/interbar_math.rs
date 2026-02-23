@@ -654,11 +654,6 @@ mod simd {
     pub(crate) fn compute_kyle_lambda_simd(lookback: &[&TradeSnapshot]) -> f64 {
         let n = lookback.len();
 
-        // Early exit for insufficient data
-        if n < 10 {
-            return 0.0;
-        }
-
         if n < 2 {
             return 0.0;
         }
@@ -699,10 +694,7 @@ mod simd {
             0.0
         };
 
-        // Issue #96 Task #199: Eliminated redundant .abs() calls (Task #198 pattern)
-        // Cached first_price.abs() before use to avoid 3x recomputation
-        let normalized_imbalance_abs = normalized_imbalance.abs();
-        if normalized_imbalance_abs > f64::EPSILON && first_price_abs > f64::EPSILON {
+        if normalized_imbalance.abs() > f64::EPSILON && first_price_abs > f64::EPSILON {
             ((last_price - first_price) / first_price) / normalized_imbalance
         } else {
             0.0
@@ -810,11 +802,6 @@ pub fn compute_kyle_lambda(lookback: &[&TradeSnapshot]) -> f64 {
 #[inline]
 fn compute_kyle_lambda_scalar(lookback: &[&TradeSnapshot]) -> f64 {
     let n = lookback.len();
-
-    // Early exit for insufficient data (Kyle Lambda has minimal correlation on tiny windows)
-    if n < 10 {
-        return 0.0;
-    }
 
     if n < 2 {
         return 0.0;
@@ -1007,8 +994,14 @@ pub fn compute_volume_moments(lookback: &[&TradeSnapshot]) -> (f64, f64) {
         return (0.0, 0.0); // All same volume
     }
 
-    let skewness = m3 / sigma.powi(3);
-    let kurtosis = m4 / sigma.powi(4) - 3.0; // Excess kurtosis
+    // Issue #96 Task #202: Pre-compute powers instead of powi() calls
+    // powi() is ~20-30 CPU cycles, multiplication is ~1-2 cycles
+    let sigma2 = sigma * sigma;
+    let sigma3 = sigma2 * sigma;
+    let sigma4 = sigma2 * sigma2;
+
+    let skewness = m3 / sigma3;
+    let kurtosis = m4 / sigma4 - 3.0; // Excess kurtosis
 
     (skewness, kurtosis)
 }
@@ -1052,8 +1045,14 @@ pub fn compute_volume_moments_cached(volumes: &[f64]) -> (f64, f64) {
         return (0.0, 0.0); // All same volume
     }
 
-    let skewness = m3 / sigma.powi(3);
-    let kurtosis = m4 / sigma.powi(4) - 3.0; // Excess kurtosis
+    // Issue #96 Task #202: Pre-compute powers instead of powi() calls
+    // powi() is ~20-30 CPU cycles, multiplication is ~1-2 cycles
+    let sigma2 = sigma * sigma;
+    let sigma3 = sigma2 * sigma;
+    let sigma4 = sigma2 * sigma2;
+
+    let skewness = m3 / sigma3;
+    let kurtosis = m4 / sigma4 - 3.0; // Excess kurtosis
 
     (skewness, kurtosis)
 }
