@@ -166,8 +166,9 @@ def validate_tier1(df: pd.DataFrame) -> dict:
     """
     results: dict = {}
 
-    # Check which columns are present
-    present_cols = [c for c in FEATURE_COLS if c in df.columns]
+    # Issue #96 Task #20: Set intersection O(n+m) instead of O(n*m) list comprehension
+    col_set = set(df.columns)
+    present_cols = [c for c in FEATURE_COLS if c in col_set]
 
     if not present_cols:
         results["features_present"] = False
