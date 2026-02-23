@@ -579,11 +579,13 @@ impl RangeBarProcessor {
         // When include_incomplete=true, clone for checkpoint then consume for output.
         // When include_incomplete=false, move directly (no clone needed).
         if include_incomplete {
-            // Issue #96 Task #45: Reduce clone size by clearing accumulated_trades
-            // (not needed after intra-bar features computed). Saves ~50+ bytes per clone.
+            // Issue #96 Task #95: Optimize checkpoint cloning with take() to avoid Vec allocation
+            // (accumulated_trades not needed after intra-bar features computed).
+            // Using std::mem::take() instead of clone+clear reduces allocation overhead.
             if let Some(ref state) = current_bar {
                 let mut checkpoint_state = state.clone();
-                checkpoint_state.accumulated_trades.clear();
+                // Use take() to avoid cloning the Vec - directly moves empty Vec into place
+                let _ = std::mem::take(&mut checkpoint_state.accumulated_trades);
                 self.current_bar_state = Some(checkpoint_state);
             }
 
