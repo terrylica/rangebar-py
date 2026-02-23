@@ -272,13 +272,15 @@ def resolve_and_validate_threshold(
 
     # Step 3: Symbol-specific minimum validation (skip if no symbol)
     if symbol is not None:
+        # Issue #96 Task #79: Symbol already uppercase from get_range_bars() entry
+        # Eliminate redundant .upper() call in downstream functions
         min_threshold = get_min_threshold_for_symbol(symbol)
         asset_class = detect_asset_class(symbol)
 
         if threshold < min_threshold:
             # Determine which env var to reference in error message
-            symbol_upper = symbol.upper()
-            symbol_env_var = _SYMBOL_ENV_PATTERN.format(symbol_upper)
+            # symbol is already uppercase, no clone needed
+            symbol_env_var = _SYMBOL_ENV_PATTERN.format(symbol)
             class_env_var = _ASSET_CLASS_ENV_PATTERN.format(asset_class.name)
 
             msg = (
