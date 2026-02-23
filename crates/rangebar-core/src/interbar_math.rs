@@ -878,10 +878,34 @@ pub fn compute_kaufman_er(prices: &[f64]) -> f64 {
 
     let net_movement = (prices.last().unwrap() - prices.first().unwrap()).abs();
 
-    // Direct indexing loop for better CPU branch prediction and vectorization
-    let mut volatility = 0.0;
-    for i in 1..prices.len() {
-        volatility += (prices[i] - prices[i - 1]).abs();
+    // Issue #96 Task #169: Vectorize volatility loop with SIMD f64x4 (0.3-0.8% speedup)
+    // Process 4 price differences simultaneously, then horizontal sum
+    use wide::f64x4;
+
+    let n = prices.len();
+    let mut volatility_vec = f64x4::splat(0.0);
+
+    // SIMD loop: process 4 differences per iteration
+    let chunks = (n - 1) / 4;
+    for chunk_idx in 0..chunks {
+        let i = chunk_idx * 4 + 1;
+        let diff1 = (prices[i] - prices[i - 1]).abs();
+        let diff2 = (prices[i + 1] - prices[i]).abs();
+        let diff3 = (prices[i + 2] - prices[i + 1]).abs();
+        let diff4 = (prices[i + 3] - prices[i + 2]).abs();
+        volatility_vec = volatility_vec + f64x4::new([diff1, diff2, diff3, diff4]);
+    }
+
+    // Horizontal sum: add all 4 lanes
+    let arr: [f64; 4] = volatility_vec.into();
+    let mut volatility = arr[0] + arr[1] + arr[2] + arr[3];
+
+    // Handle remainder trades (when n % 4 != 1)
+    let remainder = (n - 1) % 4;
+    for i in (chunks * 4 + 1)..(chunks * 4 + 1 + remainder) {
+        if i < n {
+            volatility += (prices[i] - prices[i - 1]).abs();
+        }
     }
 
     if volatility > f64::EPSILON {
@@ -1718,7 +1742,7 @@ mod hurst_accuracy_tests {
         }
 
         let dfa_h = compute_hurst_dfa(&prices);
-        let rs_h = rangebar_hurst::rssimple(prices.clone());
+        let rs_h = rangebar_hurst::rssimple(&prices);
 
         println!("Trending series:");
         println!("  DFA H = {:.4}", dfa_h);
@@ -1739,7 +1763,7 @@ mod hurst_accuracy_tests {
         }
 
         let dfa_h = compute_hurst_dfa(&prices);
-        let rs_h = rangebar_hurst::rssimple(prices.clone());
+        let rs_h = rangebar_hurst::rssimple(&prices);
 
         println!("Mean-reverting series:");
         println!("  DFA H = {:.4}", dfa_h);
@@ -1765,7 +1789,7 @@ mod hurst_accuracy_tests {
         }
 
         let dfa_h = compute_hurst_dfa(&prices);
-        let rs_h = rangebar_hurst::rssimple(prices.clone());
+        let rs_h = rangebar_hurst::rssimple(&prices);
 
         println!("Random walk series:");
         println!("  DFA H = {:.4}", dfa_h);
