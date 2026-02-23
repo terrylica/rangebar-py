@@ -193,6 +193,7 @@ harness = false
 [profile.release]
 lto = "thin"           # Thin LTO for cross-platform compatibility
 codegen-units = 1      # Maximum optimization (single codegen unit)
+opt-level = 3          # Explicit maximum optimization
 overflow-checks = false
 # panic = "abort"      # FORBIDDEN with PyO3!
 
@@ -201,6 +202,22 @@ inherits = "release"
 lto = "thin"           # Thin LTO (safe for cross-compile)
 codegen-units = 1      # Maximum optimization
 strip = "symbols"      # Minimize wheel size
+
+[profile.pgo-collect]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+# RUSTFLAGS needed for PGO collection: -Cprofile-generate=/path/to/pgo-data
+# Compile with: RUSTFLAGS='-Cprofile-generate=./pgo-data' cargo build -p rangebar-py --release --profile pgo-collect
+
+[profile.pgo-use]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+# RUSTFLAGS needed for PGO optimization: -Cprofile-use=/path/to/pgo-data/merged.profdata,-Cllvm-args=-pgo-warn-missing-function
+# Compile with: RUSTFLAGS='-Cprofile-use=./pgo-data/merged.profdata -Cllvm-args=-pgo-warn-missing-function' cargo build -p rangebar-py --release --profile pgo-use
 
 [profile.dev]
 overflow-checks = true
