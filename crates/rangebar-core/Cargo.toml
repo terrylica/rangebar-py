@@ -147,5 +147,9 @@ harness = false  # Disable test harness for cumulative optimization validation (
 name = "hurst_dfa_memoization_benchmark"
 harness = false  # Disable test harness for Hurst DFA memoization benchmark (Issue #96 Task #192)
 
+[[bench]]
+name = "intrabar_early_exit_benchmark"
+harness = false  # Disable test harness for intra-bar early-exit optimization (Issue #96 Task #193)
+
 [lints]
 workspace = true
