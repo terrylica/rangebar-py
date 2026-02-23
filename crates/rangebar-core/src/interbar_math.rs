@@ -1280,7 +1280,14 @@ fn compute_permutation_entropy_m3_simd_batch(prices: &[f64]) -> f64 {
     // Process patterns in groups of 16 using vectorized approach
     // Each iteration computes 16 pattern indices with better ILP and SIMD potential
     let simd_bulk_patterns = (n_patterns / 16) * 16;
+
+    // Issue #96 Task #182: Bounds-check gated saturation for histogram accumulation
+    // Avoid redundant saturating_add bounds-checking when overflow is impossible.
+    // For typical windows (100-600 trades), pattern counts never exceed 255.
+    // Only switch to saturating_add after checking for high count (>200, conservative estimate).
     let mut i = 0;
+    let mut use_saturating = false;  // Hot-path flag to avoid repeated checks
+
     while i < simd_bulk_patterns {
         // Vectorized loop: compute 16 patterns in a single iteration
         // These 16 independent operations allow CPU out-of-order execution and SIMD parallelism
@@ -1303,27 +1310,53 @@ fn compute_permutation_entropy_m3_simd_batch(prices: &[f64]) -> f64 {
 
         // Batch accumulation - all 16 pattern updates in sequence
         // CPU can parallelize across different histogram buckets
-        pattern_counts[p0] = pattern_counts[p0].saturating_add(1);
-        pattern_counts[p1] = pattern_counts[p1].saturating_add(1);
-        pattern_counts[p2] = pattern_counts[p2].saturating_add(1);
-        pattern_counts[p3] = pattern_counts[p3].saturating_add(1);
-        pattern_counts[p4] = pattern_counts[p4].saturating_add(1);
-        pattern_counts[p5] = pattern_counts[p5].saturating_add(1);
-        pattern_counts[p6] = pattern_counts[p6].saturating_add(1);
-        pattern_counts[p7] = pattern_counts[p7].saturating_add(1);
-        pattern_counts[p8] = pattern_counts[p8].saturating_add(1);
-        pattern_counts[p9] = pattern_counts[p9].saturating_add(1);
-        pattern_counts[p10] = pattern_counts[p10].saturating_add(1);
-        pattern_counts[p11] = pattern_counts[p11].saturating_add(1);
-        pattern_counts[p12] = pattern_counts[p12].saturating_add(1);
-        pattern_counts[p13] = pattern_counts[p13].saturating_add(1);
-        pattern_counts[p14] = pattern_counts[p14].saturating_add(1);
-        pattern_counts[p15] = pattern_counts[p15].saturating_add(1);
+        if use_saturating {
+            // Saturating path (rare, high-count case)
+            pattern_counts[p0] = pattern_counts[p0].saturating_add(1);
+            pattern_counts[p1] = pattern_counts[p1].saturating_add(1);
+            pattern_counts[p2] = pattern_counts[p2].saturating_add(1);
+            pattern_counts[p3] = pattern_counts[p3].saturating_add(1);
+            pattern_counts[p4] = pattern_counts[p4].saturating_add(1);
+            pattern_counts[p5] = pattern_counts[p5].saturating_add(1);
+            pattern_counts[p6] = pattern_counts[p6].saturating_add(1);
+            pattern_counts[p7] = pattern_counts[p7].saturating_add(1);
+            pattern_counts[p8] = pattern_counts[p8].saturating_add(1);
+            pattern_counts[p9] = pattern_counts[p9].saturating_add(1);
+            pattern_counts[p10] = pattern_counts[p10].saturating_add(1);
+            pattern_counts[p11] = pattern_counts[p11].saturating_add(1);
+            pattern_counts[p12] = pattern_counts[p12].saturating_add(1);
+            pattern_counts[p13] = pattern_counts[p13].saturating_add(1);
+            pattern_counts[p14] = pattern_counts[p14].saturating_add(1);
+            pattern_counts[p15] = pattern_counts[p15].saturating_add(1);
+        } else {
+            // Hot-path: unchecked arithmetic (safe for typical windows with count < 200)
+            pattern_counts[p0] = pattern_counts[p0].wrapping_add(1);
+            pattern_counts[p1] = pattern_counts[p1].wrapping_add(1);
+            pattern_counts[p2] = pattern_counts[p2].wrapping_add(1);
+            pattern_counts[p3] = pattern_counts[p3].wrapping_add(1);
+            pattern_counts[p4] = pattern_counts[p4].wrapping_add(1);
+            pattern_counts[p5] = pattern_counts[p5].wrapping_add(1);
+            pattern_counts[p6] = pattern_counts[p6].wrapping_add(1);
+            pattern_counts[p7] = pattern_counts[p7].wrapping_add(1);
+            pattern_counts[p8] = pattern_counts[p8].wrapping_add(1);
+            pattern_counts[p9] = pattern_counts[p9].wrapping_add(1);
+            pattern_counts[p10] = pattern_counts[p10].wrapping_add(1);
+            pattern_counts[p11] = pattern_counts[p11].wrapping_add(1);
+            pattern_counts[p12] = pattern_counts[p12].wrapping_add(1);
+            pattern_counts[p13] = pattern_counts[p13].wrapping_add(1);
+            pattern_counts[p14] = pattern_counts[p14].wrapping_add(1);
+            pattern_counts[p15] = pattern_counts[p15].wrapping_add(1);
+
+            // Check if any count exceeded safe threshold; switch to saturating if needed
+            if pattern_counts.iter().any(|&c| c > 200) {
+                use_saturating = true;
+            }
+        }
 
         i += 16;
     }
 
-    // Remainder patterns (8x unroll for small tails)
+    // Remainder patterns (8x unroll for small tails) - reuse use_saturating flag from above
     let remainder_patterns = n_patterns - simd_bulk_patterns;
     let remainder_8x = (remainder_patterns / 8) * 8;
     let mut j = simd_bulk_patterns;
@@ -1338,14 +1371,30 @@ fn compute_permutation_entropy_m3_simd_batch(prices: &[f64]) -> f64 {
         let p6 = ordinal_pattern_index_m3(prices[j + 6], prices[j + 7], prices[j + 8]);
         let p7 = ordinal_pattern_index_m3(prices[j + 7], prices[j + 8], prices[j + 9]);
 
-        pattern_counts[p0] = pattern_counts[p0].saturating_add(1);
-        pattern_counts[p1] = pattern_counts[p1].saturating_add(1);
-        pattern_counts[p2] = pattern_counts[p2].saturating_add(1);
-        pattern_counts[p3] = pattern_counts[p3].saturating_add(1);
-        pattern_counts[p4] = pattern_counts[p4].saturating_add(1);
-        pattern_counts[p5] = pattern_counts[p5].saturating_add(1);
-        pattern_counts[p6] = pattern_counts[p6].saturating_add(1);
-        pattern_counts[p7] = pattern_counts[p7].saturating_add(1);
+        if use_saturating {
+            pattern_counts[p0] = pattern_counts[p0].saturating_add(1);
+            pattern_counts[p1] = pattern_counts[p1].saturating_add(1);
+            pattern_counts[p2] = pattern_counts[p2].saturating_add(1);
+            pattern_counts[p3] = pattern_counts[p3].saturating_add(1);
+            pattern_counts[p4] = pattern_counts[p4].saturating_add(1);
+            pattern_counts[p5] = pattern_counts[p5].saturating_add(1);
+            pattern_counts[p6] = pattern_counts[p6].saturating_add(1);
+            pattern_counts[p7] = pattern_counts[p7].saturating_add(1);
+        } else {
+            pattern_counts[p0] = pattern_counts[p0].wrapping_add(1);
+            pattern_counts[p1] = pattern_counts[p1].wrapping_add(1);
+            pattern_counts[p2] = pattern_counts[p2].wrapping_add(1);
+            pattern_counts[p3] = pattern_counts[p3].wrapping_add(1);
+            pattern_counts[p4] = pattern_counts[p4].wrapping_add(1);
+            pattern_counts[p5] = pattern_counts[p5].wrapping_add(1);
+            pattern_counts[p6] = pattern_counts[p6].wrapping_add(1);
+            pattern_counts[p7] = pattern_counts[p7].wrapping_add(1);
+
+            // Check if any count exceeded safe threshold
+            if pattern_counts.iter().any(|&c| c > 200) {
+                use_saturating = true;
+            }
+        }
 
         j += 8;
     }
@@ -1353,7 +1402,11 @@ fn compute_permutation_entropy_m3_simd_batch(prices: &[f64]) -> f64 {
     // Final scalar remainder (0-7 patterns)
     for k in (simd_bulk_patterns + remainder_8x)..n_patterns {
         let pattern_idx = ordinal_pattern_index_m3(prices[k], prices[k + 1], prices[k + 2]);
-        pattern_counts[pattern_idx] = pattern_counts[pattern_idx].saturating_add(1);
+        if use_saturating {
+            pattern_counts[pattern_idx] = pattern_counts[pattern_idx].saturating_add(1);
+        } else {
+            pattern_counts[pattern_idx] = pattern_counts[pattern_idx].wrapping_add(1);
+        }
     }
 
     // Compute entropy from final histogram state
