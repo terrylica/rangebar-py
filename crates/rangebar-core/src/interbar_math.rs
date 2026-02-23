@@ -229,7 +229,7 @@ mod simd {
 /// - lambda > 0: Price moves in direction of order flow (normal)
 /// - lambda < 0: Price moves against order flow (unusual)
 /// - |lambda| high: Large price impact per unit imbalance (illiquid)
-pub(crate) fn compute_kyle_lambda(lookback: &[&TradeSnapshot]) -> f64 {
+pub fn compute_kyle_lambda(lookback: &[&TradeSnapshot]) -> f64 {
     if lookback.len() < 2 {
         return 0.0;
     }
@@ -314,7 +314,7 @@ fn compute_burstiness_scalar(lookback: &[&TradeSnapshot]) -> f64 {
 ///
 /// Skewness: E[(V-mu)^3] / sigma^3 (Fisher-Pearson coefficient)
 /// Excess Kurtosis: E[(V-mu)^4] / sigma^4 - 3 (normal distribution = 0)
-pub(crate) fn compute_volume_moments(lookback: &[&TradeSnapshot]) -> (f64, f64) {
+pub fn compute_volume_moments(lookback: &[&TradeSnapshot]) -> (f64, f64) {
     let volumes: Vec<f64> = lookback.iter().map(|t| t.volume.to_f64()).collect();
     let n = volumes.len() as f64;
 
@@ -353,7 +353,7 @@ pub(crate) fn compute_volume_moments(lookback: &[&TradeSnapshot]) -> (f64, f64) 
 /// Reference: Kaufman (1995) - Smarter Trading
 ///
 /// Range: [0, 1] where 1 = perfect trend, 0 = pure noise
-pub(crate) fn compute_kaufman_er(prices: &[f64]) -> f64 {
+pub fn compute_kaufman_er(prices: &[f64]) -> f64 {
     if prices.len() < 2 {
         return 0.0;
     }
