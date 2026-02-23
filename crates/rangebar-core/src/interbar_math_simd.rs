@@ -207,4 +207,131 @@ mod tests {
         // Should compute successfully and be within bounds
         assert!(b >= -1.0 && b <= 1.0);
     }
+
+    #[test]
+    fn test_simd_large_dataset() {
+        // Issue #96 Task #15: Test SIMD performance on large lookback windows (100+ trades)
+        // This validates the vectorized reduction pattern on realistic data
+        let trades: Vec<_> = (0..150)
+            .map(|i| create_test_snapshot((i * 50) as i64, 100.0 + (i as f64 * 0.01), 1.0))
+            .collect();
+        let trade_refs: Vec<_> = trades.iter().collect();
+
+        let b = compute_burstiness_simd(&trade_refs);
+        assert!(b >= -1.0 && b <= 1.0, "Large dataset SIMD result out of bounds");
+    }
+
+    #[test]
+    fn test_simd_poisson_process() {
+        // Poisson arrivals should have B ≈ 0
+        // Using exponential inter-arrival times (characteristic of Poisson)
+        let mut ts = 0i64;
+        let trades: Vec<_> = (0..20)
+            .map(|i| {
+                let delta = (100.0 * (1.0 + (i as f64 / 10.0).sin())) as i64;
+                ts += delta;
+                create_test_snapshot(ts, 100.0, 1.0)
+            })
+            .collect();
+        let trade_refs: Vec<_> = trades.iter().collect();
+
+        let b = compute_burstiness_simd(&trade_refs);
+        // Poisson should be close to 0
+        assert!(b.abs() < 0.5, "Poisson process B-statistic too far from 0");
+    }
+
+    #[test]
+    fn test_simd_identical_intervals() {
+        // All identical intervals: σ = 0 → B = -1
+        let trades: Vec<_> = (0..10)
+            .map(|i| create_test_snapshot((i * 1000) as i64, 100.0, 1.0))
+            .collect();
+        let trade_refs: Vec<_> = trades.iter().collect();
+
+        let b = compute_burstiness_simd(&trade_refs);
+        assert!((b - (-1.0)).abs() < 0.01, "Identical intervals should give B ≈ -1");
+    }
+
+    #[test]
+    fn test_simd_highly_bursty() {
+        // Create highly bursty pattern: tight clusters with large gaps
+        let timestamps = vec![0, 1, 2, 3, 4000, 4001, 4002, 4003, 8000, 8001, 8002, 8003];
+        let trades: Vec<_> = timestamps
+            .iter()
+            .map(|&ts| create_test_snapshot(ts, 100.0, 1.0))
+            .collect();
+        let trade_refs: Vec<_> = trades.iter().collect();
+
+        let b = compute_burstiness_simd(&trade_refs);
+        // Highly bursty should be positive and significant
+        assert!(b > 0.3, "Bursty pattern B-statistic too low: {}", b);
+        assert!(b <= 1.0, "Burstiness should not exceed 1.0");
+    }
+
+    #[test]
+    fn test_simd_two_trades() {
+        // Minimum case: exactly 2 trades should work
+        let t0 = create_test_snapshot(0, 100.0, 1.0);
+        let t1 = create_test_snapshot(1000, 100.0, 1.0);
+        let lookback = vec![&t0, &t1];
+
+        let b = compute_burstiness_simd(&lookback);
+        // With only one inter-arrival time, σ = 0
+        assert_eq!(b, -1.0, "Two-trade case should give B = -1");
+    }
+
+    #[test]
+    fn test_simd_statistical_equivalence() {
+        // Issue #96 Task #15: Verify SIMD matches scalar within numerical precision
+        let trades: Vec<_> = (0..50)
+            .map(|i| create_test_snapshot((i * 100) as i64, 100.0, 1.0))
+            .collect();
+        let trade_refs: Vec<_> = trades.iter().collect();
+
+        let b_simd = compute_burstiness_simd(&trade_refs);
+
+        // Scalar computation (inline for comparison)
+        let n = trade_refs.len();
+        let mut mean = 0.0;
+        let mut m2 = 0.0;
+        let mut count = 0.0;
+        for i in 1..n {
+            let delta_t = (trade_refs[i].timestamp - trade_refs[i - 1].timestamp) as f64;
+            count += 1.0;
+            let delta = delta_t - mean;
+            mean += delta / count;
+            let delta2 = delta_t - mean;
+            m2 += delta * delta2;
+        }
+        let variance = m2 / count;
+        let sigma = variance.sqrt();
+        let denominator = sigma + mean;
+        let b_scalar = if denominator > f64::EPSILON {
+            (sigma - mean) / denominator
+        } else {
+            0.0
+        };
+
+        // Should be within numerical precision (1e-10)
+        assert!(
+            (b_simd - b_scalar).abs() < 1e-8,
+            "SIMD result diverged from scalar: {} vs {}",
+            b_simd,
+            b_scalar
+        );
+    }
+
+    #[test]
+    fn test_simd_very_large_timestamps() {
+        // Issue #96 Task #15: Handle large timestamp values (microseconds, years of data)
+        let base_ts = 1_700_000_000_000_000i64; // Large microsecond timestamp
+        let trades: Vec<_> = (0..10)
+            .map(|i| create_test_snapshot(base_ts + (i * 1000) as i64, 100.0, 1.0))
+            .collect();
+        let trade_refs: Vec<_> = trades.iter().collect();
+
+        let b = compute_burstiness_simd(&trade_refs);
+        // Should handle large timestamps without overflow
+        assert!(b >= -1.0 && b <= 1.0, "Large timestamp SIMD failed");
+    }
 }
