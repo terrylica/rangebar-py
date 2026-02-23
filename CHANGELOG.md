@@ -1,3 +1,16 @@
+# [12.27.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.26.0...v12.27.0) (2026-02-23)
+
+
+### Bug Fixes
+
+* **#106:** improve heartbeat message clarity and checkpoint integrity tolerance ([70096f5](https://github.com-terrylica/terrylica/rangebar-py/commit/70096f5b7b2afd78693847241a857b7aba855480)), closes [#106](https://github.com-terrylica/terrylica/rangebar-py/issues/106)
+
+
+### Features
+
+* **#103-106:** backfill watcher v2, freshness detection, deploy task, heartbeat fixes ([9bcb95b](https://github.com-terrylica/terrylica/rangebar-py/commit/9bcb95b6b7f80553a3280e7ced80e1236cb808e9)), closes [#103-106](https://github.com-terrylica/terrylica/rangebar-py/issues/103-106)
+* **#107:** implement sidecar watchdog for half-open TCP detection ([54d0b46](https://github.com-terrylica/terrylica/rangebar-py/commit/54d0b46ba3341ce2a4a4506cd113001ae031a00c)), closes [#107](https://github.com-terrylica/terrylica/rangebar-py/issues/107)
+
 # [12.26.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.25.1...v12.26.0) (2026-02-22)
 
 
