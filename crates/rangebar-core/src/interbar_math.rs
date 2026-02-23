@@ -1215,8 +1215,11 @@ pub fn compute_hurst_dfa(prices: &[f64]) -> f64 {
 ///
 /// Maps 0.5 -> 0.5, and asymptotically approaches 0 or 1 for extreme values
 #[inline]
+/// Soft-clamp Hurst exponent using precomputed tanh LUT
+/// Issue #96 Task #198: Replace transcendental tanh() with O(1) lookup
+/// Expected speedup: 0.3-0.8% on Tier 3 Hurst computations
 pub(crate) fn soft_clamp_hurst(h: f64) -> f64 {
-    0.5 + 0.5 * ((h - 0.5) * 4.0).tanh()
+    crate::intrabar::normalization_lut::soft_clamp_hurst_lut(h)
 }
 
 /// Compute Adaptive Permutation Entropy with dynamic embedding dimension

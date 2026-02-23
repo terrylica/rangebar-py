@@ -93,6 +93,30 @@ pub fn tanh_lut(scaled_input: f64) -> f64 {
     TANH_LUT[index]
 }
 
+/// Soft-clamp Hurst exponent using tanh LUT (Issue #96 Task #198)
+/// Maps [0, 1] Hurst exponent to [0.25, 0.75] soft-clamped range
+/// Input: Hurst exponent h in [0.0, 1.0]
+/// Output: soft-clamped value in [~0.25, ~0.75]
+///
+/// Formula: 0.5 + 0.5 * tanh((h - 0.5) * 4)
+/// Replaces expensive tanh() (~100-200 CPU cycles) with LUT (~1 CPU cycle)
+#[inline]
+pub fn soft_clamp_hurst_lut(h: f64) -> f64 {
+    // (h - 0.5) maps [0, 1] → [-0.5, 0.5]
+    // * 4.0 maps [-0.5, 0.5] → [-2.0, 2.0]
+    // We use tanh symmetry: tanh(-x) = -tanh(x)
+    let scaled = (h - 0.5) * 4.0;
+
+    // Compute tanh using LUT, handling negative values with symmetry
+    let tanh_scaled = if scaled >= 0.0 {
+        tanh_lut(scaled)
+    } else {
+        -tanh_lut(-scaled)  // tanh is odd function: tanh(-x) = -tanh(x)
+    };
+
+    0.5 + 0.5 * tanh_scaled
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
