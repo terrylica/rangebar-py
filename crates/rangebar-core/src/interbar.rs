@@ -103,8 +103,19 @@ impl TradeHistory {
         self.total_pushed += 1;
         self.pushes_since_prune_check += 1;
 
-        // Issue #104: Only check prune every 10 trades (batch) or when significantly over capacity
-        if self.pushes_since_prune_check >= 10 || self.trades.len() > self.max_safe_capacity {
+        // Issue #111: Adaptive batch size for pruning checks based on lookback mode
+        // - FixedCount(n): Check every n/10 trades (scaled to lookback size)
+        // - FixedWindow: Check every 10 trades (time-based, not count-dependent)
+        // - BarRelative: Check every 10 trades (self-adaptive, no fixed count)
+        let prune_batch_size = match &self.config.lookback_mode {
+            LookbackMode::FixedCount(n) => std::cmp::max((*n / 10).max(5), 10), // At least 5, typically n/10
+            _ => 10, // FixedWindow and BarRelative use fixed batch
+        };
+
+        // Check every N trades or when capacity limit exceeded
+        if self.pushes_since_prune_check >= prune_batch_size
+            || self.trades.len() > self.max_safe_capacity
+        {
             self.prune_if_needed();
             self.pushes_since_prune_check = 0;
         }
