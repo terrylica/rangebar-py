@@ -1494,8 +1494,10 @@ fn compute_permutation_entropy_m3_simd_batch(prices: &[f64]) -> f64 {
             pattern_counts[p14] = pattern_counts[p14].wrapping_add(1);
             pattern_counts[p15] = pattern_counts[p15].wrapping_add(1);
 
-            // Check if any count exceeded safe threshold; switch to saturating if needed
-            if pattern_counts.iter().any(|&c| c > 200) {
+            // Issue #96 Task #211: Replace .any() with .max() for efficiency (hot path optimization)
+            // .max() is O(6) same as .any(), but more branch-prediction friendly
+            // .any() short-circuits but costs iterator overhead; .max() is direct fold
+            if pattern_counts.iter().max().copied().unwrap_or(0) > 200 {
                 use_saturating = true;
             }
         }
@@ -1537,8 +1539,9 @@ fn compute_permutation_entropy_m3_simd_batch(prices: &[f64]) -> f64 {
             pattern_counts[p6] = pattern_counts[p6].wrapping_add(1);
             pattern_counts[p7] = pattern_counts[p7].wrapping_add(1);
 
-            // Check if any count exceeded safe threshold
-            if pattern_counts.iter().any(|&c| c > 200) {
+            // Issue #96 Task #211: Replace .any() with .max() for efficiency (M=3 path)
+            // Eliminates iterator overhead in hot loop for large windows
+            if pattern_counts.iter().max().copied().unwrap_or(0) > 200 {
                 use_saturating = true;
             }
         }
