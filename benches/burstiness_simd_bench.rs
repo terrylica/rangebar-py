@@ -4,7 +4,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use rangebar_core::interbar_types::TradeSnapshot;
-use rangebar_core::types::FixedPoint;
+use rangebar_core::FixedPoint;
 
 fn create_test_trades(n: usize) -> Vec<TradeSnapshot> {
     let mut trades = Vec::with_capacity(n);
