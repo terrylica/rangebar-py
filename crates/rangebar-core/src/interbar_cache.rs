@@ -53,25 +53,30 @@ fn hash_trade_window(lookback: &[&TradeSnapshot]) -> u64 {
     // Now: Single pass through lookback trades
     let mut min_price = i64::MAX;
     let mut max_price = i64::MIN;
-    let mut total_volume: i128 = 0;
+    // Issue #96 Task #186: Use u64 for volume (safe: typical trade volumes << u64::MAX)
+    // Volume range: 0.01 - 1M BTC per trade; max sum in lookback (500 trades): ~500M BTC
+    // u64 limit: ~18 EB BTC, so u64 is safe and eliminates i128 overhead
+    let mut total_volume: u64 = 0;
     let mut buy_count = 0usize;
 
     for trade in lookback {
         min_price = min_price.min(trade.price.0);
         max_price = max_price.max(trade.price.0);
-        total_volume += trade.volume.0 as i128;
-        if !trade.is_buyer_maker {
-            buy_count += 1;
-        }
+        total_volume = total_volume.wrapping_add(trade.volume.0 as u64);
+        // Issue #96 Task #186: Branchless buy_count (eliminate conditional branch)
+        // Converts !is_buyer_maker (bool) to 0 or 1
+        buy_count += (!trade.is_buyer_maker) as usize;
     }
 
     // Compress to nearest 100 bps (0.01%) for fuzzy matching
+    // The 100 divisor is conservative fuzzy matching: price movements < 1bps map to same hash
+    // Rationale: sub-1bps price movements in lookback window typically don't affect feature computation
     let price_range = (max_price - min_price) / 100;
     price_range.hash(&mut hasher);
 
-    // Hash average volume
+    // Hash average volume (use u64 division, avoid i128 overhead)
     let avg_volume = if !lookback.is_empty() {
-        total_volume / lookback.len() as i128
+        total_volume / lookback.len() as u64
     } else {
         0
     };
