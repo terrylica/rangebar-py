@@ -31,7 +31,8 @@ use std::hash::{Hash, Hasher};
 /// Trade-off: Larger → higher hit ratio; smaller → less memory
 pub const INTERBAR_FEATURE_CACHE_CAPACITY: u64 = 256;
 
-/// Compute a hash of trade window characteristics
+/// Compute a hash of trade window characteristics (optimized single-pass version)
+/// Issue #96 Task #162: Eliminated redundant iteration in hash_trade_window
 /// Used as part of the cache key to identify similar trade sequences
 fn hash_trade_window(lookback: &[&TradeSnapshot]) -> u64 {
     if lookback.is_empty() {
@@ -43,21 +44,28 @@ fn hash_trade_window(lookback: &[&TradeSnapshot]) -> u64 {
     // Hash trade count (exact match)
     lookback.len().hash(&mut hasher);
 
-    // Hash OHLC bounds (compressed to nearest 100 bps)
+    // Combine OHLC bounds, volume distribution, and buy/sell ratio into single pass
+    // Previously: 3 separate iterations (OHLC, volume, buy/sell)
+    // Now: Single pass through lookback trades
     let mut min_price = i64::MAX;
     let mut max_price = i64::MIN;
+    let mut total_volume: i128 = 0;
+    let mut buy_count = 0usize;
 
     for trade in lookback {
         min_price = min_price.min(trade.price.0);
         max_price = max_price.max(trade.price.0);
+        total_volume += trade.volume.0 as i128;
+        if !trade.is_buyer_maker {
+            buy_count += 1;
+        }
     }
 
     // Compress to nearest 100 bps (0.01%) for fuzzy matching
     let price_range = (max_price - min_price) / 100;
     price_range.hash(&mut hasher);
 
-    // Hash volume distribution (sum and ratio)
-    let total_volume: i128 = lookback.iter().map(|t| t.volume.0 as i128).sum();
+    // Hash average volume
     let avg_volume = if !lookback.is_empty() {
         total_volume / lookback.len() as i128
     } else {
@@ -66,7 +74,6 @@ fn hash_trade_window(lookback: &[&TradeSnapshot]) -> u64 {
     avg_volume.hash(&mut hasher);
 
     // Hash buy/sell ratio
-    let buy_count = lookback.iter().filter(|t| !t.is_buyer_maker).count();
     ((buy_count * 100 / lookback.len()) as u8).hash(&mut hasher);
 
     hasher.finish()
