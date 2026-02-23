@@ -128,7 +128,8 @@ def _concat_pandas_via_polars(dfs: list[pd.DataFrame]) -> pd.DataFrame:
         return dfs[0]
 
     # Convert to Polars
-    pl_dfs = [pl.from_pandas(df.reset_index()) for df in dfs]
+    # Issue #96 Task #24: Use include_index=True to avoid reset_index() copy
+    pl_dfs = [pl.from_pandas(df, include_index=True) for df in dfs]
 
     # Normalize datetime columns to consistent precision (μs) before concat
     # This prevents SchemaError when months have mixed precision (Issue #44)
