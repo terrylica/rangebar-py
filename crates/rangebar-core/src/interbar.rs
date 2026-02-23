@@ -401,9 +401,12 @@ impl TradeHistory {
             features.lookback_hurst = Some(compute_hurst_dfa(&prices));
         }
 
-        // Permutation entropy (min 60 trades for m=3, need 10 * m! = 10 * 6 = 60)
+        // Entropy: adaptive switching (Issue #96 Task #7 Phase 3)
+        // - Small windows (n < 500): Permutation Entropy (O(n) balanced overhead)
+        // - Large windows (n >= 500): Approximate Entropy (5-10x faster on large n)
+        // Minimum 60 trades for permutation entropy (m=3, need 10 * m! = 60)
         if n >= 60 {
-            features.lookback_permutation_entropy = Some(compute_permutation_entropy(&prices));
+            features.lookback_permutation_entropy = Some(compute_entropy_adaptive(&prices));
         }
     }
 
