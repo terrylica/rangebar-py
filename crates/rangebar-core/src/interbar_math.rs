@@ -316,18 +316,23 @@ fn compute_burstiness_scalar(lookback: &[&TradeSnapshot]) -> f64 {
 ///
 /// Skewness: E[(V-mu)^3] / sigma^3 (Fisher-Pearson coefficient)
 /// Excess Kurtosis: E[(V-mu)^4] / sigma^4 - 3 (normal distribution = 0)
+///
+/// Issue #96 Task #42: Single-pass computation avoids Vec<f64> allocation.
+/// Two-phase: (1) compute mean, (2) compute moments with known mean.
 pub fn compute_volume_moments(lookback: &[&TradeSnapshot]) -> (f64, f64) {
-    let volumes: Vec<f64> = lookback.iter().map(|t| t.volume.to_f64()).collect();
-    let n = volumes.len() as f64;
+    let n = lookback.len() as f64;
 
     if n < 3.0 {
         return (0.0, 0.0);
     }
 
-    let mu = volumes.iter().sum::<f64>() / n;
+    // Phase 1: Compute mean from volume stream
+    let sum_vol = lookback.iter().fold(0.0, |acc, t| acc + t.volume.to_f64());
+    let mu = sum_vol / n;
 
-    // Central moments — single pass for m2/m3/m4 (was 3 separate passes)
-    let (m2, m3, m4) = volumes.iter().fold((0.0, 0.0, 0.0), |(m2, m3, m4), v| {
+    // Phase 2: Central moments in single pass (no Vec allocation)
+    let (m2, m3, m4) = lookback.iter().fold((0.0, 0.0, 0.0), |(m2, m3, m4), t| {
+        let v = t.volume.to_f64();
         let d = v - mu;
         let d2 = d * d;
         (m2 + d2, m3 + d2 * d, m4 + d2 * d2)
