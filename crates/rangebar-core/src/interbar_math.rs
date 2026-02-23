@@ -172,10 +172,12 @@ impl EntropyCache {
 
     /// Compute hash of price sequence
     fn price_hash(prices: &[f64]) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
+        use ahash::AHasher;
         use std::hash::{Hash, Hasher};
 
-        let mut hasher = DefaultHasher::new();
+        // Issue #96 Task #168: Use ahash instead of DefaultHasher (0.8-1.5% speedup)
+        // ahash is optimized for hash-only use cases and faster initialization
+        let mut hasher = AHasher::default();
 
         // Hash each price as bits to capture exact floating-point values
         for &price in prices {
