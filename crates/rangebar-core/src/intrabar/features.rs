@@ -231,6 +231,7 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
     let n = trades.len();
 
     // Volume aggregation with inline high/low caching (Issue #96 Task #63)
+    // Issue #96 Task #69: Fuse volume moments computation into main trades loop
     let mut buy_vol = 0.0_f64;
     let mut sell_vol = 0.0_f64;
     let mut buy_count = 0_u32;
@@ -238,11 +239,13 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
     let mut total_turnover = 0.0_f64;
     let mut high = f64::NEG_INFINITY;
     let mut low = f64::INFINITY;
-    // Pre-allocate volumes vector (Issue #96 Task #64: reduce reallocation overhead)
-    let mut volumes = Vec::with_capacity(n);
-    for trade in trades {
-        volumes.push(trade.volume.to_f64());
-    }
+
+    // For volume moments: compute mean and central moments inline (Welford-style)
+    let mut sum_vol = 0.0_f64;
+    let mut m2_vol = 0.0_f64; // sum of (v - mean)^2
+    let mut m3_vol = 0.0_f64; // sum of (v - mean)^3
+    let mut m4_vol = 0.0_f64; // sum of (v - mean)^4
+    let mut vol_count = 0_usize;
 
     for trade in trades {
         let vol = trade.volume.to_f64();
@@ -253,6 +256,10 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
         high = high.max(price);
         low = low.min(price);
 
+        // Volume accumulation for later moment computation
+        sum_vol += vol;
+        vol_count += 1;
+
         if trade.is_buyer_maker {
             sell_vol += vol;
             sell_count += trade.individual_trade_count() as u32;
@@ -260,6 +267,18 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
             buy_vol += vol;
             buy_count += trade.individual_trade_count() as u32;
         }
+    }
+
+    // Compute central moments in second pass (can't be fused due to mean dependency)
+    // But eliminate separate volumes vector allocation
+    let mean_vol = if vol_count > 0 { sum_vol / vol_count as f64 } else { 0.0 };
+    for trade in trades {
+        let vol = trade.volume.to_f64();
+        let d = vol - mean_vol;
+        let d2 = d * d;
+        m2_vol += d2;
+        m3_vol += d2 * d;
+        m4_vol += d2 * d2;
     }
 
     let total_vol = buy_vol + sell_vol;
@@ -358,9 +377,21 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
         None
     };
 
-    // Issue #96 Task #55+56: Use consolidated helper for volume moments
-    // Encapsulates 2-pass computation (mean + all central moments)
-    let (volume_skew, volume_kurt) = compute_volume_moments(&volumes);
+    // Volume moments computed inline above (Issue #96 Task #69)
+    let (volume_skew, volume_kurt) = if n >= 3 {
+        let m2_norm = m2_vol / n as f64;
+        let m3_norm = m3_vol / n as f64;
+        let m4_norm = m4_vol / n as f64;
+        let std_v = m2_norm.sqrt();
+
+        if std_v > f64::EPSILON {
+            (Some(m3_norm / std_v.powi(3)), Some(m4_norm / std_v.powi(4) - 3.0))
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
 
     // Kaufman Efficiency Ratio (requires >= 2 trades)
     let kaufman_er = if n >= 2 {
