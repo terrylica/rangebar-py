@@ -55,6 +55,52 @@ pub fn compute_max_drawdown(window: &[f64]) -> f64 {
     max_drawdown.max(f64::EPSILON)
 }
 
+/// Compute both max drawdown and max runup in a single pass (Issue #96 Task #66).
+///
+/// This combined function eliminates a redundant pass through the window
+/// by computing both extrema simultaneously.
+pub fn compute_max_drawdown_and_runup(window: &[f64]) -> (f64, f64) {
+    if window.len() < 2 {
+        return (f64::EPSILON, f64::EPSILON);
+    }
+
+    let mut running_max = window[0];
+    let mut running_min = window[0];
+    let mut max_drawdown = 0.0;
+    let mut max_runup = 0.0;
+
+    for &val in window.iter().skip(1) {
+        // Update extrema
+        if val > running_max {
+            running_max = val;
+        }
+        if val < running_min {
+            running_min = val;
+        }
+
+        // Compute drawdown (adverse move for longs)
+        if running_max > 0.0 && val.is_finite() {
+            let drawdown = 1.0 - val / running_max;
+            if drawdown > max_drawdown {
+                max_drawdown = drawdown;
+            }
+        }
+
+        // Compute runup (adverse move for shorts)
+        if val > 0.0 && running_min > 0.0 && val.is_finite() {
+            let runup = 1.0 - running_min / val;
+            if runup > max_runup {
+                max_runup = runup;
+            }
+        }
+    }
+
+    (
+        max_drawdown.max(f64::EPSILON),
+        max_runup.max(f64::EPSILON),
+    )
+}
+
 /// Compute Maximum Runup for Bear ITH TMAEG.
 ///
 /// Maximum Runup = 1 - (trough / peak) where we track the inverse:

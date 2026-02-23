@@ -10,7 +10,7 @@
 use crate::types::AggTrade;
 use smallvec::SmallVec;
 
-use super::drawdown::{compute_max_drawdown, compute_max_runup};
+use super::drawdown::compute_max_drawdown_and_runup;
 use super::ith::{bear_ith, bull_ith};
 use super::normalize::{
     normalize_cv, normalize_drawdown, normalize_epochs, normalize_excess, normalize_runup,
@@ -152,9 +152,8 @@ pub fn compute_intra_bar_features(trades: &[AggTrade]) -> IntraBarFeatures {
         normalized.push(p / first_price);
     }
 
-    // Compute max_drawdown and max_runup (used as TMAEG - no magic numbers)
-    let max_dd = compute_max_drawdown(&normalized);
-    let max_ru = compute_max_runup(&normalized);
+    // Compute max_drawdown and max_runup in single pass (Issue #96 Task #66: merged computation)
+    let (max_dd, max_ru) = compute_max_drawdown_and_runup(&normalized);
 
     // Compute Bull ITH with max_drawdown as TMAEG
     let bull_result = bull_ith(&normalized, max_dd);
