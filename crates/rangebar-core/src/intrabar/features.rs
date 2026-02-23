@@ -132,8 +132,11 @@ pub fn compute_intra_bar_features(trades: &[AggTrade]) -> IntraBarFeatures {
         };
     }
 
-    // Extract price series from trades
-    let prices: Vec<f64> = trades.iter().map(|t| t.price.to_f64()).collect();
+    // Extract price series from trades with pre-allocation (Issue #96 Task #64)
+    let mut prices = Vec::with_capacity(n);
+    for trade in trades {
+        prices.push(trade.price.to_f64());
+    }
 
     // Normalize prices to start at 1.0 for ITH computation
     let first_price = prices[0];
@@ -143,7 +146,11 @@ pub fn compute_intra_bar_features(trades: &[AggTrade]) -> IntraBarFeatures {
             ..Default::default()
         };
     }
-    let normalized: Vec<f64> = prices.iter().map(|p| p / first_price).collect();
+    // Pre-allocate normalized prices vector (Issue #96 Task #64)
+    let mut normalized = Vec::with_capacity(n);
+    for &p in &prices {
+        normalized.push(p / first_price);
+    }
 
     // Compute max_drawdown and max_runup (used as TMAEG - no magic numbers)
     let max_dd = compute_max_drawdown(&normalized);
@@ -232,7 +239,11 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
     let mut total_turnover = 0.0_f64;
     let mut high = f64::NEG_INFINITY;
     let mut low = f64::INFINITY;
-    let volumes: Vec<f64> = trades.iter().map(|t| t.volume.to_f64()).collect();
+    // Pre-allocate volumes vector (Issue #96 Task #64: reduce reallocation overhead)
+    let mut volumes = Vec::with_capacity(n);
+    for trade in trades {
+        volumes.push(trade.volume.to_f64());
+    }
 
     for trade in trades {
         let vol = trade.volume.to_f64();
