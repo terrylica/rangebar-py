@@ -133,23 +133,19 @@ def _concat_pandas_via_polars(dfs: list[pd.DataFrame]) -> pd.DataFrame:
 
     # Normalize datetime columns to consistent precision (μs) before concat
     # This prevents SchemaError when months have mixed precision (Issue #44)
-    # Issue #96 Task #23: Optimize precision normalization - check first DF to avoid
-    # redundant column scans on subsequent DataFrames when precision is consistent
+    # Issue #96 Task #25: Check temporal columns before normalizing
     if pl_dfs:
-        # Normalize first DF and check if precision change occurred
-        first_normalized = normalize_temporal_precision(pl_dfs[0])
-        # If first DF wasn't modified, assume all subsequent DFs have same precision
+        # Check first DF for temporal columns with single pass
         has_temporal = any(
             pl_dfs[0][col].dtype.is_temporal() for col in pl_dfs[0].columns
         )
-        if not has_temporal:
+
+        if has_temporal:
+            # Has temporal columns - normalize all to be safe
+            normalized = [normalize_temporal_precision(pldf) for pldf in pl_dfs]
+        else:
             # No temporal columns = no normalization needed
             normalized = pl_dfs
-        else:
-            # Has temporal columns - normalize all to be safe
-            normalized = [first_normalized] + [
-                normalize_temporal_precision(pldf) for pldf in pl_dfs[1:]
-            ]
     else:
         normalized = pl_dfs
     combined = pl.concat(normalized)
