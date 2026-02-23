@@ -66,8 +66,10 @@ def _check_vwap(
         reasons.append("All VWAP values are zero (pre-v7.0 cache data)")
     else:
         vwap_valid = (df["vwap"] >= df["Low"]) & (df["vwap"] <= df["High"])
-        checks["vwap_bounded"] = vwap_valid.all()
-        if not vwap_valid.all():
+        # Issue #96 Task #19: Cache .all() result to avoid redundant computation
+        is_vwap_bounded = vwap_valid.all()
+        checks["vwap_bounded"] = is_vwap_bounded
+        if not is_vwap_bounded:
             invalid_count = (~vwap_valid).sum()
             reasons.append(f"VWAP outside [Low, High] for {invalid_count} bars")
 
