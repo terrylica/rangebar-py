@@ -156,7 +156,8 @@ impl ExnessRangeBarBuilder {
         self.tick_counter += 1;
 
         // 3. Process through core processor (raises on error)
-        let maybe_bar = self.processor.process_single_trade(synthetic_trade)?;
+        // Issue #96 Task #78: Use borrowed trade reference (signature changed in processor)
+        let maybe_bar = self.processor.process_single_trade(&synthetic_trade)?;
 
         // 4. If bar closed, wrap with spread stats and reset
         if let Some(mut base) = maybe_bar {

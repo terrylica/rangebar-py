@@ -357,9 +357,11 @@ async fn symbol_task(
                     Some(trade) => {
                         metrics.trades_received.fetch_add(1, Ordering::Relaxed);
 
-                        // Fan out to all threshold processors
+                        // Issue #96 Task #78: Fan out using borrowed trade (0 clones)
+                        // Previously cloned trade for each threshold processor (~57 bytes each).
+                        // With &trade, eliminates 4-8x unnecessary allocations per trade.
                         for (threshold, processor) in &mut processors {
-                            match processor.process_single_trade(trade.clone()) {
+                            match processor.process_single_trade(&trade) {
                                 Ok(Some(bar)) => {
                                     metrics.bars_emitted.fetch_add(1, Ordering::Relaxed);
                                     let completed = CompletedBar {
@@ -521,7 +523,7 @@ mod tests {
                 i % 2 == 0,
             );
             for (_, processor) in &mut processors {
-                let _ = processor.process_single_trade(trade.clone());
+                let _ = processor.process_single_trade(&trade);
             }
         }
 

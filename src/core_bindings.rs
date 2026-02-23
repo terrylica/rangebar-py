@@ -313,7 +313,7 @@ impl PyRangeBarProcessor {
         // Process each trade individually to maintain state (Issue #16 fix)
         let mut bars = Vec::new();
         for trade in agg_trades {
-            match self.processor.process_single_trade(trade) {
+            match self.processor.process_single_trade(&trade) {
                 Ok(Some(bar)) => bars.push(rangebar_to_dict(py, &bar)?),
                 Ok(None) => {} // No bar completed yet
                 Err(e) => return Err(PyRuntimeError::new_err(format!("Processing failed: {e}"))),
@@ -373,7 +373,7 @@ impl PyRangeBarProcessor {
         // Process each trade individually to maintain state
         let mut bars = Vec::new();
         for trade in agg_trades {
-            match self.processor.process_single_trade(trade) {
+            match self.processor.process_single_trade(&trade) {
                 Ok(Some(bar)) => bars.push(bar),
                 Ok(None) => {} // No bar completed yet
                 Err(e) => return Err(PyRuntimeError::new_err(format!("Processing failed: {e}"))),
@@ -422,7 +422,7 @@ impl PyRangeBarProcessor {
         // Process each trade individually to maintain streaming state
         let mut bars = Vec::with_capacity(agg_trades.len() / 100);
         for trade in agg_trades {
-            match self.processor.process_single_trade(trade) {
+            match self.processor.process_single_trade(&trade) {
                 Ok(Some(bar)) => bars.push(bar),
                 Ok(None) => {}
                 Err(e) => return Err(PyRuntimeError::new_err(format!("Processing failed: {e}"))),
@@ -465,7 +465,7 @@ impl PyRangeBarProcessor {
         // Process each trade individually to maintain streaming state
         let mut bars = Vec::with_capacity(agg_trades.len() / 100);
         for trade in agg_trades {
-            match self.processor.process_single_trade(trade) {
+            match self.processor.process_single_trade(&trade) {
                 Ok(Some(bar)) => bars.push(bar),
                 Ok(None) => {}
                 Err(e) => return Err(PyRuntimeError::new_err(format!("Processing failed: {e}"))),

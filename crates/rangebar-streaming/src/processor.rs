@@ -190,8 +190,8 @@ impl StreamingProcessor {
                 Err(_) => continue, // Timeout, check circuit breaker again
             };
 
-            // Process single trade
-            match self.process_single_trade(trade).await {
+            // Process single trade (use borrowed reference per Issue #96 Task #78)
+            match self.process_single_trade(&trade).await {
                 Ok(bar_opt) => {
                     self.circuit_breaker.record_success();
 
@@ -215,9 +215,10 @@ impl StreamingProcessor {
     }
 
     /// Process single trade - extracts completed bars without accumulation
+    // Issue #96 Task #78: Accept borrowed AggTrade reference
     async fn process_single_trade(
         &mut self,
-        trade: AggTrade,
+        trade: &AggTrade,
     ) -> Result<Option<RangeBar>, StreamingError> {
         // Update metrics
         self.metrics
@@ -225,7 +226,9 @@ impl StreamingProcessor {
             .fetch_add(1, Ordering::Relaxed);
 
         // Process trade using existing algorithm (single trade at a time)
-        self.processor.process_trades_continuously(&[trade]);
+        // Note: Clone is acceptable here since this is the bounded-memory streaming processor
+        // (not the main hot path; LiveBarEngine uses non-cloning path via live_engine.rs)
+        self.processor.process_trades_continuously(&[trade.clone()]);
 
         // Extract completed bars immediately (prevents accumulation)
         let mut completed_bars = self.processor.get_all_completed_bars();
