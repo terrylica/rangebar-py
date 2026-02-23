@@ -644,18 +644,20 @@ mod simd {
 
         if subsample {
             // Process every 5th trade for large windows
+            // Branchless arithmetic selection: is_buyer_maker → mask (1.0 or 0.0)
             for trade in lookback.iter().step_by(5) {
                 let vol = trade.volume.to_f64();
-                if trade.is_buyer_maker {
-                    buy_vol += vol;
-                } else {
-                    sell_vol += vol;
-                }
+                let is_buyer_mask = trade.is_buyer_maker as u32 as f64;
+
+                // Arithmetic selection: when is_buyer_maker==true, add to sell_vol; else buy_vol
+                // (matches scalar logic: is_buyer_maker indicates seller-initiated trade)
+                buy_vol += vol * (1.0 - is_buyer_mask);
+                sell_vol += vol * is_buyer_mask;
             }
         } else {
-            // Full computation for medium windows
-            // Note: Conditional accumulation (is_buyer_maker) doesn't vectorize well with SIMD,
-            // so we use scalar loops but process in pairs for cache efficiency
+            // Full computation for medium windows with branchless optimization
+            // Issue #96 Task #175: Process trades in pairs to enable instruction-level parallelism
+            // Issue #96 Task #184: Branchless arithmetic selection (epsilon optimization)
             let n = lookback.len();
             let pairs = n / 2;
 
@@ -667,28 +669,27 @@ mod simd {
                 let vol0 = t0.volume.to_f64();
                 let vol1 = t1.volume.to_f64();
 
-                if t0.is_buyer_maker {
-                    buy_vol += vol0;
-                } else {
-                    sell_vol += vol0;
-                }
+                // Branchless conversion: is_buyer_maker (bool) → mask (0.0 or 1.0)
+                let is_buyer_mask0 = t0.is_buyer_maker as u32 as f64;
+                let is_buyer_mask1 = t1.is_buyer_maker as u32 as f64;
 
-                if t1.is_buyer_maker {
-                    buy_vol += vol1;
-                } else {
-                    sell_vol += vol1;
-                }
+                // Arithmetic selection: sell gets mask, buy gets 1-mask
+                // (matches scalar logic: is_buyer_maker=true → sell-initiated trade)
+                buy_vol += vol0 * (1.0 - is_buyer_mask0);
+                sell_vol += vol0 * is_buyer_mask0;
+
+                buy_vol += vol1 * (1.0 - is_buyer_mask1);
+                sell_vol += vol1 * is_buyer_mask1;
             }
 
             // Scalar remainder for odd-length arrays
             if n % 2 == 1 {
                 let last_trade = lookback[n - 1];
                 let vol = last_trade.volume.to_f64();
-                if last_trade.is_buyer_maker {
-                    buy_vol += vol;
-                } else {
-                    sell_vol += vol;
-                }
+                let is_buyer_mask = last_trade.is_buyer_maker as u32 as f64;
+
+                buy_vol += vol * (1.0 - is_buyer_mask);
+                sell_vol += vol * is_buyer_mask;
             }
         }
 
