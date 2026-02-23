@@ -74,14 +74,18 @@ pub fn extract_lookback_cache(lookback: &[&TradeSnapshot]) -> LookbackCache {
         };
     }
 
+    // Issue #96 Task #210: Memoize first/last element access in cache extraction
+    let first_trade = &lookback[0];
+    let last_trade = &lookback[lookback.len() - 1];
+
     let mut cache = LookbackCache {
         prices: SmallVec::with_capacity(lookback.len()),
         volumes: SmallVec::with_capacity(lookback.len()),
-        open: lookback.first().unwrap().price.to_f64(),
+        open: first_trade.price.to_f64(),
         high: f64::MIN,
         low: f64::MAX,
-        close: lookback.last().unwrap().price.to_f64(),
-        first_volume: lookback.first().unwrap().volume.to_f64(),
+        close: last_trade.price.to_f64(),
+        first_volume: first_trade.volume.to_f64(),
         total_volume: 0.0,
     };
 
@@ -658,8 +662,10 @@ mod simd {
             return 0.0;
         }
 
-        let first_price = lookback.first().unwrap().price.to_f64();
-        let last_price = lookback.last().unwrap().price.to_f64();
+        // Issue #96 Task #210: Memoize first/last element access to avoid redundant .unwrap() chains
+        // Bounds guaranteed by n >= 2 check above; direct indexing is safer than repeated .first()/.last()
+        let first_price = lookback[0].price.to_f64();
+        let last_price = lookback[n - 1].price.to_f64();
 
         // Adaptive computation: subsample large windows
         let (buy_vol, sell_vol) = if n > 500 {
@@ -826,8 +832,10 @@ fn compute_kyle_lambda_scalar(lookback: &[&TradeSnapshot]) -> f64 {
         return 0.0;
     }
 
-    let first_price = lookback.first().unwrap().price.to_f64();
-    let last_price = lookback.last().unwrap().price.to_f64();
+    // Issue #96 Task #210: Memoize first/last element access (scalar version)
+    // Bounds guaranteed by n >= 2 check above; direct indexing avoids .first()/.last() overhead
+    let first_price = lookback[0].price.to_f64();
+    let last_price = lookback[n - 1].price.to_f64();
 
     // Adaptive computation: subsample large windows
     let (buy_vol, sell_vol) = if n > 500 {
@@ -1113,7 +1121,9 @@ pub fn compute_kaufman_er(prices: &[f64]) -> f64 {
         return 0.0;
     }
 
-    let net_movement = (prices.last().unwrap() - prices.first().unwrap()).abs();
+    // Issue #96 Task #210: Memoize first/last element access (Kaufman ER)
+    let n = prices.len();
+    let net_movement = (prices[n - 1] - prices[0]).abs();
 
     // Issue #96 Task #169: Vectorize volatility loop with SIMD f64x4 (0.3-0.8% speedup)
     // Process 4 price differences simultaneously, then horizontal sum
@@ -1177,9 +1187,10 @@ pub fn compute_garman_klass(lookback: &[&TradeSnapshot]) -> f64 {
         return 0.0;
     }
 
-    // Compute OHLC from lookback window
-    let o = lookback.first().unwrap().price.to_f64();
-    let c = lookback.last().unwrap().price.to_f64();
+    // Issue #96 Task #210: Memoize first/last element access (Garman-Klass)
+    let n = lookback.len();
+    let o = lookback[0].price.to_f64();
+    let c = lookback[n - 1].price.to_f64();
     let (l, h) = lookback.iter().fold((f64::MAX, f64::MIN), |acc, t| {
         let p = t.price.to_f64();
         (acc.0.min(p), acc.1.max(p))
@@ -1634,8 +1645,10 @@ pub fn extract_ohlc_batch(lookback: &[&TradeSnapshot]) -> (f64, f64, f64, f64) {
         return (0.0, 0.0, 0.0, 0.0);
     }
 
-    let open = lookback.first().unwrap().price.to_f64();
-    let close = lookback.last().unwrap().price.to_f64();
+    // Issue #96 Task #210: Memoize first/last element access (OHLC batch extraction)
+    let n = lookback.len();
+    let open = lookback[0].price.to_f64();
+    let close = lookback[n - 1].price.to_f64();
 
     let (high, low) = lookback.iter().fold((f64::MIN, f64::MAX), |acc, t| {
         let p = t.price.to_f64();
@@ -1659,8 +1672,10 @@ pub fn extract_prices_and_ohlc_cached(
         return (SmallVec::new(), (0.0, 0.0, 0.0, 0.0));
     }
 
-    let open = lookback.first().unwrap().price.to_f64();
-    let close = lookback.last().unwrap().price.to_f64();
+    // Issue #96 Task #210: Memoize first/last element access (prices + OHLC extraction)
+    let n = lookback.len();
+    let open = lookback[0].price.to_f64();
+    let close = lookback[n - 1].price.to_f64();
 
     // Single pass: collect prices AND compute OHLC bounds
     let mut prices = SmallVec::with_capacity(lookback.len());
