@@ -103,40 +103,44 @@ pub fn extract_lookback_cache(lookback: &[&TradeSnapshot]) -> LookbackCache {
 /// Entropy result cache for deterministic price sequences (Issue #96 Task #117)
 ///
 /// Caches permutation entropy results to avoid redundant computation on identical
-/// price sequences. Uses FxHash for O(1) lookup. Useful for consolidation periods
-/// where price sequences repeat frequently.
+/// price sequences. Uses moka::sync::Cache for production-grade LRU eviction
+/// with O(1) lookup. Useful for consolidation periods where price sequences
+/// repeat frequently.
 ///
 /// # Performance Impact
 /// - Consolidation periods: 1.5-2.5x speedup (high repetition)
 /// - Trending markets: 1.0-1.2x speedup (low repetition)
-/// - Memory: ~50KB for typical cache (100 entries)
+/// - Memory: Automatic LRU eviction (max 128 entries by default)
 ///
 /// # Implementation
-/// - Uses LRU eviction (simple: clear when > 200 entries)
-/// - Hash collision handling: rehashing on mismatch (paranoid safety)
-/// - No behavioral changes: cache miss path identical to uncached computation
-#[derive(Debug, Clone)]
+/// - Uses moka::sync::Cache with automatic LRU eviction (Issue #96 Task #125)
+/// - Hash function: DefaultHasher (captures exact floating-point values)
+/// - Thread-safe via moka's internal locking
+/// - Metrics: Cache hit/miss tracking available via moka API
+#[derive(Clone)]
 pub struct EntropyCache {
-    /// Cached (price_hash, entropy_value) pairs
-    /// Map from FxHash of price sequence to computed entropy
-    entries: smallvec::SmallVec<[(u64, f64); 32]>,
+    /// Production-grade LRU cache (moka provides automatic eviction)
+    /// Key: hash of price sequence, Value: computed entropy
+    /// Max capacity: 128 entries (tuned for typical consolidation windows)
+    cache: moka::sync::Cache<u64, f64>,
 }
 
 impl EntropyCache {
-    /// Create new empty entropy cache
+    /// Create new empty entropy cache with LRU eviction
     pub fn new() -> Self {
-        Self {
-            entries: smallvec::SmallVec::new(),
-        }
+        // Configure moka cache: 128 max entries, ~10KB memory for typical entropy values
+        let cache = moka::sync::Cache::builder()
+            .max_capacity(128)
+            .build();
+
+        Self { cache }
     }
 
-    /// Compute hash of price sequence using FxHash
+    /// Compute hash of price sequence
     fn price_hash(prices: &[f64]) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
 
-        // Use DefaultHasher as fallback (FxHash not directly available in std)
-        // This provides good distribution for price sequences
         let mut hasher = DefaultHasher::new();
 
         // Hash each price as bits to capture exact floating-point values
@@ -147,38 +151,32 @@ impl EntropyCache {
         hasher.finish()
     }
 
-    /// Get cached entropy result if available
+    /// Get cached entropy result if available (O(1) operation)
     pub fn get(&self, prices: &[f64]) -> Option<f64> {
         if prices.is_empty() {
             return None;
         }
 
         let hash = Self::price_hash(prices);
-        self.entries
-            .iter()
-            .find(|(h, _)| *h == hash)
-            .map(|(_, entropy)| *entropy)
+        self.cache.get(&hash)
     }
 
-    /// Cache entropy result
+    /// Cache entropy result (O(1) operation, moka handles LRU eviction)
     pub fn insert(&mut self, prices: &[f64], entropy: f64) {
         if prices.is_empty() {
             return;
         }
 
         let hash = Self::price_hash(prices);
+        self.cache.insert(hash, entropy);
+    }
+}
 
-        // Check if already cached (avoid duplicates)
-        if self.entries.iter().any(|(h, _)| *h == hash) {
-            return;
-        }
-
-        // Simple LRU: clear if > 200 entries
-        if self.entries.len() >= 200 {
-            self.entries.clear();
-        }
-
-        self.entries.push((hash, entropy));
+impl std::fmt::Debug for EntropyCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EntropyCache")
+            .field("cache_size", &"moka(max_128)")
+            .finish()
     }
 }
 

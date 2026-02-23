@@ -43,6 +43,9 @@ rayon = "1.10"
 # parking_lot for optimized RwLock (Issue #96 Task #124 - lower latency than std::sync::RwLock)
 parking_lot = "0.12"
 
+# moka for production-grade LRU caching (Issue #96 Task #125 - automatic eviction, metrics)
+moka = { version = "0.12", features = ["sync"] }
+
 [dev-dependencies]
 csv.workspace = true  # Required for test_data_loader during test compilation
 
