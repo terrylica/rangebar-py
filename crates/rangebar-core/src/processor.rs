@@ -2011,4 +2011,129 @@ mod tests {
         assert_eq!(restored.version, 2);
         assert_eq!(restored.symbol, "BTCUSDT");
     }
+
+    // =========================================================================
+    // Issue #96: Checkpoint error path tests
+    // =========================================================================
+
+    #[test]
+    fn test_from_checkpoint_invalid_threshold_zero() {
+        let checkpoint = Checkpoint::new(
+            "BTCUSDT".to_string(), 0, None, None, 0, None, 0, true,
+        );
+        match RangeBarProcessor::from_checkpoint(checkpoint) {
+            Err(CheckpointError::InvalidThreshold { threshold: 0, .. }) => {}
+            other => panic!("Expected InvalidThreshold(0), got {:?}", other.err()),
+        }
+    }
+
+    #[test]
+    fn test_from_checkpoint_invalid_threshold_too_high() {
+        let checkpoint = Checkpoint::new(
+            "BTCUSDT".to_string(), 200_000, None, None, 0, None, 0, true,
+        );
+        match RangeBarProcessor::from_checkpoint(checkpoint) {
+            Err(CheckpointError::InvalidThreshold { threshold: 200_000, .. }) => {}
+            other => panic!("Expected InvalidThreshold(200000), got {:?}", other.err()),
+        }
+    }
+
+    #[test]
+    fn test_from_checkpoint_missing_thresholds() {
+        let bar = RangeBar::new(&test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1000));
+        let mut checkpoint = Checkpoint::new(
+            "BTCUSDT".to_string(), 250, None, None, 0, None, 0, true,
+        );
+        checkpoint.incomplete_bar = Some(bar);
+        checkpoint.thresholds = None;
+
+        match RangeBarProcessor::from_checkpoint(checkpoint) {
+            Err(CheckpointError::MissingThresholds) => {}
+            other => panic!("Expected MissingThresholds, got {:?}", other.err()),
+        }
+    }
+
+    #[test]
+    fn test_from_checkpoint_unknown_version_treated_as_v2() {
+        let mut checkpoint = Checkpoint::new(
+            "BTCUSDT".to_string(), 250, None, None, 0, None, 0, true,
+        );
+        checkpoint.version = 99;
+
+        let processor = RangeBarProcessor::from_checkpoint(checkpoint).unwrap();
+        assert_eq!(processor.threshold_decimal_bps(), 250);
+    }
+
+    #[test]
+    fn test_from_checkpoint_valid_with_incomplete_bar() {
+        use crate::fixed_point::FixedPoint;
+        let bar = RangeBar::new(&test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1000));
+        let upper = FixedPoint::from_str("50125.0").unwrap();
+        let lower = FixedPoint::from_str("49875.0").unwrap();
+
+        let checkpoint = Checkpoint::new(
+            "BTCUSDT".to_string(), 250, Some(bar), Some((upper, lower)), 0, None, 0, true,
+        );
+
+        let processor = RangeBarProcessor::from_checkpoint(checkpoint).unwrap();
+        assert!(processor.get_incomplete_bar().is_some(), "Should restore incomplete bar");
+    }
+
+    // =========================================================================
+    // Issue #96: Ouroboros reset tests
+    // =========================================================================
+
+    #[test]
+    fn test_reset_at_ouroboros_with_orphan() {
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+
+        // Feed trades to create incomplete bar
+        let t1 = test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1000);
+        let t2 = test_utils::create_test_agg_trade(2, "50050.0", "1.0", 2000);
+        assert!(processor.process_single_trade(&t1).unwrap().is_none());
+        assert!(processor.process_single_trade(&t2).unwrap().is_none());
+        assert!(processor.get_incomplete_bar().is_some(), "Should have incomplete bar");
+
+        // Reset at ouroboros boundary - should return orphaned bar
+        let orphan = processor.reset_at_ouroboros();
+        assert!(orphan.is_some(), "Should return orphaned bar");
+        let orphan_bar = orphan.unwrap();
+        assert_eq!(orphan_bar.open.to_string(), "50000.00000000");
+
+        // After reset, no incomplete bar
+        assert!(processor.get_incomplete_bar().is_none(), "No bar after reset");
+    }
+
+    #[test]
+    fn test_reset_at_ouroboros_clean_state() {
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+
+        // Reset without any trades processed - should return None
+        let orphan = processor.reset_at_ouroboros();
+        assert!(orphan.is_none(), "No orphan when state is clean");
+        assert!(processor.get_incomplete_bar().is_none());
+    }
+
+    #[test]
+    fn test_reset_at_ouroboros_clears_defer_open() {
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+
+        // Create a breach to set defer_open = true
+        let t1 = test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1000);
+        let t2 = test_utils::create_test_agg_trade(2, "50200.0", "1.0", 2000); // +0.4% breach
+        processor.process_single_trade(&t1).unwrap();
+        let bar = processor.process_single_trade(&t2).unwrap();
+        assert!(bar.is_some(), "Should breach");
+
+        // After breach, defer_open is true - no incomplete bar
+        assert!(processor.get_incomplete_bar().is_none());
+
+        // Reset at ouroboros should clear defer_open
+        processor.reset_at_ouroboros();
+
+        // New trade should open fresh bar (defer_open was cleared)
+        let t3 = test_utils::create_test_agg_trade(3, "50000.0", "1.0", 3000);
+        processor.process_single_trade(&t3).unwrap();
+        assert!(processor.get_incomplete_bar().is_some(), "Should have new bar after reset");
+    }
 }
