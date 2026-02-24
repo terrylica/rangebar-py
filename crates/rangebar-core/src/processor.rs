@@ -95,6 +95,43 @@ pub struct RangeBarProcessor {
     include_intra_bar_features: bool,
 }
 
+/// Cold path: scan trades to find first unsorted pair and return error
+/// Extracted from validate_trade_ordering() to improve hot-path code layout
+#[cold]
+#[inline(never)]
+fn find_unsorted_trade(trades: &[AggTrade]) -> Result<(), ProcessingError> {
+    for i in 1..trades.len() {
+        let prev = &trades[i - 1];
+        let curr = &trades[i];
+        if curr.timestamp < prev.timestamp
+            || (curr.timestamp == prev.timestamp && curr.agg_trade_id <= prev.agg_trade_id)
+        {
+            return Err(ProcessingError::UnsortedTrades {
+                index: i,
+                prev_time: prev.timestamp,
+                prev_id: prev.agg_trade_id,
+                curr_time: curr.timestamp,
+                curr_id: curr.agg_trade_id,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Cold path: construct unsorted trade error
+/// Extracted to keep error construction out of the hot validation loop
+#[cold]
+#[inline(never)]
+fn unsorted_trade_error(index: usize, prev: &AggTrade, curr: &AggTrade) -> Result<(), ProcessingError> {
+    Err(ProcessingError::UnsortedTrades {
+        index,
+        prev_time: prev.timestamp,
+        prev_id: prev.agg_trade_id,
+        curr_time: curr.timestamp,
+        curr_id: curr.agg_trade_id,
+    })
+}
+
 impl RangeBarProcessor {
     /// Create new processor with given threshold
     ///
@@ -922,22 +959,8 @@ impl RangeBarProcessor {
         if last.timestamp < first.timestamp
             || (last.timestamp == first.timestamp && last.agg_trade_id <= first.agg_trade_id)
         {
-            // Definitely unsorted - find exact error location
-            for i in 1..trades.len() {
-                let prev = &trades[i - 1];
-                let curr = &trades[i];
-                if curr.timestamp < prev.timestamp
-                    || (curr.timestamp == prev.timestamp && curr.agg_trade_id <= prev.agg_trade_id)
-                {
-                    return Err(ProcessingError::UnsortedTrades {
-                        index: i,
-                        prev_time: prev.timestamp,
-                        prev_id: prev.agg_trade_id,
-                        curr_time: curr.timestamp,
-                        curr_id: curr.agg_trade_id,
-                    });
-                }
-            }
+            // Definitely unsorted - find exact error location (cold path)
+            return find_unsorted_trade(trades);
         }
 
         // Full validation for typical sorted case
@@ -949,13 +972,7 @@ impl RangeBarProcessor {
             if curr.timestamp < prev.timestamp
                 || (curr.timestamp == prev.timestamp && curr.agg_trade_id <= prev.agg_trade_id)
             {
-                return Err(ProcessingError::UnsortedTrades {
-                    index: i,
-                    prev_time: prev.timestamp,
-                    prev_id: prev.agg_trade_id,
-                    curr_time: curr.timestamp,
-                    curr_id: curr.agg_trade_id,
-                });
+                return unsorted_trade_error(i, prev, curr);
             }
         }
 

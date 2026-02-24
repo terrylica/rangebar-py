@@ -78,6 +78,40 @@ pub struct IntraBarFeatures {
     pub intra_permutation_entropy: Option<f64>,
 }
 
+/// Cold path: return features for zero-trade bar
+/// Extracted to improve instruction cache locality on the hot path
+#[cold]
+#[inline(never)]
+fn intra_bar_zero_trades() -> IntraBarFeatures {
+    IntraBarFeatures {
+        intra_trade_count: Some(0),
+        ..Default::default()
+    }
+}
+
+/// Cold path: return features for single-trade bar
+#[cold]
+#[inline(never)]
+fn intra_bar_single_trade() -> IntraBarFeatures {
+    IntraBarFeatures {
+        intra_trade_count: Some(1),
+        intra_duration_us: Some(0),
+        intra_intensity: Some(0.0),
+        intra_ofi: Some(0.0),
+        ..Default::default()
+    }
+}
+
+/// Cold path: return features for bar with invalid first price
+#[cold]
+#[inline(never)]
+fn intra_bar_invalid_price(n: usize) -> IntraBarFeatures {
+    IntraBarFeatures {
+        intra_trade_count: Some(n as u32),
+        ..Default::default()
+    }
+}
+
 /// Compute all intra-bar features from constituent trades.
 ///
 /// This is the main entry point for computing ITH and statistical features
@@ -109,19 +143,10 @@ pub fn compute_intra_bar_features_with_scratch(
     // Skip only expensive complexity features (Hurst, PE) for bars with insufficient data
     // ITH computation is linear and inexpensive, always included for n >= 2
     if n == 0 {
-        return IntraBarFeatures {
-            intra_trade_count: Some(0),
-            ..Default::default()
-        };
+        return intra_bar_zero_trades();
     }
     if n == 1 {
-        return IntraBarFeatures {
-            intra_trade_count: Some(1),
-            intra_duration_us: Some(0),
-            intra_intensity: Some(0.0),
-            intra_ofi: Some(0.0),
-            ..Default::default()
-        };
+        return intra_bar_single_trade();
     }
 
     // Extract price series from trades, reusing scratch buffer (Issue #96 Task #173)
@@ -134,10 +159,7 @@ pub fn compute_intra_bar_features_with_scratch(
     // Normalize prices to start at 1.0 for ITH computation
     let first_price = scratch_prices[0];
     if first_price <= 0.0 || !first_price.is_finite() {
-        return IntraBarFeatures {
-            intra_trade_count: Some(n as u32),
-            ..Default::default()
-        };
+        return intra_bar_invalid_price(n);
     }
     // Reuse scratch buffer for normalized prices (Issue #96 Task #173)
     scratch_volumes.clear();

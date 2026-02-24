@@ -48,6 +48,23 @@ pub struct LookbackCache {
     pub total_volume: f64,
 }
 
+/// Cold path: empty lookback cache (Issue #96 Task #4: cold path optimization)
+/// Moved out of hot path to improve instruction cache locality
+#[cold]
+#[inline(never)]
+fn empty_lookback_cache() -> LookbackCache {
+    LookbackCache {
+        prices: SmallVec::new(),
+        volumes: SmallVec::new(),
+        open: 0.0,
+        high: 0.0,
+        low: 0.0,
+        close: 0.0,
+        first_volume: 0.0,
+        total_volume: 0.0,
+    }
+}
+
 /// Extract memoized lookback data in single pass (Issue #96 Task #99)
 ///
 /// Replaces multiple independent passes through lookback trades with a single
@@ -62,16 +79,7 @@ pub struct LookbackCache {
 #[inline]
 pub fn extract_lookback_cache(lookback: &[&TradeSnapshot]) -> LookbackCache {
     if lookback.is_empty() {
-        return LookbackCache {
-            prices: SmallVec::new(),
-            volumes: SmallVec::new(),
-            open: 0.0,
-            high: 0.0,
-            low: 0.0,
-            close: 0.0,
-            first_volume: 0.0,
-            total_volume: 0.0,
-        };
+        return empty_lookback_cache();
     }
 
     // Issue #96 Task #210: Memoize first/last element access in cache extraction

@@ -94,6 +94,14 @@ pub struct TradeHistory {
     lookahead_buffer: std::sync::Arc<parking_lot::Mutex<SmallVec<[(i64, usize); 3]>>>,
 }
 
+/// Cold path: return default inter-bar features for empty lookback
+/// Extracted to improve instruction cache locality on the hot path
+#[cold]
+#[inline(never)]
+fn default_interbar_features() -> InterBarFeatures {
+    InterBarFeatures::default()
+}
+
 impl TradeHistory {
     /// Create new trade history with given configuration
     ///
@@ -671,14 +679,14 @@ impl TradeHistory {
         // Issue #96 Task #178: Fast-path for empty lookback windows
         // Skip SmallVec allocation if we know there are no lookback trades (0.3-0.8% speedup)
         if !self.has_lookback_trades(bar_open_time) {
-            return InterBarFeatures::default();
+            return default_interbar_features();
         }
 
         let lookback = self.get_lookback_trades(bar_open_time);
 
         // This should never be empty now (checked above), but keep as safety check
         if lookback.is_empty() {
-            return InterBarFeatures::default();
+            return default_interbar_features();
         }
 
         // Issue #96 Task #183: Check feature result cache with try-lock to reduce contention
