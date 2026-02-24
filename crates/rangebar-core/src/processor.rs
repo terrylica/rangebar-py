@@ -1683,6 +1683,165 @@ mod tests {
         }
     }
 
+    /// Issue #96: Proptest-enhanced batch vs streaming parity
+    ///
+    /// Generates random trade sequences (200-500 trades) with realistic price
+    /// movements and verifies bit-exact parity between batch and streaming paths
+    /// on ALL bar fields including microstructure features.
+    mod proptest_batch_streaming_parity {
+        use super::*;
+        use proptest::prelude::*;
+
+        /// Generate a realistic trade sequence with random price movements
+        fn trade_sequence(
+            n: usize,
+            base_price: f64,
+            volatility: f64,
+        ) -> Vec<AggTrade> {
+            let mut trades = Vec::with_capacity(n);
+            let mut price = base_price;
+            let base_ts = 1640995200000i64; // 2022-01-01
+
+            for i in 0..n {
+                // Deterministic price walk using sin/cos (proptest handles seed)
+                let step = ((i as f64 * 0.3).sin() * volatility)
+                    + ((i as f64 * 0.07).cos() * volatility * 0.5);
+                price += step;
+                // Clamp to avoid negative prices
+                if price < 100.0 {
+                    price = 100.0 + (i as f64 * 0.01).sin().abs() * 50.0;
+                }
+
+                let trade = test_utils::create_test_agg_trade_with_range(
+                    i as i64 + 1,
+                    &format!("{:.8}", price),
+                    "1.50000000",
+                    base_ts + (i as i64 * 500), // 500ms apart
+                    (i as i64 + 1) * 10,
+                    (i as i64 + 1) * 10,
+                    i % 3 != 0, // Mix of buy/sell sides
+                );
+                trades.push(trade);
+            }
+            trades
+        }
+
+        /// Assert two bars are bit-exact on all OHLCV and microstructure fields
+        fn assert_bar_parity(i: usize, batch: &RangeBar, stream: &RangeBar) {
+            // Tier 1: OHLCV core
+            assert_eq!(batch.open_time, stream.open_time, "Bar {i}: open_time");
+            assert_eq!(batch.close_time, stream.close_time, "Bar {i}: close_time");
+            assert_eq!(batch.open, stream.open, "Bar {i}: open");
+            assert_eq!(batch.high, stream.high, "Bar {i}: high");
+            assert_eq!(batch.low, stream.low, "Bar {i}: low");
+            assert_eq!(batch.close, stream.close, "Bar {i}: close");
+
+            // Tier 2: Volume accumulators
+            assert_eq!(batch.volume, stream.volume, "Bar {i}: volume");
+            assert_eq!(batch.turnover, stream.turnover, "Bar {i}: turnover");
+            assert_eq!(batch.buy_volume, stream.buy_volume, "Bar {i}: buy_volume");
+            assert_eq!(batch.sell_volume, stream.sell_volume, "Bar {i}: sell_volume");
+            assert_eq!(batch.buy_turnover, stream.buy_turnover, "Bar {i}: buy_turnover");
+            assert_eq!(batch.sell_turnover, stream.sell_turnover, "Bar {i}: sell_turnover");
+
+            // Tier 3: Trade tracking
+            assert_eq!(batch.individual_trade_count, stream.individual_trade_count, "Bar {i}: trade_count");
+            assert_eq!(batch.agg_record_count, stream.agg_record_count, "Bar {i}: agg_record_count");
+            assert_eq!(batch.first_trade_id, stream.first_trade_id, "Bar {i}: first_trade_id");
+            assert_eq!(batch.last_trade_id, stream.last_trade_id, "Bar {i}: last_trade_id");
+            assert_eq!(batch.first_agg_trade_id, stream.first_agg_trade_id, "Bar {i}: first_agg_trade_id");
+            assert_eq!(batch.last_agg_trade_id, stream.last_agg_trade_id, "Bar {i}: last_agg_trade_id");
+            assert_eq!(batch.buy_trade_count, stream.buy_trade_count, "Bar {i}: buy_trade_count");
+            assert_eq!(batch.sell_trade_count, stream.sell_trade_count, "Bar {i}: sell_trade_count");
+
+            // Tier 4: VWAP
+            assert_eq!(batch.vwap, stream.vwap, "Bar {i}: vwap");
+
+            // Tier 5: Microstructure f64 features (bit-exact comparison)
+            assert_eq!(batch.duration_us, stream.duration_us, "Bar {i}: duration_us");
+            assert_eq!(batch.ofi.to_bits(), stream.ofi.to_bits(), "Bar {i}: ofi");
+            assert_eq!(batch.vwap_close_deviation.to_bits(), stream.vwap_close_deviation.to_bits(), "Bar {i}: vwap_close_dev");
+            assert_eq!(batch.price_impact.to_bits(), stream.price_impact.to_bits(), "Bar {i}: price_impact");
+            assert_eq!(batch.kyle_lambda_proxy.to_bits(), stream.kyle_lambda_proxy.to_bits(), "Bar {i}: kyle_lambda");
+            assert_eq!(batch.trade_intensity.to_bits(), stream.trade_intensity.to_bits(), "Bar {i}: trade_intensity");
+            assert_eq!(batch.volume_per_trade.to_bits(), stream.volume_per_trade.to_bits(), "Bar {i}: vol_per_trade");
+            assert_eq!(batch.aggression_ratio.to_bits(), stream.aggression_ratio.to_bits(), "Bar {i}: aggression_ratio");
+            assert_eq!(batch.aggregation_density_f64.to_bits(), stream.aggregation_density_f64.to_bits(), "Bar {i}: agg_density");
+            assert_eq!(batch.turnover_imbalance.to_bits(), stream.turnover_imbalance.to_bits(), "Bar {i}: turnover_imbalance");
+        }
+
+        proptest! {
+            /// 200-500 random trades, 250 dbps threshold
+            #[test]
+            fn batch_streaming_parity_random(
+                n in 200usize..500,
+                volatility in 10.0f64..200.0,
+            ) {
+                let trades = trade_sequence(n, 50000.0, volatility);
+
+                // Batch path
+                let mut batch_proc = RangeBarProcessor::new(250).unwrap();
+                let batch_bars = batch_proc.process_agg_trade_records(&trades).unwrap();
+                let batch_incomplete = batch_proc.get_incomplete_bar();
+
+                // Streaming path
+                let mut stream_proc = RangeBarProcessor::new(250).unwrap();
+                let mut stream_bars: Vec<RangeBar> = Vec::new();
+                for trade in &trades {
+                    if let Some(bar) = stream_proc.process_single_trade(trade).unwrap() {
+                        stream_bars.push(bar);
+                    }
+                }
+                let stream_incomplete = stream_proc.get_incomplete_bar();
+
+                // Bar count parity
+                prop_assert_eq!(batch_bars.len(), stream_bars.len(),
+                    "Completed bar count mismatch: batch={}, stream={} for n={}, vol={}",
+                    batch_bars.len(), stream_bars.len(), n, volatility);
+
+                // Field-level parity for all completed bars
+                for (i, (b, s)) in batch_bars.iter().zip(stream_bars.iter()).enumerate() {
+                    assert_bar_parity(i, b, s);
+                }
+
+                // Incomplete bar parity
+                match (&batch_incomplete, &stream_incomplete) {
+                    (Some(b), Some(s)) => assert_bar_parity(batch_bars.len(), b, s),
+                    (None, None) => {}
+                    _ => prop_assert!(false,
+                        "Incomplete bar presence mismatch: batch={}, stream={}",
+                        batch_incomplete.is_some(), stream_incomplete.is_some()),
+                }
+            }
+
+            /// Vary threshold: 100-1000 dbps
+            #[test]
+            fn batch_streaming_parity_thresholds(
+                threshold in 100u32..1000,
+            ) {
+                let trades = trade_sequence(300, 50000.0, 80.0);
+
+                let mut batch_proc = RangeBarProcessor::new(threshold).unwrap();
+                let batch_bars = batch_proc.process_agg_trade_records(&trades).unwrap();
+
+                let mut stream_proc = RangeBarProcessor::new(threshold).unwrap();
+                let mut stream_bars: Vec<RangeBar> = Vec::new();
+                for trade in &trades {
+                    if let Some(bar) = stream_proc.process_single_trade(trade).unwrap() {
+                        stream_bars.push(bar);
+                    }
+                }
+
+                prop_assert_eq!(batch_bars.len(), stream_bars.len(),
+                    "Bar count mismatch at threshold={}", threshold);
+
+                for (i, (b, s)) in batch_bars.iter().zip(stream_bars.iter()).enumerate() {
+                    assert_bar_parity(i, b, s);
+                }
+            }
+        }
+    }
+
     /// Issue #46: After breach, next trade opens new bar (not breaching trade)
     #[test]
     fn test_defer_open_new_bar_opens_with_next_trade() {
