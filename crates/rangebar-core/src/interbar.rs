@@ -1907,7 +1907,7 @@ mod tests {
     #[test]
     fn test_optimization_edge_case_zero_trades() {
         // Task #115-119: Verify optimizations handle edge case of zero trades gracefully
-        let mut history = TradeHistory::new(InterBarConfig::default());
+        let history = TradeHistory::new(InterBarConfig::default());
 
         // Try to compute features with no trades
         let features = history.compute_features(1000);

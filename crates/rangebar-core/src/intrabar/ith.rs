@@ -326,8 +326,15 @@ fn calculate_intervals_cv_numba_style(epochs: &[bool], num_of_epochs: usize) -> 
     }
 
     // Calculate std (population std, matching numpy default)
-    let variance: f64 =
-        intervals.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / intervals.len() as f64;
+    // Issue #96: powi(2) → multiplication for hot-path variance
+    let variance: f64 = intervals
+        .iter()
+        .map(|&x| {
+            let d = x - mean;
+            d * d
+        })
+        .sum::<f64>()
+        / intervals.len() as f64;
 
     let std_dev = variance.sqrt();
 

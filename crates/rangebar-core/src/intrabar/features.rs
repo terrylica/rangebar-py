@@ -412,9 +412,11 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
 
     // Volume moments computed inline above (Issue #96 Task #69)
     let (volume_skew, volume_kurt) = if n >= 3 {
-        let m2_norm = m2_vol / n as f64;
-        let m3_norm = m3_vol / n as f64;
-        let m4_norm = m4_vol / n as f64;
+        // Issue #96: reciprocal caching — single division for 3 moment normalizations
+        let inv_n = 1.0 / n as f64;
+        let m2_norm = m2_vol * inv_n;
+        let m3_norm = m3_vol * inv_n;
+        let m4_norm = m4_vol * inv_n;
         let std_v = m2_norm.sqrt();
 
         if std_v > f64::EPSILON {
@@ -593,8 +595,10 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
     let mut xy_sum = 0.0;
     let mut xx_sum = 0.0;
     for (&x, &y) in log_scales.iter().zip(log_fluctuations.iter()) {
-        xy_sum += (x - x_mean) * (y - y_mean);
-        xx_sum += (x - x_mean).powi(2);
+        let dx = x - x_mean;
+        xy_sum += dx * (y - y_mean);
+        // Issue #96: powi(2) → multiplication for hot-path Hurst regression
+        xx_sum += dx * dx;
     }
 
     let hurst = if xx_sum.abs() > f64::EPSILON {
@@ -641,20 +645,18 @@ fn compute_permutation_entropy(prices: &[f64], m: usize) -> f64 {
     for i in 0..num_patterns {
         let window = &prices[i..i + m];
 
-        // Create sorted indices (ordinal pattern) using SmallVec
-        indices.clear();
-        for j in 0..m {
-            indices.push(j);
-        }
-
-        // OPTIMIZATION: Early-exit if already sorted (common in trending data)
-        // Check if indices == [0, 1, 2, ..., m-1] without allocation
-        let is_sorted = indices.iter().enumerate().all(|(pos, &idx)| idx == pos);
-        if is_sorted {
-            // Pattern index is 0 (identity permutation - perfect ascending order)
+        // OPTIMIZATION: Early-exit if prices are already ascending (common in trending data)
+        // BUG FIX: Previously checked identity-initialized indices (always true) instead of prices
+        let prices_ascending = window.windows(2).all(|w| w[0] <= w[1]);
+        if prices_ascending {
+            // Identity permutation (ascending order) = pattern index 0
             pattern_counts[0] += 1;
         } else {
-            // Perform sort and compute pattern index
+            // Create sorted indices (ordinal pattern) using SmallVec
+            indices.clear();
+            for j in 0..m {
+                indices.push(j);
+            }
             indices.sort_by(|&a, &b| {
                 window[a]
                     .partial_cmp(&window[b])

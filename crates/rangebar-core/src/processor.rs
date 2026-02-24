@@ -1979,7 +1979,7 @@ mod tests {
         }"#;
 
         // Deserialize old v1 checkpoint
-        let mut checkpoint: Checkpoint = serde_json::from_str(v1_json).unwrap();
+        let checkpoint: Checkpoint = serde_json::from_str(v1_json).unwrap();
         assert_eq!(checkpoint.version, 1, "Old checkpoints should default to v1");
         assert_eq!(checkpoint.symbol, "BTCUSDT");
         assert_eq!(checkpoint.threshold_decimal_bps, 250);
