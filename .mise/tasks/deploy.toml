@@ -26,10 +26,10 @@ echo "Pulling latest from origin..."
 ssh "$REMOTE_HOST" "cd $REMOTE_DIR && git pull origin main"
 echo "OK: Git pull complete"
 
-# Step 3: Install latest rangebar from PyPI
+# Step 3: Install latest rangebar from PyPI using uv
 VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
 echo "Installing rangebar==$VERSION from PyPI..."
-ssh "$REMOTE_HOST" "$REMOTE_VENV/pip install --upgrade rangebar==$VERSION"
+ssh "$REMOTE_HOST" "uv pip install --upgrade rangebar==$VERSION"
 echo "OK: rangebar $VERSION installed"
 
 # Step 4: Verify version alignment
