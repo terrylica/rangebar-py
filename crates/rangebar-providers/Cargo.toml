@@ -48,8 +48,11 @@ sha2.workspace = true
 # Observability
 tracing.workspace = true
 
+# TCP keepalive for half-open connection detection (Issue #107)
+socket2 = { version = "0.5", optional = true }
+
 [features]
 default = ["binance"]
-binance = ["tokio-tungstenite", "tokio-stream", "tokio-util", "futures-util"]
+binance = ["tokio-tungstenite", "tokio-stream", "tokio-util", "futures-util", "socket2"]
 exness = []
 all-providers = ["binance", "exness"]
