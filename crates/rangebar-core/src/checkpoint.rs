@@ -586,4 +586,108 @@ mod tests {
         assert_eq!(restored.version, 2);
         assert_eq!(restored.symbol, "EURUSD");
     }
+
+    // =========================================================================
+    // Issue #96: PriceWindow circular buffer edge case tests
+    // =========================================================================
+
+    #[test]
+    fn test_price_window_empty() {
+        let pw = PriceWindow::new();
+        assert!(pw.is_empty());
+        assert_eq!(pw.len(), 0);
+        // Hash of empty window should be deterministic
+        let hash1 = pw.compute_hash();
+        let hash2 = PriceWindow::new().compute_hash();
+        assert_eq!(hash1, hash2, "Empty window hash must be deterministic");
+    }
+
+    #[test]
+    fn test_price_window_partial_fill() {
+        let mut pw = PriceWindow::new();
+        pw.push(FixedPoint(100_000_000)); // 1.0
+        pw.push(FixedPoint(200_000_000)); // 2.0
+        pw.push(FixedPoint(300_000_000)); // 3.0
+
+        assert_eq!(pw.len(), 3);
+        assert!(!pw.is_empty());
+
+        // Hash should be deterministic for same sequence
+        let mut pw2 = PriceWindow::new();
+        pw2.push(FixedPoint(100_000_000));
+        pw2.push(FixedPoint(200_000_000));
+        pw2.push(FixedPoint(300_000_000));
+        assert_eq!(pw.compute_hash(), pw2.compute_hash(), "Same prices = same hash");
+    }
+
+    #[test]
+    fn test_price_window_full_capacity() {
+        let mut pw = PriceWindow::new();
+        for i in 1..=PRICE_WINDOW_SIZE {
+            pw.push(FixedPoint(i as i64 * 100_000_000));
+        }
+        assert_eq!(pw.len(), PRICE_WINDOW_SIZE);
+
+        // Verify hash consistency
+        let hash1 = pw.compute_hash();
+        let hash2 = pw.compute_hash();
+        assert_eq!(hash1, hash2, "Hash must be idempotent");
+    }
+
+    #[test]
+    fn test_price_window_wrapping() {
+        let mut pw = PriceWindow::new();
+        // Fill to capacity
+        for i in 1..=PRICE_WINDOW_SIZE {
+            pw.push(FixedPoint(i as i64 * 100_000_000));
+        }
+        let hash_before = pw.compute_hash();
+
+        // Push one more (wraps, oldest evicted)
+        pw.push(FixedPoint(999_000_000));
+        assert_eq!(pw.len(), PRICE_WINDOW_SIZE, "Length stays at capacity after wrap");
+
+        let hash_after = pw.compute_hash();
+        assert_ne!(hash_before, hash_after, "Hash must change after circular overwrite");
+    }
+
+    #[test]
+    fn test_price_window_order_sensitivity() {
+        // Same prices, different order → different hash
+        let mut pw1 = PriceWindow::new();
+        pw1.push(FixedPoint(100_000_000));
+        pw1.push(FixedPoint(200_000_000));
+        pw1.push(FixedPoint(300_000_000));
+
+        let mut pw2 = PriceWindow::new();
+        pw2.push(FixedPoint(300_000_000));
+        pw2.push(FixedPoint(200_000_000));
+        pw2.push(FixedPoint(100_000_000));
+
+        assert_ne!(
+            pw1.compute_hash(), pw2.compute_hash(),
+            "Different order must produce different hash"
+        );
+    }
+
+    #[test]
+    fn test_price_window_push_beyond_capacity() {
+        let mut pw = PriceWindow::new();
+        // Push 2x capacity to exercise full circular behavior
+        for i in 1..=(PRICE_WINDOW_SIZE * 2) {
+            pw.push(FixedPoint(i as i64 * 100_000_000));
+        }
+        assert_eq!(pw.len(), PRICE_WINDOW_SIZE);
+
+        // Should only contain the last PRICE_WINDOW_SIZE prices
+        // Hash should match a fresh window with those same prices
+        let mut pw_expected = PriceWindow::new();
+        for i in (PRICE_WINDOW_SIZE + 1)..=(PRICE_WINDOW_SIZE * 2) {
+            pw_expected.push(FixedPoint(i as i64 * 100_000_000));
+        }
+        assert_eq!(
+            pw.compute_hash(), pw_expected.compute_hash(),
+            "After full wrap, hash must match the last N prices"
+        );
+    }
 }
