@@ -865,3 +865,96 @@ mod microstructure_edge_tests {
         assert!(bar.turnover_imbalance.is_finite(), "Turnover imbalance must be finite");
     }
 }
+
+// Issue #96: is_breach() precision tests — hot-path threshold detection
+#[cfg(test)]
+mod is_breach_tests {
+    use super::*;
+    use crate::fixed_point::FixedPoint;
+
+    fn default_bar() -> RangeBar {
+        RangeBar::default()
+    }
+
+    #[test]
+    fn test_exact_upper_threshold_is_breach() {
+        let bar = default_bar();
+        let upper = FixedPoint(100_250_000); // 1.0025
+        let lower = FixedPoint(99_750_000);  // 0.9975
+        let price = upper; // Exactly at upper
+        assert!(bar.is_breach(price, upper, lower));
+    }
+
+    #[test]
+    fn test_just_below_upper_no_breach() {
+        let bar = default_bar();
+        let upper = FixedPoint(100_250_000);
+        let lower = FixedPoint(99_750_000);
+        let price = FixedPoint(upper.0 - 1); // 1 unit below upper
+        assert!(!bar.is_breach(price, upper, lower));
+    }
+
+    #[test]
+    fn test_exact_lower_threshold_is_breach() {
+        let bar = default_bar();
+        let upper = FixedPoint(100_250_000);
+        let lower = FixedPoint(99_750_000);
+        let price = lower; // Exactly at lower
+        assert!(bar.is_breach(price, upper, lower));
+    }
+
+    #[test]
+    fn test_just_above_lower_no_breach() {
+        let bar = default_bar();
+        let upper = FixedPoint(100_250_000);
+        let lower = FixedPoint(99_750_000);
+        let price = FixedPoint(lower.0 + 1); // 1 unit above lower
+        assert!(!bar.is_breach(price, upper, lower));
+    }
+
+    #[test]
+    fn test_mid_range_no_breach() {
+        let bar = default_bar();
+        let upper = FixedPoint(100_250_000);
+        let lower = FixedPoint(99_750_000);
+        let price = FixedPoint(100_000_000); // Exactly at open (mid-range)
+        assert!(!bar.is_breach(price, upper, lower));
+    }
+
+    #[test]
+    fn test_well_above_upper_breach() {
+        let bar = default_bar();
+        let upper = FixedPoint(100_250_000);
+        let lower = FixedPoint(99_750_000);
+        let price = FixedPoint(200_000_000); // Far above upper
+        assert!(bar.is_breach(price, upper, lower));
+    }
+
+    #[test]
+    fn test_well_below_lower_breach() {
+        let bar = default_bar();
+        let upper = FixedPoint(100_250_000);
+        let lower = FixedPoint(99_750_000);
+        let price = FixedPoint(50_000_000); // Far below lower
+        assert!(bar.is_breach(price, upper, lower));
+    }
+
+    #[test]
+    fn test_fixed_point_precision_boundary() {
+        // Test at 8-decimal precision edge: 250 dbps on BTCUSDT ~100000.0
+        // open = 100000.00000000, upper = 100000 * 1.0025 = 100250.00000000
+        let bar = default_bar();
+        let open = 100_000_00_000_000i64; // 100000.0 in FixedPoint
+        let upper = FixedPoint(open + (open * 250) / 100_000);
+        let lower = FixedPoint(open - (open * 250) / 100_000);
+
+        // Just below upper
+        assert!(!bar.is_breach(FixedPoint(upper.0 - 1), upper, lower));
+        // At upper
+        assert!(bar.is_breach(upper, upper, lower));
+        // Just above lower
+        assert!(!bar.is_breach(FixedPoint(lower.0 + 1), upper, lower));
+        // At lower
+        assert!(bar.is_breach(lower, upper, lower));
+    }
+}
