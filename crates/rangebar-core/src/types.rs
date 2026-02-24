@@ -620,6 +620,8 @@ impl RangeBar {
     /// # Returns
     ///
     /// `true` if price breaches either threshold
+    /// Issue #96: #[inline] for per-trade hot path
+    #[inline]
     pub fn is_breach(
         &self,
         price: FixedPoint,

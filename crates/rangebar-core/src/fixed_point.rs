@@ -143,6 +143,8 @@ impl FixedPoint {
     }
 
     /// Convert to f64 for user-friendly output
+    /// Issue #96: #[inline] for hot-path conversion (called 100s of times per bar)
+    #[inline]
     pub fn to_f64(&self) -> f64 {
         self.0 as f64 / SCALE as f64
     }
