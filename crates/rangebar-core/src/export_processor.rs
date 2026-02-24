@@ -331,3 +331,312 @@ impl ExportRangeBarProcessor {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::create_test_agg_trade_with_range;
+
+    /// Helper: create a buy trade at given price/time
+    fn buy_trade(id: i64, price: &str, vol: &str, ts: i64) -> AggTrade {
+        create_test_agg_trade_with_range(id, price, vol, ts, id * 10, id * 10, false)
+    }
+
+    /// Helper: create a sell trade at given price/time
+    fn sell_trade(id: i64, price: &str, vol: &str, ts: i64) -> AggTrade {
+        create_test_agg_trade_with_range(id, price, vol, ts, id * 10, id * 10, true)
+    }
+
+    #[test]
+    fn test_new_valid_threshold() {
+        let proc = ExportRangeBarProcessor::new(250);
+        assert!(proc.is_ok());
+    }
+
+    #[test]
+    fn test_new_invalid_threshold_zero() {
+        match ExportRangeBarProcessor::new(0) {
+            Err(ProcessingError::InvalidThreshold {
+                threshold_decimal_bps: 0,
+            }) => {}
+            Err(e) => panic!("Expected InvalidThreshold(0), got error: {e}"),
+            Ok(_) => panic!("Expected error for threshold 0"),
+        }
+    }
+
+    #[test]
+    fn test_new_invalid_threshold_too_high() {
+        let proc = ExportRangeBarProcessor::new(100_001);
+        assert!(proc.is_err());
+    }
+
+    #[test]
+    fn test_new_boundary_thresholds() {
+        // Minimum valid
+        assert!(ExportRangeBarProcessor::new(1).is_ok());
+        // Maximum valid
+        assert!(ExportRangeBarProcessor::new(100_000).is_ok());
+    }
+
+    #[test]
+    fn test_with_options_timestamp_gating() {
+        let proc = ExportRangeBarProcessor::with_options(250, false);
+        assert!(proc.is_ok());
+    }
+
+    #[test]
+    fn test_single_trade_no_bar_completion() {
+        let mut proc = ExportRangeBarProcessor::new(250).unwrap();
+        let trades = vec![buy_trade(1, "100.0", "1.0", 1000)];
+        proc.process_trades_continuously(&trades);
+
+        let completed = proc.get_all_completed_bars();
+        assert_eq!(completed.len(), 0, "Single trade should not complete a bar");
+
+        let incomplete = proc.get_incomplete_bar();
+        assert!(incomplete.is_some(), "Should have an incomplete bar");
+        let bar = incomplete.unwrap();
+        assert_eq!(bar.open, FixedPoint::from_str("100.0").unwrap());
+        assert_eq!(bar.close, FixedPoint::from_str("100.0").unwrap());
+    }
+
+    #[test]
+    fn test_breach_completes_bar() {
+        // 250 dbps = 0.25%. At open=100.0, upper=100.25, lower=99.75
+        let mut proc = ExportRangeBarProcessor::new(250).unwrap();
+        let trades = vec![
+            buy_trade(1, "100.0", "1.0", 1000),
+            buy_trade(2, "100.10", "1.0", 2000),
+            buy_trade(3, "100.25", "1.0", 3000), // Breach: >= upper threshold
+        ];
+        proc.process_trades_continuously(&trades);
+
+        let completed = proc.get_all_completed_bars();
+        assert_eq!(completed.len(), 1, "Breach should complete one bar");
+
+        let bar = &completed[0];
+        assert_eq!(bar.open, FixedPoint::from_str("100.0").unwrap());
+        assert_eq!(bar.close, FixedPoint::from_str("100.25").unwrap());
+        assert_eq!(bar.high, FixedPoint::from_str("100.25").unwrap());
+        assert_eq!(bar.low, FixedPoint::from_str("100.0").unwrap());
+    }
+
+    #[test]
+    fn test_defer_open_semantics() {
+        // Issue #46: Breaching trade should NOT open next bar
+        let mut proc = ExportRangeBarProcessor::new(250).unwrap();
+        let trades = vec![
+            buy_trade(1, "100.0", "1.0", 1000),
+            buy_trade(2, "100.25", "1.0", 2000), // Breach → completes bar 1
+            buy_trade(3, "100.50", "1.0", 3000),  // Opens bar 2 (defer_open)
+        ];
+        proc.process_trades_continuously(&trades);
+
+        let completed = proc.get_all_completed_bars();
+        assert_eq!(completed.len(), 1);
+        // Bar 1 was opened by trade 1, closed by trade 2
+        assert_eq!(completed[0].open, FixedPoint::from_str("100.0").unwrap());
+        assert_eq!(completed[0].close, FixedPoint::from_str("100.25").unwrap());
+
+        // Incomplete bar should be opened by trade 3 (not trade 2)
+        let incomplete = proc.get_incomplete_bar();
+        assert!(incomplete.is_some());
+        let bar2 = incomplete.unwrap();
+        assert_eq!(
+            bar2.open,
+            FixedPoint::from_str("100.50").unwrap(),
+            "Bar 2 should open at trade 3's price, not the breaching trade"
+        );
+    }
+
+    #[test]
+    fn test_timestamp_gate_prevents_same_ts_close() {
+        // Issue #36: Bar cannot close on same timestamp as it opened
+        let mut proc = ExportRangeBarProcessor::new(250).unwrap();
+        let trades = vec![
+            buy_trade(1, "100.0", "1.0", 1000),
+            buy_trade(2, "100.30", "1.0", 1000), // Same ts as open, breach but gated
+        ];
+        proc.process_trades_continuously(&trades);
+
+        let completed = proc.get_all_completed_bars();
+        assert_eq!(
+            completed.len(),
+            0,
+            "Timestamp gate should prevent close on same ms"
+        );
+    }
+
+    #[test]
+    fn test_timestamp_gate_disabled() {
+        // With timestamp gating off, same-ts breach closes the bar
+        let mut proc = ExportRangeBarProcessor::with_options(250, false).unwrap();
+        let trades = vec![
+            buy_trade(1, "100.0", "1.0", 1000),
+            buy_trade(2, "100.30", "1.0", 1000), // Same ts, breach allowed
+        ];
+        proc.process_trades_continuously(&trades);
+
+        let completed = proc.get_all_completed_bars();
+        assert_eq!(
+            completed.len(),
+            1,
+            "With gating disabled, same-ts breach should close"
+        );
+    }
+
+    #[test]
+    fn test_get_all_completed_bars_drains() {
+        let mut proc = ExportRangeBarProcessor::new(250).unwrap();
+        let trades = vec![
+            buy_trade(1, "100.0", "1.0", 1000),
+            buy_trade(2, "100.25", "1.0", 2000), // Breach
+        ];
+        proc.process_trades_continuously(&trades);
+
+        let bars1 = proc.get_all_completed_bars();
+        assert_eq!(bars1.len(), 1);
+
+        // Second call should return empty (drained)
+        let bars2 = proc.get_all_completed_bars();
+        assert_eq!(bars2.len(), 0, "get_all_completed_bars should drain buffer");
+    }
+
+    #[test]
+    fn test_vec_reuse_pool() {
+        let mut proc = ExportRangeBarProcessor::new(250).unwrap();
+
+        // First batch: produce a bar
+        proc.process_trades_continuously(&[
+            buy_trade(1, "100.0", "1.0", 1000),
+            buy_trade(2, "100.25", "1.0", 2000),
+        ]);
+        let _bars1 = proc.get_all_completed_bars();
+
+        // Second batch: produce another bar — pool should be reused
+        proc.process_trades_continuously(&[
+            sell_trade(3, "100.50", "1.0", 3000),
+            sell_trade(4, "100.75", "1.0", 4000),
+            sell_trade(5, "100.24", "1.0", 5000), // Breach lower
+        ]);
+        let bars2 = proc.get_all_completed_bars();
+        assert_eq!(bars2.len(), 1);
+    }
+
+    #[test]
+    fn test_buy_sell_volume_segregation() {
+        let mut proc = ExportRangeBarProcessor::new(250).unwrap();
+        let trades = vec![
+            buy_trade(1, "100.0", "2.0", 1000),   // Buy: 2.0
+            sell_trade(2, "100.05", "3.0", 2000),  // Sell: 3.0
+            buy_trade(3, "100.25", "1.0", 3000),   // Buy: 1.0, breach
+        ];
+        proc.process_trades_continuously(&trades);
+
+        let bars = proc.get_all_completed_bars();
+        assert_eq!(bars.len(), 1);
+        let bar = &bars[0];
+
+        let buy_vol = bar.buy_volume;
+        let sell_vol = bar.sell_volume;
+        // Buy trades: 2.0 + 1.0 = 3.0, Sell trades: 3.0
+        assert_eq!(buy_vol, 300_000_000, "Buy volume should be 3.0 in FixedPoint i128");
+        assert_eq!(sell_vol, 300_000_000, "Sell volume should be 3.0 in FixedPoint i128");
+    }
+
+    #[test]
+    fn test_trade_id_tracking() {
+        // Issue #72: Verify first/last agg trade ID tracking
+        let mut proc = ExportRangeBarProcessor::new(250).unwrap();
+        let trades = vec![
+            create_test_agg_trade_with_range(100, "100.0", "1.0", 1000, 1000, 1005, false),
+            create_test_agg_trade_with_range(101, "100.10", "1.0", 2000, 1006, 1010, true),
+            create_test_agg_trade_with_range(102, "100.25", "1.0", 3000, 1011, 1015, false), // Breach
+        ];
+        proc.process_trades_continuously(&trades);
+
+        let bars = proc.get_all_completed_bars();
+        assert_eq!(bars.len(), 1);
+        let bar = &bars[0];
+        assert_eq!(bar.first_agg_trade_id, 100);
+        assert_eq!(bar.last_agg_trade_id, 102);
+        assert_eq!(bar.first_trade_id, 1000);
+        assert_eq!(bar.last_trade_id, 1015);
+    }
+
+    #[test]
+    fn test_microstructure_features_computed() {
+        let mut proc = ExportRangeBarProcessor::new(250).unwrap();
+        let trades = vec![
+            buy_trade(1, "100.0", "5.0", 1000),
+            sell_trade(2, "100.10", "3.0", 2000),
+            buy_trade(3, "100.25", "2.0", 3000), // Breach
+        ];
+        proc.process_trades_continuously(&trades);
+
+        let bars = proc.get_all_completed_bars();
+        let bar = &bars[0];
+
+        // OFI should be computed (buy_vol > sell_vol → positive)
+        // buy = 5.0 + 2.0 = 7.0, sell = 3.0, ofi = (7-3)/10 = 0.4
+        assert!(bar.ofi != 0.0, "OFI should be computed");
+        assert!(bar.trade_intensity > 0.0, "Trade intensity should be > 0");
+        assert!(bar.volume_per_trade > 0.0, "Volume per trade should be > 0");
+    }
+
+    #[test]
+    fn test_incomplete_bar_has_microstructure() {
+        let mut proc = ExportRangeBarProcessor::new(250).unwrap();
+        proc.process_trades_continuously(&[
+            buy_trade(1, "100.0", "5.0", 1000),
+            sell_trade(2, "100.10", "3.0", 2000),
+        ]);
+
+        let incomplete = proc.get_incomplete_bar().unwrap();
+        // Microstructure should be computed on incomplete bars too
+        assert!(
+            incomplete.volume_per_trade > 0.0,
+            "Incomplete bar should have microstructure features"
+        );
+    }
+
+    #[test]
+    fn test_multiple_bars_sequence() {
+        let mut proc = ExportRangeBarProcessor::new(250).unwrap();
+        // Generate enough trades for 2 complete bars
+        let trades = vec![
+            buy_trade(1, "100.0", "1.0", 1000),
+            buy_trade(2, "100.25", "1.0", 2000),   // Breach → bar 1
+            buy_trade(3, "100.50", "1.0", 3000),    // Opens bar 2
+            buy_trade(4, "100.76", "1.0", 4000),    // Breach → bar 2 (100.50 * 1.0025 = 100.75125)
+        ];
+        proc.process_trades_continuously(&trades);
+
+        let bars = proc.get_all_completed_bars();
+        assert_eq!(bars.len(), 2, "Should produce 2 complete bars");
+        assert_eq!(bars[0].open, FixedPoint::from_str("100.0").unwrap());
+        assert_eq!(bars[1].open, FixedPoint::from_str("100.50").unwrap());
+    }
+
+    #[test]
+    fn test_downward_breach() {
+        let mut proc = ExportRangeBarProcessor::new(250).unwrap();
+        let trades = vec![
+            sell_trade(1, "100.0", "1.0", 1000),
+            sell_trade(2, "99.75", "1.0", 2000), // Breach lower: <= 99.75
+        ];
+        proc.process_trades_continuously(&trades);
+
+        let bars = proc.get_all_completed_bars();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].close, FixedPoint::from_str("99.75").unwrap());
+    }
+
+    #[test]
+    fn test_empty_trades_no_op() {
+        let mut proc = ExportRangeBarProcessor::new(250).unwrap();
+        proc.process_trades_continuously(&[]);
+        assert_eq!(proc.get_all_completed_bars().len(), 0);
+        assert!(proc.get_incomplete_bar().is_none());
+    }
+}
