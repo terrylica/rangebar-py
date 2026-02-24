@@ -72,27 +72,31 @@ def _record_cooldown(symbol: str, threshold: int) -> None:
 
 
 def _fetch_pending_requests(cache: object) -> list[dict]:
-    """Query backfill_requests for pending rows, grouped by (symbol, threshold).
+    """Query backfill_requests for pending rows, grouped by symbol only.
 
-    Returns one logical request per (symbol, threshold) pair with all
-    duplicate request_ids collected for batch status updates.
+    Issue #103/#105: Process all thresholds for a symbol together to prevent
+    fast-completing thresholds (BPR250) from monopolizing the queue while
+    slower thresholds (BPR50, BPR75, BPR100) wait indefinitely.
+
+    Returns one logical request per symbol with all thresholds and
+    request_ids collected for batch status updates.
     """
     result = cache.client.query(
-        "SELECT symbol, threshold_decimal_bps, "
-        "min(request_id) AS oldest_id, "
+        "SELECT symbol, "
+        "groupArray(DISTINCT threshold_decimal_bps) AS thresholds, "
         "groupArray(request_id) AS all_ids, "
         "min(requested_at) AS earliest "
         "FROM rangebar_cache.backfill_requests FINAL "
         "WHERE status = 'pending' "
-        "GROUP BY symbol, threshold_decimal_bps "
+        "GROUP BY symbol "
         "ORDER BY earliest ASC"
     )
     return [
         {
             "symbol": row[0],
-            "threshold_decimal_bps": int(row[1]),
-            "oldest_id": str(row[2]),
-            "all_ids": [str(rid) for rid in row[3]],
+            "thresholds": [int(t) for t in row[1]],
+            "all_ids": [str(rid) for rid in row[2]],
+            "earliest": row[3],
         }
         for row in result.result_rows
     ]
@@ -198,29 +202,31 @@ def _compute_gap_seconds(cache: object, symbol: str, threshold: int) -> float:
 
 
 def _process_request_group(
-    cache: object, request: dict, *, verbose: bool = False
+    cache: object, symbol: str, thresholds: list[int], all_ids: list[str],
+    *, verbose: bool = False
 ) -> bool:
-    """Validate and process a dedup-grouped backfill request.
+    """Validate and process all thresholds for a symbol together.
 
-    A request group contains one logical (symbol, threshold) pair with
-    potentially multiple request_ids that all get the same status updates.
+    Issue #103/#105: Process all thresholds for a symbol in one cycle to ensure
+    fair scheduling. Fast thresholds (BPR250) cannot monopolize the queue by
+    re-entering before slow thresholds (BPR50/75/100) complete.
+
+    A request group contains one symbol with potentially multiple thresholds
+    and multiple request_ids that all get the same status updates.
 
     Returns True if backfill succeeded, False on failure.
     """
     from rangebar.recency import backfill_recent
     from rangebar.symbol_registry import get_symbol_entries
 
-    all_ids = request["all_ids"]
-    symbol = request["symbol"]
-    threshold = request["threshold_decimal_bps"]
-    display_id = request["oldest_id"][:8]
+    display_id = all_ids[0][:8] if all_ids else "unknown"
 
     logger.info(
-        "Processing request group %s (%d request(s)): %s @ %d dbps",
+        "Processing request group %s (%d request(s)): %s @ %d threshold(s)",
         display_id,
         len(all_ids),
         symbol,
-        threshold,
+        len(thresholds),
     )
 
     # Validate symbol is registered and enabled (fail fast, before marking running)
@@ -231,8 +237,17 @@ def _process_request_group(
         _mark_failed(cache, all_ids, error_msg)
         return False
 
-    # Resolve thresholds (fan-out threshold=0 -> all cached thresholds)
-    thresholds = _resolve_thresholds(cache, symbol, threshold)
+    # If any threshold is 0 (fan-out case), resolve to all cached thresholds
+    # Issue #103: Only resolve 0 if explicitly in the list; otherwise use as-is
+    if 0 in thresholds:
+        resolved = _resolve_thresholds(cache, symbol, 0)
+        thresholds = resolved
+        logger.info(
+            "Request %s: %s — threshold=0 resolved to %s dbps",
+            display_id,
+            symbol,
+            thresholds,
+        )
 
     # Filter by cooldown
     actionable = [t for t in thresholds if not _is_on_cooldown(symbol, t)]
@@ -331,15 +346,18 @@ def poll_once(*, verbose: bool = False) -> int:
     """Poll for pending requests and process all of them.
 
     Flow:
-    1. Fetch pending requests (GROUP BY symbol, threshold — dedup-aware)
-    2. For each unique (symbol, threshold) group:
-       a. Resolve thresholds (fan-out threshold=0 -> all cached)
-       b. Filter by cooldown (skip recently completed)
-       c. Validate symbol
+    1. Fetch pending requests (GROUP BY symbol only — not per-threshold)
+    2. For each symbol:
+       a. Get all pending thresholds for the symbol
+       b. Filter by cooldown (skip recently completed thresholds)
+       c. Validate symbol is registered & enabled
        d. Mark all request_ids as running (with gap_seconds)
        e. For each actionable threshold: call backfill_recent()
-       f. Record cooldown on success
+       f. Record cooldown on success for each threshold
        g. Mark all request_ids as completed/failed with aggregate bars_written
+
+    Issue #103/#105: By grouping by symbol only, all thresholds (BPR50, BPR75,
+    BPR100, BPR250) process fairly without fast thresholds monopolizing the queue.
 
     Returns the number of request groups processed.
     """
@@ -352,11 +370,14 @@ def poll_once(*, verbose: bool = False) -> int:
             logger.debug("No pending backfill requests")
             return 0
 
-        logger.info("Found %d pending request group(s)", len(pending))
+        logger.info("Found %d pending symbol group(s)", len(pending))
 
         processed = 0
         for request in pending:
-            _process_request_group(cache, request, verbose=verbose)
+            symbol = request["symbol"]
+            thresholds = request["thresholds"]
+            all_ids = request["all_ids"]
+            _process_request_group(cache, symbol, thresholds, all_ids, verbose=verbose)
             processed += 1
 
     return processed
