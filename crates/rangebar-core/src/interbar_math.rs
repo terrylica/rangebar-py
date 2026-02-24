@@ -3296,3 +3296,248 @@ mod hurst_accuracy_tests {
         assert_eq!(entropy_cached, entropy_uncached, "Cached and uncached must produce identical results");
     }
 }
+
+/// SIMD vs scalar parity tests
+/// Ensures SIMD-accelerated implementations produce results equivalent to scalar baselines.
+/// Critical for correctness: SIMD paths must not introduce numerical divergence.
+#[cfg(test)]
+#[cfg(any(feature = "simd-burstiness", feature = "simd-kyle-lambda"))]
+mod simd_parity_tests {
+    use super::*;
+    use crate::interbar_types::TradeSnapshot;
+    use crate::FixedPoint;
+
+    fn make_snapshot(ts: i64, price: f64, volume: f64, is_buyer_maker: bool) -> TradeSnapshot {
+        TradeSnapshot {
+            timestamp: ts,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint((volume * 1e8) as i64),
+            is_buyer_maker,
+            turnover: (price * volume * 1e8) as i128,
+        }
+    }
+
+    /// Generate a deterministic trade sequence with varying intervals and volumes
+    fn generate_trade_sequence(n: usize, seed: u64) -> Vec<TradeSnapshot> {
+        let mut rng = seed;
+        let mut ts = 1_000_000i64;
+        let base_price = 50000.0;
+
+        (0..n)
+            .map(|_| {
+                // LCG for deterministic pseudo-random
+                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                let r = ((rng >> 33) as f64) / (u32::MAX as f64);
+
+                // Variable inter-arrival: 10-5000 us
+                let delta = 10 + ((r * 4990.0) as i64);
+                ts += delta;
+
+                let price = base_price + (r - 0.5) * 100.0;
+                let volume = 0.01 + r * 2.0;
+                let is_buyer = rng % 2 == 0;
+
+                make_snapshot(ts, price, volume, is_buyer)
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "simd-burstiness")]
+    #[test]
+    fn test_burstiness_simd_scalar_parity_small() {
+        // Small window: tests scalar remainder path
+        let trades = generate_trade_sequence(5, 42);
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+
+        let simd_result = simd::compute_burstiness_simd(&refs);
+        let scalar_result = compute_burstiness_scalar(&refs);
+
+        assert!(
+            (simd_result - scalar_result).abs() < 1e-10,
+            "Burstiness SIMD/scalar divergence on small window: SIMD={simd_result}, scalar={scalar_result}"
+        );
+    }
+
+    #[cfg(feature = "simd-burstiness")]
+    #[test]
+    fn test_burstiness_simd_scalar_parity_medium() {
+        // Medium window: typical lookback (100 trades)
+        let trades = generate_trade_sequence(100, 123);
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+
+        let simd_result = simd::compute_burstiness_simd(&refs);
+        let scalar_result = compute_burstiness_scalar(&refs);
+
+        assert!(
+            (simd_result - scalar_result).abs() < 1e-10,
+            "Burstiness SIMD/scalar divergence on medium window: SIMD={simd_result}, scalar={scalar_result}"
+        );
+    }
+
+    #[cfg(feature = "simd-burstiness")]
+    #[test]
+    fn test_burstiness_simd_scalar_parity_large() {
+        // Large window: stress test (500 trades)
+        let trades = generate_trade_sequence(500, 456);
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+
+        let simd_result = simd::compute_burstiness_simd(&refs);
+        let scalar_result = compute_burstiness_scalar(&refs);
+
+        assert!(
+            (simd_result - scalar_result).abs() < 1e-8,
+            "Burstiness SIMD/scalar divergence on large window: SIMD={simd_result}, scalar={scalar_result}"
+        );
+    }
+
+    #[cfg(feature = "simd-burstiness")]
+    #[test]
+    fn test_burstiness_simd_scalar_parity_edge_cases() {
+        // 2 trades: minimum for burstiness
+        let t0 = make_snapshot(0, 100.0, 1.0, false);
+        let t1 = make_snapshot(1000, 101.0, 1.0, true);
+        let refs = vec![&t0, &t1];
+
+        let simd_result = simd::compute_burstiness_simd(&refs);
+        let scalar_result = compute_burstiness_scalar(&refs);
+        assert!(
+            (simd_result - scalar_result).abs() < 1e-10,
+            "Burstiness parity failed on 2 trades: SIMD={simd_result}, scalar={scalar_result}"
+        );
+
+        // 3 trades: first non-trivial case
+        let t2 = make_snapshot(2000, 102.0, 1.0, false);
+        let refs = vec![&t0, &t1, &t2];
+
+        let simd_result = simd::compute_burstiness_simd(&refs);
+        let scalar_result = compute_burstiness_scalar(&refs);
+        assert!(
+            (simd_result - scalar_result).abs() < 1e-10,
+            "Burstiness parity failed on 3 trades: SIMD={simd_result}, scalar={scalar_result}"
+        );
+
+        // Exactly 4 trades: one full SIMD chunk, no remainder
+        let t3 = make_snapshot(3000, 103.0, 1.0, true);
+        let refs = vec![&t0, &t1, &t2, &t3];
+
+        let simd_result = simd::compute_burstiness_simd(&refs);
+        let scalar_result = compute_burstiness_scalar(&refs);
+        assert!(
+            (simd_result - scalar_result).abs() < 1e-10,
+            "Burstiness parity failed on 4 trades: SIMD={simd_result}, scalar={scalar_result}"
+        );
+    }
+
+    #[cfg(feature = "simd-kyle-lambda")]
+    #[test]
+    fn test_kyle_lambda_simd_scalar_parity_small() {
+        let trades = generate_trade_sequence(10, 789);
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+
+        let simd_result = simd::compute_kyle_lambda_simd(&refs);
+        let scalar_result = compute_kyle_lambda_scalar(&refs);
+
+        assert!(
+            (simd_result - scalar_result).abs() < 1e-8,
+            "Kyle Lambda SIMD/scalar divergence on small window: SIMD={simd_result}, scalar={scalar_result}"
+        );
+    }
+
+    #[cfg(feature = "simd-kyle-lambda")]
+    #[test]
+    fn test_kyle_lambda_simd_scalar_parity_medium() {
+        let trades = generate_trade_sequence(200, 101);
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+
+        let simd_result = simd::compute_kyle_lambda_simd(&refs);
+        let scalar_result = compute_kyle_lambda_scalar(&refs);
+
+        assert!(
+            (simd_result - scalar_result).abs() < 1e-6,
+            "Kyle Lambda SIMD/scalar divergence on medium window: SIMD={simd_result}, scalar={scalar_result}"
+        );
+    }
+
+    #[cfg(feature = "simd-kyle-lambda")]
+    #[test]
+    fn test_kyle_lambda_simd_scalar_parity_large() {
+        // Large window triggers subsampling in SIMD path
+        let trades = generate_trade_sequence(600, 202);
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+
+        let simd_result = simd::compute_kyle_lambda_simd(&refs);
+        let scalar_result = compute_kyle_lambda_scalar(&refs);
+
+        // Larger tolerance for subsampled windows — both paths subsample
+        assert!(
+            (simd_result - scalar_result).abs() < 1e-4,
+            "Kyle Lambda SIMD/scalar divergence on large window: SIMD={simd_result}, scalar={scalar_result}"
+        );
+    }
+
+    #[cfg(feature = "simd-kyle-lambda")]
+    #[test]
+    fn test_kyle_lambda_simd_scalar_parity_edge_cases() {
+        // Minimum: 2 trades
+        let t0 = make_snapshot(0, 50000.0, 1.0, false);
+        let t1 = make_snapshot(1000, 50010.0, 2.0, true);
+        let refs = vec![&t0, &t1];
+
+        let simd_result = simd::compute_kyle_lambda_simd(&refs);
+        let scalar_result = compute_kyle_lambda_scalar(&refs);
+        assert!(
+            (simd_result - scalar_result).abs() < 1e-10,
+            "Kyle Lambda parity failed on 2 trades: SIMD={simd_result}, scalar={scalar_result}"
+        );
+
+        // All buys: extreme imbalance
+        let all_buys: Vec<TradeSnapshot> = (0..20)
+            .map(|i| make_snapshot(i * 100, 50000.0 + i as f64, 1.0, false))
+            .collect();
+        let refs: Vec<&TradeSnapshot> = all_buys.iter().collect();
+
+        let simd_result = simd::compute_kyle_lambda_simd(&refs);
+        let scalar_result = compute_kyle_lambda_scalar(&refs);
+        assert!(
+            (simd_result - scalar_result).abs() < 1e-8,
+            "Kyle Lambda parity failed on all-buys: SIMD={simd_result}, scalar={scalar_result}"
+        );
+
+        // All sells: extreme imbalance other direction
+        let all_sells: Vec<TradeSnapshot> = (0..20)
+            .map(|i| make_snapshot(i * 100, 50000.0 + i as f64, 1.0, true))
+            .collect();
+        let refs: Vec<&TradeSnapshot> = all_sells.iter().collect();
+
+        let simd_result = simd::compute_kyle_lambda_simd(&refs);
+        let scalar_result = compute_kyle_lambda_scalar(&refs);
+        assert!(
+            (simd_result - scalar_result).abs() < 1e-8,
+            "Kyle Lambda parity failed on all-sells: SIMD={simd_result}, scalar={scalar_result}"
+        );
+    }
+
+    #[cfg(all(feature = "simd-burstiness", feature = "simd-kyle-lambda"))]
+    #[test]
+    fn test_simd_parity_sweep_window_sizes() {
+        // Sweep through various window sizes to catch alignment/remainder bugs
+        for size in [2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256] {
+            let trades = generate_trade_sequence(size, size as u64 * 37);
+            let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+
+            let burst_simd = simd::compute_burstiness_simd(&refs);
+            let burst_scalar = compute_burstiness_scalar(&refs);
+            assert!(
+                (burst_simd - burst_scalar).abs() < 1e-8,
+                "Burstiness parity failed at size {size}: SIMD={burst_simd}, scalar={burst_scalar}"
+            );
+
+            let kyle_simd = simd::compute_kyle_lambda_simd(&refs);
+            let kyle_scalar = compute_kyle_lambda_scalar(&refs);
+            assert!(
+                (kyle_simd - kyle_scalar).abs() < 1e-6,
+                "Kyle Lambda parity failed at size {size}: SIMD={kyle_simd}, scalar={kyle_scalar}"
+            );
+        }
+    }
+}
