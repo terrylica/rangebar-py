@@ -199,9 +199,9 @@ Hour 24:05+ Streaming resumes, new bars flowing
 
 ---
 
-## Phase 2: Queue Fairness (HIGH - PENDING)
+## Phase 2: Queue Fairness (HIGH - COMPLETE on rangebar-py, PENDING flowsurface)
 
-**Status**: Ready to implement, pending flowsurface coordination
+**Status**: rangebar-py implementation complete (commit 2c6fe35), pending flowsurface dedup query update
 
 ### Problem
 
@@ -306,16 +306,29 @@ When working on Issue #107:
 
 ---
 
-## Files Modified (Phase 1)
+## Files Modified (Phase 1 & 2)
 
-| File                                       | Changes    | Details                        |
-| ------------------------------------------ | ---------- | ------------------------------ |
-| `python/rangebar/sidecar.py`               | +168 lines | 2 functions, watchdog refactor |
-| `scripts/systemd/rangebar-sidecar.service` | +24 lines  | New service unit               |
+### Phase 1 (Sidecar Reliability)
+
+| File                                                 | Changes    | Details                                   | Commit  |
+| ---------------------------------------------------- | ---------- | ----------------------------------------- | ------- |
+| `python/rangebar/sidecar.py`                         | +168 lines | 2 functions, watchdog refactor            | 0172702 |
+| `scripts/systemd/rangebar-sidecar.service`           | +24 lines  | New service unit                          | 0172702 |
+| `crates/rangebar-providers/Cargo.toml`               | +2 lines   | Add socket2 dependency                    | f937c16 |
+| `crates/rangebar-providers/src/binance/websocket.rs` | +35 lines  | TCP keepalive documentation + placeholder | f937c16 |
+| `CLAUDE.md`                                          | +1 line    | Add Issue #107 doc to Quick Reference     | f937c16 |
+
+### Phase 2 (Queue Fairness - rangebar-py)
+
+| File                          | Changes   | Details                                          | Commit  |
+| ----------------------------- | --------- | ------------------------------------------------ | ------- |
+| `scripts/backfill_watcher.py` | ~50 lines | GROUP BY symbol, process all thresholds together | 2c6fe35 |
 
 **Commits**:
 
 - `0172702` — Phase 1 P0 watchdog + error recovery + systemd
+- `f937c16` — Phase 1b TCP keepalive infrastructure
+- `2c6fe35` — Phase 2 (rangebar-py): queue fairness by symbol grouping
 
 ---
 
@@ -340,10 +353,19 @@ When working on Issue #107:
 - [x] systemd auto-restarts on crash
 - [ ] Production deployment + monitoring
 
-### Phase 2 (Queue) ⏳
+### Phase 2 (Queue) 🔄
 
-- [ ] flowsurface includes threshold in dedup
-- [ ] rangebar-py processes all thresholds per symbol
+**rangebar-py (complete):**
+
+- [x] rangebar-py processes all thresholds per symbol (GROUP BY symbol, not threshold)
+- [x] \_fetch_pending_requests() returns symbol + thresholds_list
+- [x] \_process_request_group() iterates all thresholds together
+- [x] Cooldown mechanism preserved per (symbol, threshold) pair
+
+**flowsurface (pending):**
+
+- [ ] Include threshold_decimal_bps in dedup query
+- [ ] ClickHouse query changed from per-symbol to per-(symbol, threshold)
 - [ ] No starvation: BPR50/75/100 process within 1h
 - [ ] Query performance unchanged
 
