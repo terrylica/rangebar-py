@@ -569,7 +569,8 @@ impl RangeBar {
 
         // 6. Trade Intensity (trades per second)
         // Note: duration_us is in microseconds, convert to seconds
-        let duration_sec = duration_us_raw as f64 / 1_000_000.0;
+        // Issue #96: Multiply by reciprocal instead of dividing
+        let duration_sec = duration_us_raw as f64 * 1e-6;
         self.trade_intensity = if duration_sec > f64::EPSILON {
             trade_count / duration_sec
         } else {

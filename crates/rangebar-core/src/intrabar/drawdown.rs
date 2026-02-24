@@ -31,6 +31,8 @@
 ///
 /// # Returns
 /// Maximum drawdown as a fraction [0, 1). Returns `f64::EPSILON` for windows < 2.
+/// Issue #96: #[inline] for per-bar ITH computation
+#[inline]
 pub fn compute_max_drawdown(window: &[f64]) -> f64 {
     if window.len() < 2 {
         return f64::EPSILON;
@@ -59,6 +61,8 @@ pub fn compute_max_drawdown(window: &[f64]) -> f64 {
 ///
 /// This combined function eliminates a redundant pass through the window
 /// by computing both extrema simultaneously.
+/// Issue #96: #[inline] for per-bar ITH computation
+#[inline]
 pub fn compute_max_drawdown_and_runup(window: &[f64]) -> (f64, f64) {
     if window.len() < 2 {
         return (f64::EPSILON, f64::EPSILON);
@@ -116,6 +120,8 @@ pub fn compute_max_drawdown_and_runup(window: &[f64]) -> (f64, f64) {
 ///
 /// # Returns
 /// Maximum runup as a fraction [0, 1). Returns `f64::EPSILON` for windows < 2.
+/// Issue #96: #[inline] for per-bar ITH computation
+#[inline]
 pub fn compute_max_runup(window: &[f64]) -> f64 {
     if window.len() < 2 {
         return f64::EPSILON;

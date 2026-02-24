@@ -322,7 +322,8 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
     let first_ts = trades.first().map(|t| t.timestamp).unwrap_or(0);
     let last_ts = trades.last().map(|t| t.timestamp).unwrap_or(0);
     let duration_us = last_ts - first_ts;
-    let duration_sec = duration_us as f64 / 1_000_000.0;
+    // Issue #96: Multiply by reciprocal instead of dividing (avoids fdiv in hot path)
+    let duration_sec = duration_us as f64 * 1e-6;
 
     // Intensity: trades per second
     let intensity = if duration_sec > f64::EPSILON {
@@ -381,7 +382,9 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
         }
 
         if intervals.len() >= 2 {
-            let mean_tau: f64 = intervals.iter().sum::<f64>() / intervals.len() as f64;
+            // Issue #96: Pre-compute reciprocal to avoid repeated division
+            let inv_len = 1.0 / intervals.len() as f64;
+            let mean_tau: f64 = intervals.iter().sum::<f64>() * inv_len;
             let variance: f64 = intervals
                 .iter()
                 .map(|&x| {
@@ -389,7 +392,7 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
                     d * d  // Multiply instead of powi(2)
                 })
                 .sum::<f64>()
-                / intervals.len() as f64;
+                * inv_len;
             let std_tau = variance.sqrt();
 
             // Early-exit if intervals are uniform (common in tick data)

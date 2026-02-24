@@ -868,7 +868,8 @@ impl TradeHistory {
         features.lookback_duration_us = Some(duration_us);
 
         // Intensity (trades per second)
-        let duration_sec = duration_us as f64 / 1_000_000.0;
+        // Issue #96: Multiply by reciprocal instead of dividing
+        let duration_sec = duration_us as f64 * 1e-6;
         features.lookback_intensity = Some(if duration_sec > f64::EPSILON {
             n as f64 / duration_sec
         } else {
