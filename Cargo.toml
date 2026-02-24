@@ -262,7 +262,7 @@ harness = false  # Issue #96 Task #197: Normalization LUT (sigmoid/tanh) optimiz
 # With panic = "abort", the process crashes instead of raising a Python exception.
 
 [profile.release]
-lto = "thin"           # Thin LTO for cross-platform compatibility
+lto = "fat"            # Fat LTO for maximum cross-crate optimization (native builds)
 codegen-units = 1      # Maximum optimization (single codegen unit)
 opt-level = 3          # Explicit maximum optimization
 overflow-checks = false
