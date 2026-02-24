@@ -815,42 +815,34 @@ impl TradeHistory {
 
         // Issue #96 Task #46: Merge Tier 1 feature folds into single pass
         // Previously: 3 separate folds (buy/sell, volumes, min/max prices)
-        // Now: Single fold with 8-value accumulator - 8-15% speedup via improved cache locality
-        let (buy_vol, sell_vol, buy_count, sell_count, total_turnover, total_volume_fp, low, high) =
-            lookback
-                .iter()
-                .fold((0.0, 0.0, 0u32, 0u32, 0i128, 0i128, i64::MAX, i64::MIN), |acc, t| {
-                    let new_turnover = acc.4 + t.turnover;
-                    let new_volume_fp = acc.5 + (t.volume.0 as i128);
-                    let new_low = acc.6.min(t.price.0);
-                    let new_high = acc.7.max(t.price.0);
+        // Now: Single loop with 8-value accumulation - 8-15% speedup via improved cache locality
+        // Issue #96: Branchless buy/sell accumulation eliminates branch mispredictions
+        let mut buy_vol = 0.0_f64;
+        let mut sell_vol = 0.0_f64;
+        let mut buy_count = 0_u32;
+        let mut sell_count = 0_u32;
+        let mut total_turnover = 0_i128;
+        let mut total_volume_fp = 0_i128;
+        let mut low = i64::MAX;
+        let mut high = i64::MIN;
 
-                    if t.is_buyer_maker {
-                        // Sell pressure
-                        (
-                            acc.0,
-                            acc.1 + t.volume.to_f64(),
-                            acc.2,
-                            acc.3 + 1,
-                            new_turnover,
-                            new_volume_fp,
-                            new_low,
-                            new_high,
-                        )
-                    } else {
-                        // Buy pressure
-                        (
-                            acc.0 + t.volume.to_f64(),
-                            acc.1,
-                            acc.2 + 1,
-                            acc.3,
-                            new_turnover,
-                            new_volume_fp,
-                            new_low,
-                            new_high,
-                        )
-                    }
-                });
+        for t in lookback.iter() {
+            total_turnover += t.turnover;
+            total_volume_fp += t.volume.0 as i128;
+            low = low.min(t.price.0);
+            high = high.max(t.price.0);
+
+            // Branchless buy/sell accumulation: mask-based arithmetic
+            // is_buyer_maker=true → seller (mask=1.0), false → buyer (mask=0.0)
+            let vol = t.volume.to_f64();
+            let is_seller_mask = t.is_buyer_maker as u32 as f64;
+            sell_vol += vol * is_seller_mask;
+            buy_vol += vol * (1.0 - is_seller_mask);
+
+            let is_seller_count = t.is_buyer_maker as u32;
+            sell_count += is_seller_count;
+            buy_count += 1 - is_seller_count;
+        }
 
         let total_vol = buy_vol + sell_vol;
 
