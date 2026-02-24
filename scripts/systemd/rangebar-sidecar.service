@@ -1,0 +1,35 @@
+[Unit]
+Description=rangebar-py streaming sidecar (Issue #107)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tca
+WorkingDirectory=/home/tca/rangebar-py
+ExecStart=/home/tca/rangebar-py/.venv/bin/python3 -m rangebar.sidecar
+
+# Restart policy (Issue #107 P3)
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=600
+StartLimitBurst=5
+StartLimitAction=reboot
+
+# OOM protection (Issue #107 P4 - prevents batch jobs from starving sidecar)
+MemoryHigh=2G
+MemoryMax=2.5G
+MemorySwapMax=0
+OOMScoreAdjust=-500
+
+# Process limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Standard output/error
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rangebar-sidecar
+
+[Install]
+WantedBy=default.target

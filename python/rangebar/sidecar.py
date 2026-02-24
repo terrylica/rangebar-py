@@ -439,6 +439,86 @@ def _notify_watchdog_trigger(
 
 
 # =============================================================================
+# Watchdog error recovery (Issue #107, TGI #2)
+# =============================================================================
+
+
+def _restart_engine_with_recovery(
+    engine: object,
+    config: SidecarConfig,
+    trace_id: str,
+    gap_fill_results: dict | None,
+    bars_written: int,
+    restart_attempt: int,
+) -> tuple[object | None, bool]:
+    """Restart engine with timeout guards and error recovery.
+
+    Each shutdown step has isolated error handling to prevent cascading failures.
+
+    Returns:
+        (new_engine, success_bool) - engine is None if restart failed
+    """
+    try:
+        # Step 1: Graceful shutdown attempt (may fail or hang)
+        try:
+            engine.stop()
+            logger.info("engine.stop() completed")
+        except (RuntimeError, OSError, TimeoutError, ValueError) as e:
+            logger.warning("engine.stop() raised exception: %s", e)
+
+        # Step 2: Extract checkpoints (critical for state recovery)
+        try:
+            _extract_checkpoints(engine, trace_id, bars_written)
+            logger.info("checkpoint extraction succeeded")
+        except (OSError, ValueError, RuntimeError) as e:
+            logger.warning("checkpoint extraction failed: %s", e)
+
+        # Step 3: Force shutdown
+        try:
+            engine.shutdown()
+            logger.info("engine.shutdown() completed")
+        except (RuntimeError, OSError, TimeoutError, ValueError) as e:
+            logger.warning("engine.shutdown() raised: %s", e)
+
+        # Step 4: Create new engine
+        new_engine, _ = _create_engine(config, trace_id, gap_fill_results)
+        logger.info("engine restart #%d succeeded", restart_attempt)
+        return new_engine, True
+
+    except Exception:
+        logger.exception(
+            "WATCHDOG RESTART FAILED (attempt #%d)", restart_attempt
+        )
+        return None, False
+
+
+def _notify_restart_failure(
+    restart_number: int,
+    consecutive_timeouts: int,
+    stale_seconds: float,
+) -> None:
+    """Alert ops when watchdog restart fails via Telegram."""
+    try:
+        from rangebar.notify.telegram import send_telegram
+    except ImportError:
+        logger.warning("telegram module not available for restart failure alert")
+        return
+
+    try:
+        msg = (
+            "<b>⚠️ WATCHDOG RESTART FAILED</b>\n"
+            f"restart_attempt={restart_number}\n"
+            f"consecutive_timeouts={consecutive_timeouts}\n"
+            f"stale_s={stale_seconds:.0f}\n\n"
+            "Sidecar will exit. Check logs and restart manually."
+        )
+        send_telegram(msg, disable_notification=False)
+        logger.info("restart failure alert sent via Telegram")
+    except Exception:
+        logger.exception("failed to send restart failure alert")
+
+
+# =============================================================================
 # Main sidecar loop
 # =============================================================================
 
@@ -507,6 +587,8 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
     last_trades_received = 0
     last_trade_increment_time = time.monotonic()
     watchdog_restarts = 0
+    consecutive_timeouts = 0  # Track None returns for heartbeat logging
+    timeout_heartbeat_interval = 60  # Log every 60 timeouts ≈ 5 min at 5s timeout
 
     # Issue #96 Task #144 Phase 3: Batch accumulation for streaming optimization
     bar_batch_buffer = defaultdict(list)  # Keyed by (symbol, threshold)
@@ -544,20 +626,41 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
             bar = engine.next_bar(timeout_ms=config.timeout_ms)
 
             if bar is None:
+                consecutive_timeouts += 1
+
+                # Periodic heartbeat (show sidecar is responsive)
+                if consecutive_timeouts % timeout_heartbeat_interval == 0:
+                    has_metrics = hasattr(engine, "get_metrics")
+                    metrics = engine.get_metrics() if has_metrics else {}
+                    trades_received = (
+                        metrics.get("trades_received", 0) if metrics else 0
+                    )
+                    stale_s = time.monotonic() - last_trade_increment_time
+                    logger.info(
+                        "watchdog heartbeat: %d consecutive timeouts, "
+                        "last_trades_received=%d, stale=%.0fs",
+                        consecutive_timeouts,
+                        trades_received,
+                        stale_s,
+                    )
+
                 # Check trade flow via metrics (Issue #107)
                 if config.watchdog_timeout_s > 0:
                     metrics = engine.get_metrics()
                     current_trades = metrics.get("trades_received", 0)
 
                     if current_trades > last_trades_received:
+                        # Reset counter on fresh trades
+                        consecutive_timeouts = 0
                         last_trades_received = current_trades
                         last_trade_increment_time = time.monotonic()
                     else:
                         stale_s = time.monotonic() - last_trade_increment_time
                         if stale_s >= config.watchdog_timeout_s:
                             logger.warning(
-                                "WATCHDOG: no trades for %.0fs (restart #%d)",
-                                stale_s, watchdog_restarts + 1,
+                                "WATCHDOG: no trades %.0fs, %d timeouts",
+                                stale_s,
+                                consecutive_timeouts,
                             )
                             _notify_watchdog_trigger(
                                 stale_s, current_trades, watchdog_restarts,
@@ -573,17 +676,36 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
                             # Flush pending bars before restart
                             written = _flush_all_batches()
                             if written > 0:
-                                logger.info("flushed %d bars before watchdog restart", written)
+                                logger.info(
+                                    "flushed %d bars before restart", written
+                                )
 
-                            engine.stop()
-                            _extract_checkpoints(engine, trace_id, bars_written)
-                            engine.shutdown()
-                            engine, _ = _create_engine(
-                                config, trace_id, gap_fill_results,
+                            # Use error-tolerant restart (Issue #107, TGI #2)
+                            new_engine, success = _restart_engine_with_recovery(
+                                engine, config, trace_id, gap_fill_results,
+                                bars_written, watchdog_restarts + 1,
                             )
-                            watchdog_restarts += 1
-                            last_trades_received = 0
-                            last_trade_increment_time = time.monotonic()
+
+                            if success:
+                                engine = new_engine
+                                watchdog_restarts += 1
+                                consecutive_timeouts = 0
+                                last_trades_received = 0
+                                last_trade_increment_time = time.monotonic()
+                                logger.info("watchdog restart succeeded")
+                            else:
+                                # Restart failed — escalate
+                                logger.error(
+                                    "ESCALATION: restart failed after %d timeouts",
+                                    consecutive_timeouts,
+                                )
+                                _notify_restart_failure(
+                                    watchdog_restarts + 1,
+                                    consecutive_timeouts,
+                                    stale_s,
+                                )
+                                # Exit to be restarted by systemd/supervisor
+                                break
                 continue
 
             # Bar received — reset watchdog
