@@ -240,4 +240,61 @@ mod tests {
         assert_eq!(normalize_runup(0.5), 0.5);
         assert_eq!(normalize_runup(1.5), 1.0);
     }
+
+    // Issue #96: Edge case coverage for normalization functions
+
+    #[test]
+    fn test_normalize_epochs_zero_lookback() {
+        // Degenerate case: lookback=0 should not panic
+        assert_eq!(normalize_epochs(0, 0), 0.5);
+        assert_eq!(normalize_epochs(5, 0), 0.5);
+    }
+
+    #[test]
+    fn test_normalize_epochs_zero_epochs() {
+        let result = normalize_epochs(0, 100);
+        assert!(result < 0.1, "Zero epochs should map to low value, got {}", result);
+        assert!(result > 0.0, "Zero epochs should be distinguishable from 0");
+    }
+
+    #[test]
+    fn test_normalize_epochs_full_density() {
+        let result = normalize_epochs(100, 100);
+        // sigmoid_lut(1.0) ≈ 0.70 (LUT-specific scaling)
+        assert!(result > 0.5, "All-epochs should map above midpoint, got {}", result);
+        assert!(result <= 1.0, "Must be bounded by 1.0");
+    }
+
+    #[test]
+    fn test_normalize_excess_zero() {
+        let result = normalize_excess(0.0);
+        assert!(result.abs() < 0.01, "Zero excess should map near 0, got {}", result);
+    }
+
+    #[test]
+    fn test_normalize_excess_negative_uses_abs() {
+        let pos = normalize_excess(0.1);
+        let neg = normalize_excess(-0.1);
+        assert_eq!(pos, neg, "normalize_excess should use absolute value");
+    }
+
+    #[test]
+    fn test_normalize_excess_large_saturates() {
+        let result = normalize_excess(100.0);
+        assert!(result > 0.999, "Large excess should saturate near 1.0, got {}", result);
+    }
+
+    #[test]
+    fn test_logistic_sigmoid_center() {
+        let result = logistic_sigmoid(0.5, 0.5, 4.0);
+        assert!((result - 0.5).abs() < 0.001, "At center, sigmoid should be 0.5");
+    }
+
+    #[test]
+    fn test_logistic_sigmoid_extremes() {
+        let low = logistic_sigmoid(-10.0, 0.0, 1.0);
+        let high = logistic_sigmoid(10.0, 0.0, 1.0);
+        assert!(low < 0.001, "Far below center should be near 0");
+        assert!(high > 0.999, "Far above center should be near 1");
+    }
 }

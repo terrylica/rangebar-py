@@ -219,4 +219,85 @@ mod tests {
         assert_eq!(compute_max_drawdown(&[1.0]), f64::EPSILON);
         assert_eq!(compute_max_runup(&[1.0]), f64::EPSILON);
     }
+
+    // Issue #96: Edge case coverage for drawdown/runup
+
+    #[test]
+    fn test_identical_prices_flat() {
+        let prices = vec![1.0, 1.0, 1.0, 1.0, 1.0];
+        let dd = compute_max_drawdown(&prices);
+        let ru = compute_max_runup(&prices);
+        assert_eq!(dd, f64::EPSILON, "Flat prices should have epsilon drawdown");
+        assert_eq!(ru, f64::EPSILON, "Flat prices should have epsilon runup");
+    }
+
+    #[test]
+    fn test_combined_pure_uptrend() {
+        let prices = vec![1.0, 1.1, 1.2, 1.3, 1.4, 1.5];
+        let (dd, ru) = compute_max_drawdown_and_runup(&prices);
+        assert!(dd < 0.001, "Pure uptrend drawdown should be ~0");
+        // Runup = 1 - 1.0/1.5 = 0.333
+        assert!((ru - 0.333).abs() < 0.01, "Expected ~33% runup, got {}", ru);
+    }
+
+    #[test]
+    fn test_combined_pure_downtrend() {
+        let prices = vec![1.5, 1.4, 1.3, 1.2, 1.1, 1.0];
+        let (dd, ru) = compute_max_drawdown_and_runup(&prices);
+        // Drawdown = 1 - 1.0/1.5 = 0.333
+        assert!((dd - 0.333).abs() < 0.01, "Expected ~33% drawdown, got {}", dd);
+        assert!(ru < 0.001, "Pure downtrend runup should be ~0");
+    }
+
+    #[test]
+    fn test_combined_identical_prices() {
+        let prices = vec![100.0, 100.0, 100.0];
+        let (dd, ru) = compute_max_drawdown_and_runup(&prices);
+        assert_eq!(dd, f64::EPSILON);
+        assert_eq!(ru, f64::EPSILON);
+    }
+
+    #[test]
+    fn test_combined_empty_and_single() {
+        assert_eq!(compute_max_drawdown_and_runup(&[]), (f64::EPSILON, f64::EPSILON));
+        assert_eq!(compute_max_drawdown_and_runup(&[42.0]), (f64::EPSILON, f64::EPSILON));
+    }
+
+    #[test]
+    fn test_combined_matches_individual() {
+        // Verify combined function matches individual function outputs
+        let prices = vec![1.0, 1.1, 0.9, 1.05, 0.85, 1.15];
+        let dd_individual = compute_max_drawdown(&prices);
+        let ru_individual = compute_max_runup(&prices);
+        let (dd_combined, ru_combined) = compute_max_drawdown_and_runup(&prices);
+
+        assert!(
+            (dd_individual - dd_combined).abs() < f64::EPSILON * 10.0,
+            "Drawdown mismatch: {} vs {}",
+            dd_individual,
+            dd_combined
+        );
+        assert!(
+            (ru_individual - ru_combined).abs() < f64::EPSILON * 10.0,
+            "Runup mismatch: {} vs {}",
+            ru_individual,
+            ru_combined
+        );
+    }
+
+    #[test]
+    fn test_two_element_window() {
+        // Minimum window that produces non-epsilon result
+        let up = vec![1.0, 1.5];
+        let dd = compute_max_drawdown(&up);
+        let ru = compute_max_runup(&up);
+        assert_eq!(dd, f64::EPSILON, "Upward 2-element: no drawdown");
+        assert!((ru - 0.333).abs() < 0.01, "Upward 2-element: 33% runup");
+
+        let down = vec![1.5, 1.0];
+        let dd = compute_max_drawdown(&down);
+        let ru = compute_max_runup(&down);
+        assert!((dd - 0.333).abs() < 0.01, "Downward 2-element: 33% drawdown");
+        assert_eq!(ru, f64::EPSILON, "Downward 2-element: no runup");
+    }
 }
