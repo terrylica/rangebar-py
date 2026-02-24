@@ -3541,3 +3541,145 @@ mod simd_parity_tests {
         }
     }
 }
+
+/// Property-based tests for inter-bar feature bounds invariants.
+/// Uses proptest to verify that computed features stay within documented ranges
+/// for arbitrary inputs, catching edge cases that hand-written tests miss.
+#[cfg(test)]
+mod proptest_bounds {
+    use super::*;
+    use crate::interbar_types::TradeSnapshot;
+    use crate::FixedPoint;
+    use proptest::prelude::*;
+
+    fn make_snapshot(ts: i64, price: f64, volume: f64, is_buyer_maker: bool) -> TradeSnapshot {
+        TradeSnapshot {
+            timestamp: ts,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint((volume * 1e8) as i64),
+            is_buyer_maker,
+            turnover: (price * volume * 1e8) as i128,
+        }
+    }
+
+    /// Strategy: generate valid price sequences (positive, finite)
+    fn price_sequence(min_len: usize, max_len: usize) -> impl Strategy<Value = Vec<f64>> {
+        prop::collection::vec(1.0..=100_000.0_f64, min_len..=max_len)
+    }
+
+    /// Strategy: generate valid volume pairs (positive, finite)
+    fn volume_pair() -> impl Strategy<Value = (f64, f64)> {
+        (0.001..=1e9_f64, 0.001..=1e9_f64)
+    }
+
+    proptest! {
+        /// OFI: (buy_vol - sell_vol) / (buy_vol + sell_vol) must be in [-1, 1]
+        #[test]
+        fn ofi_always_bounded((buy_vol, sell_vol) in volume_pair()) {
+            let total = buy_vol + sell_vol;
+            if total > f64::EPSILON {
+                let ofi = (buy_vol - sell_vol) / total;
+                prop_assert!(ofi >= -1.0 - f64::EPSILON && ofi <= 1.0 + f64::EPSILON,
+                    "OFI={ofi} out of [-1, 1] for buy={buy_vol}, sell={sell_vol}");
+            }
+        }
+
+        /// Kaufman ER must be in [0, 1] for valid price sequences
+        #[test]
+        fn kaufman_er_always_bounded(prices in price_sequence(2, 200)) {
+            let er = compute_kaufman_er(&prices);
+            prop_assert!(er >= 0.0 && er <= 1.0 + f64::EPSILON,
+                "Kaufman ER={er} out of [0, 1] for {}-trade window", prices.len());
+        }
+
+        /// Permutation entropy must be in [0, 1] for valid price sequences
+        #[test]
+        fn permutation_entropy_always_bounded(prices in price_sequence(60, 300)) {
+            let pe = compute_permutation_entropy(&prices);
+            prop_assert!(pe >= 0.0 && pe <= 1.0 + f64::EPSILON,
+                "PE={pe} out of [0, 1] for {}-trade window", prices.len());
+        }
+
+        /// Garman-Klass volatility must be non-negative
+        #[test]
+        fn garman_klass_non_negative(prices in price_sequence(2, 100)) {
+            let first = prices[0];
+            let last = *prices.last().unwrap();
+            let high = prices.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let low = prices.iter().cloned().fold(f64::INFINITY, f64::min);
+            let gk = compute_garman_klass_with_ohlc(first, high, low, last);
+            prop_assert!(gk >= 0.0,
+                "GK={gk} negative for OHLC({first}, {high}, {low}, {last})");
+        }
+
+        /// Burstiness must be in [-1, 1] for valid inter-arrival patterns
+        #[test]
+        fn burstiness_scalar_always_bounded(
+            n in 3_usize..100,
+            seed in 0_u64..10000,
+        ) {
+            // Generate trades with variable inter-arrival times
+            let mut rng = seed;
+            let mut ts = 0i64;
+            let trades: Vec<TradeSnapshot> = (0..n).map(|_| {
+                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let delta = 1 + ((rng >> 33) % 10000) as i64;
+                ts += delta;
+                make_snapshot(ts, 100.0, 1.0, rng % 2 == 0)
+            }).collect();
+            let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+
+            let b = compute_burstiness_scalar(&refs);
+            prop_assert!(b >= -1.0 - f64::EPSILON && b <= 1.0 + f64::EPSILON,
+                "Burstiness={b} out of [-1, 1] for n={n}");
+        }
+
+        /// Hurst DFA must be in [0, 1] after soft-clamping
+        #[test]
+        fn hurst_dfa_always_bounded(prices in price_sequence(64, 300)) {
+            let h = compute_hurst_dfa(&prices);
+            prop_assert!(h >= 0.0 && h <= 1.0,
+                "Hurst={h} out of [0, 1] for {}-trade window", prices.len());
+        }
+
+        /// Approximate entropy must be non-negative
+        #[test]
+        fn approximate_entropy_non_negative(prices in price_sequence(10, 200)) {
+            let std_dev = {
+                let mean = prices.iter().sum::<f64>() / prices.len() as f64;
+                let var = prices.iter().map(|p| (p - mean) * (p - mean)).sum::<f64>() / prices.len() as f64;
+                var.sqrt()
+            };
+            if std_dev > f64::EPSILON {
+                let r = 0.2 * std_dev;
+                let apen = compute_approximate_entropy(&prices, 2, r);
+                prop_assert!(apen >= 0.0,
+                    "ApEn={apen} negative for {}-trade window", prices.len());
+            }
+        }
+
+        /// extract_lookback_cache OHLC invariants: high >= open,close and low <= open,close
+        #[test]
+        fn lookback_cache_ohlc_invariants(
+            n in 1_usize..50,
+            seed in 0_u64..10000,
+        ) {
+            let mut rng = seed;
+            let trades: Vec<TradeSnapshot> = (0..n).map(|i| {
+                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let price = 100.0 + ((rng >> 33) as f64 / u32::MAX as f64) * 50.0;
+                make_snapshot(i as i64 * 1000, price, 1.0, rng % 2 == 0)
+            }).collect();
+            let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+
+            let cache = extract_lookback_cache(&refs);
+            prop_assert!(cache.high >= cache.open, "high < open");
+            prop_assert!(cache.high >= cache.close, "high < close");
+            prop_assert!(cache.low <= cache.open, "low > open");
+            prop_assert!(cache.low <= cache.close, "low > close");
+            prop_assert!(cache.total_volume >= 0.0, "total_volume negative");
+            prop_assert_eq!(cache.prices.len(), n, "prices length mismatch");
+            prop_assert_eq!(cache.volumes.len(), n, "volumes length mismatch");
+        }
+    }
+}

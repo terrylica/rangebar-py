@@ -68,6 +68,7 @@ mimalloc = { version = "0.1", default-features = false }
 
 [dev-dependencies]
 csv.workspace = true  # Required for test_data_loader during test compilation
+proptest = "1.6"  # Property-based testing for feature bounds invariants
 
 [features]
 default = ["simd-burstiness", "simd-kyle-lambda"]  # Issue #96 Task #102/148: Enable SIMD for 2-4x speedup
