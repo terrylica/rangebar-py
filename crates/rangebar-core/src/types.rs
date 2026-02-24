@@ -698,3 +698,170 @@ impl RangeBar {
 }
 
 // Tests moved to crates/rangebar-core/tests/types_tests.rs (Phase 1a refactoring)
+
+/// Issue #96: Edge case tests for compute_microstructure_features() epsilon guards
+#[cfg(test)]
+mod microstructure_edge_tests {
+    use super::*;
+    use crate::fixed_point::FixedPoint;
+
+    /// Helper: create a minimal bar with given values for edge case testing
+    fn bar_with(
+        open: &str, close: &str, high: &str, low: &str,
+        volume_raw: i128, buy_vol: i128, sell_vol: i128,
+        trade_count: u32, agg_count: u32,
+        buy_count: u32, sell_count: u32,
+        buy_turn: i128, sell_turn: i128,
+        open_time: i64, close_time: i64,
+    ) -> RangeBar {
+        RangeBar {
+            open: FixedPoint::from_str(open).unwrap(),
+            close: FixedPoint::from_str(close).unwrap(),
+            high: FixedPoint::from_str(high).unwrap(),
+            low: FixedPoint::from_str(low).unwrap(),
+            vwap: FixedPoint::from_str(open).unwrap(),
+            volume: volume_raw,
+            buy_volume: buy_vol,
+            sell_volume: sell_vol,
+            individual_trade_count: trade_count,
+            agg_record_count: agg_count,
+            buy_trade_count: buy_count,
+            sell_trade_count: sell_count,
+            buy_turnover: buy_turn,
+            sell_turnover: sell_turn,
+            open_time,
+            close_time,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_zero_volume_ofi_is_zero() {
+        let mut bar = bar_with(
+            "50000.0", "50000.0", "50000.0", "50000.0",
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        );
+        bar.compute_microstructure_features();
+        assert_eq!(bar.ofi, 0.0, "OFI must be 0 when total_vol=0");
+    }
+
+    #[test]
+    fn test_zero_range_vwap_deviation_is_zero() {
+        // high == low → range = 0
+        let mut bar = bar_with(
+            "50000.0", "50000.0", "50000.0", "50000.0",
+            100_000_000, 50_000_000, 50_000_000,
+            2, 1, 1, 1, 100, 100, 1000, 2000,
+        );
+        bar.compute_microstructure_features();
+        assert_eq!(bar.vwap_close_deviation, 0.0, "VWAP deviation must be 0 when range=0");
+    }
+
+    #[test]
+    fn test_zero_volume_price_impact_is_zero() {
+        let mut bar = bar_with(
+            "50000.0", "50100.0", "50100.0", "50000.0",
+            0, 0, 0, 2, 1, 1, 1, 0, 0, 1000, 2000,
+        );
+        bar.compute_microstructure_features();
+        assert_eq!(bar.price_impact, 0.0, "Price impact must be 0 when volume=0");
+    }
+
+    #[test]
+    fn test_kyle_lambda_zero_imbalance() {
+        // Equal buy/sell volume → normalized_imbalance ≈ 0
+        let vol = 100_000_000i128;
+        let mut bar = bar_with(
+            "50000.0", "50100.0", "50100.0", "50000.0",
+            vol * 2, vol, vol,
+            2, 1, 1, 1, 100, 100, 1000, 2000,
+        );
+        bar.compute_microstructure_features();
+        assert_eq!(bar.kyle_lambda_proxy, 0.0, "Kyle lambda must be 0 when imbalance=0");
+    }
+
+    #[test]
+    fn test_zero_duration_trade_intensity() {
+        // open_time == close_time → duration_sec = 0
+        let mut bar = bar_with(
+            "50000.0", "50100.0", "50100.0", "50000.0",
+            100_000_000, 100_000_000, 0,
+            5, 1, 5, 0, 100, 0, 1000, 1000,
+        );
+        bar.compute_microstructure_features();
+        // When duration=0, trade_intensity = trade_count (instant bar)
+        assert_eq!(bar.trade_intensity, 5.0, "Intensity should be trade_count when duration=0");
+    }
+
+    #[test]
+    fn test_zero_trade_count_volume_per_trade() {
+        let mut bar = bar_with(
+            "50000.0", "50000.0", "50000.0", "50000.0",
+            100_000_000, 50_000_000, 50_000_000,
+            0, 0, 0, 0, 0, 0, 1000, 2000,
+        );
+        bar.compute_microstructure_features();
+        assert_eq!(bar.volume_per_trade, 0.0, "Volume per trade must be 0 when no trades");
+    }
+
+    #[test]
+    fn test_zero_sell_count_aggression_ratio_capped() {
+        let mut bar = bar_with(
+            "50000.0", "50100.0", "50100.0", "50000.0",
+            200_000_000, 200_000_000, 0,
+            5, 1, 5, 0, 100, 0, 1000, 2000,
+        );
+        bar.compute_microstructure_features();
+        assert_eq!(bar.aggression_ratio, 100.0, "Aggression ratio must be capped at 100 with 0 sells");
+    }
+
+    #[test]
+    fn test_no_trades_aggression_ratio_neutral() {
+        let mut bar = bar_with(
+            "50000.0", "50000.0", "50000.0", "50000.0",
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        );
+        bar.compute_microstructure_features();
+        assert_eq!(bar.aggression_ratio, 1.0, "Aggression ratio must be 1.0 (neutral) with 0 trades");
+    }
+
+    #[test]
+    fn test_zero_agg_count_density_defaults() {
+        let mut bar = bar_with(
+            "50000.0", "50000.0", "50000.0", "50000.0",
+            100_000_000, 50_000_000, 50_000_000,
+            2, 0, 1, 1, 100, 100, 1000, 2000,
+        );
+        bar.compute_microstructure_features();
+        assert_eq!(bar.aggregation_density_f64, 1.0, "Density must be 1.0 when agg_count=0");
+    }
+
+    #[test]
+    fn test_zero_turnover_imbalance_is_zero() {
+        let mut bar = bar_with(
+            "50000.0", "50100.0", "50100.0", "50000.0",
+            100_000_000, 50_000_000, 50_000_000,
+            2, 1, 1, 1, 0, 0, 1000, 2000,
+        );
+        bar.compute_microstructure_features();
+        assert_eq!(bar.turnover_imbalance, 0.0, "Turnover imbalance must be 0 with zero turnover");
+    }
+
+    #[test]
+    fn test_all_epsilon_guards_no_panic() {
+        // Worst case: completely empty bar
+        let mut bar = RangeBar::default();
+        bar.compute_microstructure_features();
+
+        // Nothing should panic; all features should be finite
+        assert!(bar.ofi.is_finite(), "OFI must be finite");
+        assert!(bar.vwap_close_deviation.is_finite(), "VWAP deviation must be finite");
+        assert!(bar.price_impact.is_finite(), "Price impact must be finite");
+        assert!(bar.kyle_lambda_proxy.is_finite(), "Kyle lambda must be finite");
+        assert!(bar.trade_intensity.is_finite(), "Trade intensity must be finite");
+        assert!(bar.volume_per_trade.is_finite(), "Volume per trade must be finite");
+        assert!(bar.aggression_ratio.is_finite(), "Aggression ratio must be finite");
+        assert!(bar.aggregation_density_f64.is_finite(), "Agg density must be finite");
+        assert!(bar.turnover_imbalance.is_finite(), "Turnover imbalance must be finite");
+    }
+}
