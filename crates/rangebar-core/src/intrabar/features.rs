@@ -984,3 +984,133 @@ mod tests {
         }
     }
 }
+
+/// Property-based tests for intra-bar feature bounds invariants.
+/// Uses proptest to verify all features stay within documented ranges
+/// for arbitrary trade inputs across various market conditions.
+#[cfg(test)]
+mod proptest_intrabar_bounds {
+    use super::*;
+    use crate::fixed_point::FixedPoint;
+    use crate::types::AggTrade;
+    use proptest::prelude::*;
+
+    fn make_trade(price: f64, volume: f64, timestamp: i64, is_buyer_maker: bool) -> AggTrade {
+        AggTrade {
+            agg_trade_id: timestamp,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint((volume * 1e8) as i64),
+            first_trade_id: timestamp,
+            last_trade_id: timestamp,
+            timestamp,
+            is_buyer_maker,
+            is_best_match: None,
+        }
+    }
+
+    /// Strategy: generate a valid trade sequence with varying parameters
+    fn trade_sequence(min_n: usize, max_n: usize) -> impl Strategy<Value = Vec<AggTrade>> {
+        (min_n..=max_n, 0_u64..10000).prop_map(|(n, seed)| {
+            let mut rng = seed;
+            let base_price = 100.0;
+            (0..n)
+                .map(|i| {
+                    rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    let r = ((rng >> 33) as f64) / (u32::MAX as f64);
+                    let price = base_price + (r - 0.5) * 10.0;
+                    let volume = 0.1 + r * 5.0;
+                    let ts = (i as i64) * 1_000_000; // 1 second apart
+                    make_trade(price, volume, ts, rng % 2 == 0)
+                })
+                .collect()
+        })
+    }
+
+    proptest! {
+        /// All ITH features must be in [0, 1] for any valid trade sequence
+        #[test]
+        fn ith_features_always_bounded(trades in trade_sequence(2, 100)) {
+            let features = compute_intra_bar_features(&trades);
+
+            if let Some(v) = features.intra_bull_epoch_density {
+                prop_assert!(v >= 0.0 && v <= 1.0, "bull_epoch_density={v}");
+            }
+            if let Some(v) = features.intra_bear_epoch_density {
+                prop_assert!(v >= 0.0 && v <= 1.0, "bear_epoch_density={v}");
+            }
+            if let Some(v) = features.intra_bull_excess_gain {
+                prop_assert!(v >= 0.0 && v <= 1.0, "bull_excess_gain={v}");
+            }
+            if let Some(v) = features.intra_bear_excess_gain {
+                prop_assert!(v >= 0.0 && v <= 1.0, "bear_excess_gain={v}");
+            }
+            if let Some(v) = features.intra_bull_cv {
+                prop_assert!(v >= 0.0 && v <= 1.0, "bull_cv={v}");
+            }
+            if let Some(v) = features.intra_bear_cv {
+                prop_assert!(v >= 0.0 && v <= 1.0, "bear_cv={v}");
+            }
+            if let Some(v) = features.intra_max_drawdown {
+                prop_assert!(v >= 0.0 && v <= 1.0, "max_drawdown={v}");
+            }
+            if let Some(v) = features.intra_max_runup {
+                prop_assert!(v >= 0.0 && v <= 1.0, "max_runup={v}");
+            }
+        }
+
+        /// Statistical features must respect their documented ranges
+        #[test]
+        fn statistical_features_bounded(trades in trade_sequence(3, 200)) {
+            let features = compute_intra_bar_features(&trades);
+
+            if let Some(ofi) = features.intra_ofi {
+                prop_assert!(ofi >= -1.0 - f64::EPSILON && ofi <= 1.0 + f64::EPSILON,
+                    "OFI={ofi} out of [-1, 1]");
+            }
+            if let Some(ci) = features.intra_count_imbalance {
+                prop_assert!(ci >= -1.0 - f64::EPSILON && ci <= 1.0 + f64::EPSILON,
+                    "count_imbalance={ci} out of [-1, 1]");
+            }
+            if let Some(b) = features.intra_burstiness {
+                prop_assert!(b >= -1.0 - f64::EPSILON && b <= 1.0 + f64::EPSILON,
+                    "burstiness={b} out of [-1, 1]");
+            }
+            if let Some(er) = features.intra_kaufman_er {
+                prop_assert!(er >= 0.0 && er <= 1.0 + f64::EPSILON,
+                    "kaufman_er={er} out of [0, 1]");
+            }
+            if let Some(vwap) = features.intra_vwap_position {
+                prop_assert!(vwap >= 0.0 && vwap <= 1.0 + f64::EPSILON,
+                    "vwap_position={vwap} out of [0, 1]");
+            }
+            if let Some(gk) = features.intra_garman_klass_vol {
+                prop_assert!(gk >= 0.0, "garman_klass_vol={gk} negative");
+            }
+            if let Some(intensity) = features.intra_intensity {
+                prop_assert!(intensity >= 0.0, "intensity={intensity} negative");
+            }
+        }
+
+        /// Complexity features (Hurst, PE) bounded when present
+        #[test]
+        fn complexity_features_bounded(trades in trade_sequence(70, 300)) {
+            let features = compute_intra_bar_features(&trades);
+
+            if let Some(h) = features.intra_hurst {
+                prop_assert!(h >= 0.0 && h <= 1.0,
+                    "hurst={h} out of [0, 1] for n={}", trades.len());
+            }
+            if let Some(pe) = features.intra_permutation_entropy {
+                prop_assert!(pe >= 0.0 && pe <= 1.0 + f64::EPSILON,
+                    "permutation_entropy={pe} out of [0, 1] for n={}", trades.len());
+            }
+        }
+
+        /// Trade count always equals input length
+        #[test]
+        fn trade_count_matches_input(trades in trade_sequence(0, 50)) {
+            let features = compute_intra_bar_features(&trades);
+            prop_assert_eq!(features.intra_trade_count, Some(trades.len() as u32));
+        }
+    }
+}
