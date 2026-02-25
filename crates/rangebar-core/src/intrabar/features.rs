@@ -139,6 +139,8 @@ pub fn compute_intra_bar_features(trades: &[AggTrade]) -> IntraBarFeatures {
 
 /// Optimized version accepting reusable scratch buffers
 /// Issue #96 Task #173: Avoids per-bar heap allocation by reusing buffers across bars
+/// Issue #96 Task #88: #[inline] — per-bar dispatcher called from processor hot path
+#[inline]
 pub fn compute_intra_bar_features_with_scratch(
     trades: &[AggTrade],
     scratch_prices: &mut SmallVec<[f64; 64]>,

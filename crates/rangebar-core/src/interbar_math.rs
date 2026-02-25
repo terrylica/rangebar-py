@@ -1796,6 +1796,8 @@ pub fn compute_approximate_entropy(prices: &[f64], m: usize, r: f64) -> f64 {
 ///
 /// Uses wide::f64x2 to compute both abs differences in parallel when m=2,
 /// providing ~2x speedup vs scalar by reducing latency and improving ILP.
+/// Issue #96 Task #88: #[inline] — called in O(n²) loop for approximate entropy
+#[inline]
 fn patterns_within_distance_simd(p1: &[f64], p2: &[f64], r: f64, m: usize) -> bool {
     // Optimize common case: m=2 (used for ApEn in lookback_permutation_entropy)
     if m == 2 && p1.len() >= 2 && p2.len() >= 2 {

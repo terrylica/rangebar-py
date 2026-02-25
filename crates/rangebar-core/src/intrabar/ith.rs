@@ -38,6 +38,8 @@ use super::types::{BearIthResult, BullIthResult};
 /// # Returns
 ///
 /// `BullIthResult` containing excess gains, excess losses, epoch count, and statistics.
+/// Issue #96 Task #88: #[inline] — per-bar computation in intra-bar feature pipeline
+#[inline]
 pub fn bull_ith(nav: &[f64], tmaeg: f64) -> BullIthResult {
     if nav.is_empty() {
         return BullIthResult {
@@ -168,6 +170,8 @@ pub fn bull_ith(nav: &[f64], tmaeg: f64) -> BullIthResult {
 /// # Returns
 ///
 /// `BearIthResult` containing excess gains, excess losses, epoch count, and statistics.
+/// Issue #96 Task #88: #[inline] — per-bar computation in intra-bar feature pipeline
+#[inline]
 pub fn bear_ith(nav: &[f64], tmaeg: f64) -> BearIthResult {
     if nav.is_empty() {
         return BearIthResult {

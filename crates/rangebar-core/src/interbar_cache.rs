@@ -295,4 +295,102 @@ mod tests {
         );
         assert!(count > 0, "cache should not be empty after inserts");
     }
+
+    // Issue #96 Task #89: Edge case tests for hash_trade_window
+
+    #[test]
+    fn test_hash_early_exit_empty_window() {
+        let refs: Vec<&TradeSnapshot> = vec![];
+        let key = InterBarCacheKey::from_lookback(&refs);
+        assert_eq!(key.trade_count, 0);
+        // Empty window returns sentinel 0
+        assert_eq!(key.window_hash, 0);
+    }
+
+    #[test]
+    fn test_hash_early_exit_single_trade() {
+        let trade = create_test_trade(100.0, 1.0, false);
+        let refs: Vec<_> = vec![&trade];
+        let key = InterBarCacheKey::from_lookback(&refs);
+        assert_eq!(key.trade_count, 1);
+        // Single trade returns sentinel 1
+        assert_eq!(key.window_hash, 1);
+    }
+
+    #[test]
+    fn test_hash_two_trades_not_sentinel() {
+        let t1 = create_test_trade(100.0, 1.0, false);
+        let t2 = create_test_trade(101.0, 2.0, true);
+        let refs: Vec<_> = vec![&t1, &t2];
+        let key = InterBarCacheKey::from_lookback(&refs);
+        assert_eq!(key.trade_count, 2);
+        // Two trades should compute a real hash, not sentinel
+        assert!(key.window_hash > 1, "2-trade window should compute hash, not sentinel");
+    }
+
+    #[test]
+    fn test_hash_all_buyers_vs_all_sellers() {
+        // All buyers (is_buyer_maker=false)
+        let buyers = vec![
+            create_test_trade(100.0, 1.0, false),
+            create_test_trade(101.0, 1.0, false),
+            create_test_trade(100.5, 1.0, false),
+        ];
+        let buyer_refs: Vec<_> = buyers.iter().collect();
+        let key_buyers = InterBarCacheKey::from_lookback(&buyer_refs);
+
+        // All sellers (is_buyer_maker=true)
+        let sellers = vec![
+            create_test_trade(100.0, 1.0, true),
+            create_test_trade(101.0, 1.0, true),
+            create_test_trade(100.5, 1.0, true),
+        ];
+        let seller_refs: Vec<_> = sellers.iter().collect();
+        let key_sellers = InterBarCacheKey::from_lookback(&seller_refs);
+
+        // Same count but different buy/sell ratios → different hashes
+        assert_eq!(key_buyers.trade_count, key_sellers.trade_count);
+        assert_ne!(key_buyers.window_hash, key_sellers.window_hash,
+            "All-buyer and all-seller windows should produce different hashes");
+    }
+
+    #[test]
+    fn test_hash_different_price_ranges() {
+        // Tight range: 100.0 → 100.5 (50 bps)
+        let tight = vec![
+            create_test_trade(100.0, 1.0, false),
+            create_test_trade(100.5, 1.0, true),
+        ];
+        let tight_refs: Vec<_> = tight.iter().collect();
+        let key_tight = InterBarCacheKey::from_lookback(&tight_refs);
+
+        // Wide range: 100.0 → 110.0 (10000 bps)
+        let wide = vec![
+            create_test_trade(100.0, 1.0, false),
+            create_test_trade(110.0, 1.0, true),
+        ];
+        let wide_refs: Vec<_> = wide.iter().collect();
+        let key_wide = InterBarCacheKey::from_lookback(&wide_refs);
+
+        assert_ne!(key_tight.window_hash, key_wide.window_hash,
+            "Different price ranges should produce different hashes");
+    }
+
+    #[test]
+    fn test_feature_value_round_trip() {
+        let cache = InterBarFeatureCache::new();
+        let key = InterBarCacheKey { trade_count: 50, window_hash: 99999 };
+
+        let mut features = InterBarFeatures::default();
+        features.lookback_ofi = Some(0.75);
+        features.lookback_trade_count = Some(50);
+        features.lookback_intensity = Some(123.456);
+
+        cache.insert(key, features);
+        let retrieved = cache.get(&key).expect("should hit cache");
+
+        assert_eq!(retrieved.lookback_ofi, Some(0.75));
+        assert_eq!(retrieved.lookback_trade_count, Some(50));
+        assert_eq!(retrieved.lookback_intensity, Some(123.456));
+    }
 }
