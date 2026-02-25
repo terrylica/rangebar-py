@@ -1044,6 +1044,7 @@ fn compute_burstiness_scalar(lookback: &[&TradeSnapshot]) -> f64 {
 ///
 /// Issue #96 Task #42: Single-pass computation avoids Vec<f64> allocation.
 /// Two-phase: (1) compute mean, (2) compute moments with known mean.
+#[inline]
 pub fn compute_volume_moments(lookback: &[&TradeSnapshot]) -> (f64, f64) {
     let n = lookback.len() as f64;
 
@@ -1158,6 +1159,7 @@ pub fn compute_volume_moments_with_mean(volumes: &[f64], mu: f64) -> (f64, f64) 
 /// Reference: Kaufman (1995) - Smarter Trading
 ///
 /// Range: [0, 1] where 1 = perfect trend, 0 = pure noise
+#[inline]
 pub fn compute_kaufman_er(prices: &[f64]) -> f64 {
     if prices.len() < 2 {
         return 0.0;
@@ -1775,6 +1777,7 @@ pub fn extract_prices_and_ohlc_cached(
 /// - r: tolerance (typically 0.2*std(prices))
 ///
 /// Returns entropy in [0, 1] range (normalized by ln(n))
+#[inline]
 pub fn compute_approximate_entropy(prices: &[f64], m: usize, r: f64) -> f64 {
     let n = prices.len();
 
@@ -1961,6 +1964,7 @@ fn compute_phi(prices: &[f64], m: usize, r: f64) -> f64 {
 /// Dispatches to either Permutation Entropy (n < 500) or Approximate Entropy (n >= 500).
 /// Uses cache for Permutation Entropy results to avoid redundant computation on
 /// identical price sequences.
+#[inline]
 pub fn compute_entropy_adaptive(prices: &[f64]) -> f64 {
     let n = prices.len();
 
@@ -1993,6 +1997,7 @@ pub fn compute_entropy_adaptive(prices: &[f64]) -> f64 {
 /// Issue #96 Task #156: Enables lock-free fast-path by checking cache
 /// with read-lock only. Returns Some(entropy) if cached, None if miss
 /// or requires computation.
+#[inline]
 pub fn compute_entropy_adaptive_cached_readonly(
     prices: &[f64],
     cache: &EntropyCache,
@@ -2008,6 +2013,7 @@ pub fn compute_entropy_adaptive_cached_readonly(
     }
 }
 
+#[inline]
 pub fn compute_entropy_adaptive_cached(
     prices: &[f64],
     cache: &mut EntropyCache,
