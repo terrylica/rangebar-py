@@ -54,18 +54,28 @@ impl FixedPoint {
             .parse()
             .map_err(|_| FixedPointError::InvalidFormat)?;
 
-        // Parse fractional part (if exists)
+        // Parse fractional part (if exists) — zero-allocation path
+        // Issue #96: Avoid format!() String allocation per parse (2 allocs/trade eliminated)
         let fractional_part = if parts.len() == 2 {
             let frac_str = parts[1];
-            if frac_str.len() > 8 {
+            let frac_len = frac_str.len();
+            if frac_len > 8 {
                 return Err(FixedPointError::TooManyDecimals);
             }
 
-            // Pad with zeros to get exactly 8 decimals
-            let padded = format!("{:0<8}", frac_str);
-            padded
-                .parse::<i64>()
-                .map_err(|_| FixedPointError::InvalidFormat)?
+            // Parse digits directly and scale by 10^(8-len) instead of String padding
+            let frac_digits: i64 = frac_str
+                .parse()
+                .map_err(|_| FixedPointError::InvalidFormat)?;
+
+            // Multiply by appropriate power of 10 to get 8 decimal places
+            // e.g., "5" (1 digit) → 5 * 10^7 = 50_000_000
+            // e.g., "12345678" (8 digits) → 12345678 * 10^0 = 12345678
+            const POWERS: [i64; 9] = [
+                100_000_000, 10_000_000, 1_000_000, 100_000, 10_000,
+                1_000, 100, 10, 1,
+            ];
+            frac_digits * POWERS[frac_len]
         } else {
             0
         };
