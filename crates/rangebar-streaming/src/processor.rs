@@ -636,4 +636,120 @@ mod tests {
         assert_eq!(metrics.error_rate(), 0.005);
         assert_eq!(metrics.memory_usage_mb(), 50.0);
     }
+
+    // === Metrics Snapshot & Take-Once Tests (Issue #96 Task #114) ===
+
+    #[test]
+    fn test_streaming_metrics_summary_snapshot() {
+        let metrics = StreamingMetrics::default();
+        metrics.trades_processed.store(500, Ordering::Relaxed);
+        metrics.bars_generated.store(25, Ordering::Relaxed);
+        metrics.errors_total.store(3, Ordering::Relaxed);
+        metrics.backpressure_events.store(1, Ordering::Relaxed);
+        metrics.circuit_breaker_trips.store(0, Ordering::Relaxed);
+        metrics.memory_usage_bytes.store(42_000_000, Ordering::Relaxed);
+
+        let summary = metrics.summary();
+
+        assert_eq!(summary.trades_processed, 500);
+        assert_eq!(summary.bars_generated, 25);
+        assert_eq!(summary.errors_total, 3);
+        assert_eq!(summary.backpressure_events, 1);
+        assert_eq!(summary.circuit_breaker_trips, 0);
+        assert_eq!(summary.memory_usage_bytes, 42_000_000);
+    }
+
+    #[test]
+    fn test_memory_usage_mb_conversion() {
+        // Exact MB boundary
+        let m1 = MetricsSummary {
+            trades_processed: 0, bars_generated: 0, errors_total: 0,
+            backpressure_events: 0, circuit_breaker_trips: 0,
+            memory_usage_bytes: 1_000_000,
+        };
+        assert_eq!(m1.memory_usage_mb(), 1.0);
+
+        // Fractional MB
+        let m2 = MetricsSummary {
+            trades_processed: 0, bars_generated: 0, errors_total: 0,
+            backpressure_events: 0, circuit_breaker_trips: 0,
+            memory_usage_bytes: 1_500_000,
+        };
+        assert_eq!(m2.memory_usage_mb(), 1.5);
+
+        // Large value (4 GB)
+        let m3 = MetricsSummary {
+            trades_processed: 0, bars_generated: 0, errors_total: 0,
+            backpressure_events: 0, circuit_breaker_trips: 0,
+            memory_usage_bytes: 4_000_000_000,
+        };
+        assert_eq!(m3.memory_usage_mb(), 4000.0);
+    }
+
+    #[test]
+    fn test_trade_sender_take_once() {
+        let mut processor = StreamingProcessor::new(25).unwrap();
+
+        // First call returns Some
+        let sender = processor.trade_sender();
+        assert!(sender.is_some(), "First trade_sender() call must return Some");
+
+        // Second call returns None (already taken)
+        let sender2 = processor.trade_sender();
+        assert!(sender2.is_none(), "Second trade_sender() call must return None");
+    }
+
+    #[test]
+    fn test_bar_receiver_take_once() {
+        let mut processor = StreamingProcessor::new(25).unwrap();
+
+        // First call returns Some
+        let receiver = processor.bar_receiver();
+        assert!(receiver.is_some(), "First bar_receiver() call must return Some");
+
+        // Second call returns None (already taken)
+        let receiver2 = processor.bar_receiver();
+        assert!(receiver2.is_none(), "Second bar_receiver() call must return None");
+    }
+
+    #[test]
+    fn test_check_memory_usage_below_threshold() {
+        let processor = StreamingProcessor::new(25).unwrap();
+
+        // Default: memory_usage_bytes = 0, threshold = 100MB → within bounds
+        assert!(processor.check_memory_usage(), "Zero memory usage should be within threshold");
+    }
+
+    #[test]
+    fn test_check_memory_usage_above_threshold() {
+        let processor = StreamingProcessor::new(25).unwrap();
+
+        // Simulate exceeding threshold (100MB default)
+        processor.metrics.memory_usage_bytes.store(200_000_000, Ordering::Relaxed);
+        assert!(!processor.check_memory_usage(), "200MB should exceed 100MB threshold");
+    }
+
+    #[test]
+    fn test_get_final_incomplete_bar_empty() {
+        let mut processor = StreamingProcessor::new(25).unwrap();
+
+        // No trades processed → no incomplete bar
+        let bar = processor.get_final_incomplete_bar();
+        assert!(bar.is_none(), "No incomplete bar before any trades");
+    }
+
+    #[test]
+    fn test_bars_per_aggtrade_ratio() {
+        let metrics = MetricsSummary {
+            trades_processed: 200,
+            bars_generated: 10,
+            errors_total: 0,
+            backpressure_events: 0,
+            circuit_breaker_trips: 0,
+            memory_usage_bytes: 0,
+        };
+
+        assert_eq!(metrics.bars_per_aggtrade(), 0.05);
+        assert_eq!(metrics.error_rate(), 0.0);
+    }
 }
