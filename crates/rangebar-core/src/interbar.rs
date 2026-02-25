@@ -543,8 +543,17 @@ impl TradeHistory {
         } // Lock is released here
 
         // Issue #96 Task #167 Phase 2: Trend-guided binary search with lookahead hint
-        // Uses hint for O(1) boundary check; falls back to O(log n) VecDeque binary search.
-        // Task #20: Removed O(n) Vec collect that negated the predicted region optimization.
+        // Uses hint for O(1) boundary probe; falls back to O(log n) VecDeque binary search.
+        // Task #20: Removed O(n) Vec collect. Task #23: Deduplicated binary search branches.
+        #[inline(always)]
+        fn ts_binary_search(trades: &std::collections::VecDeque<TradeSnapshot>, bar_open_time: i64) -> usize {
+            match trades.binary_search_by(|trade| {
+                if trade.timestamp < bar_open_time { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }
+            }) {
+                Ok(idx) | Err(idx) => idx,
+            }
+        }
+
         let cutoff_idx = if let Some((should_check_higher, last_idx)) = self.compute_search_hint() {
             let check_region_end = if should_check_higher {
                 std::cmp::min(last_idx + (last_idx / 2), self.trades.len())
@@ -552,36 +561,17 @@ impl TradeHistory {
                 last_idx
             };
 
-            // O(1) boundary probe: if all trades in predicted region are before bar_open_time,
-            // the cutoff is at least check_region_end. Verify with full binary search.
+            // O(1) boundary probe: if all trades are before bar_open_time, skip binary search
             if check_region_end > 0
                 && check_region_end == self.trades.len()
                 && self.trades[check_region_end - 1].timestamp < bar_open_time
             {
-                // All trades are before bar_open_time — cutoff is the full length
                 check_region_end
             } else {
-                // Binary search the full VecDeque — O(log n), no allocation
-                match self.trades.binary_search_by(|trade| {
-                    if trade.timestamp < bar_open_time {
-                        Ordering::Less
-                    } else {
-                        Ordering::Greater
-                    }
-                }) {
-                    Ok(idx) | Err(idx) => idx,
-                }
+                ts_binary_search(&self.trades, bar_open_time)
             }
         } else {
-            match self.trades.binary_search_by(|trade| {
-                if trade.timestamp < bar_open_time {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                }
-            }) {
-                Ok(idx) | Err(idx) => idx,
-            }
+            ts_binary_search(&self.trades, bar_open_time)
         };
 
         // Issue #96 Task #163: Update cache with new result
