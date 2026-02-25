@@ -597,8 +597,9 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
     }
 
     let n_points = log_scales.len() as f64;
-    let x_mean: f64 = log_scales.iter().sum::<f64>() / n_points;
-    let y_mean: f64 = log_fluctuations.iter().sum::<f64>() / n_points;
+    let inv_n_points = 1.0 / n_points;
+    let x_mean: f64 = log_scales.iter().sum::<f64>() * inv_n_points;
+    let y_mean: f64 = log_fluctuations.iter().sum::<f64>() * inv_n_points;
 
     let mut xy_sum = 0.0;
     let mut xx_sum = 0.0;

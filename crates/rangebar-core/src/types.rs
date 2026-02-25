@@ -591,9 +591,19 @@ impl RangeBar {
             trade_count // Instant bar = all trades at once
         };
 
-        // Issue #96: Pre-compute trade_count reciprocal (reused in features 7 and 9)
+        // Issue #96: Pre-compute reciprocals (reused in features 7, 9, 10)
         let trade_count_recip = if trade_count > f64::EPSILON {
             1.0 / trade_count
+        } else {
+            0.0
+        };
+        let agg_count_recip = if agg_count > f64::EPSILON {
+            1.0 / agg_count
+        } else {
+            0.0
+        };
+        let total_turn_recip = if total_turn.abs() > f64::EPSILON {
+            1.0 / total_turn
         } else {
             0.0
         };
@@ -612,19 +622,14 @@ impl RangeBar {
         };
 
         // 9. Aggregation Density (Issue #32 rename: was aggregation_efficiency)
-        // Measures average trades per AggTrade record (higher = more fragmented)
-        self.aggregation_density_f64 = if agg_count > f64::EPSILON {
-            trade_count / agg_count
+        self.aggregation_density_f64 = if agg_count_recip > 0.0 {
+            trade_count * agg_count_recip
         } else {
             1.0
         };
 
         // 10. Turnover Imbalance (dollar-weighted OFI) [-1, 1]
-        self.turnover_imbalance = if total_turn.abs() > f64::EPSILON {
-            (buy_turn - sell_turn) / total_turn
-        } else {
-            0.0
-        };
+        self.turnover_imbalance = (buy_turn - sell_turn) * total_turn_recip;
     }
 
     /// Check if price breaches the range thresholds
