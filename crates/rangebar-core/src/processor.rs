@@ -365,6 +365,8 @@ impl RangeBarProcessor {
     /// Issue #96 Task #78: Accept borrowed AggTrade to eliminate clones in fan-out loops
     /// Streaming pipelines (4+ thresholds) were cloning ~57 byte trades per processor.
     /// Signature change to &AggTrade eliminates 4-8x unnecessary allocations.
+    /// Issue #96 Task #84: #[inline] — main hot-path entry point called on every trade
+    #[inline]
     pub fn process_single_trade(
         &mut self,
         trade: &AggTrade,

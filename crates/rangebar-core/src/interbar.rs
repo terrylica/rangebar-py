@@ -706,6 +706,8 @@ impl TradeHistory {
     }
 
     /// Compute Tier 1 features (7 features, min 1 trade)
+    /// Issue #96 Task #85: #[inline] — called once per bar from compute_features()
+    #[inline]
     fn compute_tier1_features(&self, lookback: &[&TradeSnapshot], features: &mut InterBarFeatures) {
         let n = lookback.len();
         if n == 0 {
@@ -764,8 +766,9 @@ impl TradeHistory {
         });
 
         // Duration
-        let first_ts = lookback.first().unwrap().timestamp;
-        let last_ts = lookback.last().unwrap().timestamp;
+        // Issue #96 Task #86: Direct indexing — n>0 guaranteed by early return above
+        let first_ts = lookback[0].timestamp;
+        let last_ts = lookback[n - 1].timestamp;
         let duration_us = last_ts - first_ts;
         features.lookback_duration_us = Some(duration_us);
 
@@ -802,6 +805,8 @@ impl TradeHistory {
     /// Uses pre-computed cache passed from compute_features() to avoid
     /// redundant float conversions across multiple feature functions.
     /// Issue #115: Refactored to return InterBarFeatures for rayon parallelization support
+    /// Issue #96 Task #85: #[inline] — called once per bar from compute_features()
+    #[inline]
     fn compute_tier2_features(
         &self,
         lookback: &[&TradeSnapshot],
@@ -869,6 +874,8 @@ impl TradeHistory {
     /// Issue #96 Task #10: SmallVec optimization for price allocation (typical 100-500 trades)
     /// Issue #96 Task #99: Reuses memoized float conversions from shared cache
     /// Issue #115: Refactored to return InterBarFeatures for rayon parallelization support
+    /// Issue #96 Task #85: #[inline] — called once per bar from compute_features()
+    #[inline]
     fn compute_tier3_features(
         &self,
         lookback: &[&TradeSnapshot],
