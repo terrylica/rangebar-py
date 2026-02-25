@@ -727,8 +727,9 @@ impl TradeHistory {
         const TIER2_PARALLEL_THRESHOLD_BASE: usize = 80;   // Tier 2 parallelizes at 80+ trades
         const TIER3_PARALLEL_THRESHOLD_BASE: usize = 150;  // Tier 3 parallelizes at 150+ trades
 
-        // Adjust thresholds based on CPU count (avoid oversubscription)
-        let cpu_count = num_cpus::get();
+        // Task #18: Cache CPU count to avoid repeated syscall per bar
+        static CPU_COUNT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+        let cpu_count = *CPU_COUNT.get_or_init(num_cpus::get);
         let tier2_threshold = if cpu_count == 1 {
             usize::MAX  // Never parallelize on single-core
         } else {
