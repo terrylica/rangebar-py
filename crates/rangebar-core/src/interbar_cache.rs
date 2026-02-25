@@ -274,4 +274,30 @@ mod tests {
         // Should have same trade count; hash may or may not match depending on tolerance
         assert_eq!(key1.trade_count, key2.trade_count);
     }
+
+    #[test]
+    fn test_cache_eviction_beyond_capacity() {
+        let capacity = 16u64;
+        let cache = InterBarFeatureCache::with_capacity(capacity);
+
+        // Insert 4x capacity entries with repeated access to early entries
+        let total = (capacity * 4) as usize;
+        for i in 0..total {
+            let key = InterBarCacheKey {
+                trade_count: i,
+                window_hash: i as u64 * 7919, // distinct hashes
+            };
+            cache.insert(key, InterBarFeatures::default());
+        }
+
+        // Moka eviction is async — sync pending tasks
+        cache.cache.run_pending_tasks();
+
+        let (count, _) = cache.stats();
+        assert!(
+            count <= capacity,
+            "cache count ({count}) should not exceed capacity ({capacity})"
+        );
+        assert!(count > 0, "cache should not be empty after inserts");
+    }
 }
