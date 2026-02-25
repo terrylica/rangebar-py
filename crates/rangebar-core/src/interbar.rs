@@ -454,19 +454,9 @@ impl TradeHistory {
             }
         } // Lock is released here
 
-        // Cache miss: perform quick binary search to find cutoff
-        // We only need to know if cutoff_idx > 0, so we can short-circuit
-        use std::cmp::Ordering;
-
-        let idx = match self.trades.binary_search_by(|trade| {
-            if trade.timestamp < bar_open_time {
-                Ordering::Less
-            } else {
-                Ordering::Greater
-            }
-        }) {
-            Ok(idx) | Err(idx) => idx,
-        };
+        // Cache miss: use partition_point for cleaner cutoff lookup
+        // Issue #96 Task #48: partition_point avoids Ok/Err unwrapping overhead
+        let idx = self.trades.partition_point(|trade| trade.timestamp < bar_open_time);
         *self.last_binary_search_cache.lock() = Some((bar_open_time, idx));
         idx > 0
     }
@@ -522,14 +512,10 @@ impl TradeHistory {
 
         // Issue #96 Task #167 Phase 2: Trend-guided binary search with lookahead hint
         // Uses hint for O(1) boundary probe; falls back to O(log n) VecDeque binary search.
-        // Task #20: Removed O(n) Vec collect. Task #23: Deduplicated binary search branches.
+        // Issue #96 Task #48: partition_point replaces binary_search_by + Ok/Err collapse
         #[inline(always)]
-        fn ts_binary_search(trades: &std::collections::VecDeque<TradeSnapshot>, bar_open_time: i64) -> usize {
-            match trades.binary_search_by(|trade| {
-                if trade.timestamp < bar_open_time { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }
-            }) {
-                Ok(idx) | Err(idx) => idx,
-            }
+        fn ts_partition_point(trades: &std::collections::VecDeque<TradeSnapshot>, bar_open_time: i64) -> usize {
+            trades.partition_point(|trade| trade.timestamp < bar_open_time)
         }
 
         let cutoff_idx = if let Some((should_check_higher, last_idx)) = self.compute_search_hint() {
@@ -546,10 +532,10 @@ impl TradeHistory {
             {
                 check_region_end
             } else {
-                ts_binary_search(&self.trades, bar_open_time)
+                ts_partition_point(&self.trades, bar_open_time)
             }
         } else {
-            ts_binary_search(&self.trades, bar_open_time)
+            ts_partition_point(&self.trades, bar_open_time)
         };
 
         // Issue #96 Task #163: Update cache with new result
