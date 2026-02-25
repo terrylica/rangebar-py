@@ -778,11 +778,9 @@ def populate_cache_resumable(
                 )
 
                 # Normalize return type for consistent downstream handling
-                if return_format == "arrow":
-                    import polars as pl
-                    bars_df = bars_result  # Already Polars
-                else:
-                    bars_df = bars_result  # Already Pandas
+                import polars as pl
+
+                bars_df = bars_result
 
                 # Issue #98: Plugin feature enrichment (post-Rust, pre-cache)
                 # Plugins operate on Pandas, so convert if needed for enrichment
