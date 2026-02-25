@@ -2527,4 +2527,115 @@ mod tests {
             "inclusive ({}) must be >= strict ({})", bars_incl.len(), bars_strict.len()
         );
     }
+
+    // === Issue #96: Untested public method coverage ===
+
+    #[test]
+    fn test_anomaly_summary_default_no_anomalies() {
+        let processor = RangeBarProcessor::new(250).unwrap();
+        let summary = processor.anomaly_summary();
+        assert_eq!(summary.gaps_detected, 0);
+        assert_eq!(summary.overlaps_detected, 0);
+        assert_eq!(summary.timestamp_anomalies, 0);
+        assert!(!summary.has_anomalies());
+        assert_eq!(summary.total(), 0);
+    }
+
+    #[test]
+    fn test_anomaly_summary_preserved_through_checkpoint() {
+        // Process some trades, create checkpoint, restore, verify anomaly state
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+        let trades = scenarios::single_breach_sequence(250);
+        processor.process_agg_trade_records(&trades).unwrap();
+
+        let checkpoint = processor.create_checkpoint("TEST");
+        let restored = RangeBarProcessor::from_checkpoint(checkpoint).unwrap();
+        let summary = restored.anomaly_summary();
+        // Default processor has no anomalies; checkpoint preserves that
+        assert_eq!(summary.total(), 0);
+    }
+
+    #[test]
+    fn test_anomaly_summary_from_checkpoint_with_anomalies() {
+        // Deserialize a checkpoint that has anomaly data
+        let json = r#"{
+            "version": 3,
+            "symbol": "TESTUSDT",
+            "threshold_decimal_bps": 250,
+            "prevent_same_timestamp_close": true,
+            "defer_open": false,
+            "current_bar": null,
+            "thresholds": null,
+            "last_timestamp_us": 1000000,
+            "last_trade_id": 5,
+            "price_hash": 0,
+            "anomaly_summary": {"gaps_detected": 3, "overlaps_detected": 1, "timestamp_anomalies": 2}
+        }"#;
+        let checkpoint: crate::checkpoint::Checkpoint = serde_json::from_str(json).unwrap();
+        let processor = RangeBarProcessor::from_checkpoint(checkpoint).unwrap();
+        let summary = processor.anomaly_summary();
+        assert_eq!(summary.gaps_detected, 3);
+        assert_eq!(summary.overlaps_detected, 1);
+        assert_eq!(summary.timestamp_anomalies, 2);
+        assert!(summary.has_anomalies());
+        assert_eq!(summary.total(), 6);
+    }
+
+    #[test]
+    fn test_with_inter_bar_config_and_cache_shared() {
+        use crate::entropy_cache_global::get_global_entropy_cache;
+        use crate::interbar::LookbackMode;
+
+        let global_cache = get_global_entropy_cache();
+        let config = InterBarConfig {
+            lookback_mode: LookbackMode::FixedCount(100),
+            compute_tier2: true,
+            compute_tier3: true,
+        };
+
+        // Two processors sharing the same global cache
+        let p1 = RangeBarProcessor::new(250).unwrap()
+            .with_inter_bar_config_and_cache(config.clone(), Some(global_cache.clone()));
+        let p2 = RangeBarProcessor::new(500).unwrap()
+            .with_inter_bar_config_and_cache(config, Some(global_cache));
+
+        assert!(p1.inter_bar_enabled());
+        assert!(p2.inter_bar_enabled());
+    }
+
+    #[test]
+    fn test_set_inter_bar_config_with_cache_after_checkpoint() {
+        use crate::entropy_cache_global::get_global_entropy_cache;
+        use crate::interbar::LookbackMode;
+
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+        let trades = scenarios::single_breach_sequence(250);
+        processor.process_agg_trade_records(&trades).unwrap();
+
+        // Simulate checkpoint round-trip (inter-bar config not preserved)
+        let checkpoint = processor.create_checkpoint("TEST");
+        let mut restored = RangeBarProcessor::from_checkpoint(checkpoint).unwrap();
+        assert!(!restored.inter_bar_enabled(), "Checkpoint does not preserve inter-bar config");
+
+        // Re-enable with shared cache
+        let global_cache = get_global_entropy_cache();
+        restored.set_inter_bar_config_with_cache(
+            InterBarConfig {
+                lookback_mode: LookbackMode::FixedCount(100),
+                compute_tier2: false,
+                compute_tier3: false,
+            },
+            Some(global_cache),
+        );
+        assert!(restored.inter_bar_enabled(), "set_inter_bar_config_with_cache should re-enable");
+    }
+
+    #[test]
+    fn test_threshold_decimal_bps_getter() {
+        let p250 = RangeBarProcessor::new(250).unwrap();
+        assert_eq!(p250.threshold_decimal_bps(), 250);
+
+        let p1000 = RangeBarProcessor::new(1000).unwrap();
+        assert_eq!(p1000.threshold_decimal_bps(), 1000);
+    }
 }
