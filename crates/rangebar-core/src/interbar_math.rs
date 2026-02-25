@@ -143,11 +143,12 @@ pub fn extract_lookback_cache(lookback: &[&TradeSnapshot]) -> LookbackCache {
 /// ```
 #[inline]
 pub fn accumulate_buy_sell_branchless(trades: &[&TradeSnapshot]) -> (f64, f64) {
+    let n = trades.len();
     let mut buy_vol = 0.0;
     let mut sell_vol = 0.0;
 
     // Process pairs for ILP + branchless accumulation
-    let pairs = trades.len() / 2;
+    let pairs = n / 2;
     for i in 0..pairs {
         let t1 = &trades[i * 2];
         let t2 = &trades[i * 2 + 1];
@@ -172,8 +173,8 @@ pub fn accumulate_buy_sell_branchless(trades: &[&TradeSnapshot]) -> (f64, f64) {
     }
 
     // Scalar remainder for odd-length arrays
-    if trades.len() % 2 == 1 {
-        let t = &trades[trades.len() - 1];
+    if n % 2 == 1 {
+        let t = &trades[n - 1];
         let vol = t.volume.to_f64();
         let is_buyer_mask = t.is_buyer_maker as u32 as f64;
 
@@ -203,12 +204,13 @@ pub fn accumulate_buy_sell_branchless(trades: &[&TradeSnapshot]) -> (f64, f64) {
 /// ```
 #[inline]
 pub fn compute_ofi_branchless(trades: &[&TradeSnapshot]) -> f64 {
+    let n = trades.len();
     let mut buy_vol = 0.0;
     let mut sell_vol = 0.0;
 
     // Process pairs for ILP + branchless accumulation
     // Each pair iteration has independent operations that can execute in parallel
-    let pairs = trades.len() / 2;
+    let pairs = n / 2;
     for i in 0..pairs {
         let t1 = &trades[i * 2];
         let t2 = &trades[i * 2 + 1];
@@ -230,8 +232,8 @@ pub fn compute_ofi_branchless(trades: &[&TradeSnapshot]) -> f64 {
     }
 
     // Scalar remainder for odd-length arrays
-    if trades.len() % 2 == 1 {
-        let t = &trades[trades.len() - 1];
+    if n % 2 == 1 {
+        let t = &trades[n - 1];
         let vol = t.volume.to_f64();
         let mask = t.is_buyer_maker as u32 as f64;
 
@@ -865,7 +867,7 @@ fn compute_kyle_lambda_scalar(lookback: &[&TradeSnapshot]) -> f64 {
         let mut sell_vol = 0.0;
 
         // Process pairs of trades for ILP (2 independent condition checks per iteration)
-        let pairs = lookback.len() / 2;
+        let pairs = n / 2;
         for i in 0..pairs {
             let t1 = &lookback[i * 2];
             let t2 = &lookback[i * 2 + 1];
@@ -888,8 +890,8 @@ fn compute_kyle_lambda_scalar(lookback: &[&TradeSnapshot]) -> f64 {
         }
 
         // Handle odd trade if present
-        if lookback.len() % 2 == 1 {
-            let t = &lookback[lookback.len() - 1];
+        if n % 2 == 1 {
+            let t = &lookback[n - 1];
             let vol = t.volume.to_f64();
             if t.is_buyer_maker {
                 sell_vol += vol;
@@ -902,20 +904,21 @@ fn compute_kyle_lambda_scalar(lookback: &[&TradeSnapshot]) -> f64 {
     };
 
     let total_vol = buy_vol + sell_vol;
+    let first_price_abs = first_price.abs();
 
     // Issue #96 Task #65: Coarse bounds check for extreme imbalance (early-exit optimization)
     // If one volume dominates completely (other volume ~= 0), imbalance is extreme (|imbalance| >= 1.0 - eps)
     // and we can return early without expensive normalization
     if buy_vol >= total_vol - f64::EPSILON {
         // All buys: normalized_imbalance ≈ 1.0
-        return if first_price.abs() > f64::EPSILON {
+        return if first_price_abs > f64::EPSILON {
             (last_price - first_price) / first_price
         } else {
             0.0
         };
     } else if sell_vol >= total_vol - f64::EPSILON {
         // All sells: normalized_imbalance ≈ -1.0
-        return if first_price.abs() > f64::EPSILON {
+        return if first_price_abs > f64::EPSILON {
             -((last_price - first_price) / first_price)
         } else {
             0.0
@@ -939,8 +942,6 @@ fn compute_kyle_lambda_scalar(lookback: &[&TradeSnapshot]) -> f64 {
     // Issue #96 Task #203: Branchless epsilon handling using masks
     // Avoids branch misprediction penalties by checking preconditions once
     // Pattern: similar to Task #200 (OFI branchless), mask-based arithmetic
-    let first_price_abs = first_price.abs();
-
     // Branchless precondition checks: convert booleans to 0.0/1.0 masks
     let imbalance_valid = 1.0;  // Already verified imbalance_abs > f64::EPSILON above
     let price_valid = if first_price_abs > f64::EPSILON { 1.0 } else { 0.0 };
@@ -1136,7 +1137,6 @@ pub fn compute_kaufman_er(prices: &[f64]) -> f64 {
     // Process 4 price differences simultaneously, then horizontal sum
     use wide::f64x4;
 
-    let n = prices.len();
     let mut volatility_vec = f64x4::splat(0.0);
 
     // SIMD loop: process 4 differences per iteration
