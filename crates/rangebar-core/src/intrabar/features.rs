@@ -171,10 +171,12 @@ pub fn compute_intra_bar_features_with_scratch(
         return intra_bar_invalid_price(n);
     }
     // Reuse scratch buffer for normalized prices (Issue #96 Task #173)
+    // Issue #96: Pre-compute reciprocal to replace per-element division with multiplication
+    let inv_first_price = 1.0 / first_price;
     scratch_volumes.clear();
     scratch_volumes.reserve(n);
     for &p in scratch_prices.iter() {
-        scratch_volumes.push(p / first_price);
+        scratch_volumes.push(p * inv_first_price);
     }
     let normalized = scratch_volumes;  // Rebind for clarity
 
