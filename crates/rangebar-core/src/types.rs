@@ -528,12 +528,16 @@ impl RangeBar {
         // 1. Duration (already in microseconds)
         self.duration_us = duration_us_raw;
 
-        // 2. Order Flow Imbalance [-1, 1]
-        self.ofi = if total_vol > f64::EPSILON {
-            (buy_vol - sell_vol) / total_vol
+        // Pre-compute reciprocals for division elimination (Issue #96: reciprocal memoization)
+        let total_vol_recip = if total_vol > f64::EPSILON {
+            1.0 / total_vol
         } else {
             0.0
         };
+
+        // 2. Order Flow Imbalance [-1, 1]
+        let imbalance = buy_vol - sell_vol;
+        self.ofi = imbalance * total_vol_recip;
 
         // 3. VWAP-Close Deviation (normalized by price range)
         let range = high - low;
@@ -554,15 +558,12 @@ impl RangeBar {
         // Formula: ((close - open) / open) / ((buy_vol - sell_vol) / total_vol)
         // Creates dimensionally consistent ratio: percentage return per unit of normalized imbalance
         // Reference: Kyle (1985), normalized for cross-asset comparability
-        let imbalance = buy_vol - sell_vol;
-        let normalized_imbalance = if total_vol > f64::EPSILON {
-            imbalance / total_vol
-        } else {
-            0.0
-        };
+        let normalized_imbalance = imbalance * total_vol_recip;
+        let abs_normalized_imbalance = normalized_imbalance.abs();
+        let abs_open = open.abs();
         self.kyle_lambda_proxy =
-            if normalized_imbalance.abs() > f64::EPSILON && open.abs() > f64::EPSILON {
-                ((close - open) / open) / normalized_imbalance
+            if abs_normalized_imbalance > f64::EPSILON && abs_open > f64::EPSILON {
+                ((close - open) / abs_open) / normalized_imbalance
             } else {
                 0.0
             };
