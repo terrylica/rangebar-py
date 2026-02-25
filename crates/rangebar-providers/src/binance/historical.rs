@@ -896,4 +896,55 @@ mod tests {
         let end = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
         let _ = IntraDayChunkIterator::new(loader, start, end, 25);
     }
+
+    // === Issue #96: detect_csv_headers + CsvAggTrade conversion tests ===
+
+    #[test]
+    fn test_detect_csv_headers_with_headers() {
+        assert!(detect_csv_headers("agg_trade_id,price,quantity,first_trade_id\n1,50000,1.0,1"));
+        assert!(detect_csv_headers("timestamp,is_buyer_maker\n123,true"));
+    }
+
+    #[test]
+    fn test_detect_csv_headers_without_headers() {
+        assert!(!detect_csv_headers("12345,50000.0,1.5,100,102,1640995200000,true,true"));
+        assert!(!detect_csv_headers(""));
+    }
+
+    #[test]
+    fn test_csv_agg_trade_to_agg_trade() {
+        let csv = CsvAggTrade(12345, 50000.12345678, 1.5, 100, 102, 1640995200000, true);
+        let trade: AggTrade = csv.into();
+        assert_eq!(trade.agg_trade_id, 12345);
+        assert_eq!(trade.first_trade_id, 100);
+        assert_eq!(trade.last_trade_id, 102);
+        assert_eq!(trade.timestamp, 1640995200000);
+        assert!(trade.is_buyer_maker);
+        assert!(trade.price.to_f64() > 49999.0);
+        assert!(trade.volume.to_f64() > 1.0);
+    }
+
+    #[test]
+    fn test_rest_agg_trade_inline_conversion() {
+        let rest = RestAggTrade {
+            agg_trade_id: 999, price: "50000.0".to_string(), quantity: "2.5".to_string(),
+            first_trade_id: 10, last_trade_id: 12, trade_time: 1700000000000, is_buyer_maker: false,
+        };
+        // Mirrors the inline conversion pattern used in fetch_recent_trades()
+        let trade = AggTrade {
+            agg_trade_id: rest.agg_trade_id,
+            price: FixedPoint::from_str(&rest.price).unwrap_or(FixedPoint(0)),
+            volume: FixedPoint::from_str(&rest.quantity).unwrap_or(FixedPoint(0)),
+            first_trade_id: rest.first_trade_id,
+            last_trade_id: rest.last_trade_id,
+            timestamp: rest.trade_time * 1000,
+            is_buyer_maker: rest.is_buyer_maker,
+            is_best_match: None,
+        };
+        assert_eq!(trade.agg_trade_id, 999);
+        assert!(!trade.is_buyer_maker);
+        assert_eq!(trade.timestamp, 1700000000000 * 1000);
+        assert!(trade.price.to_f64() > 49999.0);
+        assert!(trade.volume.to_f64() > 2.0);
+    }
 }
