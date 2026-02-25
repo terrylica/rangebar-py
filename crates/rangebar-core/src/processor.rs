@@ -1053,6 +1053,7 @@ struct RangeBarState {
 impl RangeBarState {
     /// Create new range bar state from opening trade
     /// Issue #96 Task #98: Accept pre-computed threshold_ratio for fast threshold calculation
+    #[inline]
     fn new(trade: &AggTrade, threshold_ratio: i64) -> Self {
         let bar = RangeBar::new(trade);
 
@@ -1073,6 +1074,7 @@ impl RangeBarState {
 
     /// Create new range bar state with intra-bar feature accumulation
     /// Issue #96 Task #98: Accept pre-computed threshold_ratio for fast threshold calculation
+    #[inline]
     fn new_with_trade_accumulation(trade: &AggTrade, threshold_ratio: i64) -> Self {
         let bar = RangeBar::new(trade);
 

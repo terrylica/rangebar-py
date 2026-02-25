@@ -588,12 +588,15 @@ impl RangeBar {
             trade_count // Instant bar = all trades at once
         };
 
-        // 7. Volume per Trade (average trade size)
-        self.volume_per_trade = if trade_count > f64::EPSILON {
-            volume / trade_count
+        // Issue #96: Pre-compute trade_count reciprocal (reused in features 7 and 9)
+        let trade_count_recip = if trade_count > f64::EPSILON {
+            1.0 / trade_count
         } else {
             0.0
         };
+
+        // 7. Volume per Trade (average trade size)
+        self.volume_per_trade = volume * trade_count_recip;
 
         // 8. Aggression Ratio [0, 100] (capped)
         let sell_count = self.sell_trade_count as f64;
