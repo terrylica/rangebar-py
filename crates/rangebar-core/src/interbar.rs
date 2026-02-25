@@ -537,7 +537,12 @@ impl TradeHistory {
                         result.push(&self.trades[1]);
                         return result;
                     }
-                    return self.trades.iter().take(cutoff_idx).collect();
+                    // Task #24: Manual loop instead of .collect() to use SmallVec inline buffer
+                    let mut result = SmallVec::new();
+                    for i in 0..cutoff_idx {
+                        result.push(&self.trades[i]);
+                    }
+                    return result;
                 }
             }
         } // Lock is released here
