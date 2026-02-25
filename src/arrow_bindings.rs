@@ -84,12 +84,6 @@ fn get_f64_required(dict: &Bound<PyDict>, key: &str, index: usize) -> PyResult<f
         .extract()
 }
 
-#[inline]
-fn get_i64_required(dict: &Bound<PyDict>, key: &str, index: usize) -> PyResult<i64> {
-    dict.get_item(key)?
-        .ok_or_else(|| PyKeyError::new_err(format!("Bar {index}: missing '{key}'")))?
-        .extract()
-}
 
 #[inline]
 fn get_u32_optional(dict: &Bound<PyDict>, key: &str, default: u32) -> PyResult<u32> {

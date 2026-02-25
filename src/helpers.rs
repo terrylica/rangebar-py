@@ -15,7 +15,7 @@ pub(crate) fn f64_to_fixed_point(value: f64) -> FixedPoint {
 
 /// Convert Python dict to Rust `AggTrade`
 pub(crate) fn dict_to_agg_trade(
-    py: Python,
+    _py: Python,
     trade_dict: &Bound<PyDict>,
     index: usize,
 ) -> PyResult<AggTrade> {
