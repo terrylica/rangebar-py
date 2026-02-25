@@ -8,6 +8,7 @@
 #![cfg(feature = "simd-burstiness")]
 
 use crate::interbar_types::TradeSnapshot;
+use smallvec::SmallVec;
 
 /// SIMD-accelerated burstiness computation with f64x2 vectors.
 ///
@@ -44,14 +45,17 @@ pub(crate) fn compute_burstiness_simd(lookback: &[&TradeSnapshot]) -> f64 {
 
 /// Compute inter-arrival times using SIMD vectorization.
 /// Processes timestamp differences two at a time with f64x2.
+/// Task #17: SmallVec<[f64; 64]> avoids heap allocation for typical lookback windows (2-50 trades)
 #[inline]
-fn compute_inter_arrivals_simd(lookback: &[&TradeSnapshot]) -> Vec<f64> {
+fn compute_inter_arrivals_simd(lookback: &[&TradeSnapshot]) -> SmallVec<[f64; 64]> {
     let n = lookback.len();
     if n < 2 {
-        return vec![];
+        return SmallVec::new();
     }
 
-    let mut inter_arrivals = vec![0.0; n - 1];
+    let mut inter_arrivals = SmallVec::<[f64; 64]>::with_capacity(n - 1);
+    // SAFETY: We fill all n-1 elements below. Using set_len avoids redundant zero-init.
+    unsafe { inter_arrivals.set_len(n - 1); }
 
     // Process pairs of inter-arrivals
     let simd_chunks = (n - 1) / 2;
