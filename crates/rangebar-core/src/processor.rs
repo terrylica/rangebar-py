@@ -1097,6 +1097,9 @@ impl RangeBarState {
     ///
     /// Issue #96 Task #44: Only accumulates if intra-bar features are enabled,
     /// avoiding unnecessary clones for the majority of use cases where they're disabled.
+    /// Issue #96 Task #79: #[inline] allows compiler to fold invariant branch
+    /// (include_intra is constant for processor lifetime)
+    #[inline]
     fn accumulate_trade(&mut self, trade: &AggTrade, include_intra: bool) {
         if include_intra {
             self.accumulated_trades.push(trade.clone());

@@ -738,6 +738,143 @@ fn test_volume_conservation_with_i128() {
     );
 }
 
+// === Issue #96 Task #81: update_with_trade() invariant tests ===
+
+#[test]
+fn test_high_only_extends_upward() {
+    // High must only increase, never decrease — even when later trades are lower
+    let t1 = test_utils::create_test_agg_trade_with_range(1, "50000.0", "1.0", 1000, 10, 10, false);
+    let mut bar = RangeBar::new(&t1);
+
+    let t2 = test_utils::create_test_agg_trade_with_range(2, "50200.0", "1.0", 2000, 20, 20, true);
+    bar.update_with_trade(&t2);
+    assert_eq!(bar.high.to_string(), "50200.00000000");
+
+    // Lower trade should NOT reduce high
+    let t3 = test_utils::create_test_agg_trade_with_range(3, "49800.0", "1.0", 3000, 30, 30, false);
+    bar.update_with_trade(&t3);
+    assert_eq!(bar.high.to_string(), "50200.00000000", "High must not decrease after lower trade");
+}
+
+#[test]
+fn test_low_only_extends_downward() {
+    // Low must only decrease, never increase — even when later trades are higher
+    let t1 = test_utils::create_test_agg_trade_with_range(1, "50000.0", "1.0", 1000, 10, 10, false);
+    let mut bar = RangeBar::new(&t1);
+
+    let t2 = test_utils::create_test_agg_trade_with_range(2, "49800.0", "1.0", 2000, 20, 20, true);
+    bar.update_with_trade(&t2);
+    assert_eq!(bar.low.to_string(), "49800.00000000");
+
+    // Higher trade should NOT raise low
+    let t3 = test_utils::create_test_agg_trade_with_range(3, "50200.0", "1.0", 3000, 30, 30, false);
+    bar.update_with_trade(&t3);
+    assert_eq!(bar.low.to_string(), "49800.00000000", "Low must not increase after higher trade");
+}
+
+#[test]
+fn test_close_tracks_latest_trade() {
+    // Close and close_time must always reflect the most recent trade
+    let t1 = test_utils::create_test_agg_trade_with_range(1, "50000.0", "1.0", 1000, 10, 10, false);
+    let mut bar = RangeBar::new(&t1);
+    assert_eq!(bar.close.to_string(), "50000.00000000");
+    assert_eq!(bar.close_time, 1000);
+
+    let t2 = test_utils::create_test_agg_trade_with_range(2, "50100.0", "1.0", 2000, 20, 20, true);
+    bar.update_with_trade(&t2);
+    assert_eq!(bar.close.to_string(), "50100.00000000");
+    assert_eq!(bar.close_time, 2000);
+
+    let t3 = test_utils::create_test_agg_trade_with_range(3, "49900.0", "1.0", 3000, 30, 30, false);
+    bar.update_with_trade(&t3);
+    assert_eq!(bar.close.to_string(), "49900.00000000");
+    assert_eq!(bar.close_time, 3000);
+}
+
+#[test]
+fn test_open_never_changes() {
+    // Open price and open_time are set at construction and must never change
+    let t1 = test_utils::create_test_agg_trade_with_range(1, "50000.0", "1.0", 1000, 10, 10, false);
+    let mut bar = RangeBar::new(&t1);
+    let original_open = bar.open;
+    let original_open_time = bar.open_time;
+
+    for i in 2..=5 {
+        let t = test_utils::create_test_agg_trade_with_range(
+            i, &format!("{:.1}", 49000.0 + (i as f64) * 500.0), "1.0",
+            1000 + i * 1000, i * 10, i * 10, i % 2 == 0,
+        );
+        bar.update_with_trade(&t);
+        assert_eq!(bar.open, original_open, "Open must never change after trade {i}");
+        assert_eq!(bar.open_time, original_open_time, "Open time must never change after trade {i}");
+    }
+}
+
+#[test]
+fn test_volume_conservation_buy_sell() {
+    // Invariant: buy_volume + sell_volume == total volume (exact, not approximate)
+    let t1 = test_utils::create_test_agg_trade_with_range(1, "50000.0", "2.5", 1000, 10, 12, false);
+    let mut bar = RangeBar::new(&t1);
+
+    let t2 = test_utils::create_test_agg_trade_with_range(2, "50100.0", "3.7", 2000, 20, 22, true);
+    bar.update_with_trade(&t2);
+
+    let t3 = test_utils::create_test_agg_trade_with_range(3, "49900.0", "1.3", 3000, 30, 30, false);
+    bar.update_with_trade(&t3);
+
+    assert_eq!(
+        bar.buy_volume + bar.sell_volume, bar.volume,
+        "buy_vol ({}) + sell_vol ({}) != total ({})", bar.buy_volume, bar.sell_volume, bar.volume
+    );
+}
+
+#[test]
+fn test_trade_count_consistency() {
+    // Invariant: buy_trade_count + sell_trade_count == individual_trade_count
+    let t1 = test_utils::create_test_agg_trade_with_range(1, "50000.0", "1.0", 1000, 10, 14, false); // 5 individual
+    let mut bar = RangeBar::new(&t1);
+
+    let t2 = test_utils::create_test_agg_trade_with_range(2, "50100.0", "1.0", 2000, 20, 22, true); // 3 individual
+    bar.update_with_trade(&t2);
+
+    assert_eq!(bar.individual_trade_count, 8, "5 + 3 = 8 individual trades");
+    assert_eq!(bar.buy_trade_count + bar.sell_trade_count, bar.individual_trade_count,
+        "buy_count ({}) + sell_count ({}) != individual ({})",
+        bar.buy_trade_count, bar.sell_trade_count, bar.individual_trade_count);
+    assert_eq!(bar.agg_record_count, 2);
+}
+
+#[test]
+fn test_vwap_between_min_max_price() {
+    // VWAP must always be between the lowest and highest trade prices
+    let t1 = test_utils::create_test_agg_trade_with_range(1, "49000.0", "1.0", 1000, 10, 10, false);
+    let mut bar = RangeBar::new(&t1);
+
+    let t2 = test_utils::create_test_agg_trade_with_range(2, "51000.0", "1.0", 2000, 20, 20, true);
+    bar.update_with_trade(&t2);
+
+    let t3 = test_utils::create_test_agg_trade_with_range(3, "50000.0", "1.0", 3000, 30, 30, false);
+    bar.update_with_trade(&t3);
+
+    assert!(bar.vwap >= bar.low, "VWAP ({}) must be >= low ({})", bar.vwap, bar.low);
+    assert!(bar.vwap <= bar.high, "VWAP ({}) must be <= high ({})", bar.vwap, bar.high);
+}
+
+#[test]
+fn test_agg_trade_id_range_tracking() {
+    // first_agg_trade_id stays at opening trade, last_agg_trade_id tracks latest
+    let t1 = test_utils::create_test_agg_trade_with_range(100, "50000.0", "1.0", 1000, 1000, 1002, false);
+    let mut bar = RangeBar::new(&t1);
+    assert_eq!(bar.first_agg_trade_id, 100);
+    assert_eq!(bar.last_agg_trade_id, 100);
+
+    let t2 = test_utils::create_test_agg_trade_with_range(105, "50100.0", "1.0", 2000, 1050, 1055, true);
+    bar.update_with_trade(&t2);
+    assert_eq!(bar.first_agg_trade_id, 100, "first_agg_trade_id must not change");
+    assert_eq!(bar.last_agg_trade_id, 105);
+    assert_eq!(bar.last_trade_id, 1055, "last_trade_id tracks individual trade ID");
+}
+
 // === Memory efficiency tests (R15) ===
 
 #[test]
