@@ -535,6 +535,11 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
         // Issue #96 Task #192: Memoize x_mean computation outside segment loop
         // Only depends on scale, not on segment index, so compute once and reuse
         let x_mean = (scale - 1) as f64 / 2.0;
+        // Issue #96: Pre-compute xx_sum analytically: sum_{i=0}^{n-1} (i - mean)^2 = n*(n^2-1)/12
+        // Eliminates per-element (delta_x * delta_x) accumulation from inner loop
+        let scale_f64 = scale as f64;
+        let inv_scale = 1.0 / scale_f64;
+        let xx_sum = scale_f64 * (scale_f64 * scale_f64 - 1.0) / 12.0;
 
         let mut total_fluctuation = 0.0;
         let mut segment_count = 0;
@@ -546,23 +551,18 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
                 break;
             }
 
-            // Linear detrend via least squares
+            // Linear detrend via least squares (xx_sum pre-computed above)
             let mut xy_sum = 0.0;
-            let mut xx_sum = 0.0;
             let mut y_sum = 0.0;
 
             for (i, &yi) in y[start..end].iter().enumerate() {
-                let xi = i as f64;
-                let delta_x = xi - x_mean;
+                let delta_x = i as f64 - x_mean;
                 xy_sum += delta_x * yi;
-                // Issue #96 Task #195: Replace powi(2) with multiplication (5-8% speedup)
-                // powi(2) is ~3-5x slower than multiplication for simple squaring
-                xx_sum += delta_x * delta_x;
                 y_sum += yi;
             }
 
-            let y_mean = y_sum / scale as f64;
-            let slope = if xx_sum.abs() > f64::EPSILON {
+            let y_mean = y_sum * inv_scale;
+            let slope = if xx_sum > f64::EPSILON {
                 xy_sum / xx_sum
             } else {
                 0.0
@@ -576,7 +576,7 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
                 // Issue #96 Task #195: Replace powi(2) with multiplication
                 rms += residual * residual;
             }
-            rms = (rms / scale as f64).sqrt();
+            rms = (rms * inv_scale).sqrt();
 
             total_fluctuation += rms;
             segment_count += 1;
