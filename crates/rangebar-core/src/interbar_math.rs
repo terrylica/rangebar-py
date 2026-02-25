@@ -46,6 +46,9 @@ pub struct LookbackCache {
     pub first_volume: f64,
     /// Total volume (pre-summed for Kyle Lambda, moments, etc.)
     pub total_volume: f64,
+    /// Issue #96 Task #45: All prices are finite (no NaN/Inf)
+    /// Pre-computed during extraction to eliminate O(n) scan in Tier 3
+    pub all_prices_finite: bool,
 }
 
 /// Cold path: empty lookback cache (Issue #96 Task #4: cold path optimization)
@@ -62,6 +65,7 @@ fn empty_lookback_cache() -> LookbackCache {
         close: 0.0,
         first_volume: 0.0,
         total_volume: 0.0,
+        all_prices_finite: true,
     }
 }
 
@@ -95,15 +99,19 @@ pub fn extract_lookback_cache(lookback: &[&TradeSnapshot]) -> LookbackCache {
         close: last_trade.price.to_f64(),
         first_volume: first_trade.volume.to_f64(),
         total_volume: 0.0,
+        all_prices_finite: true,
     };
 
-    // Single pass: extract prices, volumes, compute OHLC and total volume
+    // Single pass: extract prices, volumes, compute OHLC, total volume, and finite check
+    // Issue #96 Task #45: Track all_prices_finite during extraction (eliminates O(n) scan in Tier 3)
     for trade in lookback {
         let p = trade.price.to_f64();
         let v = trade.volume.to_f64();
         cache.prices.push(p);
         cache.volumes.push(v);
         cache.total_volume += v;
+        // Branchless finite check: &= avoids branch misprediction
+        cache.all_prices_finite &= p.is_finite();
         if p > cache.high {
             cache.high = p;
         }

@@ -912,8 +912,8 @@ impl TradeHistory {
 
         // Issue #96 Task #206: Early validity checks on price data
         // Skip Tier 3 computation if price data is invalid (NaN or degenerate)
-        // This avoids expensive computation on corrupt/incomplete bars
-        if prices.is_empty() || prices.iter().any(|p| !p.is_finite()) {
+        // Issue #96 Task #45: Use pre-computed all_prices_finite flag (O(1) vs O(n) scan)
+        if prices.is_empty() || !cache.all_prices_finite {
             return features;  // Return default (all None) for invalid prices
         }
 
