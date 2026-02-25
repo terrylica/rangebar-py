@@ -2359,4 +2359,68 @@ mod tests {
             );
         }
     }
+
+    // Issue #96 Task #93: Edge case tests for processor algorithm invariants
+
+    #[test]
+    fn test_same_timestamp_prevents_bar_close() {
+        // Issue #36: Bar cannot close on same timestamp as it opened
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+        processor.prevent_same_timestamp_close = true;
+
+        // All trades at same timestamp but price breaches threshold
+        let trades: Vec<AggTrade> = (0..5)
+            .map(|i| {
+                let price_str = if i == 0 {
+                    "50000.0".to_string()
+                } else {
+                    // Price far above threshold to trigger breach
+                    format!("{}.0", 50000 + (i + 1) * 200)
+                };
+                AggTrade {
+                    agg_trade_id: i as i64,
+                    price: FixedPoint::from_str(&price_str).unwrap(),
+                    volume: FixedPoint::from_str("1.0").unwrap(),
+                    first_trade_id: i as i64,
+                    last_trade_id: i as i64,
+                    timestamp: 1000000, // ALL same timestamp
+                    is_buyer_maker: false,
+                    is_best_match: None,
+                }
+            })
+            .collect();
+
+        let bars = processor.process_agg_trade_records(&trades).unwrap();
+        // No bars should close because timestamp gate blocks it
+        assert_eq!(bars.len(), 0, "Same timestamp should prevent bar close (Issue #36)");
+    }
+
+    #[test]
+    fn test_single_trade_incomplete_bar() {
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+
+        let trade = AggTrade {
+            agg_trade_id: 1,
+            price: FixedPoint::from_str("50000.0").unwrap(),
+            volume: FixedPoint::from_str("10.0").unwrap(),
+            first_trade_id: 1,
+            last_trade_id: 1,
+            timestamp: 1000000,
+            is_buyer_maker: false,
+            is_best_match: None,
+        };
+
+        // Strict mode: 0 completed bars
+        let bars = processor.process_agg_trade_records(&[trade.clone()]).unwrap();
+        assert_eq!(bars.len(), 0, "Single trade cannot complete a bar");
+
+        // With incomplete: should return 1 incomplete bar
+        let mut processor2 = RangeBarProcessor::new(250).unwrap();
+        let bars_incl = processor2
+            .process_agg_trade_records_with_incomplete(&[trade])
+            .unwrap();
+        assert_eq!(bars_incl.len(), 1, "Should return 1 incomplete bar");
+        assert_eq!(bars_incl[0].open, bars_incl[0].close);
+        assert_eq!(bars_incl[0].high, bars_incl[0].low);
+    }
 }

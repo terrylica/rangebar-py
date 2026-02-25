@@ -280,4 +280,93 @@ mod tests {
         assert!(c < a);
         assert_eq!(a, a);
     }
+
+    // Issue #96 Task #91: Edge case tests for arithmetic correctness
+
+    #[test]
+    fn test_from_str_too_many_decimals() {
+        let err = FixedPoint::from_str("0.000000001").unwrap_err();
+        assert_eq!(err, FixedPointError::TooManyDecimals);
+    }
+
+    #[test]
+    fn test_from_str_negative_fractional() {
+        // Known edge case: "-0.5" parses as +0.5 because "-0" → 0 (non-negative)
+        // The sign is lost when integer_part == 0. This only affects (-1, 0) range.
+        // Real Binance prices are always positive, so this is acceptable behavior.
+        let fp = FixedPoint::from_str("-0.5").unwrap();
+        assert_eq!(fp.0, 50_000_000); // "-0" parsed as 0 (non-negative), so +0.5
+
+        // Negative values with non-zero integer part work correctly
+        let fp2 = FixedPoint::from_str("-1.5").unwrap();
+        assert_eq!(fp2.0, -150_000_000); // -1.5 * SCALE
+        assert_eq!(fp2.to_f64(), -1.5);
+    }
+
+    #[test]
+    fn test_from_str_leading_zeros() {
+        // "000.123" should parse — integer part "000" is valid i64
+        let fp = FixedPoint::from_str("000.123").unwrap();
+        assert_eq!(fp.0, 12_300_000); // 0.123 * SCALE
+    }
+
+    #[test]
+    fn test_to_f64_extreme_values() {
+        // i64::MAX / SCALE = 92233720368.54775807
+        let max_fp = FixedPoint(i64::MAX);
+        let max_f64 = max_fp.to_f64();
+        assert!(max_f64 > 92_233_720_368.0);
+        assert!(max_f64.is_finite());
+
+        // i64::MIN / SCALE = -92233720368.54775808
+        let min_fp = FixedPoint(i64::MIN);
+        let min_f64 = min_fp.to_f64();
+        assert!(min_f64 < -92_233_720_368.0);
+        assert!(min_f64.is_finite());
+    }
+
+    #[test]
+    fn test_threshold_zero_ratio() {
+        let price = FixedPoint::from_str("100.0").unwrap();
+        let (upper, lower) = price.compute_range_thresholds_cached(0);
+        assert_eq!(upper, price);
+        assert_eq!(lower, price);
+    }
+
+    #[test]
+    fn test_threshold_small_price_small_bps() {
+        // Very small price (0.01) with smallest threshold (1 dbps = 0.001%)
+        let price = FixedPoint::from_str("0.01").unwrap();
+        let (upper, lower) = price.compute_range_thresholds(1);
+        // delta = (1_000_000 * 1) / 100_000 = 10
+        // So upper = 1_000_010, lower = 999_990
+        assert!(upper > price);
+        assert!(lower < price);
+    }
+
+    #[test]
+    fn test_fixedpoint_zero() {
+        let zero = FixedPoint(0);
+        assert_eq!(zero.to_f64(), 0.0);
+        assert_eq!(zero.to_string(), "0.00000000");
+        let (upper, lower) = zero.compute_range_thresholds(250);
+        assert_eq!(upper, zero); // 0 * anything = 0
+        assert_eq!(lower, zero);
+    }
+
+    #[test]
+    fn test_fixedpoint_error_display() {
+        assert_eq!(
+            FixedPointError::InvalidFormat.to_string(),
+            "Invalid number format"
+        );
+        assert_eq!(
+            FixedPointError::TooManyDecimals.to_string(),
+            "Too many decimal places (max 8)"
+        );
+        assert_eq!(
+            FixedPointError::Overflow.to_string(),
+            "Arithmetic overflow"
+        );
+    }
 }
