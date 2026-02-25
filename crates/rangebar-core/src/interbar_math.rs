@@ -246,12 +246,11 @@ pub fn compute_ofi_branchless(trades: &[&TradeSnapshot]) -> f64 {
     // If total_vol > EPSILON: ofi = (buy - sell) / total, else ofi = 0.0
     // Issue #96 Task #200: Cache reciprocal to eliminate redundant division
     // Mask pattern: (condition as 0.0 or 1.0) * value
-    let is_nonzero = (total_vol > f64::EPSILON) as u32 as f64;
-    let reciprocal_computed = 1.0 / total_vol;  // Compute once
-    let is_finite_mask = reciprocal_computed.is_finite() as u32 as f64;
-    let reciprocal = reciprocal_computed * is_finite_mask;
-
-    (buy_vol - sell_vol) * reciprocal * is_nonzero
+    if total_vol > f64::EPSILON {
+        (buy_vol - sell_vol) / total_vol
+    } else {
+        0.0
+    }
 }
 
 /// Entropy result cache for deterministic price sequences (Issue #96 Task #117)
@@ -3545,6 +3544,154 @@ mod simd_parity_tests {
 /// Property-based tests for inter-bar feature bounds invariants.
 /// Uses proptest to verify that computed features stay within documented ranges
 /// for arbitrary inputs, catching edge cases that hand-written tests miss.
+#[cfg(test)]
+mod branchless_ofi_tests {
+    use super::*;
+    use crate::interbar_types::TradeSnapshot;
+    use crate::FixedPoint;
+
+    fn make_snapshot(ts: i64, price: f64, volume: f64, is_buyer_maker: bool) -> TradeSnapshot {
+        TradeSnapshot {
+            timestamp: ts,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint((volume * 1e8) as i64),
+            is_buyer_maker,
+            turnover: (price * volume * 1e8) as i128,
+        }
+    }
+
+    #[test]
+    fn test_accumulate_all_buys() {
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 1.0, false),
+            make_snapshot(2000, 50000.0, 2.0, false),
+            make_snapshot(3000, 50000.0, 3.0, false),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (buy, sell) = accumulate_buy_sell_branchless(&refs);
+        assert!((buy - 6.0).abs() < 1e-6, "buy={buy}, expected 6.0");
+        assert!(sell.abs() < 1e-6, "sell={sell}, expected 0.0");
+    }
+
+    #[test]
+    fn test_accumulate_all_sells() {
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 1.0, true),
+            make_snapshot(2000, 50000.0, 2.0, true),
+            make_snapshot(3000, 50000.0, 3.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (buy, sell) = accumulate_buy_sell_branchless(&refs);
+        assert!(buy.abs() < 1e-6, "buy={buy}, expected 0.0");
+        assert!((sell - 6.0).abs() < 1e-6, "sell={sell}, expected 6.0");
+    }
+
+    #[test]
+    fn test_accumulate_balanced() {
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 5.0, false),
+            make_snapshot(2000, 50000.0, 5.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (buy, sell) = accumulate_buy_sell_branchless(&refs);
+        assert!((buy - 5.0).abs() < 1e-6, "buy={buy}, expected 5.0");
+        assert!((sell - 5.0).abs() < 1e-6, "sell={sell}, expected 5.0");
+    }
+
+    #[test]
+    fn test_accumulate_empty() {
+        let refs: Vec<&TradeSnapshot> = vec![];
+        let (buy, sell) = accumulate_buy_sell_branchless(&refs);
+        assert_eq!(buy, 0.0);
+        assert_eq!(sell, 0.0);
+    }
+
+    #[test]
+    fn test_accumulate_single_trade() {
+        let trades = vec![make_snapshot(1000, 50000.0, 7.5, false)];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (buy, sell) = accumulate_buy_sell_branchless(&refs);
+        assert!((buy - 7.5).abs() < 1e-6, "buy={buy}, expected 7.5");
+        assert!(sell.abs() < 1e-6, "sell={sell}, expected 0.0");
+    }
+
+    #[test]
+    fn test_accumulate_odd_count_remainder_path() {
+        // 3 trades: pair processes first 2, scalar remainder processes 3rd
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 1.0, false),
+            make_snapshot(2000, 50000.0, 2.0, true),
+            make_snapshot(3000, 50000.0, 4.0, false),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (buy, sell) = accumulate_buy_sell_branchless(&refs);
+        assert!((buy - 5.0).abs() < 1e-6, "buy={buy}, expected 5.0 (1+4)");
+        assert!((sell - 2.0).abs() < 1e-6, "sell={sell}, expected 2.0");
+    }
+
+    #[test]
+    fn test_ofi_branchless_all_buys() {
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 1.0, false),
+            make_snapshot(2000, 50000.0, 1.0, false),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let ofi = compute_ofi_branchless(&refs);
+        assert!((ofi - 1.0).abs() < 1e-10, "ofi={ofi}, expected 1.0");
+    }
+
+    #[test]
+    fn test_ofi_branchless_all_sells() {
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 1.0, true),
+            make_snapshot(2000, 50000.0, 1.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let ofi = compute_ofi_branchless(&refs);
+        assert!((ofi - (-1.0)).abs() < 1e-10, "ofi={ofi}, expected -1.0");
+    }
+
+    #[test]
+    fn test_ofi_branchless_balanced() {
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 3.0, false),
+            make_snapshot(2000, 50000.0, 3.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let ofi = compute_ofi_branchless(&refs);
+        assert!(ofi.abs() < 1e-10, "ofi={ofi}, expected 0.0");
+    }
+
+    #[test]
+    fn test_ofi_branchless_empty() {
+        let refs: Vec<&TradeSnapshot> = vec![];
+        let ofi = compute_ofi_branchless(&refs);
+        assert_eq!(ofi, 0.0, "empty trades should return 0.0");
+    }
+
+    #[test]
+    fn test_ofi_branchless_single_trade() {
+        let trades = vec![make_snapshot(1000, 50000.0, 10.0, false)];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let ofi = compute_ofi_branchless(&refs);
+        assert!((ofi - 1.0).abs() < 1e-10, "ofi={ofi}, expected 1.0 for single buy");
+    }
+
+    #[test]
+    fn test_ofi_branchless_bounded() {
+        // Asymmetric volumes: OFI must still be in [-1, 1]
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 100.0, false),
+            make_snapshot(2000, 50000.0, 0.001, true),
+            make_snapshot(3000, 50000.0, 50.0, false),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let ofi = compute_ofi_branchless(&refs);
+        assert!(ofi >= -1.0 && ofi <= 1.0, "ofi={ofi} out of [-1, 1]");
+        assert!(ofi > 0.0, "ofi should be positive (buy-dominated)");
+    }
+}
+
 #[cfg(test)]
 mod proptest_bounds {
     use super::*;
