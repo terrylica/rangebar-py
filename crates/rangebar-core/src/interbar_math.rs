@@ -1400,12 +1400,12 @@ fn compute_permutation_entropy_m2(prices: &[f64]) -> f64 {
         return 0.0; // All patterns identical = entropy 0
     }
 
-    let mut counts = [0u8; 2]; // 2! = 2 patterns, u8 for cache efficiency
+    let mut counts = [0u16; 2]; // 2! = 2 patterns, u16 for windows up to 65535
     let n_patterns = prices.len() - 1;
 
     for i in 0..n_patterns {
         let idx = if prices[i] <= prices[i + 1] { 0 } else { 1 };
-        counts[idx] = counts[idx].saturating_add(1);
+        counts[idx] += 1;
     }
 
     // Shannon entropy
@@ -1460,21 +1460,16 @@ fn compute_permutation_entropy_m3_simd_batch(prices: &[f64]) -> f64 {
         return 0.0; // Single pattern = entropy 0
     }
 
-    // Pattern histogram - use u8 for better L1 cache locality
-    let mut pattern_counts: [u8; 6] = [0; 6];
+    // Pattern histogram — u16 supports windows up to 65535 trades without overflow
+    // Previous u8 capped at 255, causing incorrect entropy for FixedCount(500) lookback windows
+    let mut pattern_counts: [u16; 6] = [0; 6];
 
     // Issue #96 Task #130: SIMD-accelerated ordinal pattern extraction
     // Process patterns in groups of 16 using vectorized approach
     // Each iteration computes 16 pattern indices with better ILP and SIMD potential
     let simd_bulk_patterns = (n_patterns / 16) * 16;
 
-    // Issue #96 Task #182: Bounds-check gated saturation for histogram accumulation
-    // Avoid redundant saturating_add bounds-checking when overflow is impossible.
-    // For typical windows (100-600 trades), pattern counts never exceed 255.
-    // Only switch to saturating_add after checking for high count (>200, conservative estimate).
     let mut i = 0;
-    let mut use_saturating = false;  // Hot-path flag to avoid repeated checks
-
     while i < simd_bulk_patterns {
         // Vectorized loop: compute 16 patterns in a single iteration
         // These 16 independent operations allow CPU out-of-order execution and SIMD parallelism
@@ -1495,57 +1490,28 @@ fn compute_permutation_entropy_m3_simd_batch(prices: &[f64]) -> f64 {
         let p14 = ordinal_pattern_index_m3(prices[i + 14], prices[i + 15], prices[i + 16]);
         let p15 = ordinal_pattern_index_m3(prices[i + 15], prices[i + 16], prices[i + 17]);
 
-        // Batch accumulation - all 16 pattern updates in sequence
-        // CPU can parallelize across different histogram buckets
-        if use_saturating {
-            // Saturating path (rare, high-count case)
-            pattern_counts[p0] = pattern_counts[p0].saturating_add(1);
-            pattern_counts[p1] = pattern_counts[p1].saturating_add(1);
-            pattern_counts[p2] = pattern_counts[p2].saturating_add(1);
-            pattern_counts[p3] = pattern_counts[p3].saturating_add(1);
-            pattern_counts[p4] = pattern_counts[p4].saturating_add(1);
-            pattern_counts[p5] = pattern_counts[p5].saturating_add(1);
-            pattern_counts[p6] = pattern_counts[p6].saturating_add(1);
-            pattern_counts[p7] = pattern_counts[p7].saturating_add(1);
-            pattern_counts[p8] = pattern_counts[p8].saturating_add(1);
-            pattern_counts[p9] = pattern_counts[p9].saturating_add(1);
-            pattern_counts[p10] = pattern_counts[p10].saturating_add(1);
-            pattern_counts[p11] = pattern_counts[p11].saturating_add(1);
-            pattern_counts[p12] = pattern_counts[p12].saturating_add(1);
-            pattern_counts[p13] = pattern_counts[p13].saturating_add(1);
-            pattern_counts[p14] = pattern_counts[p14].saturating_add(1);
-            pattern_counts[p15] = pattern_counts[p15].saturating_add(1);
-        } else {
-            // Hot-path: unchecked arithmetic (safe for typical windows with count < 200)
-            pattern_counts[p0] = pattern_counts[p0].wrapping_add(1);
-            pattern_counts[p1] = pattern_counts[p1].wrapping_add(1);
-            pattern_counts[p2] = pattern_counts[p2].wrapping_add(1);
-            pattern_counts[p3] = pattern_counts[p3].wrapping_add(1);
-            pattern_counts[p4] = pattern_counts[p4].wrapping_add(1);
-            pattern_counts[p5] = pattern_counts[p5].wrapping_add(1);
-            pattern_counts[p6] = pattern_counts[p6].wrapping_add(1);
-            pattern_counts[p7] = pattern_counts[p7].wrapping_add(1);
-            pattern_counts[p8] = pattern_counts[p8].wrapping_add(1);
-            pattern_counts[p9] = pattern_counts[p9].wrapping_add(1);
-            pattern_counts[p10] = pattern_counts[p10].wrapping_add(1);
-            pattern_counts[p11] = pattern_counts[p11].wrapping_add(1);
-            pattern_counts[p12] = pattern_counts[p12].wrapping_add(1);
-            pattern_counts[p13] = pattern_counts[p13].wrapping_add(1);
-            pattern_counts[p14] = pattern_counts[p14].wrapping_add(1);
-            pattern_counts[p15] = pattern_counts[p15].wrapping_add(1);
-
-            // Issue #96 Task #211: Replace .any() with .max() for efficiency (hot path optimization)
-            // .max() is O(6) same as .any(), but more branch-prediction friendly
-            // .any() short-circuits but costs iterator overhead; .max() is direct fold
-            if pattern_counts.iter().max().copied().unwrap_or(0) > 200 {
-                use_saturating = true;
-            }
-        }
+        // Batch accumulation — u16 never overflows for realistic window sizes
+        pattern_counts[p0] += 1;
+        pattern_counts[p1] += 1;
+        pattern_counts[p2] += 1;
+        pattern_counts[p3] += 1;
+        pattern_counts[p4] += 1;
+        pattern_counts[p5] += 1;
+        pattern_counts[p6] += 1;
+        pattern_counts[p7] += 1;
+        pattern_counts[p8] += 1;
+        pattern_counts[p9] += 1;
+        pattern_counts[p10] += 1;
+        pattern_counts[p11] += 1;
+        pattern_counts[p12] += 1;
+        pattern_counts[p13] += 1;
+        pattern_counts[p14] += 1;
+        pattern_counts[p15] += 1;
 
         i += 16;
     }
 
-    // Remainder patterns (8x unroll for small tails) - reuse use_saturating flag from above
+    // Remainder patterns (8x unroll for small tails)
     let remainder_patterns = n_patterns - simd_bulk_patterns;
     let remainder_8x = (remainder_patterns / 8) * 8;
     let mut j = simd_bulk_patterns;
@@ -1560,31 +1526,14 @@ fn compute_permutation_entropy_m3_simd_batch(prices: &[f64]) -> f64 {
         let p6 = ordinal_pattern_index_m3(prices[j + 6], prices[j + 7], prices[j + 8]);
         let p7 = ordinal_pattern_index_m3(prices[j + 7], prices[j + 8], prices[j + 9]);
 
-        if use_saturating {
-            pattern_counts[p0] = pattern_counts[p0].saturating_add(1);
-            pattern_counts[p1] = pattern_counts[p1].saturating_add(1);
-            pattern_counts[p2] = pattern_counts[p2].saturating_add(1);
-            pattern_counts[p3] = pattern_counts[p3].saturating_add(1);
-            pattern_counts[p4] = pattern_counts[p4].saturating_add(1);
-            pattern_counts[p5] = pattern_counts[p5].saturating_add(1);
-            pattern_counts[p6] = pattern_counts[p6].saturating_add(1);
-            pattern_counts[p7] = pattern_counts[p7].saturating_add(1);
-        } else {
-            pattern_counts[p0] = pattern_counts[p0].wrapping_add(1);
-            pattern_counts[p1] = pattern_counts[p1].wrapping_add(1);
-            pattern_counts[p2] = pattern_counts[p2].wrapping_add(1);
-            pattern_counts[p3] = pattern_counts[p3].wrapping_add(1);
-            pattern_counts[p4] = pattern_counts[p4].wrapping_add(1);
-            pattern_counts[p5] = pattern_counts[p5].wrapping_add(1);
-            pattern_counts[p6] = pattern_counts[p6].wrapping_add(1);
-            pattern_counts[p7] = pattern_counts[p7].wrapping_add(1);
-
-            // Issue #96 Task #211: Replace .any() with .max() for efficiency (M=3 path)
-            // Eliminates iterator overhead in hot loop for large windows
-            if pattern_counts.iter().max().copied().unwrap_or(0) > 200 {
-                use_saturating = true;
-            }
-        }
+        pattern_counts[p0] += 1;
+        pattern_counts[p1] += 1;
+        pattern_counts[p2] += 1;
+        pattern_counts[p3] += 1;
+        pattern_counts[p4] += 1;
+        pattern_counts[p5] += 1;
+        pattern_counts[p6] += 1;
+        pattern_counts[p7] += 1;
 
         j += 8;
     }
@@ -1592,11 +1541,7 @@ fn compute_permutation_entropy_m3_simd_batch(prices: &[f64]) -> f64 {
     // Final scalar remainder (0-7 patterns)
     for k in (simd_bulk_patterns + remainder_8x)..n_patterns {
         let pattern_idx = ordinal_pattern_index_m3(prices[k], prices[k + 1], prices[k + 2]);
-        if use_saturating {
-            pattern_counts[pattern_idx] = pattern_counts[pattern_idx].saturating_add(1);
-        } else {
-            pattern_counts[pattern_idx] = pattern_counts[pattern_idx].wrapping_add(1);
-        }
+        pattern_counts[pattern_idx] += 1;
     }
 
     // Compute entropy from final histogram state
@@ -4681,6 +4626,28 @@ mod permutation_entropy_edge_tests {
         assert!(pe >= 0.0 && pe <= 1.0, "PE must be in [0, 1], got {pe}");
         // Perfect zigzag should have very high entropy (near 1.0 for M=2)
         assert!(pe > 0.8, "perfect zigzag (M=2) should have high PE, got {pe}");
+    }
+
+    #[test]
+    fn test_pe_large_window_dominant_pattern() {
+        // Regression test: u8 pattern counts saturated at 255 for windows >255 trades.
+        // With 600 ascending prices (1 dominant pattern), count reaches ~598.
+        // u8 saturation would cap at 255, producing wrong entropy (non-zero).
+        // u16 handles this correctly.
+        let prices: Vec<f64> = (0..600).map(|i| 100.0 + i as f64 * 0.01).collect();
+        let pe = compute_permutation_entropy(&prices);
+        // Monotonic ascending = all patterns identical = entropy 0
+        assert_eq!(pe, 0.0, "600-trade monotonic should yield PE=0, got {pe}");
+    }
+
+    #[test]
+    fn test_pe_large_window_near_uniform() {
+        // 500 trades with near-uniform pattern distribution
+        // Verifies accuracy at realistic FixedCount(500) window size
+        let prices: Vec<f64> = (0..500).map(|i| 100.0 + (i as f64 * 0.73).sin() * 5.0).collect();
+        let pe = compute_permutation_entropy(&prices);
+        assert!(pe > 0.5, "varied 500-trade series should have moderate-high PE, got {pe}");
+        assert!(pe <= 1.0, "PE must be <= 1.0, got {pe}");
     }
 }
 
