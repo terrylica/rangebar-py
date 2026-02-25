@@ -5113,3 +5113,103 @@ mod proptest_bounds {
         }
     }
 }
+
+/// Issue #96: Hurst DFA and Permutation Entropy numerical stability edge case tests
+#[cfg(test)]
+mod hurst_pe_stability_tests {
+    use super::*;
+
+    #[test]
+    fn test_hurst_constant_prices_must_not_be_nan() {
+        // Constant prices → R/S analysis may return NaN (0/0 in variance)
+        // The soft_clamp should handle this gracefully
+        let prices = vec![42000.0; 100];
+        let h = compute_hurst_dfa(&prices);
+        // NaN propagation to downstream LSTM is dangerous
+        assert!(h.is_finite(), "Constant prices must not produce NaN, got {h}");
+        assert!(h >= 0.0 && h <= 1.0, "Hurst must be in [0,1], got {h}");
+    }
+
+    #[test]
+    fn test_hurst_alternating_pattern_mean_reverting() {
+        // Perfect alternation: strong anti-persistence → low Hurst
+        let prices: Vec<f64> = (0..128)
+            .map(|i| if i % 2 == 0 { 100.0 } else { 101.0 })
+            .collect();
+        let h = compute_hurst_dfa(&prices);
+        assert!(h.is_finite() && h >= 0.0 && h <= 1.0, "Hurst bounded: {h}");
+        assert!(h < 0.45, "Alternating pattern should have H < 0.45 (mean-reverting): {h}");
+    }
+
+    #[test]
+    fn test_hurst_perfect_linear_trend() {
+        // Perfect linear trend → strong persistence → high Hurst
+        let prices: Vec<f64> = (0..128).map(|i| 100.0 + i as f64 * 0.5).collect();
+        let h = compute_hurst_dfa(&prices);
+        assert!(h.is_finite() && h >= 0.0 && h <= 1.0, "Hurst bounded: {h}");
+        assert!(h > 0.7, "Perfect trend should have H > 0.7 (trending): {h}");
+    }
+
+    #[test]
+    fn test_hurst_boundary_63_vs_64_vs_65() {
+        // Verify clean transition at the MIN_SAMPLES=64 boundary
+        let base_prices: Vec<f64> = (0..65).map(|i| 100.0 + (i as f64 * 0.3).sin()).collect();
+
+        let h63 = compute_hurst_dfa(&base_prices[..63]);
+        let h64 = compute_hurst_dfa(&base_prices[..64]);
+        let h65 = compute_hurst_dfa(&base_prices[..65]);
+
+        // n=63: must return neutral 0.5 (below threshold)
+        assert!((h63 - 0.5).abs() < f64::EPSILON, "n=63 must be 0.5, got {h63}");
+
+        // n=64, n=65: must compute via rssimple (finite, bounded)
+        assert!(h64.is_finite() && h64 >= 0.0 && h64 <= 1.0, "n=64 bounded: {h64}");
+        assert!(h65.is_finite() && h65 >= 0.0 && h65 <= 1.0, "n=65 bounded: {h65}");
+
+        // Both computed values should be in reasonable agreement
+        assert!((h64 - h65).abs() < 0.3, "Hurst(64) and Hurst(65) should be similar: {h64} vs {h65}");
+    }
+
+    #[test]
+    fn test_pe_m2_vs_m3_boundary_29_vs_30() {
+        // n=29: uses M=2 path; n=30: uses M=3 path
+        let prices_29: Vec<f64> = (0..29).map(|i| 100.0 + i as f64).collect();
+        let prices_30: Vec<f64> = (0..30).map(|i| 100.0 + i as f64).collect();
+
+        let pe29 = compute_permutation_entropy(&prices_29); // M=2 path
+        let pe30 = compute_permutation_entropy(&prices_30); // M=3 path
+
+        // Both monotonic → should be near 0
+        assert!(pe29 >= 0.0 && pe29 <= 1.0, "PE(29) bounded: {pe29}");
+        assert!(pe30 >= 0.0 && pe30 <= 1.0, "PE(30) bounded: {pe30}");
+        assert!(pe29 < 0.05, "Monotonic M=2 → PE near 0: {pe29}");
+        assert!(pe30 < 0.05, "Monotonic M=3 → PE near 0: {pe30}");
+    }
+
+    #[test]
+    fn test_pe_monotonic_decreasing_early_exit() {
+        // Monotonic decreasing: M=3 SIMD early-exit should return 0.0
+        let prices: Vec<f64> = (0..50).map(|i| 200.0 - i as f64 * 0.5).collect();
+        let pe = compute_permutation_entropy(&prices);
+        assert!(pe.is_finite() && pe >= 0.0, "PE finite: {pe}");
+        assert!(pe < 0.01, "Monotonic decreasing → PE ≈ 0: {pe}");
+    }
+
+    #[test]
+    fn test_pe_m2_perfect_alternation_maximum_entropy() {
+        // Perfect alternation in M=2: 50/50 split of ascending/descending patterns
+        // Should produce maximum entropy (PE ≈ 1.0)
+        let prices: Vec<f64> = (0..20).map(|i| if i % 2 == 0 { 100.0 } else { 101.0 }).collect();
+        let pe = compute_permutation_entropy(&prices); // M=2 path (n < 30)
+        assert!(pe.is_finite() && pe >= 0.0 && pe <= 1.0, "PE bounded: {pe}");
+        assert!(pe > 0.95, "Perfect alternation → PE ≈ 1.0: {pe}");
+    }
+
+    #[test]
+    fn test_pe_exactly_60_samples_m3() {
+        // n=60: uses M=3 path, verify no array bounds issues
+        let prices: Vec<f64> = (0..60).map(|i| 100.0 + (i as f64 * 0.5).sin() * 10.0).collect();
+        let pe = compute_permutation_entropy(&prices);
+        assert!(pe.is_finite() && pe >= 0.0 && pe <= 1.0, "PE(60) bounded: {pe}");
+    }
+}

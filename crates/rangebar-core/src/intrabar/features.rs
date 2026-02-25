@@ -1365,6 +1365,168 @@ mod tests {
             assert!(ofi >= -1.0 && ofi <= 1.0, "OFI out of bounds at n=500: {}", ofi);
         }
     }
+
+    // === Issue #96: Intra-bar feature boundary and edge case tests ===
+
+    #[test]
+    fn test_intrabar_exactly_2_trades_ith() {
+        // Minimum threshold for ITH features (n >= 2)
+        let trades = vec![
+            create_test_trade(100.0, 1.0, 1_000_000, false),
+            create_test_trade(100.5, 1.5, 2_000_000, true),
+        ];
+        let features = compute_intra_bar_features(&trades);
+        assert_eq!(features.intra_trade_count, Some(2));
+
+        // ITH features should be present for n >= 2
+        assert!(features.intra_bull_epoch_density.is_some(), "Bull epochs for n=2");
+        assert!(features.intra_bear_epoch_density.is_some(), "Bear epochs for n=2");
+        assert!(features.intra_max_drawdown.is_some(), "Max drawdown for n=2");
+        assert!(features.intra_max_runup.is_some(), "Max runup for n=2");
+
+        // Complexity features must be None (need n >= 60/64)
+        assert!(features.intra_hurst.is_none(), "Hurst requires n >= 64");
+        assert!(features.intra_permutation_entropy.is_none(), "PE requires n >= 60");
+
+        // Kaufman ER for 2-trade straight line should be ~1.0
+        if let Some(er) = features.intra_kaufman_er {
+            assert!((er - 1.0).abs() < 0.01, "Straight line ER should be 1.0: {}", er);
+        }
+    }
+
+    #[test]
+    fn test_intrabar_pe_boundary_59_vs_60() {
+        // n=59: below PE threshold → None
+        let trades_59: Vec<AggTrade> = (0..59)
+            .map(|i| {
+                let price = 100.0 + (i as f64 * 0.3).sin() * 2.0;
+                create_test_trade(price, 1.0, i * 1_000_000, i % 2 == 0)
+            })
+            .collect();
+        let f59 = compute_intra_bar_features(&trades_59);
+        assert!(f59.intra_permutation_entropy.is_none(), "n=59 should not compute PE");
+
+        // n=60: at PE threshold → Some
+        let trades_60: Vec<AggTrade> = (0..60)
+            .map(|i| {
+                let price = 100.0 + (i as f64 * 0.3).sin() * 2.0;
+                create_test_trade(price, 1.0, i * 1_000_000, i % 2 == 0)
+            })
+            .collect();
+        let f60 = compute_intra_bar_features(&trades_60);
+        assert!(f60.intra_permutation_entropy.is_some(), "n=60 should compute PE");
+        let pe60 = f60.intra_permutation_entropy.unwrap();
+        assert!(pe60.is_finite() && pe60 >= 0.0 && pe60 <= 1.0, "PE(60) out of bounds: {}", pe60);
+    }
+
+    #[test]
+    fn test_intrabar_hurst_boundary_63_vs_64() {
+        // n=63: below Hurst threshold → None
+        let trades_63: Vec<AggTrade> = (0..63)
+            .map(|i| {
+                let price = 100.0 + (i as f64 * 0.2).sin() * 2.0;
+                create_test_trade(price, 1.0, i * 1_000_000, i % 2 == 0)
+            })
+            .collect();
+        let f63 = compute_intra_bar_features(&trades_63);
+        assert!(f63.intra_hurst.is_none(), "n=63 should not compute Hurst");
+
+        // n=64: at Hurst threshold → Some
+        let trades_64: Vec<AggTrade> = (0..64)
+            .map(|i| {
+                let price = 100.0 + (i as f64 * 0.2).sin() * 2.0;
+                create_test_trade(price, 1.0, i * 1_000_000, i % 2 == 0)
+            })
+            .collect();
+        let f64_features = compute_intra_bar_features(&trades_64);
+        assert!(f64_features.intra_hurst.is_some(), "n=64 should compute Hurst");
+        let h64 = f64_features.intra_hurst.unwrap();
+        assert!(h64.is_finite() && h64 >= 0.0 && h64 <= 1.0, "Hurst(64) out of bounds: {}", h64);
+    }
+
+    #[test]
+    fn test_intrabar_constant_price_full_features() {
+        // 100 trades at identical price — tests all features with zero-range input
+        let trades: Vec<AggTrade> = (0..100)
+            .map(|i| create_test_trade(42000.0, 1.0, i * 1_000_000, i % 2 == 0))
+            .collect();
+        let features = compute_intra_bar_features(&trades);
+        assert_eq!(features.intra_trade_count, Some(100));
+
+        // OFI: equal buy/sell → near 0
+        if let Some(ofi) = features.intra_ofi {
+            assert!(ofi.abs() < 0.1, "Equal buy/sell → OFI near 0: {}", ofi);
+        }
+
+        // Garman-Klass: zero price range → 0
+        if let Some(gk) = features.intra_garman_klass_vol {
+            assert!(gk.is_finite() && gk < 0.001, "Constant price → GK near 0: {}", gk);
+        }
+
+        // Hurst: flat series → should be finite (may be 0.5 or NaN-clamped)
+        if let Some(h) = features.intra_hurst {
+            assert!(h.is_finite() && h >= 0.0 && h <= 1.0, "Hurst must be finite: {}", h);
+        }
+
+        // PE: all identical ordinal patterns → low entropy
+        if let Some(pe) = features.intra_permutation_entropy {
+            assert!(pe.is_finite() && pe >= 0.0, "PE must be finite: {}", pe);
+            assert!(pe < 0.05, "Constant prices → PE near 0: {}", pe);
+        }
+
+        // Kaufman ER: no movement → ER = 1.0 (net = path = 0)
+        if let Some(er) = features.intra_kaufman_er {
+            assert!(er.is_finite(), "Kaufman ER finite for constant price: {}", er);
+        }
+    }
+
+    #[test]
+    fn test_intrabar_all_buy_with_hurst_pe() {
+        // 70 buy trades with ascending prices — triggers Hurst + PE computation
+        let trades: Vec<AggTrade> = (0..70)
+            .map(|i| create_test_trade(100.0 + i as f64 * 0.1, 1.0, i * 1_000_000, false))
+            .collect();
+        let features = compute_intra_bar_features(&trades);
+
+        // All buys → OFI = 1.0
+        if let Some(ofi) = features.intra_ofi {
+            assert!((ofi - 1.0).abs() < 0.01, "All buys → OFI=1.0: {}", ofi);
+        }
+
+        // Hurst should be computable (n=70 >= 64) and trending
+        assert!(features.intra_hurst.is_some(), "n=70 should compute Hurst");
+        if let Some(h) = features.intra_hurst {
+            assert!(h.is_finite() && h >= 0.0 && h <= 1.0, "Hurst bounded: {}", h);
+        }
+
+        // PE should be computable (n=70 >= 60) and low (monotonic ascending)
+        assert!(features.intra_permutation_entropy.is_some(), "n=70 should compute PE");
+        if let Some(pe) = features.intra_permutation_entropy {
+            assert!(pe.is_finite() && pe >= 0.0 && pe <= 1.0, "PE bounded: {}", pe);
+            assert!(pe < 0.1, "Monotonic ascending → low PE: {}", pe);
+        }
+    }
+
+    #[test]
+    fn test_intrabar_all_sell_with_hurst_pe() {
+        // 70 sell trades with descending prices — symmetric to all-buy
+        let trades: Vec<AggTrade> = (0..70)
+            .map(|i| create_test_trade(100.0 - i as f64 * 0.1, 1.0, i * 1_000_000, true))
+            .collect();
+        let features = compute_intra_bar_features(&trades);
+
+        // All sells → OFI = -1.0
+        if let Some(ofi) = features.intra_ofi {
+            assert!((ofi - (-1.0)).abs() < 0.01, "All sells → OFI=-1.0: {}", ofi);
+        }
+
+        // Hurst and PE should be computable
+        assert!(features.intra_hurst.is_some(), "n=70 should compute Hurst");
+        assert!(features.intra_permutation_entropy.is_some(), "n=70 should compute PE");
+        if let Some(pe) = features.intra_permutation_entropy {
+            assert!(pe < 0.1, "Monotonic descending → low PE: {}", pe);
+        }
+    }
 }
 
 /// Property-based tests for intra-bar feature bounds invariants.
