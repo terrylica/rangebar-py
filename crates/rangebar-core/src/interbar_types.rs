@@ -84,7 +84,7 @@ impl From<&AggTrade> for TradeSnapshot {
 ///
 /// All features use `Option<T>` to indicate when computation is not possible
 /// (e.g., insufficient trades in lookback window).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct InterBarFeatures {
     // === Tier 1: Core Features (7) ===
     /// Number of trades in lookback window

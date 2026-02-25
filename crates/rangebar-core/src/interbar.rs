@@ -716,7 +716,7 @@ impl TradeHistory {
         // Task #15: Reuse cache_key computed above (avoids duplicate from_lookback call)
         if let (Some(cache), Some(key)) = (&self.feature_result_cache, cache_key) {
             if let Some(cache_guard) = cache.try_write() {
-                cache_guard.insert(key, features.clone());
+                cache_guard.insert(key, features);
             }
         }
 
