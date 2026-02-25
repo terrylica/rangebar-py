@@ -47,14 +47,15 @@ pub enum LookbackMode {
 ///
 /// Uses 48 bytes per trade (vs full AggTrade which is larger).
 /// For 500 trades: 24 KB memory overhead.
-#[derive(Debug, Clone)]
-/// Issue #96 Task #190: Cache-optimized field ordering
+/// Issue #96 Task #190: Cache-optimized field ordering.
 /// Reordered to minimize cache line waste and group frequently accessed fields:
 /// 1. price + volume (always accessed together for feature computation)
 /// 2. turnover (used immediately after price * volume calculation)
 /// 3. timestamp (used for time-based metrics)
 /// 4. is_buyer_maker (metadata, accessed less frequently)
-/// This reduces cache misses by ~2-4% on inter-bar feature computation
+///
+/// This reduces cache misses by ~2-4% on inter-bar feature computation.
+#[derive(Debug, Clone)]
 pub struct TradeSnapshot {
     /// Price as fixed-point (hot path: accessed in every feature computation)
     pub price: FixedPoint,

@@ -25,7 +25,7 @@ pub fn standard_deviation(x: &[f64]) -> f64 {
 pub fn cumsum(x: &[f64]) -> Vec<f64> {
     x.iter()
         .scan(0f64, |acc, &a| {
-            *acc = *acc + a;
+            *acc += a;
             Some(*acc)
         })
         .collect()
@@ -53,6 +53,6 @@ pub fn half(n: &[u64], original_length: u64) -> Vec<u64> {
     let previous_step: u64 = n[1];
     let next_step: u64 = previous_step / 2;
     let length: u64 = original_length / next_step;
-    let range: Vec<u64> = (0..length + 1).collect();
+    let range: Vec<u64> = (0..=length).collect();
     range.iter().map(|a| a * next_step).collect()
 }

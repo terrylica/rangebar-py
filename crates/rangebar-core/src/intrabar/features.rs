@@ -179,13 +179,13 @@ pub fn compute_intra_bar_features_with_scratch(
     let normalized = scratch_volumes;  // Rebind for clarity
 
     // Compute max_drawdown and max_runup in single pass (Issue #96 Task #66: merged computation)
-    let (max_dd, max_ru) = compute_max_drawdown_and_runup(&normalized);
+    let (max_dd, max_ru) = compute_max_drawdown_and_runup(normalized);
 
     // Compute Bull ITH with max_drawdown as TMAEG
-    let bull_result = bull_ith(&normalized, max_dd);
+    let bull_result = bull_ith(normalized, max_dd);
 
     // Compute Bear ITH with max_runup as TMAEG
-    let bear_result = bear_ith(&normalized, max_ru);
+    let bear_result = bear_ith(normalized, max_ru);
 
     // Sum excess gains for normalization
     let bull_excess_sum: f64 = bull_result.excess_gains.iter().sum();
@@ -196,7 +196,7 @@ pub fn compute_intra_bar_features_with_scratch(
 
     // Compute complexity features (only if enough trades)
     let hurst = if n >= 64 {
-        Some(compute_hurst_dfa(&normalized))
+        Some(compute_hurst_dfa(normalized))
     } else {
         None
     };
@@ -688,8 +688,7 @@ fn compute_permutation_entropy(prices: &[f64], m: usize) -> f64 {
 
     // Compute Shannon entropy from pattern counts
     let mut entropy = 0.0;
-    for i in 0..max_patterns {
-        let count = pattern_counts[i];
+    for &count in &pattern_counts[..max_patterns] {
         if count > 0 {
             let p = count as f64 / num_patterns as f64;
             entropy -= p * p.ln();

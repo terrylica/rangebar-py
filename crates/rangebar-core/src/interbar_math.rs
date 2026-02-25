@@ -521,7 +521,7 @@ mod simd {
         for i in 0..chunks {
             let idx = i * 4;
             let chunk = f64x4::new([values[idx], values[idx + 1], values[idx + 2], values[idx + 3]]);
-            sum_vec = sum_vec + chunk;
+            sum_vec += chunk;
         }
 
         // Horizontal sum of SIMD vector (sum all 4 elements)
@@ -554,7 +554,7 @@ mod simd {
             let chunk = f64x4::new([values[idx], values[idx + 1], values[idx + 2], values[idx + 3]]);
             let deviations = chunk - mu_vec;
             let squared = deviations * deviations;
-            sum_sq_vec = sum_sq_vec + squared;
+            sum_sq_vec += squared;
         }
 
         // Horizontal sum of squared deviations
@@ -975,6 +975,7 @@ fn compute_kyle_lambda_scalar(lookback: &[&TradeSnapshot]) -> f64 {
 /// - B = -1: Perfectly regular (periodic) arrivals
 /// - B = 0: Poisson process
 /// - B = +1: Maximally bursty
+///
 /// Issue #96 Task #52: #[inline] for thin SIMD/scalar dispatcher
 #[inline]
 pub fn compute_burstiness(lookback: &[&TradeSnapshot]) -> f64 {
@@ -1109,8 +1110,6 @@ pub fn compute_volume_moments_with_mean(volumes: &[f64], mu: f64) -> (f64, f64) 
         return (0.0, 0.0);
     }
 
-    let mu = mu;
-
     // Phase 2: Central moments in single pass
     let (m2, m3, m4) = volumes.iter().fold((0.0, 0.0, 0.0), |(m2, m3, m4), &v| {
         let d = v - mu;
@@ -1170,7 +1169,7 @@ pub fn compute_kaufman_er(prices: &[f64]) -> f64 {
         let diff2 = (prices[i + 1] - prices[i]).abs();
         let diff3 = (prices[i + 2] - prices[i + 1]).abs();
         let diff4 = (prices[i + 3] - prices[i + 2]).abs();
-        volatility_vec = volatility_vec + f64x4::new([diff1, diff2, diff3, diff4]);
+        volatility_vec += f64x4::new([diff1, diff2, diff3, diff4]);
     }
 
     // Horizontal sum: add all 4 lanes
@@ -1198,8 +1197,8 @@ pub fn compute_kaufman_er(prices: &[f64]) -> f64 {
 const GARMAN_KLASS_COEFFICIENT: f64 = 0.3862943611198906;
 
 /// Precomputed ln(2!) for M=2 permutation entropy normalization
-/// Exact value: ln(2) ≈ 0.693147180559945
-const LN_2_FACTORIAL: f64 = 0.6931471805599453;
+/// Exact value: ln(2)
+const LN_2_FACTORIAL: f64 = std::f64::consts::LN_2;
 
 /// Precomputed ln(3!) for M=3 permutation entropy normalization
 /// Exact value: ln(6) ≈ 1.791759469228055
@@ -1790,9 +1789,9 @@ pub fn compute_approximate_entropy(prices: &[f64], m: usize, r: f64) -> f64 {
 /// - Direct Chebyshev distance instead of zip+all()
 /// - Single pass through pattern elements
 /// - Avoid iterator overhead
-#[inline]
-/// Check if two patterns are within Chebyshev distance using SIMD for m=2 case
-/// Issue #96 Task #161 Phase 2: SIMD vectorization of pattern distance checks
+///
+/// Check if two patterns are within Chebyshev distance using SIMD for m=2 case.
+/// Issue #96 Task #161 Phase 2: SIMD vectorization of pattern distance checks.
 ///
 /// Uses wide::f64x2 to compute both abs differences in parallel when m=2,
 /// providing ~2x speedup vs scalar by reducing latency and improving ILP.
@@ -1981,7 +1980,8 @@ pub fn compute_entropy_adaptive(prices: &[f64]) -> f64 {
 /// # Performance
 /// - Consolidation periods: 1.5-2.5x speedup (high repetition)
 /// - Trending markets: 1.0-1.2x speedup (low repetition, more cache misses)
-/// Read-only entropy cache lookup for try-lock fast-path optimization
+///
+/// Read-only entropy cache lookup for try-lock fast-path optimization.
 ///
 /// Issue #96 Task #156: Enables lock-free fast-path by checking cache
 /// with read-lock only. Returns Some(entropy) if cached, None if miss

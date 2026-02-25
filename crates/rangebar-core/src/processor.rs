@@ -191,7 +191,7 @@ impl RangeBarProcessor {
         // Issue #96 Task #98: Pre-compute threshold ratio
         // Ratio = (threshold_decimal_bps * SCALE) / BASIS_POINTS_SCALE
         // This is used in compute_range_thresholds() for fast delta calculation
-        let threshold_ratio = ((threshold_decimal_bps as i64) * crate::fixed_point::SCALE as i64)
+        let threshold_ratio = ((threshold_decimal_bps as i64) * crate::fixed_point::SCALE)
             / (crate::fixed_point::BASIS_POINTS_SCALE as i64);
 
         Ok(Self {
@@ -362,10 +362,11 @@ impl RangeBarProcessor {
     /// - First trade: Initializes new bar state
     /// - Subsequent trades: Updates existing bar or closes on breach
     /// - Breach: Returns completed bar, starts new bar with breaching trade
-    /// Issue #96 Task #78: Accept borrowed AggTrade to eliminate clones in fan-out loops
+    ///
+    /// Issue #96 Task #78: Accept borrowed AggTrade to eliminate clones in fan-out loops.
     /// Streaming pipelines (4+ thresholds) were cloning ~57 byte trades per processor.
-    /// Signature change to &AggTrade eliminates 4-8x unnecessary allocations.
-    /// Issue #96 Task #84: #[inline] — main hot-path entry point called on every trade
+    /// Signature change to `&AggTrade` eliminates 4-8x unnecessary allocations.
+    /// Issue #96 Task #84: `#[inline]` — main hot-path entry point called on every trade.
     #[inline]
     pub fn process_single_trade(
         &mut self,
@@ -379,7 +380,7 @@ impl RangeBarProcessor {
         // Issue #59: Push trade to history buffer for inter-bar feature computation
         // This must happen BEFORE bar processing so lookback window includes recent trades
         if let Some(ref mut history) = self.trade_history {
-            history.push(&trade);
+            history.push(trade);
         }
 
         // Issue #46: If previous call triggered a breach, this trade opens the new bar.
@@ -391,9 +392,9 @@ impl RangeBarProcessor {
                 history.on_bar_open(trade.timestamp);
             }
             self.current_bar_state = Some(if self.include_intra_bar_features {
-                RangeBarState::new_with_trade_accumulation(&trade, self.threshold_ratio)
+                RangeBarState::new_with_trade_accumulation(trade, self.threshold_ratio)
             } else {
-                RangeBarState::new(&trade, self.threshold_ratio)
+                RangeBarState::new(trade, self.threshold_ratio)
             });
             self.defer_open = false;
             return Ok(None);
@@ -407,16 +408,16 @@ impl RangeBarProcessor {
                     history.on_bar_open(trade.timestamp);
                 }
                 self.current_bar_state = Some(if self.include_intra_bar_features {
-                    RangeBarState::new_with_trade_accumulation(&trade, self.threshold_ratio)
+                    RangeBarState::new_with_trade_accumulation(trade, self.threshold_ratio)
                 } else {
-                    RangeBarState::new(&trade, self.threshold_ratio)
+                    RangeBarState::new(trade, self.threshold_ratio)
                 });
                 Ok(None)
             }
             Some(bar_state) => {
                 // Issue #59 & #96 Task #44: Accumulate trade for intra-bar features (before breach check)
                 // Only accumulates if features enabled, avoiding unnecessary clones
-                bar_state.accumulate_trade(&trade, self.include_intra_bar_features);
+                bar_state.accumulate_trade(trade, self.include_intra_bar_features);
 
                 // Check for threshold breach
                 let price_breaches = bar_state.bar.is_breach(
@@ -433,7 +434,7 @@ impl RangeBarProcessor {
 
                 if price_breaches && timestamp_allows_close {
                     // Breach detected AND timestamp changed - close current bar
-                    bar_state.bar.update_with_trade(&trade);
+                    bar_state.bar.update_with_trade(trade);
 
                     // Validation: Ensure high/low include open/close extremes
                     debug_assert!(
@@ -475,7 +476,7 @@ impl RangeBarProcessor {
                     Ok(Some(completed_bar))
                 } else {
                     // Either no breach OR same timestamp (gate active) - update existing bar
-                    bar_state.bar.update_with_trade(&trade);
+                    bar_state.bar.update_with_trade(trade);
                     Ok(None)
                 }
             }
@@ -836,7 +837,7 @@ impl RangeBarProcessor {
         };
 
         // Issue #96 Task #98: Pre-compute threshold ratio (same as with_options)
-        let threshold_ratio = ((checkpoint.threshold_decimal_bps as i64) * crate::fixed_point::SCALE as i64)
+        let threshold_ratio = ((checkpoint.threshold_decimal_bps as i64) * crate::fixed_point::SCALE)
             / (crate::fixed_point::BASIS_POINTS_SCALE as i64);
 
         Ok(Self {

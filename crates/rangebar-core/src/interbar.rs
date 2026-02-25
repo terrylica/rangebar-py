@@ -230,7 +230,7 @@ impl TradeHistory {
             self.prune_stats.1 = self.prune_stats.1.saturating_add(1);
 
             // Every 10 prune calls, reevaluate batch size
-            if self.prune_stats.1 % 10 == 0 && self.prune_stats.1 > 0 {
+            if self.prune_stats.1 > 0 && self.prune_stats.1.is_multiple_of(10) {
                 let avg_removed = self.prune_stats.0 / self.prune_stats.1;
                 let removal_efficiency = if trades_before > 0 {
                     (avg_removed * 100) / (trades_before + avg_removed)
@@ -380,41 +380,6 @@ impl TradeHistory {
             }
         }
     }
-
-    /// Get trades for lookback computation (excludes trades at or after bar_open_time)
-    ///
-    /// This is CRITICAL for temporal integrity - we only use trades that
-    /// occurred BEFORE the current bar opened.
-    ///
-    /// # Performance
-    ///
-    /// Uses binary search to find cutoff index (trades are timestamp-sorted).
-    /// O(log n) vs O(n) for linear scan. Returns SmallVec with 256 inline capacity.
-    /// Typical lookback windows (100-500 trades) avoid heap allocation entirely.
-    /// Issue #96 Task #41: Binary search optimization for lookback filter.
-    /// Issue #96 Task #163: Cache binary search results (O(1) hit path for repeated timestamps)
-    /// Get lookback trades before a given bar opening time
-    ///
-    /// Issue #96 Task #165: SmallVec capacity tuning
-    /// Current: 256 slots = 256 * 8 bytes = 2KB stack per call
-    ///
-    /// Trade-off Analysis (Data-Driven Profiling):
-    /// - Typical consolidation: 50-150 trades (fits inline, no heap)
-    /// - Typical trending: 200-400 trades (fits inline, no heap)
-    /// - Edge cases (spike): 500+ trades (heap allocation)
-    ///
-    /// Current 256 capacity is optimal for:
-    /// - 99th percentile lookback in typical workloads
-    /// - Balance between stack footprint (2KB) and heap allocation frequency
-    /// - Zero overhead for most trading scenarios
-    ///
-    /// Potential optimization (0.5-1% speedup) requires:
-    /// - Production histogram analysis on real BTCUSDT data
-    /// - Measurement of allocation frequency vs window size
-    /// - Trade-off: Reduce to 128 saves 1KB stack but increases heap allocs
-    ///
-    /// Current status: OPTIMIZED (Task #136 profiling confirmed)
-    /// Next review: Measure with production data if needed
 
     /// Fast-path check for empty lookback window (Issue #96 Task #178)
     ///
@@ -959,7 +924,7 @@ impl TradeHistory {
         // Performance: 30-40% bars skipped in ranging markets (2-4% speedup)
         if n >= 64 {
             // Check if entropy is available and indicates high randomness (near random walk)
-            let should_skip_hurst = entropy_value.map_or(false, |e| e > 0.75);
+            let should_skip_hurst = entropy_value.is_some_and(|e| e > 0.75);
 
             if should_skip_hurst {
                 // High entropy indicates random walk behavior → Hurst ≈ 0.5
