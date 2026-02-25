@@ -947,4 +947,37 @@ mod tests {
         assert!(trade.price.to_f64() > 49999.0);
         assert!(trade.volume.to_f64() > 2.0);
     }
+
+    // === Issue #96: CsvAggTrade.to_agg_trade() + market path tests ===
+
+    #[test]
+    fn test_csv_to_agg_trade_normalizes_ms_to_us() {
+        let csv = CsvAggTrade(1, 50000.0, 1.0, 1, 1, 1640995200000, false);
+        let trade = csv.to_agg_trade("spot");
+        // normalize_timestamp converts 13-digit ms → µs
+        assert_eq!(trade.timestamp, 1640995200000 * 1000);
+        assert_eq!(trade.agg_trade_id, 1);
+    }
+
+    #[test]
+    fn test_csv_from_vs_to_agg_trade_timestamp_differs() {
+        let csv1 = CsvAggTrade(1, 50000.0, 1.0, 1, 1, 1640995200000, false);
+        let csv2 = CsvAggTrade(1, 50000.0, 1.0, 1, 1, 1640995200000, false);
+        let from_trade: AggTrade = csv1.into();
+        let to_trade = csv2.to_agg_trade("spot");
+        // From uses raw timestamp; to_agg_trade normalizes ms → µs
+        assert_eq!(from_trade.timestamp, 1640995200000);
+        assert_eq!(to_trade.timestamp, 1640995200000 * 1000);
+        // Other fields identical
+        assert_eq!(from_trade.agg_trade_id, to_trade.agg_trade_id);
+        assert_eq!(from_trade.price, to_trade.price);
+    }
+
+    #[test]
+    fn test_get_market_path_variants() {
+        assert_eq!(HistoricalDataLoader::new("BTCUSDT").get_market_path(), "spot");
+        assert_eq!(HistoricalDataLoader::new_with_market("BTCUSDT", "um").get_market_path(), "futures/um");
+        assert_eq!(HistoricalDataLoader::new_with_market("BTCUSDT", "cm").get_market_path(), "futures/cm");
+        assert_eq!(HistoricalDataLoader::new_with_market("BTCUSDT", "unknown").get_market_path(), "spot");
+    }
 }
