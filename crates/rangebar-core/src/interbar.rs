@@ -2310,4 +2310,62 @@ mod tests {
         assert_eq!(lookback.len(), 1, "Should get 1 trade before ts=200");
         assert_eq!(lookback[0].timestamp, 100);
     }
+
+    // === buffer_stats() and has_lookback_trades() edge case tests (Issue #96 Task #71) ===
+
+    #[test]
+    fn test_buffer_stats_empty_history() {
+        let history = TradeHistory::new(InterBarConfig::default());
+        let (trades_len, max_capacity, _batch, trades_pruned) = history.buffer_stats();
+        assert_eq!(trades_len, 0, "Empty history should have 0 trades");
+        assert!(max_capacity > 0, "max_safe_capacity should be positive");
+        assert_eq!(trades_pruned, 0, "No trades should have been pruned");
+    }
+
+    #[test]
+    fn test_buffer_stats_after_pushes() {
+        let mut history = TradeHistory::new(InterBarConfig::default());
+        for i in 0..5 {
+            history.push(&make_agg_trade(i, 100.0, i * 100));
+        }
+        let (trades_len, _max_capacity, _batch, _trades_pruned) = history.buffer_stats();
+        assert_eq!(trades_len, 5, "Should have 5 trades after 5 pushes");
+    }
+
+    #[test]
+    fn test_has_lookback_no_trades_before_open() {
+        let mut history = TradeHistory::new(InterBarConfig::default());
+        // All trades at timestamp 1000+
+        for i in 0..5 {
+            history.push(&make_agg_trade(i, 100.0, 1000 + i * 100));
+        }
+        // bar_open_time before all trades: should have lookback
+        assert!(history.has_lookback_trades(1000 + 200), "Should have lookback before ts=1200");
+        // bar_open_time at first trade: no trades BEFORE it
+        assert!(!history.has_lookback_trades(1000), "No trades before first trade timestamp");
+        // bar_open_time before all trades: no lookback
+        assert!(!history.has_lookback_trades(500), "No trades before ts=500");
+    }
+
+    #[test]
+    fn test_has_lookback_all_trades_before_open() {
+        let mut history = TradeHistory::new(InterBarConfig::default());
+        for i in 0..5 {
+            history.push(&make_agg_trade(i, 100.0, i * 100));
+        }
+        // bar_open_time after all trades: all 5 trades are lookback
+        assert!(history.has_lookback_trades(999), "All trades should be lookback");
+    }
+
+    #[test]
+    fn test_buffer_stats_len_matches_is_empty() {
+        let history = TradeHistory::new(InterBarConfig::default());
+        assert!(history.is_empty(), "New history should be empty");
+        assert_eq!(history.len(), 0, "New history length should be 0");
+
+        let mut history2 = TradeHistory::new(InterBarConfig::default());
+        history2.push(&make_agg_trade(1, 100.0, 1000));
+        assert!(!history2.is_empty(), "History with 1 trade should not be empty");
+        assert_eq!(history2.len(), 1, "History length should be 1");
+    }
 }
