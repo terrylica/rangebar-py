@@ -3939,6 +3939,124 @@ mod kyle_kaufman_edge_tests {
 }
 
 #[cfg(test)]
+mod garman_hurst_edge_tests {
+    use super::*;
+    use crate::interbar_types::TradeSnapshot;
+    use crate::FixedPoint;
+
+    fn make_snapshot(ts: i64, price: f64, volume: f64, is_buyer_maker: bool) -> TradeSnapshot {
+        TradeSnapshot {
+            timestamp: ts,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint((volume * 1e8) as i64),
+            is_buyer_maker,
+            turnover: (price * volume * 1e8) as i128,
+        }
+    }
+
+    // --- Garman-Klass edge cases ---
+
+    #[test]
+    fn test_gk_empty() {
+        let refs: Vec<&TradeSnapshot> = vec![];
+        let gk = compute_garman_klass(&refs);
+        assert_eq!(gk, 0.0);
+    }
+
+    #[test]
+    fn test_gk_single_trade() {
+        let trades = vec![make_snapshot(1000, 50000.0, 1.0, false)];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let gk = compute_garman_klass(&refs);
+        // Single trade: open=close=high=low, log(h/l)=0, log(c/o)=0 → variance=0 → 0.0
+        assert_eq!(gk, 0.0, "single trade → GK = 0.0");
+    }
+
+    #[test]
+    fn test_gk_all_same_price() {
+        let trades = vec![
+            make_snapshot(1000, 42000.0, 1.0, false),
+            make_snapshot(2000, 42000.0, 2.0, true),
+            make_snapshot(3000, 42000.0, 3.0, false),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let gk = compute_garman_klass(&refs);
+        assert_eq!(gk, 0.0, "same price → zero range → GK = 0.0");
+    }
+
+    #[test]
+    fn test_gk_positive_for_volatile_window() {
+        let trades = vec![
+            make_snapshot(1000, 100.0, 1.0, false),
+            make_snapshot(2000, 120.0, 1.0, true),
+            make_snapshot(3000, 80.0, 1.0, false),
+            make_snapshot(4000, 110.0, 1.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let gk = compute_garman_klass(&refs);
+        assert!(gk > 0.0, "volatile window → GK > 0, got {gk}");
+        assert!(gk.is_finite(), "GK must be finite");
+    }
+
+    #[test]
+    fn test_gk_with_ohlc_matches_trade_version() {
+        let trades = vec![
+            make_snapshot(1000, 100.0, 1.0, false),
+            make_snapshot(2000, 150.0, 1.0, true),
+            make_snapshot(3000, 80.0, 1.0, false),
+            make_snapshot(4000, 120.0, 1.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let gk_trades = compute_garman_klass(&refs);
+        let gk_ohlc = compute_garman_klass_with_ohlc(100.0, 150.0, 80.0, 120.0);
+        assert!(
+            (gk_trades - gk_ohlc).abs() < 1e-10,
+            "trade vs OHLC mismatch: {gk_trades} vs {gk_ohlc}"
+        );
+    }
+
+    #[test]
+    fn test_gk_with_ohlc_zero_price() {
+        let gk = compute_garman_klass_with_ohlc(0.0, 100.0, 50.0, 75.0);
+        assert_eq!(gk, 0.0, "zero open → guard returns 0.0");
+    }
+
+    // --- Hurst DFA edge cases ---
+
+    #[test]
+    fn test_hurst_insufficient_data() {
+        let prices: Vec<f64> = (0..30).map(|i| 100.0 + i as f64).collect();
+        let h = compute_hurst_dfa(&prices);
+        assert_eq!(h, 0.5, "< 64 samples → neutral 0.5");
+    }
+
+    #[test]
+    fn test_hurst_constant_prices() {
+        let prices = vec![42000.0; 100];
+        let h = compute_hurst_dfa(&prices);
+        assert!(h.is_finite(), "constant prices must not produce NaN/Inf");
+        assert!(h >= 0.0 && h <= 1.0, "Hurst must be in [0, 1], got {h}");
+    }
+
+    #[test]
+    fn test_hurst_trending_up() {
+        let prices: Vec<f64> = (0..100).map(|i| 100.0 + i as f64 * 0.5).collect();
+        let h = compute_hurst_dfa(&prices);
+        assert!(h >= 0.0 && h <= 1.0, "Hurst must be in [0, 1], got {h}");
+        // Trending should produce H > 0.5 (after soft clamping)
+        assert!(h >= 0.45, "trending series: Hurst should be >= 0.45, got {h}");
+    }
+
+    #[test]
+    fn test_hurst_exactly_64_samples() {
+        let prices: Vec<f64> = (0..64).map(|i| 100.0 + (i as f64).sin() * 10.0).collect();
+        let h = compute_hurst_dfa(&prices);
+        assert!(h.is_finite(), "exactly 64 samples must not panic");
+        assert!(h >= 0.0 && h <= 1.0, "Hurst must be in [0, 1], got {h}");
+    }
+}
+
+#[cfg(test)]
 mod proptest_bounds {
     use super::*;
     use crate::interbar_types::TradeSnapshot;
