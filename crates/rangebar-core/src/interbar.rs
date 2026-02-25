@@ -523,21 +523,7 @@ impl TradeHistory {
                     // Cache hit: return cached result (O(1) instead of O(log n))
                     let cutoff_idx = cached_idx;
                     drop(cache); // Release lock before constructing result
-                    if cutoff_idx == 0 {
-                        return SmallVec::new();
-                    }
-                    if cutoff_idx == 1 {
-                        let mut result = SmallVec::new();
-                        result.push(&self.trades[0]);
-                        return result;
-                    }
-                    if cutoff_idx == 2 {
-                        let mut result = SmallVec::new();
-                        result.push(&self.trades[0]);
-                        result.push(&self.trades[1]);
-                        return result;
-                    }
-                    // Task #24: Manual loop instead of .collect() to use SmallVec inline buffer
+                    // Task #26: Unified path — loop handles all sizes (0 = no iterations)
                     let mut result = SmallVec::new();
                     for i in 0..cutoff_idx {
                         result.push(&self.trades[i]);
@@ -592,26 +578,7 @@ impl TradeHistory {
             }
         }
 
-        // Issue #96 Task #68: Early-exit for tiny lookbacks to avoid collect() overhead
-        // If cutoff_idx < 3, we have 0-2 trades: direct inline collection is more efficient
-        if cutoff_idx == 0 {
-            return SmallVec::new();
-        }
-        if cutoff_idx == 1 {
-            let mut result = SmallVec::new();
-            result.push(&self.trades[0]);
-            return result;
-        }
-        if cutoff_idx == 2 {
-            let mut result = SmallVec::new();
-            result.push(&self.trades[0]);
-            result.push(&self.trades[1]);
-            return result;
-        }
-
-        // Issue #96 Task #185: Manual loop instead of .collect() to eliminate iterator overhead
-        // Generic case (cutoff_idx >= 3) uses index-based loop matching fast-path pattern
-        // Enables compiler optimization (bounds elimination, vectorization)
+        // Task #26: Unified loop handles all sizes (0 = no iterations, no special cases needed)
         let mut result = SmallVec::new();
         for i in 0..cutoff_idx {
             result.push(&self.trades[i]);
