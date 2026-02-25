@@ -518,9 +518,10 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
     let min_scale = (n / 4).max(8);
     let max_scale = n / 2;
 
-    // Issue #96 Task #57: Pre-size log vectors to typical capacity (8-12 scale points)
-    let mut log_scales = Vec::with_capacity(12);
-    let mut log_fluctuations = Vec::with_capacity(12);
+    // Issue #96 Task #57: SmallVec for log vectors — DFA has 8-12 scale points
+    // Inline storage eliminates 2 heap allocations per DFA call
+    let mut log_scales = SmallVec::<[f64; 12]>::new();
+    let mut log_fluctuations = SmallVec::<[f64; 12]>::new();
 
     let mut scale = min_scale;
     while scale <= max_scale {
