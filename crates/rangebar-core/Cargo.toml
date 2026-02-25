@@ -57,7 +57,7 @@ quick_cache = "0.6"
 
 # wide for stable Rust SIMD support (Issue #96 Task #127 - burstiness SIMD acceleration)
 # Provides portable SIMD without nightly requirement
-wide = "0.7"
+wide = "1.1"
 
 # mimalloc for high-performance memory allocation (Phase 9 Task #147)
 # Expected 2-5x speedup on multithreaded workloads vs glibc malloc
