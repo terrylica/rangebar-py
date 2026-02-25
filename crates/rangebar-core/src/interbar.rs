@@ -48,7 +48,7 @@ static ENTROPY_CACHE_WARMUP: Lazy<()> = Lazy::new(|| {
 });
 
 /// Trade history ring buffer for inter-bar feature computation
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TradeHistory {
     /// Ring buffer of recent trades
     trades: VecDeque<TradeSnapshot>,
@@ -82,16 +82,17 @@ pub struct TradeHistory {
     adaptive_prune_batch: usize,
     /// Tracks total trades pruned and prune calls for efficiency measurement
     prune_stats: (usize, usize), // (trades_pruned, prune_calls)
-    /// Issue #96 Task #163: Cache last binary search result (thread-safe, with Arc for Clone)
+    /// Issue #96 Task #163: Cache last binary search result
     /// Avoids O(log n) binary search when bar_open_time hasn't changed significantly
     /// Most bars have similar/close timestamps, so cutoff index changes slowly
-    /// Uses Arc<parking_lot::Mutex<>> for thread-safe shared access with Clone support
-    last_binary_search_cache: std::sync::Arc<parking_lot::Mutex<Option<(i64, usize)>>>,  // (open_time, cutoff_idx)
+    /// Issue #96 Task #58: Removed Arc wrapper (eliminates indirection + atomic refcount overhead)
+    last_binary_search_cache: parking_lot::Mutex<Option<(i64, usize)>>,  // (open_time, cutoff_idx)
     /// Issue #96 Task #167: Lookahead prediction buffer for binary search optimization
     /// Tracks last 2 search results to predict next position via timestamp delta trend
     /// On miss, analyzes trend = (ts_delta) / (idx_delta) to hint next search bounds
     /// Reduces binary search iterations by 20-40% on trending data patterns
-    lookahead_buffer: std::sync::Arc<parking_lot::Mutex<SmallVec<[(i64, usize); 3]>>>,
+    /// Issue #96 Task #58: Removed Arc wrapper (eliminates indirection + atomic refcount overhead)
+    lookahead_buffer: parking_lot::Mutex<SmallVec<[(i64, usize); 3]>>,
 }
 
 /// Cold path: return default inter-bar features for empty lookback
@@ -195,8 +196,8 @@ impl TradeHistory {
             feature_result_cache,
             adaptive_prune_batch: initial_prune_batch,
             prune_stats: (0, 0),
-            last_binary_search_cache: std::sync::Arc::new(parking_lot::Mutex::new(None)), // Issue #96 Task #163: Initialize binary search cache
-            lookahead_buffer: std::sync::Arc::new(parking_lot::Mutex::new(SmallVec::new())), // Issue #96 Task #167: Initialize lookahead buffer
+            last_binary_search_cache: parking_lot::Mutex::new(None), // Issue #96 Task #163/#58: No Arc indirection
+            lookahead_buffer: parking_lot::Mutex::new(SmallVec::new()), // Issue #96 Task #167/#58: No Arc indirection
         }
     }
 
@@ -443,16 +444,15 @@ impl TradeHistory {
             return false;
         }
 
-        // Check cache first for O(1) path (Issue #96 Task #163)
+        // Check cache first for O(1) path (Issue #96 Task #163/#58)
         {
             let cache = self.last_binary_search_cache.lock();
             if let Some((cached_time, cached_idx)) = *cache {
                 if cached_time == bar_open_time {
-                    // Cache hit: use cached cutoff index
-                    return cached_idx > 0; // Non-zero means we have lookback trades
+                    return cached_idx > 0;
                 }
             }
-        } // Lock is released here
+        }
 
         // Cache miss: use partition_point for cleaner cutoff lookup
         // Issue #96 Task #48: partition_point avoids Ok/Err unwrapping overhead
@@ -491,16 +491,13 @@ impl TradeHistory {
     }
 
     pub fn get_lookback_trades(&self, bar_open_time: i64) -> SmallVec<[&TradeSnapshot; 256]> {
-        // Issue #96 Task #163: Check cache first
-        // During typical trading, timestamps change gradually so this hits frequently
+        // Issue #96 Task #163/#58: Check cache first
         {
             let cache = self.last_binary_search_cache.lock();
             if let Some((cached_time, cached_idx)) = *cache {
                 if cached_time == bar_open_time {
-                    // Cache hit: return cached result (O(1) instead of O(log n))
                     let cutoff_idx = cached_idx;
-                    drop(cache); // Release lock before constructing result
-                    // Task #26: Unified path — loop handles all sizes (0 = no iterations)
+                    drop(cache);
                     let mut result = SmallVec::new();
                     for i in 0..cutoff_idx {
                         result.push(&self.trades[i]);
@@ -508,7 +505,7 @@ impl TradeHistory {
                     return result;
                 }
             }
-        } // Lock is released here
+        }
 
         // Issue #96 Task #167 Phase 2: Trend-guided binary search with lookahead hint
         // Uses hint for O(1) boundary probe; falls back to O(log n) VecDeque binary search.
@@ -538,14 +535,13 @@ impl TradeHistory {
             ts_partition_point(&self.trades, bar_open_time)
         };
 
-        // Issue #96 Task #163: Update cache with new result
+        // Issue #96 Task #163/#58: Update cache
         *self.last_binary_search_cache.lock() = Some((bar_open_time, cutoff_idx));
 
-        // Issue #96 Task #167: Update lookahead buffer with new search result
+        // Issue #96 Task #167/#58: Update lookahead buffer
         {
             let mut buffer = self.lookahead_buffer.lock();
             buffer.push((bar_open_time, cutoff_idx));
-            // Keep only last 3 results for trend analysis
             if buffer.len() > 3 {
                 buffer.remove(0);
             }
