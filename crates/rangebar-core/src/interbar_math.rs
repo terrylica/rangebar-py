@@ -832,6 +832,8 @@ mod simd {
 ///
 /// Issue #96 Task #148 Phase 2: Kyle Lambda SIMD acceleration (1.5-2.5x speedup)
 /// Dispatch to SIMD or scalar based on feature flag
+/// Issue #96 Task #52: #[inline] for thin SIMD/scalar dispatcher
+#[inline]
 pub fn compute_kyle_lambda(lookback: &[&TradeSnapshot]) -> f64 {
     // Issue #96 Task #148 Phase 2: Dispatch to SIMD or scalar based on feature flag
     #[cfg(feature = "simd-kyle-lambda")]
@@ -986,6 +988,8 @@ fn compute_kyle_lambda_scalar(lookback: &[&TradeSnapshot]) -> f64 {
 /// - B = -1: Perfectly regular (periodic) arrivals
 /// - B = 0: Poisson process
 /// - B = +1: Maximally bursty
+/// Issue #96 Task #52: #[inline] for thin SIMD/scalar dispatcher
+#[inline]
 pub fn compute_burstiness(lookback: &[&TradeSnapshot]) -> f64 {
     // Issue #96 Task #4: Dispatch to SIMD or scalar based on feature flag
     #[cfg(feature = "simd-burstiness")]
@@ -1219,6 +1223,8 @@ const LN_3_FACTORIAL: f64 = 1.791759469228055;
 /// Reference: Garman & Klass (1980), Journal of Business, vol. 53, no. 1
 ///
 /// Coefficient precomputed: (2*ln(2) - 1) = 0.386294...
+/// Issue #96 Task #52: #[inline] for per-bar computation function
+#[inline]
 pub fn compute_garman_klass(lookback: &[&TradeSnapshot]) -> f64 {
     if lookback.is_empty() {
         return 0.0;
@@ -1290,6 +1296,8 @@ pub fn compute_garman_klass_with_ohlc(open: f64, high: f64, low: f64, close: f64
 /// - H > 0.5: Positively correlated (trending)
 ///
 /// Output: soft-clamped to [0, 1] for ML consumption
+/// Issue #96 Task #52: #[inline] for per-bar computation function
+#[inline]
 pub fn compute_hurst_dfa(prices: &[f64]) -> f64 {
     // Issue #96 Phase 3b: Integrate evrom/hurst for 4-5x speedup
     // Rescaled Range (R/S) Analysis: O(n log n) vs DFA O(n²)

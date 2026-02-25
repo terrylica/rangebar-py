@@ -129,6 +129,8 @@ fn intra_bar_invalid_price(n: usize) -> IntraBarFeatures {
 /// `IntraBarFeatures` struct with all 22 features (or None for insufficient data)
 ///
 /// Issue #96 Task #173: Uses reusable scratch buffers if available for zero-copy extraction
+/// Issue #96 Task #52: #[inline] for delegation to _with_scratch
+#[inline]
 pub fn compute_intra_bar_features(trades: &[AggTrade]) -> IntraBarFeatures {
     let mut scratch_prices = Vec::new();
     let mut scratch_volumes = Vec::new();
