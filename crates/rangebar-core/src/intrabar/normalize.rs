@@ -11,7 +11,7 @@
 //! Issue #96 Task #197: Uses precomputed lookup tables for sigmoid and tanh
 //! to replace expensive transcendental function calls (~100-200 CPU cycles each).
 
-use super::normalization_lut::{sigmoid_lut, tanh_lut};
+use super::normalization_lut::{cv_sigmoid_lut, sigmoid_lut, tanh_lut};
 
 /// Logistic sigmoid function: 1 / (1 + exp(-(x - center) * scale))
 ///
@@ -116,8 +116,8 @@ pub fn normalize_cv(cv: f64) -> f64 {
     // NaN handling: treat as CV=0 (would be perfectly regular if epochs existed)
     let cv_effective = if cv.is_nan() { 0.0 } else { cv };
 
-    // Logistic sigmoid centered at 0.5 with scale 4
-    logistic_sigmoid(cv_effective, 0.5, 4.0)
+    // Task #10: Precomputed LUT replaces exp() call (~50-100 CPU cycles → <1 cycle)
+    cv_sigmoid_lut(cv_effective)
 }
 
 /// Normalize max drawdown to [0, 1].

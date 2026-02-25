@@ -117,6 +117,35 @@ pub fn soft_clamp_hurst_lut(h: f64) -> f64 {
     0.5 + 0.5 * tanh_scaled
 }
 
+/// Pre-computed CV sigmoid LUT for [0.0, 5.0] with 0.1 step (Task #10)
+/// sigmoid(x, center=0.5, scale=4.0) = 1 / (1 + exp(-(x - 0.5) * 4))
+/// Size: 51 entries (0.0, 0.1, 0.2, ..., 5.0)
+/// CV values > 5.0 saturate at ~1.0 (0.99999998)
+const CV_SIGMOID_LUT: [f64; 51] = [
+    0.11920292, 0.16798161, 0.23147522, 0.31002552, 0.40131234,  // 0.0-0.4
+    0.50000000, 0.59868766, 0.68997448, 0.76852478, 0.83201839,  // 0.5-0.9
+    0.88079708, 0.91682730, 0.94267582, 0.96083428, 0.97340301,  // 1.0-1.4
+    0.98201379, 0.98787157, 0.99183743, 0.99451370, 0.99631576,  // 1.5-1.9
+    0.99752738, 0.99834120, 0.99888746, 0.99925397, 0.99949980,  // 2.0-2.4
+    0.99966465, 0.99977518, 0.99984929, 0.99989897, 0.99993228,  // 2.5-2.9
+    0.99995460, 0.99996957, 0.99997960, 0.99998633, 0.99999083,  // 3.0-3.4
+    0.99999386, 0.99999588, 0.99999724, 0.99999815, 0.99999876,  // 3.5-3.9
+    0.99999917, 0.99999944, 0.99999963, 0.99999975, 0.99999983,  // 4.0-4.4
+    0.99999989, 0.99999992, 0.99999995, 0.99999997, 0.99999998,  // 4.5-4.9
+    0.99999998,  // 5.0
+];
+
+/// Look up CV sigmoid value from precomputed LUT (Task #10)
+/// Input: CV (coefficient of variation) in [0, ∞), clamped to [0, 5]
+/// Output: sigmoid(cv, center=0.5, scale=4.0) approximation
+/// Replaces logistic_sigmoid() exp() call (~50-100 CPU cycles → <1 cycle)
+#[inline]
+pub fn cv_sigmoid_lut(cv: f64) -> f64 {
+    let clamped = cv.clamp(0.0, 5.0);
+    let index = ((clamped * 10.0).round() as usize).min(50);
+    CV_SIGMOID_LUT[index]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
