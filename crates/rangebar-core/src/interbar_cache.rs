@@ -113,10 +113,10 @@ impl InterBarCacheKey {
 /// in streaming scenarios with repeated window patterns.
 ///
 /// Typical hit rate: 15-30% for streaming (depends on market conditions)
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct InterBarFeatureCache {
-    /// Underlying LRU cache (via moka)
-    cache: moka::sync::Cache<InterBarCacheKey, InterBarFeatures>,
+    /// Underlying LRU cache (via quick_cache, S3-FIFO eviction)
+    cache: quick_cache::sync::Cache<InterBarCacheKey, InterBarFeatures>,
 }
 
 impl InterBarFeatureCache {
@@ -127,10 +127,7 @@ impl InterBarFeatureCache {
 
     /// Create with custom capacity
     pub fn with_capacity(capacity: u64) -> Self {
-        let cache = moka::sync::Cache::builder()
-            .max_capacity(capacity)
-            .build();
-
+        let cache = quick_cache::sync::Cache::new(capacity as usize);
         Self { cache }
     }
 
@@ -146,12 +143,12 @@ impl InterBarFeatureCache {
 
     /// Clear all cached entries
     pub fn clear(&self) {
-        self.cache.invalidate_all();
+        self.cache.clear();
     }
 
     /// Get cache statistics
     pub fn stats(&self) -> (u64, u64) {
-        (self.cache.entry_count(), INTERBAR_FEATURE_CACHE_CAPACITY)
+        (self.cache.len() as u64, INTERBAR_FEATURE_CACHE_CAPACITY)
     }
 }
 
@@ -290,9 +287,7 @@ mod tests {
             cache.insert(key, InterBarFeatures::default());
         }
 
-        // Moka eviction is async — sync pending tasks
-        cache.cache.run_pending_tasks();
-
+        // quick_cache evicts synchronously (no pending tasks needed)
         let (count, _) = cache.stats();
         assert!(
             count <= capacity,

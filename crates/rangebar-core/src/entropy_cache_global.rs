@@ -40,7 +40,7 @@ use parking_lot::RwLock;
 /// Trade-off: Larger cache → higher hit ratio (50%+ vs 34.5%) but more memory (80KB)
 /// Smaller cache → lower memory but reduced hit ratio
 ///
-/// Formula: memory ≈ capacity × 40 bytes (moka overhead + f64 value)
+/// Formula: memory ≈ capacity × 24 bytes (quick_cache overhead + f64 value)
 /// - 128 entries = 5KB (original per-processor)
 /// - 512 entries = 20KB (4x improvement, typical multi-symbol)
 /// - 1024 entries = 40KB (8x improvement, heavy multi-symbol)

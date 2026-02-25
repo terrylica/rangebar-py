@@ -49,8 +49,9 @@ num_cpus = "1.16"
 # parking_lot for optimized RwLock (Issue #96 Task #124 - lower latency than std::sync::RwLock)
 parking_lot = "0.12"
 
-# moka for production-grade LRU caching (Issue #96 Task #125 - automatic eviction, metrics)
-moka = { version = "0.12", features = ["sync"] }
+# quick_cache for high-performance LRU caching (Issue #96 Task #63 - 4-10x faster than moka)
+# S3-FIFO eviction, lower overhead than moka's W-TinyLFU for throughput-critical caches
+quick_cache = "0.6"
 
 # once_cell for lazy static globals (Issue #145: Multi-Symbol Entropy Cache Sharing)
 # Thread-safe, one-time initialization with no runtime cost after first access

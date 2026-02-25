@@ -269,7 +269,7 @@ pub fn compute_ofi_branchless(trades: &[&TradeSnapshot]) -> f64 {
 /// Entropy result cache for deterministic price sequences (Issue #96 Task #117)
 ///
 /// Caches permutation entropy results to avoid redundant computation on identical
-/// price sequences. Uses moka::sync::Cache for production-grade LRU eviction
+/// price sequences. Uses quick_cache::sync::Cache for production-grade LRU eviction
 /// with O(1) lookup. Useful for consolidation periods where price sequences
 /// repeat frequently.
 ///
@@ -279,16 +279,15 @@ pub fn compute_ofi_branchless(trades: &[&TradeSnapshot]) -> f64 {
 /// - Memory: Automatic LRU eviction (max 128 entries by default)
 ///
 /// # Implementation
-/// - Uses moka::sync::Cache with automatic LRU eviction (Issue #96 Task #125)
+/// - Uses quick_cache::sync::Cache with automatic LRU eviction (Issue #96 Task #125)
 /// - Hash function: AHasher (captures exact floating-point values)
-/// - Thread-safe via moka's internal locking
+/// - Thread-safe via quick_cache's internal locking
 /// - Metrics: Cache hit/miss/eviction tracking (Issue #96 Task #135)
-#[derive(Clone)]
 pub struct EntropyCache {
-    /// Production-grade LRU cache (moka provides automatic eviction)
+    /// High-performance LRU cache (quick_cache: 4-10x faster than moka, Issue #96 Task #63)
     /// Key: hash of price sequence, Value: computed entropy
     /// Max capacity: 128 entries (tuned for typical consolidation windows)
-    cache: moka::sync::Cache<u64, f64>,
+    cache: quick_cache::sync::Cache<u64, f64>,
     /// Metrics: hit counter (atomic for thread-safe access)
     hits: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     /// Metrics: miss counter (atomic for thread-safe access)
@@ -298,13 +297,8 @@ pub struct EntropyCache {
 impl EntropyCache {
     /// Create new empty entropy cache with LRU eviction and metrics tracking (Task #135)
     pub fn new() -> Self {
-        // Configure moka cache: 128 max entries, ~10KB memory for typical entropy values
-        let cache = moka::sync::Cache::builder()
-            .max_capacity(128)
-            .build();
-
         Self {
-            cache,
+            cache: quick_cache::sync::Cache::new(128),
             hits: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             misses: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
@@ -317,17 +311,13 @@ impl EntropyCache {
     ///
     /// ## Memory Usage
     ///
-    /// Approximate memory per entry: 40 bytes (moka overhead + u64 hash + f64 value)
-    /// - 128 entries ≈ 5KB (default, per-processor)
-    /// - 512 entries ≈ 20KB (4x improvement)
-    /// - 1024 entries ≈ 40KB (8x improvement, global cache)
+    /// Approximate memory per entry: ~24 bytes (quick_cache overhead + u64 key + f64 value)
+    /// - 128 entries ≈ 3KB (default, per-processor)
+    /// - 512 entries ≈ 12KB (4x improvement)
+    /// - 1024 entries ≈ 24KB (8x improvement, global cache)
     pub fn with_capacity(capacity: u64) -> Self {
-        let cache = moka::sync::Cache::builder()
-            .max_capacity(capacity)
-            .build();
-
         Self {
-            cache,
+            cache: quick_cache::sync::Cache::new(capacity as usize),
             hits: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             misses: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
@@ -386,7 +376,7 @@ impl EntropyCache {
         }
     }
 
-    /// Cache entropy result (O(1) operation, moka handles LRU eviction)
+    /// Cache entropy result (O(1) operation, quick_cache handles LRU eviction)
     pub fn insert(&mut self, prices: &[f64], entropy: f64) {
         if prices.is_empty() {
             return;
@@ -421,7 +411,7 @@ impl std::fmt::Debug for EntropyCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (hits, misses, hit_ratio) = self.metrics();
         f.debug_struct("EntropyCache")
-            .field("cache_size", &"moka(max_128)")
+            .field("cache_size", &"quick_cache(max_128)")
             .field("hits", &hits)
             .field("misses", &misses)
             .field("hit_ratio_percent", &format!("{:.1}%", hit_ratio))
