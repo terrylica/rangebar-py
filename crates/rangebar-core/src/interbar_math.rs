@@ -5263,3 +5263,72 @@ mod hurst_pe_stability_tests {
         assert!(pe.is_finite() && pe >= 0.0 && pe <= 1.0, "PE(60) bounded: {pe}");
     }
 }
+
+// Issue #96: Edge case tests for Tier 2/3 public functions lacking direct coverage
+#[cfg(test)]
+mod tier2_edge_case_tests {
+    use super::*;
+
+    #[test]
+    fn test_garman_klass_with_ohlc_zero_volatility() {
+        // All prices identical → variance = 0, should return 0.0
+        let gk = compute_garman_klass_with_ohlc(100.0, 100.0, 100.0, 100.0);
+        assert_eq!(gk, 0.0, "Constant OHLC → GK = 0");
+    }
+
+    #[test]
+    fn test_garman_klass_with_ohlc_negative_variance() {
+        // Close ≠ Open with tiny range → subtractive term dominates, variance < 0
+        let gk = compute_garman_klass_with_ohlc(99.0, 100.001, 99.999, 101.0);
+        // May be 0.0 if variance goes negative, or small positive
+        assert!(gk >= 0.0, "GK must be non-negative: {gk}");
+        assert!(gk.is_finite(), "GK must be finite");
+    }
+
+    #[test]
+    fn test_garman_klass_with_ohlc_zero_price_guard() {
+        assert_eq!(compute_garman_klass_with_ohlc(0.0, 100.0, 50.0, 75.0), 0.0);
+        assert_eq!(compute_garman_klass_with_ohlc(100.0, 100.0, 0.0, 75.0), 0.0);
+    }
+
+    #[test]
+    fn test_volume_moments_cached_insufficient_data() {
+        assert_eq!(compute_volume_moments_cached(&[]), (0.0, 0.0));
+        assert_eq!(compute_volume_moments_cached(&[1.0]), (0.0, 0.0));
+        assert_eq!(compute_volume_moments_cached(&[1.0, 2.0]), (0.0, 0.0));
+    }
+
+    #[test]
+    fn test_volume_moments_cached_constant_volume() {
+        let vols = vec![5.0; 100];
+        let (skew, kurt) = compute_volume_moments_cached(&vols);
+        assert_eq!(skew, 0.0, "Constant volume → skewness = 0");
+        assert_eq!(kurt, 0.0, "Constant volume → kurtosis = 0");
+    }
+
+    #[test]
+    fn test_volume_moments_with_mean_matches_cached() {
+        let vols = vec![1.0, 2.0, 3.0, 10.0, 0.5, 7.0, 4.0];
+        let mean = vols.iter().sum::<f64>() / vols.len() as f64;
+        let (skew1, kurt1) = compute_volume_moments_cached(&vols);
+        let (skew2, kurt2) = compute_volume_moments_with_mean(&vols, mean);
+        assert!((skew1 - skew2).abs() < 1e-10, "Skewness parity: {skew1} vs {skew2}");
+        assert!((kurt1 - kurt2).abs() < 1e-10, "Kurtosis parity: {kurt1} vs {kurt2}");
+    }
+
+    #[test]
+    fn test_kaufman_er_perfect_trend() {
+        // Monotonic up: net = total volatility, ER = 1.0
+        let prices: Vec<f64> = (0..20).map(|i| 100.0 + i as f64).collect();
+        let er = compute_kaufman_er(&prices);
+        assert!((er - 1.0).abs() < 1e-10, "Perfect trend → ER = 1.0: {er}");
+    }
+
+    #[test]
+    fn test_kaufman_er_pure_noise_returns_to_start() {
+        // Prices return to start: net = 0, ER = 0.0
+        let prices = vec![100.0, 105.0, 95.0, 110.0, 90.0, 100.0];
+        let er = compute_kaufman_er(&prices);
+        assert_eq!(er, 0.0, "Return-to-start → ER = 0: {er}");
+    }
+}
