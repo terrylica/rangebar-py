@@ -573,7 +573,7 @@ impl RangeBarProcessor {
             None
         };
 
-        let mut bars = Vec::with_capacity(agg_trade_records.len() / 100); // Heuristic capacity
+        let mut bars = Vec::with_capacity(agg_trade_records.len() / 50); // Heuristic: 50 trades/bar covers consolidation regimes
         let mut defer_open = false;
 
         for agg_record in agg_trade_records {
