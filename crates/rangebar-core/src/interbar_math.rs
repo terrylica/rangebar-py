@@ -3911,6 +3911,143 @@ mod extract_cache_tests {
 }
 
 #[cfg(test)]
+mod extract_prices_ohlc_cached_tests {
+    use super::*;
+    use crate::interbar_types::TradeSnapshot;
+    use crate::FixedPoint;
+
+    fn make_snapshot(ts: i64, price: f64, volume: f64, is_buyer_maker: bool) -> TradeSnapshot {
+        TradeSnapshot {
+            timestamp: ts,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint((volume * 1e8) as i64),
+            is_buyer_maker,
+            turnover: (price * volume * 1e8) as i128,
+        }
+    }
+
+    #[test]
+    fn test_empty() {
+        let refs: Vec<&TradeSnapshot> = vec![];
+        let (prices, (o, h, l, c)) = extract_prices_and_ohlc_cached(&refs);
+        assert!(prices.is_empty());
+        assert_eq!(o, 0.0);
+        assert_eq!(h, 0.0);
+        assert_eq!(l, 0.0);
+        assert_eq!(c, 0.0);
+    }
+
+    #[test]
+    fn test_single_trade() {
+        let trades = vec![make_snapshot(1000, 42000.0, 1.0, false)];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (prices, (o, h, l, c)) = extract_prices_and_ohlc_cached(&refs);
+        assert_eq!(prices.len(), 1);
+        assert!((o - c).abs() < 1e-6, "single trade: open == close");
+        assert!((h - l).abs() < 1e-6, "single trade: high == low");
+    }
+
+    #[test]
+    fn test_ohlc_invariants() {
+        let trades = vec![
+            make_snapshot(1000, 100.0, 1.0, false),
+            make_snapshot(2000, 150.0, 1.0, true),
+            make_snapshot(3000, 80.0, 1.0, false),
+            make_snapshot(4000, 120.0, 1.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (prices, (o, h, l, c)) = extract_prices_and_ohlc_cached(&refs);
+        assert_eq!(prices.len(), 4);
+        assert!(h >= o && h >= c, "high must be >= open and close");
+        assert!(l <= o && l <= c, "low must be <= open and close");
+        // Verify OHLC values match expectations
+        assert!((o - 100.0).abs() < 1e-6);
+        assert!((h - 150.0).abs() < 1e-6);
+        assert!((l - 80.0).abs() < 1e-6);
+        assert!((c - 120.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_prices_match_lookback_cache() {
+        let trades = vec![
+            make_snapshot(1000, 50.0, 2.0, false),
+            make_snapshot(2000, 80.0, 3.0, true),
+            make_snapshot(3000, 30.0, 1.0, false),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (prices, (o, h, l, c)) = extract_prices_and_ohlc_cached(&refs);
+        let cache = extract_lookback_cache(&refs);
+        // Verify parity with extract_lookback_cache
+        assert_eq!(prices.len(), cache.prices.len());
+        for (a, b) in prices.iter().zip(cache.prices.iter()) {
+            assert!((a - b).abs() < 1e-10, "price mismatch: {a} vs {b}");
+        }
+        assert!((o - cache.open).abs() < 1e-10);
+        assert!((h - cache.high).abs() < 1e-10);
+        assert!((l - cache.low).abs() < 1e-10);
+        assert!((c - cache.close).abs() < 1e-10);
+    }
+}
+
+#[cfg(test)]
+mod entropy_readonly_cache_tests {
+    use super::*;
+
+    #[test]
+    fn test_readonly_cache_miss_returns_none() {
+        let cache = EntropyCache::new();
+        let prices: Vec<f64> = (0..100).map(|i| 100.0 + i as f64).collect();
+        let result = compute_entropy_adaptive_cached_readonly(&prices, &cache);
+        assert!(result.is_none(), "Empty cache should return None");
+    }
+
+    #[test]
+    fn test_readonly_cache_hit_returns_value() {
+        let mut cache = EntropyCache::new();
+        let prices: Vec<f64> = (0..100).map(|i| 100.0 + i as f64).collect();
+        // Populate cache via write path
+        let expected = compute_entropy_adaptive_cached(&prices, &mut cache);
+        // Read-only should now hit
+        let result = compute_entropy_adaptive_cached_readonly(&prices, &cache);
+        assert!(result.is_some(), "Populated cache should return Some");
+        assert!((result.unwrap() - expected).abs() < 1e-10,
+            "Cached value mismatch: {} vs {expected}", result.unwrap());
+    }
+
+    #[test]
+    fn test_readonly_large_window_returns_none() {
+        // n >= 500 uses ApEn (not cached), so readonly should return None
+        let cache = EntropyCache::new();
+        let prices: Vec<f64> = (0..600).map(|i| 100.0 + i as f64 * 0.1).collect();
+        let result = compute_entropy_adaptive_cached_readonly(&prices, &cache);
+        assert!(result.is_none(), "Large window (n>=500) should return None from readonly");
+    }
+}
+
+#[cfg(test)]
+mod gk_negative_variance_tests {
+    use super::*;
+
+    #[test]
+    fn test_gk_negative_variance_returns_zero() {
+        // When close moves far from open relative to high-low range,
+        // the subtractive term dominates → negative variance → returns 0.0
+        // O=100, C=200, H=101, L=99 → log(C/O) >> log(H/L)
+        let gk = compute_garman_klass_with_ohlc(100.0, 101.0, 99.0, 200.0);
+        assert_eq!(gk, 0.0, "Negative variance should return 0.0, got {gk}");
+    }
+
+    #[test]
+    fn test_gk_borderline_variance() {
+        // When log(H/L)² term roughly equals the subtractive term
+        // O=100, C=110, H=115, L=95
+        let gk = compute_garman_klass_with_ohlc(100.0, 115.0, 95.0, 110.0);
+        assert!(gk >= 0.0, "GK should never be negative, got {gk}");
+        assert!(gk.is_finite(), "GK must be finite");
+    }
+}
+
+#[cfg(test)]
 mod kyle_kaufman_edge_tests {
     use super::*;
     use crate::interbar_types::TradeSnapshot;
