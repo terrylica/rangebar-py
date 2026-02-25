@@ -838,9 +838,10 @@ impl TradeHistory {
         }
 
         // Volume skewness (min 3 trades)
-        // Issue #96 Task #99: Use cached volumes instead of repeated .volume.to_f64() calls
+        // Issue #96 Task #51: Use pre-computed total_volume for mean (eliminates O(n) sum pass)
         if n >= 3 {
-            let (skew, kurt) = crate::interbar_math::compute_volume_moments_cached(&cache.volumes);
+            let mean_vol = cache.total_volume / n as f64;
+            let (skew, kurt) = crate::interbar_math::compute_volume_moments_with_mean(&cache.volumes, mean_vol);
             features.lookback_volume_skew = Some(skew);
             // Kurtosis requires 4 trades for meaningful estimate
             if n >= 4 {
