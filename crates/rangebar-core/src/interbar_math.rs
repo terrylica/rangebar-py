@@ -1550,14 +1550,15 @@ fn compute_permutation_entropy_m3_simd_batch(prices: &[f64]) -> f64 {
     }
 
     // Compute entropy from final histogram state
-    let total = n_patterns as f64;
+    // Issue #96: Pre-compute reciprocal (consistency with M=2 path)
+    let inv_total = 1.0 / n_patterns as f64;
     // Issue #96 Task #214: Eliminate filter() iterator overhead in M=3 path
     // fold() with inline condition avoids filter iterator chain overhead (~1-1.5% speedup)
     let entropy: f64 = pattern_counts
         .iter()
         .fold(0.0, |acc, &count| {
             if count > 0 {
-                let p = count as f64 / total;
+                let p = count as f64 * inv_total;
                 acc + (-p * libm::log(p))  // Issue #116: Use libm for 1.2-1.5x speedup
             } else {
                 acc
