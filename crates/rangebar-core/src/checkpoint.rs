@@ -20,9 +20,9 @@
 
 use crate::fixed_point::FixedPoint;
 use crate::types::RangeBar;
-use ahash::AHasher;
+use foldhash::fast::FixedState;
 use serde::{Deserialize, Serialize};
-use std::hash::Hasher;
+use std::hash::{BuildHasher, Hasher};
 use thiserror::Error;
 
 /// Price window size for hash calculation (last N prices)
@@ -303,11 +303,11 @@ impl PriceWindow {
         }
     }
 
-    /// Compute hash of the price window using ahash
+    /// Compute hash of the price window using foldhash
     ///
     /// Returns a 64-bit hash that can be used to verify position in data stream.
     pub fn compute_hash(&self) -> u64 {
-        let mut hasher = AHasher::default();
+        let mut hasher = FixedState::default().build_hasher();
 
         // Hash prices in order they were added (oldest to newest)
         if self.count < PRICE_WINDOW_SIZE {
