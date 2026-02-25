@@ -2221,4 +2221,75 @@ mod tests {
         let bars = processor.process_agg_trade_records(&trades).unwrap();
         assert_eq!(bars.len(), 2, "Should produce 2 completed bars from 2 breaches");
     }
+
+    #[test]
+    fn test_streaming_batch_parity_extended() {
+        // Task #29: Comprehensive streaming/batch parity with 20 trades producing 5+ bars
+        // Uses 100 dbps (0.1%) threshold for more frequent breaches
+        let threshold = 100;
+
+        // Build a zigzag price sequence that repeatedly breaches 0.1%
+        let mut trades = Vec::new();
+        let mut price = 50000.0;
+        for i in 0..20 {
+            // Alternate up and down movements exceeding 0.1%
+            if i % 3 == 0 && i > 0 {
+                price *= 1.002; // +0.2% → breach upward
+            } else if i % 3 == 1 && i > 1 {
+                price *= 0.998; // -0.2% → may breach downward
+            } else {
+                price *= 1.0005; // Small move, no breach
+            }
+            trades.push(test_utils::create_test_agg_trade(
+                (i + 1) as i64,
+                &format!("{:.8}", price),
+                "1.0",
+                (i as i64 + 1) * 1000,
+            ));
+        }
+
+        // === BATCH PATH ===
+        let mut batch_processor = RangeBarProcessor::new(threshold).unwrap();
+        let batch_bars = batch_processor.process_agg_trade_records(&trades).unwrap();
+
+        // === STREAMING PATH ===
+        let mut stream_processor = RangeBarProcessor::new(threshold).unwrap();
+        let mut stream_bars: Vec<RangeBar> = Vec::new();
+        for trade in &trades {
+            if let Some(bar) = stream_processor.process_single_trade(trade).unwrap() {
+                stream_bars.push(bar);
+            }
+        }
+
+        // === VERIFY PARITY ===
+        assert!(batch_bars.len() >= 3, "Should produce at least 3 bars from zigzag pattern");
+        assert_eq!(
+            batch_bars.len(), stream_bars.len(),
+            "Batch ({}) and streaming ({}) bar count mismatch",
+            batch_bars.len(), stream_bars.len()
+        );
+
+        for (i, (b, s)) in batch_bars.iter().zip(stream_bars.iter()).enumerate() {
+            assert_eq!(b.open, s.open, "Bar {i}: open mismatch");
+            assert_eq!(b.close, s.close, "Bar {i}: close mismatch");
+            assert_eq!(b.high, s.high, "Bar {i}: high mismatch");
+            assert_eq!(b.low, s.low, "Bar {i}: low mismatch");
+            assert_eq!(b.volume, s.volume, "Bar {i}: volume mismatch");
+            assert_eq!(b.open_time, s.open_time, "Bar {i}: open_time mismatch");
+            assert_eq!(b.close_time, s.close_time, "Bar {i}: close_time mismatch");
+            assert_eq!(b.individual_trade_count, s.individual_trade_count, "Bar {i}: trade_count mismatch");
+        }
+
+        // Verify incomplete bars match
+        let batch_inc = batch_processor.get_incomplete_bar();
+        let stream_inc = stream_processor.get_incomplete_bar();
+        match (&batch_inc, &stream_inc) {
+            (Some(b), Some(s)) => {
+                assert_eq!(b.open, s.open, "Incomplete: open mismatch");
+                assert_eq!(b.volume, s.volume, "Incomplete: volume mismatch");
+            }
+            (None, None) => {}
+            _ => panic!("Incomplete bar presence mismatch"),
+        }
+    }
 }
