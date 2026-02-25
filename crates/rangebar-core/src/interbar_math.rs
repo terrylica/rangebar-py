@@ -1910,9 +1910,11 @@ pub fn compute_entropy_adaptive(prices: &[f64]) -> f64 {
     }
 
     // Large windows: use ApEn with adaptive tolerance
-    let mean = prices.iter().sum::<f64>() / n as f64;
+    // Issue #96: Pre-compute reciprocal — replaces 2 divisions with 1 division + 2 multiplications
+    let n_inv = 1.0 / n as f64;
+    let mean = prices.iter().sum::<f64>() * n_inv;
     // Issue #96 Task #168: Optimize powi(2) to direct multiplication (0.5-1% speedup)
-    let variance = prices.iter().map(|p| { let d = p - mean; d * d }).sum::<f64>() / n as f64;
+    let variance = prices.iter().map(|p| { let d = p - mean; d * d }).sum::<f64>() * n_inv;
     let std = variance.sqrt();
     let r = 0.2 * std;
 
@@ -1971,9 +1973,11 @@ pub fn compute_entropy_adaptive_cached(
     }
 
     // Large windows: use ApEn (no caching benefit, too variable)
-    let mean = prices.iter().sum::<f64>() / n as f64;
+    // Issue #96: Pre-compute reciprocal — replaces 2 divisions with 1 division + 2 multiplications
+    let n_inv = 1.0 / n as f64;
+    let mean = prices.iter().sum::<f64>() * n_inv;
     // Issue #96 Task #168: Optimize powi(2) to direct multiplication (0.5-1% speedup)
-    let variance = prices.iter().map(|p| { let d = p - mean; d * d }).sum::<f64>() / n as f64;
+    let variance = prices.iter().map(|p| { let d = p - mean; d * d }).sum::<f64>() * n_inv;
     let std = variance.sqrt();
     let r = 0.2 * std;
 
