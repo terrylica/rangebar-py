@@ -507,6 +507,8 @@ impl RangeBar {
     /// | aggression_ratio | buy_trades / sell_trades | Lee & Ready (1991) |
     /// | aggregation_density_f64 | trade_count / agg_count | (proxy) |
     /// | turnover_imbalance | (buy_turn - sell_turn) / total_turn | (proxy) |
+    // Issue #96: #[inline] hint for single-callsite hot function (processor.rs bar close)
+    #[inline]
     pub fn compute_microstructure_features(&mut self) {
         // Extract values for computation (Issue #88: i128→f64 via SCALE)
         let buy_vol = self.buy_volume as f64 / SCALE as f64;
@@ -569,11 +571,15 @@ impl RangeBar {
             };
 
         // 6. Trade Intensity (trades per second)
-        // Note: duration_us is in microseconds, convert to seconds
-        // Issue #96: Multiply by reciprocal instead of dividing
+        // Issue #96: Pre-compute duration reciprocal (follows total_vol_recip pattern)
         let duration_sec = duration_us_raw as f64 * 1e-6;
-        self.trade_intensity = if duration_sec > f64::EPSILON {
-            trade_count / duration_sec
+        let duration_sec_recip = if duration_sec > f64::EPSILON {
+            1.0 / duration_sec
+        } else {
+            0.0
+        };
+        self.trade_intensity = if duration_sec_recip > 0.0 {
+            trade_count * duration_sec_recip
         } else {
             trade_count // Instant bar = all trades at once
         };
