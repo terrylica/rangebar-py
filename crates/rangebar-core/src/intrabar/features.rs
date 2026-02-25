@@ -1001,6 +1001,116 @@ mod tests {
             );
         }
     }
+
+    // === Task #11: Hurst DFA edge case tests ===
+
+    #[test]
+    fn test_hurst_dfa_all_identical_prices() {
+        // 70 identical prices: cumsum = 0, all segments RMS = 0
+        // Should return 0.5 fallback (no information)
+        let prices: Vec<f64> = vec![100.0; 70];
+        let h = compute_hurst_dfa(&prices);
+        assert!(h.is_finite(), "Hurst should be finite for identical prices");
+        assert!((h - 0.5).abs() < 0.15, "Hurst should be near 0.5 for flat prices: {}", h);
+    }
+
+    #[test]
+    fn test_hurst_dfa_monotonic_ascending() {
+        // 70 perfectly ascending prices: strong trend (H > 0.5)
+        let prices: Vec<f64> = (0..70).map(|i| 100.0 + i as f64 * 0.01).collect();
+        let h = compute_hurst_dfa(&prices);
+        assert!(h >= 0.0 && h <= 1.0, "Hurst out of bounds: {}", h);
+        assert!(h > 0.5, "Trending series should have H > 0.5: {}", h);
+    }
+
+    #[test]
+    fn test_hurst_dfa_mean_reverting() {
+        // 70 alternating prices: mean-reverting (H < 0.5)
+        let prices: Vec<f64> = (0..70).map(|i| {
+            if i % 2 == 0 { 100.0 } else { 100.5 }
+        }).collect();
+        let h = compute_hurst_dfa(&prices);
+        assert!(h >= 0.0 && h <= 1.0, "Hurst out of bounds: {}", h);
+        assert!(h < 0.55, "Mean-reverting series should have H <= 0.5: {}", h);
+    }
+
+    #[test]
+    fn test_hurst_dfa_exactly_64_trades() {
+        // Minimum threshold for Hurst computation (n >= 64)
+        let prices: Vec<f64> = (0..64).map(|i| 100.0 + (i as f64 * 0.3).sin()).collect();
+        let h = compute_hurst_dfa(&prices);
+        assert!(h >= 0.0 && h <= 1.0, "Hurst out of bounds at n=64: {}", h);
+    }
+
+    #[test]
+    fn test_hurst_dfa_below_threshold() {
+        // 63 trades: below minimum, should return 0.5 default
+        let prices: Vec<f64> = (0..63).map(|i| 100.0 + i as f64 * 0.01).collect();
+        let h = compute_hurst_dfa(&prices);
+        assert!((h - 0.5).abs() < f64::EPSILON, "Below threshold should return 0.5: {}", h);
+    }
+
+    // === Task #11: Permutation Entropy edge case tests ===
+
+    #[test]
+    fn test_pe_monotonic_ascending() {
+        // 60 strictly ascending: all patterns are identity [0,1,2]
+        // Entropy should be 0 (maximum order)
+        let prices: Vec<f64> = (0..60).map(|i| 100.0 + i as f64 * 0.01).collect();
+        let pe = compute_permutation_entropy(&prices, 3);
+        assert!((pe - 0.0).abs() < 0.01, "Ascending series should have PE near 0: {}", pe);
+    }
+
+    #[test]
+    fn test_pe_monotonic_descending() {
+        // 60 strictly descending: all patterns are reverse [2,1,0]
+        // Entropy should be 0 (maximum order, single pattern)
+        let prices: Vec<f64> = (0..60).map(|i| 200.0 - i as f64 * 0.01).collect();
+        let pe = compute_permutation_entropy(&prices, 3);
+        assert!((pe - 0.0).abs() < 0.01, "Descending series should have PE near 0: {}", pe);
+    }
+
+    #[test]
+    fn test_pe_all_identical_prices() {
+        // 60 identical prices: all windows tied, all map to pattern 0
+        // Entropy should be 0
+        let prices: Vec<f64> = vec![100.0; 60];
+        let pe = compute_permutation_entropy(&prices, 3);
+        assert!((pe - 0.0).abs() < 0.01, "Identical prices should have PE near 0: {}", pe);
+    }
+
+    #[test]
+    fn test_pe_alternating_high_entropy() {
+        // Alternating pattern creates diverse ordinal patterns → high entropy
+        let prices: Vec<f64> = (0..70).map(|i| {
+            match i % 6 {
+                0 => 100.0, 1 => 102.0, 2 => 101.0,
+                3 => 103.0, 4 => 99.0, 5 => 101.5,
+                _ => unreachable!(),
+            }
+        }).collect();
+        let pe = compute_permutation_entropy(&prices, 3);
+        assert!(pe > 0.5, "Diverse patterns should have high PE: {}", pe);
+        assert!(pe <= 1.0, "PE must be <= 1.0: {}", pe);
+    }
+
+    #[test]
+    fn test_pe_below_threshold() {
+        // 59 trades: below minimum for m=3 (needs factorial(3) + 3 - 1 = 8, but our impl uses 60)
+        // Actually compute_permutation_entropy requires n >= factorial(m) + m - 1 = 8
+        // But the caller checks n >= 60 before calling. Let's test internal threshold.
+        let prices: Vec<f64> = (0..7).map(|i| 100.0 + i as f64).collect();
+        let pe = compute_permutation_entropy(&prices, 3);
+        assert!((pe - 0.5).abs() < f64::EPSILON, "Below threshold should return 0.5: {}", pe);
+    }
+
+    #[test]
+    fn test_pe_exactly_at_threshold() {
+        // Exactly 8 trades: minimum for m=3 (factorial(3) + 3 - 1 = 8)
+        let prices: Vec<f64> = (0..8).map(|i| 100.0 + (i as f64 * 0.7).sin()).collect();
+        let pe = compute_permutation_entropy(&prices, 3);
+        assert!(pe >= 0.0 && pe <= 1.0, "PE at threshold should be valid: {}", pe);
+    }
 }
 
 /// Property-based tests for intra-bar feature bounds invariants.
