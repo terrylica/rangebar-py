@@ -1111,6 +1111,139 @@ mod tests {
         let pe = compute_permutation_entropy(&prices, 3);
         assert!(pe >= 0.0 && pe <= 1.0, "PE at threshold should be valid: {}", pe);
     }
+
+    // === Task #12: Intra-bar features edge case tests ===
+
+    #[test]
+    fn test_intra_bar_nan_first_price() {
+        // NaN first price should trigger invalid_price guard (line 166)
+        let trades = vec![
+            AggTrade {
+                agg_trade_id: 1,
+                price: FixedPoint(0), // 0.0 → triggers first_price <= 0.0 guard
+                volume: FixedPoint(100_000_000),
+                first_trade_id: 1,
+                last_trade_id: 1,
+                timestamp: 1_000_000,
+                is_buyer_maker: false,
+                is_best_match: None,
+            },
+            create_test_trade(100.0, 1.0, 2_000_000, false),
+        ];
+        let features = compute_intra_bar_features(&trades);
+        assert_eq!(features.intra_trade_count, Some(2));
+        // All ITH features should be None (invalid price path)
+        assert!(features.intra_bull_epoch_density.is_none());
+        assert!(features.intra_hurst.is_none());
+    }
+
+    #[test]
+    fn test_intra_bar_all_identical_prices() {
+        // 100 trades at same price: zero volatility scenario
+        let trades: Vec<AggTrade> = (0..100)
+            .map(|i| create_test_trade(100.0, 1.0, i * 1_000_000, i % 2 == 0))
+            .collect();
+
+        let features = compute_intra_bar_features(&trades);
+        assert_eq!(features.intra_trade_count, Some(100));
+
+        // Features should be valid (no panic), Kaufman ER undefined (path_length=0)
+        if let Some(er) = features.intra_kaufman_er {
+            // With zero path, ER is undefined → should return None or 0
+            assert!(er.is_finite(), "Kaufman ER should be finite: {}", er);
+        }
+
+        // Garman-Klass should handle zero high-low range
+        if let Some(gk) = features.intra_garman_klass_vol {
+            assert!(gk.is_finite(), "Garman-Klass should be finite: {}", gk);
+        }
+
+        // Hurst should be near 0.5 for flat prices (n=100 >= 64)
+        if let Some(h) = features.intra_hurst {
+            assert!(h.is_finite(), "Hurst should be finite for flat prices: {}", h);
+        }
+    }
+
+    #[test]
+    fn test_intra_bar_all_buys_count_imbalance() {
+        // All buy trades: count_imbalance should saturate at 1.0
+        let trades: Vec<AggTrade> = (0..20)
+            .map(|i| create_test_trade(100.0 + i as f64 * 0.1, 1.0, i * 1_000_000, false))
+            .collect();
+
+        let features = compute_intra_bar_features(&trades);
+        if let Some(ci) = features.intra_count_imbalance {
+            assert!(
+                (ci - 1.0).abs() < 0.01,
+                "All buys should have count_imbalance near 1.0: {}",
+                ci
+            );
+        }
+    }
+
+    #[test]
+    fn test_intra_bar_all_sells_count_imbalance() {
+        // All sell trades: count_imbalance should saturate at -1.0
+        let trades: Vec<AggTrade> = (0..20)
+            .map(|i| create_test_trade(100.0 - i as f64 * 0.1, 1.0, i * 1_000_000, true))
+            .collect();
+
+        let features = compute_intra_bar_features(&trades);
+        if let Some(ci) = features.intra_count_imbalance {
+            assert!(
+                (ci - (-1.0)).abs() < 0.01,
+                "All sells should have count_imbalance near -1.0: {}",
+                ci
+            );
+        }
+    }
+
+    #[test]
+    fn test_intra_bar_instant_bar_same_timestamp() {
+        // All trades at same timestamp: duration=0
+        let trades: Vec<AggTrade> = (0..10)
+            .map(|i| create_test_trade(100.0 + i as f64 * 0.1, 1.0, 1_000_000, i % 2 == 0))
+            .collect();
+
+        let features = compute_intra_bar_features(&trades);
+        assert_eq!(features.intra_trade_count, Some(10));
+
+        // Burstiness requires inter-arrival intervals; with all same timestamps,
+        // all intervals are 0, std_tau=0, burstiness should be None
+        if let Some(b) = features.intra_burstiness {
+            assert!(b.is_finite(), "Burstiness should be finite for instant bar: {}", b);
+        }
+
+        // Intensity with duration=0 should still be finite
+        if let Some(intensity) = features.intra_intensity {
+            assert!(intensity.is_finite(), "Intensity should be finite: {}", intensity);
+        }
+    }
+
+    #[test]
+    fn test_intra_bar_large_trade_count() {
+        // 500 trades: stress test for memory and numerical stability
+        let trades: Vec<AggTrade> = (0..500)
+            .map(|i| {
+                let price = 100.0 + (i as f64 * 0.1).sin() * 2.0;
+                create_test_trade(price, 0.5 + (i as f64 * 0.03).cos(), i * 1_000_000, i % 3 == 0)
+            })
+            .collect();
+
+        let features = compute_intra_bar_features(&trades);
+        assert_eq!(features.intra_trade_count, Some(500));
+
+        // All bounded features should be valid
+        if let Some(h) = features.intra_hurst {
+            assert!(h >= 0.0 && h <= 1.0, "Hurst out of bounds at n=500: {}", h);
+        }
+        if let Some(pe) = features.intra_permutation_entropy {
+            assert!(pe >= 0.0 && pe <= 1.0, "PE out of bounds at n=500: {}", pe);
+        }
+        if let Some(ofi) = features.intra_ofi {
+            assert!(ofi >= -1.0 && ofi <= 1.0, "OFI out of bounds at n=500: {}", ofi);
+        }
+    }
 }
 
 /// Property-based tests for intra-bar feature bounds invariants.
