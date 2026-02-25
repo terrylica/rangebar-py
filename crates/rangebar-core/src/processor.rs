@@ -827,8 +827,8 @@ impl RangeBarProcessor {
                 upper_threshold: upper,
                 lower_threshold: lower,
                 accumulated_trades: SmallVec::new(), // Lost on checkpoint - features may be partial
-                scratch_prices: Vec::new(),  // Issue #96 Task #173: Initialize scratch buffers
-                scratch_volumes: Vec::new(),
+                scratch_prices: SmallVec::new(),
+                scratch_volumes: SmallVec::new(),
             }),
             _ => None,
         };
@@ -1038,15 +1038,14 @@ struct RangeBarState {
     /// 2.5x safety margin while reducing from 32KB to 4KB per bar.
     pub accumulated_trades: SmallVec<[AggTrade; 64]>,
 
-    /// Scratch buffer for intra-bar price extraction (Issue #96 Task #173)
-    /// Reused across bars to avoid per-bar heap allocation
-    /// Cleared and reserved on each use for efficient memory reuse
-    pub scratch_prices: Vec<f64>,
+    /// Issue #96: Scratch buffer for intra-bar price extraction
+    /// SmallVec<[f64; 64]> keeps 95%+ of bars on stack (P99 trades/bar = 14, max = 26)
+    /// Eliminates heap allocation for typical bars, spills transparently for large ones
+    pub scratch_prices: SmallVec<[f64; 64]>,
 
-    /// Scratch buffer for intra-bar volume extraction (Issue #96 Task #173)
-    /// Reused across bars to avoid per-bar heap allocation
-    /// Cleared and reserved on each use for efficient memory reuse
-    pub scratch_volumes: Vec<f64>,
+    /// Issue #96: Scratch buffer for intra-bar volume extraction
+    /// Same sizing rationale as scratch_prices
+    pub scratch_volumes: SmallVec<[f64; 64]>,
 }
 
 impl RangeBarState {
@@ -1065,8 +1064,8 @@ impl RangeBarState {
             upper_threshold,
             lower_threshold,
             accumulated_trades: SmallVec::new(),
-            scratch_prices: Vec::new(),  // Issue #96 Task #173: Initialize scratch buffers
-            scratch_volumes: Vec::new(),
+            scratch_prices: SmallVec::new(),
+            scratch_volumes: SmallVec::new(),
         }
     }
 
@@ -1089,8 +1088,8 @@ impl RangeBarState {
                 sv.push(trade.clone());
                 sv
             },
-            scratch_prices: Vec::new(),  // Issue #96 Task #173: Initialize scratch buffers
-            scratch_volumes: Vec::new(),
+            scratch_prices: SmallVec::new(),
+            scratch_volumes: SmallVec::new(),
         }
     }
 

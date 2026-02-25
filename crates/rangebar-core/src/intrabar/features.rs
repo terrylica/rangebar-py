@@ -132,8 +132,8 @@ fn intra_bar_invalid_price(n: usize) -> IntraBarFeatures {
 /// Issue #96 Task #52: #[inline] for delegation to _with_scratch
 #[inline]
 pub fn compute_intra_bar_features(trades: &[AggTrade]) -> IntraBarFeatures {
-    let mut scratch_prices = Vec::new();
-    let mut scratch_volumes = Vec::new();
+    let mut scratch_prices = SmallVec::<[f64; 64]>::new();
+    let mut scratch_volumes = SmallVec::<[f64; 64]>::new();
     compute_intra_bar_features_with_scratch(trades, &mut scratch_prices, &mut scratch_volumes)
 }
 
@@ -141,8 +141,8 @@ pub fn compute_intra_bar_features(trades: &[AggTrade]) -> IntraBarFeatures {
 /// Issue #96 Task #173: Avoids per-bar heap allocation by reusing buffers across bars
 pub fn compute_intra_bar_features_with_scratch(
     trades: &[AggTrade],
-    scratch_prices: &mut Vec<f64>,
-    scratch_volumes: &mut Vec<f64>,
+    scratch_prices: &mut SmallVec<[f64; 64]>,
+    scratch_volumes: &mut SmallVec<[f64; 64]>,
 ) -> IntraBarFeatures {
     let n = trades.len();
 
