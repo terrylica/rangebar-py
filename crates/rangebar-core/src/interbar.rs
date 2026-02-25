@@ -458,28 +458,17 @@ impl TradeHistory {
         // We only need to know if cutoff_idx > 0, so we can short-circuit
         use std::cmp::Ordering;
 
-        match self.trades.binary_search_by(|trade| {
+        let idx = match self.trades.binary_search_by(|trade| {
             if trade.timestamp < bar_open_time {
                 Ordering::Less
             } else {
                 Ordering::Greater
             }
         }) {
-            Ok(idx) => {
-                // Exact match found - trades before this point are lookback
-                let has_lookback = idx > 0;
-                // Update cache for future calls
-                *self.last_binary_search_cache.lock() = Some((bar_open_time, idx));
-                has_lookback
-            }
-            Err(idx) => {
-                // Insertion point - all trades before this are lookback
-                let has_lookback = idx > 0;
-                // Update cache for future calls
-                *self.last_binary_search_cache.lock() = Some((bar_open_time, idx));
-                has_lookback
-            }
-        }
+            Ok(idx) | Err(idx) => idx,
+        };
+        *self.last_binary_search_cache.lock() = Some((bar_open_time, idx));
+        idx > 0
     }
 
     /// Analyze lookahead buffer to compute trend-based search hint
