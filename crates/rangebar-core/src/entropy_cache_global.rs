@@ -299,4 +299,25 @@ mod tests {
         let ptr2 = Arc::as_ptr(&local2);
         assert_ne!(ptr1, ptr2, "Local caches should point to different EntropyCache instances");
     }
+
+    // Issue #96 Task #96: Test warm_up_entropy_cache runs without panic
+
+    #[test]
+    fn test_warm_up_entropy_cache_completes() {
+        // warm_up_entropy_cache() should complete without panic
+        // Uses try_write() internally so is non-blocking
+        warm_up_entropy_cache();
+
+        // After warm-up, global cache should be accessible for reads
+        let cache = get_global_entropy_cache();
+        let guard = cache.read();
+        // Verify we can read from cache without panic (warm-up populated it)
+        let sample_prices = vec![100.0, 100.5, 100.2, 100.8, 100.1];
+        let _ = guard.get(&sample_prices); // May or may not hit, but shouldn't panic
+    }
+
+    #[test]
+    fn test_global_cache_capacity() {
+        assert_eq!(GLOBAL_ENTROPY_CACHE_CAPACITY, 1024);
+    }
 }

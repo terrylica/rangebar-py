@@ -1540,6 +1540,25 @@ mod tests {
         }
     }
 
+    // Issue #96 Task #97: Test TimestampOnly branch (Exness path, no trade IDs)
+    #[test]
+    fn test_verify_position_timestamp_only() {
+        // Fresh processor has last_trade_id = None (simulates Exness path)
+        let processor = RangeBarProcessor::new(250).unwrap();
+
+        let trade = test_utils::create_test_agg_trade(1, "50000.0", "1.0", 5000000);
+        let verification = processor.verify_position(&trade);
+
+        // last_trade_id is None → TimestampOnly branch
+        // gap_ms = (5000000 - 0) / 1000 = 5000
+        match verification {
+            PositionVerification::TimestampOnly { gap_ms } => {
+                assert_eq!(gap_ms, 5000, "gap_ms should be (timestamp - 0) / 1000");
+            }
+            _ => panic!("Expected TimestampOnly verification, got {:?}", verification),
+        }
+    }
+
     #[test]
     fn test_checkpoint_clean_completion() {
         // Test when last trade completes a bar with no remainder
