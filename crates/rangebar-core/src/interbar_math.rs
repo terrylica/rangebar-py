@@ -453,13 +453,14 @@ mod simd {
 
         // Compute inter-arrival times (microseconds between consecutive trades)
         let inter_arrivals = compute_inter_arrivals_simd(lookback);
-        let n = inter_arrivals.len() as f64;
+        // Issue #96: Pre-compute reciprocal — shared by mean and variance (eliminates 1 division)
+        let inv_n = 1.0 / inter_arrivals.len() as f64;
 
         // SIMD-accelerated mean computation
-        let mu = sum_f64_simd(&inter_arrivals) / n;
+        let mu = sum_f64_simd(&inter_arrivals) * inv_n;
 
         // SIMD-accelerated variance computation
-        let variance = variance_f64_simd(&inter_arrivals, mu);
+        let variance = variance_f64_simd(&inter_arrivals, mu, inv_n);
         let sigma = variance.sqrt();
 
         // Issue #96 Task #213: Branchless epsilon check in burstiness (SIMD path)
@@ -540,7 +541,8 @@ mod simd {
     /// Compute variance using SIMD with wide::f64x4 vectors.
     /// Processes 4 squared deviations per iteration for 4x speedup.
     #[inline]
-    fn variance_f64_simd(values: &[f64], mu: f64) -> f64 {
+    /// Issue #96: Accept pre-computed `inv_n` to eliminate redundant division
+    fn variance_f64_simd(values: &[f64], mu: f64, inv_n: f64) -> f64 {
         if values.is_empty() {
             return 0.0;
         }
@@ -568,7 +570,7 @@ mod simd {
             sum_sq += v * v;
         }
 
-        sum_sq / (values.len() as f64)
+        sum_sq * inv_n
     }
 
     #[cfg(test)]
