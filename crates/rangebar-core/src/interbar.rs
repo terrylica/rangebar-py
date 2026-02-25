@@ -91,8 +91,8 @@ pub struct TradeHistory {
     /// Tracks last 2 search results to predict next position via timestamp delta trend
     /// On miss, analyzes trend = (ts_delta) / (idx_delta) to hint next search bounds
     /// Reduces binary search iterations by 20-40% on trending data patterns
-    /// Issue #96 Task #58: Removed Arc wrapper (eliminates indirection + atomic refcount overhead)
-    lookahead_buffer: parking_lot::Mutex<SmallVec<[(i64, usize); 3]>>,
+    /// Issue #96 Task #62: VecDeque for O(1) pop_front (was SmallVec with O(n) remove(0))
+    lookahead_buffer: parking_lot::Mutex<VecDeque<(i64, usize)>>,
 }
 
 /// Cold path: return default inter-bar features for empty lookback
@@ -197,7 +197,7 @@ impl TradeHistory {
             adaptive_prune_batch: initial_prune_batch,
             prune_stats: (0, 0),
             last_binary_search_cache: parking_lot::Mutex::new(None), // Issue #96 Task #163/#58: No Arc indirection
-            lookahead_buffer: parking_lot::Mutex::new(SmallVec::new()), // Issue #96 Task #167/#58: No Arc indirection
+            lookahead_buffer: parking_lot::Mutex::new(VecDeque::with_capacity(3)), // Issue #96 Task #62: VecDeque for O(1) pop_front
         }
     }
 
@@ -541,9 +541,9 @@ impl TradeHistory {
         // Issue #96 Task #167/#58: Update lookahead buffer
         {
             let mut buffer = self.lookahead_buffer.lock();
-            buffer.push((bar_open_time, cutoff_idx));
+            buffer.push_back((bar_open_time, cutoff_idx));
             if buffer.len() > 3 {
-                buffer.remove(0);
+                buffer.pop_front();
             }
         }
 
