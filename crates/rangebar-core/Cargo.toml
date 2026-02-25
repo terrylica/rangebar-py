@@ -53,8 +53,6 @@ parking_lot = "0.12"
 # S3-FIFO eviction, lower overhead than moka's W-TinyLFU for throughput-critical caches
 quick_cache = "0.6"
 
-# once_cell replaced by std::sync::LazyLock (stable since Rust 1.80, MSRV 1.90)
-
 # wide for stable Rust SIMD support (Issue #96 Task #127 - burstiness SIMD acceleration)
 # Provides portable SIMD without nightly requirement
 wide = "1.1"
