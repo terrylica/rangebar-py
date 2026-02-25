@@ -3693,6 +3693,120 @@ mod branchless_ofi_tests {
 }
 
 #[cfg(test)]
+mod extract_cache_tests {
+    use super::*;
+    use crate::interbar_types::TradeSnapshot;
+    use crate::FixedPoint;
+
+    fn make_snapshot(ts: i64, price: f64, volume: f64, is_buyer_maker: bool) -> TradeSnapshot {
+        TradeSnapshot {
+            timestamp: ts,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint((volume * 1e8) as i64),
+            is_buyer_maker,
+            turnover: (price * volume * 1e8) as i128,
+        }
+    }
+
+    #[test]
+    fn test_lookback_cache_empty() {
+        let refs: Vec<&TradeSnapshot> = vec![];
+        let cache = extract_lookback_cache(&refs);
+        assert!(cache.prices.is_empty());
+        assert!(cache.volumes.is_empty());
+        assert_eq!(cache.total_volume, 0.0);
+    }
+
+    #[test]
+    fn test_lookback_cache_single_trade() {
+        let trades = vec![make_snapshot(1000, 50000.0, 2.5, false)];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let cache = extract_lookback_cache(&refs);
+        assert_eq!(cache.prices.len(), 1);
+        assert!((cache.open - 50000.0).abs() < 1e-6);
+        assert!((cache.close - 50000.0).abs() < 1e-6);
+        assert!((cache.high - 50000.0).abs() < 1e-6);
+        assert!((cache.low - 50000.0).abs() < 1e-6);
+        assert!((cache.total_volume - 2.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_lookback_cache_ascending_prices() {
+        let trades = vec![
+            make_snapshot(1000, 100.0, 1.0, false),
+            make_snapshot(2000, 200.0, 2.0, false),
+            make_snapshot(3000, 300.0, 3.0, false),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let cache = extract_lookback_cache(&refs);
+        assert!((cache.open - 100.0).abs() < 1e-6);
+        assert!((cache.close - 300.0).abs() < 1e-6);
+        assert!((cache.high - 300.0).abs() < 1e-6);
+        assert!((cache.low - 100.0).abs() < 1e-6);
+        assert!((cache.total_volume - 6.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_lookback_cache_ohlc_invariants() {
+        // V-shape: high in middle, low at edges
+        let trades = vec![
+            make_snapshot(1000, 50.0, 1.0, false),
+            make_snapshot(2000, 100.0, 1.0, true),
+            make_snapshot(3000, 30.0, 1.0, false),
+            make_snapshot(4000, 80.0, 1.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let cache = extract_lookback_cache(&refs);
+        assert!(cache.high >= cache.open, "high >= open");
+        assert!(cache.high >= cache.close, "high >= close");
+        assert!(cache.low <= cache.open, "low <= open");
+        assert!(cache.low <= cache.close, "low <= close");
+        assert!((cache.high - 100.0).abs() < 1e-6);
+        assert!((cache.low - 30.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_lookback_cache_all_same_price() {
+        let trades = vec![
+            make_snapshot(1000, 42000.0, 1.0, false),
+            make_snapshot(2000, 42000.0, 2.0, true),
+            make_snapshot(3000, 42000.0, 3.0, false),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let cache = extract_lookback_cache(&refs);
+        assert!((cache.high - cache.low).abs() < 1e-6, "same price: high == low");
+        assert!((cache.open - cache.close).abs() < 1e-6, "same price: open == close");
+    }
+
+    #[test]
+    fn test_ohlc_batch_empty() {
+        let refs: Vec<&TradeSnapshot> = vec![];
+        let (o, h, l, c) = extract_ohlc_batch(&refs);
+        assert_eq!(o, 0.0);
+        assert_eq!(h, 0.0);
+        assert_eq!(l, 0.0);
+        assert_eq!(c, 0.0);
+    }
+
+    #[test]
+    fn test_ohlc_batch_matches_cache() {
+        let trades = vec![
+            make_snapshot(1000, 50.0, 1.0, false),
+            make_snapshot(2000, 80.0, 2.0, true),
+            make_snapshot(3000, 30.0, 3.0, false),
+            make_snapshot(4000, 60.0, 4.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let cache = extract_lookback_cache(&refs);
+        let (o, h, l, c) = extract_ohlc_batch(&refs);
+        assert!((o - cache.open).abs() < 1e-10, "open mismatch");
+        assert!((h - cache.high).abs() < 1e-10, "high mismatch");
+        assert!((l - cache.low).abs() < 1e-10, "low mismatch");
+        assert!((c - cache.close).abs() < 1e-10, "close mismatch");
+    }
+}
+
+#[cfg(test)]
 mod proptest_bounds {
     use super::*;
     use crate::interbar_types::TradeSnapshot;
