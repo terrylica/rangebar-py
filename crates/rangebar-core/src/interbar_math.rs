@@ -436,6 +436,7 @@ mod simd {
     //! Expected speedup: 2-4x vs scalar on ARM64/x86_64 via SIMD vectorization
 
     use crate::interbar_types::TradeSnapshot;
+    use smallvec::SmallVec;
     use wide::f64x4;
 
     /// True SIMD-accelerated burstiness computation using wide::f64x4 vectors.
@@ -476,13 +477,14 @@ mod simd {
     /// Compute inter-arrival times using SIMD vectorization.
     /// Processes 4 timestamp differences at a time with f64x4.
     #[inline]
-    fn compute_inter_arrivals_simd(lookback: &[&TradeSnapshot]) -> Vec<f64> {
+    /// Issue #96: SmallVec avoids heap allocation for typical bars (≤256 trades)
+    fn compute_inter_arrivals_simd(lookback: &[&TradeSnapshot]) -> SmallVec<[f64; 256]> {
         let n = lookback.len();
         if n < 2 {
-            return vec![];
+            return SmallVec::new();
         }
 
-        let mut inter_arrivals = vec![0.0; n - 1];
+        let mut inter_arrivals: SmallVec<[f64; 256]> = smallvec::smallvec![0.0; n - 1];
 
         // Process inter-arrivals (n-1 elements)
         let iter_count = (n - 1) / 4;
