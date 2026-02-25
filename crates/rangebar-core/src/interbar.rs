@@ -501,8 +501,6 @@ impl TradeHistory {
     }
 
     pub fn get_lookback_trades(&self, bar_open_time: i64) -> SmallVec<[&TradeSnapshot; 256]> {
-        use std::cmp::Ordering;
-
         // Issue #96 Task #163: Check cache first
         // During typical trading, timestamps change gradually so this hits frequently
         {
@@ -601,15 +599,17 @@ impl TradeHistory {
     /// `InterBarFeatures` with computed values, or `None` for features that
     /// cannot be computed due to insufficient data.
     pub fn compute_features(&self, bar_open_time: i64) -> InterBarFeatures {
-        // Issue #96 Task #178: Fast-path for empty lookback windows
-        // Skip SmallVec allocation if we know there are no lookback trades (0.3-0.8% speedup)
-        if !self.has_lookback_trades(bar_open_time) {
+        // Issue #96 Task #44: Eliminate double binary search in compute_features
+        // Previously: has_lookback_trades() (mutex lock + binary search + cache update)
+        //   then get_lookback_trades() (mutex lock + cache hit + SmallVec construction)
+        // Now: trades.is_empty() O(1) fast-path + single get_lookback_trades() call
+        // Saves 1 mutex lock acquisition per bar (~0.3-0.5% speedup)
+        if self.trades.is_empty() {
             return default_interbar_features();
         }
 
         let lookback = self.get_lookback_trades(bar_open_time);
 
-        // This should never be empty now (checked above), but keep as safety check
         if lookback.is_empty() {
             return default_interbar_features();
         }
