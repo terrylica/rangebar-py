@@ -634,4 +634,57 @@ mod tests {
         assert_eq!(proc.get_all_completed_bars().len(), 0);
         assert!(proc.get_incomplete_bar().is_none());
     }
+
+    // === Issue #96: Cross-processor parity verification ===
+
+    #[test]
+    fn test_parity_with_range_bar_processor() {
+        use crate::processor::RangeBarProcessor;
+
+        // Test across multiple thresholds
+        for threshold in [250, 500, 1000] {
+            // Generate a multi-breach trade sequence
+            let trades: Vec<AggTrade> = (0..20)
+                .map(|i| {
+                    let price = format!("{:.8}", 100.0 + (i as f64 * 0.15));
+                    buy_trade(i + 1, &price, "1.0", 1000 + i * 1000)
+                })
+                .collect();
+
+            // Process with both processors
+            let mut main_proc = RangeBarProcessor::new(threshold).unwrap();
+            let main_bars = main_proc.process_agg_trade_records(&trades).unwrap();
+
+            let mut export_proc = ExportRangeBarProcessor::new(threshold).unwrap();
+            export_proc.process_trades_continuously(&trades);
+            let export_bars = export_proc.get_all_completed_bars();
+
+            // Bar count must match
+            assert_eq!(
+                main_bars.len(), export_bars.len(),
+                "threshold={threshold}: bar count mismatch: main={} export={}",
+                main_bars.len(), export_bars.len()
+            );
+
+            // Per-bar field-level comparison
+            for (i, (m, e)) in main_bars.iter().zip(export_bars.iter()).enumerate() {
+                assert_eq!(m.open, e.open, "t={threshold} bar={i}: open mismatch");
+                assert_eq!(m.high, e.high, "t={threshold} bar={i}: high mismatch");
+                assert_eq!(m.low, e.low, "t={threshold} bar={i}: low mismatch");
+                assert_eq!(m.close, e.close, "t={threshold} bar={i}: close mismatch");
+                assert_eq!(m.volume, e.volume, "t={threshold} bar={i}: volume mismatch");
+                assert_eq!(m.open_time, e.open_time, "t={threshold} bar={i}: open_time mismatch");
+                assert_eq!(m.close_time, e.close_time, "t={threshold} bar={i}: close_time mismatch");
+                assert_eq!(m.individual_trade_count, e.individual_trade_count, "t={threshold} bar={i}: trade_count mismatch");
+                assert_eq!(
+                    m.first_agg_trade_id, e.first_agg_trade_id,
+                    "t={threshold} bar={i}: first_agg_trade_id mismatch"
+                );
+                assert_eq!(
+                    m.last_agg_trade_id, e.last_agg_trade_id,
+                    "t={threshold} bar={i}: last_agg_trade_id mismatch"
+                );
+            }
+        }
+    }
 }
