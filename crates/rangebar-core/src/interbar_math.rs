@@ -118,12 +118,9 @@ pub fn extract_lookback_cache(lookback: &[&TradeSnapshot]) -> LookbackCache {
         // Branchless finite checks: &= avoids branch misprediction
         cache.all_prices_finite &= p.is_finite();
         cache.all_volumes_finite &= v.is_finite();
-        if p > cache.high {
-            cache.high = p;
-        }
-        if p < cache.low {
-            cache.low = p;
-        }
+        // Issue #96 Task #61: Branchless min/max avoids branch misprediction
+        cache.high = cache.high.max(p);
+        cache.low = cache.low.min(p);
     }
 
     cache
