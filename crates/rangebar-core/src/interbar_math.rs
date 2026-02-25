@@ -267,7 +267,7 @@ pub fn compute_ofi_branchless(trades: &[&TradeSnapshot]) -> f64 {
 ///
 /// # Implementation
 /// - Uses moka::sync::Cache with automatic LRU eviction (Issue #96 Task #125)
-/// - Hash function: DefaultHasher (captures exact floating-point values)
+/// - Hash function: AHasher (captures exact floating-point values)
 /// - Thread-safe via moka's internal locking
 /// - Metrics: Cache hit/miss/eviction tracking (Issue #96 Task #135)
 #[derive(Clone)]

@@ -24,7 +24,7 @@
 //! - Temporal characteristics (duration, trade frequency)
 
 use crate::interbar_types::{InterBarFeatures, TradeSnapshot};
-use std::collections::hash_map::DefaultHasher;
+use ahash::AHasher;
 use std::hash::{Hash, Hasher};
 
 /// Maximum capacity for inter-bar feature cache
@@ -43,7 +43,7 @@ fn hash_trade_window(lookback: &[&TradeSnapshot]) -> u64 {
         return lookback.len() as u64;  // Return count as sentinel for cache miss
     }
 
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = AHasher::default();
 
     // Hash trade count (exact match)
     lookback.len().hash(&mut hasher);
