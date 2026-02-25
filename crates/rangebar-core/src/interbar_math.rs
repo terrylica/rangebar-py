@@ -3807,6 +3807,138 @@ mod extract_cache_tests {
 }
 
 #[cfg(test)]
+mod kyle_kaufman_edge_tests {
+    use super::*;
+    use crate::interbar_types::TradeSnapshot;
+    use crate::FixedPoint;
+
+    fn make_snapshot(ts: i64, price: f64, volume: f64, is_buyer_maker: bool) -> TradeSnapshot {
+        TradeSnapshot {
+            timestamp: ts,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint((volume * 1e8) as i64),
+            is_buyer_maker,
+            turnover: (price * volume * 1e8) as i128,
+        }
+    }
+
+    // --- Kyle Lambda edge cases ---
+
+    #[test]
+    fn test_kyle_lambda_single_trade() {
+        let trades = vec![make_snapshot(1000, 50000.0, 1.0, false)];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let kl = compute_kyle_lambda(&refs);
+        assert_eq!(kl, 0.0, "single trade → 0.0 (n < 2)");
+    }
+
+    #[test]
+    fn test_kyle_lambda_empty() {
+        let refs: Vec<&TradeSnapshot> = vec![];
+        let kl = compute_kyle_lambda(&refs);
+        assert_eq!(kl, 0.0, "empty → 0.0");
+    }
+
+    #[test]
+    fn test_kyle_lambda_zero_price_change() {
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 1.0, false),
+            make_snapshot(2000, 50000.0, 2.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let kl = compute_kyle_lambda(&refs);
+        assert_eq!(kl, 0.0, "no price change → kyle lambda = 0");
+    }
+
+    #[test]
+    fn test_kyle_lambda_balanced_volume() {
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 5.0, false),
+            make_snapshot(2000, 51000.0, 5.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let kl = compute_kyle_lambda(&refs);
+        assert_eq!(kl, 0.0, "balanced volume → zero imbalance → 0.0");
+    }
+
+    #[test]
+    fn test_kyle_lambda_all_same_price() {
+        let trades = vec![
+            make_snapshot(1000, 42000.0, 1.0, false),
+            make_snapshot(2000, 42000.0, 2.0, false),
+            make_snapshot(3000, 42000.0, 3.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let kl = compute_kyle_lambda(&refs);
+        assert!(kl.is_finite(), "kyle lambda must be finite for same-price");
+    }
+
+    #[test]
+    fn test_kyle_lambda_no_panic_large_window() {
+        // 100+ trades should not panic or produce NaN
+        let trades: Vec<_> = (0..150)
+            .map(|i| make_snapshot(i * 1000, 50000.0 + (i as f64) * 0.1, 1.0, i % 3 == 0))
+            .collect();
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let kl = compute_kyle_lambda(&refs);
+        assert!(kl.is_finite(), "kyle lambda must be finite for large window: {kl}");
+    }
+
+    // --- Kaufman ER edge cases ---
+
+    #[test]
+    fn test_kaufman_er_single_price() {
+        let prices = vec![50000.0];
+        let er = compute_kaufman_er(&prices);
+        assert_eq!(er, 0.0, "single price → 0.0 (n < 2)");
+    }
+
+    #[test]
+    fn test_kaufman_er_empty() {
+        let prices: Vec<f64> = vec![];
+        let er = compute_kaufman_er(&prices);
+        assert_eq!(er, 0.0, "empty → 0.0");
+    }
+
+    #[test]
+    fn test_kaufman_er_monotonic_up() {
+        let prices: Vec<f64> = (0..10).map(|i| 100.0 + i as f64).collect();
+        let er = compute_kaufman_er(&prices);
+        assert!((er - 1.0).abs() < 1e-10, "monotonic → ER = 1.0, got {er}");
+    }
+
+    #[test]
+    fn test_kaufman_er_monotonic_down() {
+        let prices: Vec<f64> = (0..10).map(|i| 100.0 - i as f64).collect();
+        let er = compute_kaufman_er(&prices);
+        assert!((er - 1.0).abs() < 1e-10, "monotonic down → ER = 1.0, got {er}");
+    }
+
+    #[test]
+    fn test_kaufman_er_all_same_price() {
+        let prices = vec![42000.0; 20];
+        let er = compute_kaufman_er(&prices);
+        assert_eq!(er, 0.0, "all same → ER = 0.0 (zero volatility)");
+    }
+
+    #[test]
+    fn test_kaufman_er_bounded_zigzag() {
+        // Zigzag: net movement is 0, volatility is high → ER near 0
+        let prices: Vec<f64> = (0..20).map(|i| if i % 2 == 0 { 100.0 } else { 110.0 }).collect();
+        let er = compute_kaufman_er(&prices);
+        assert!(er >= 0.0 && er <= 1.0, "ER must be in [0, 1], got {er}");
+        assert!(er < 0.1, "zigzag should have low ER, got {er}");
+    }
+
+    #[test]
+    fn test_kaufman_er_two_prices() {
+        let prices = vec![100.0, 200.0];
+        let er = compute_kaufman_er(&prices);
+        assert!((er - 1.0).abs() < 1e-10, "two prices with change → ER = 1.0, got {er}");
+    }
+}
+
+#[cfg(test)]
 mod proptest_bounds {
     use super::*;
     use crate::interbar_types::TradeSnapshot;
