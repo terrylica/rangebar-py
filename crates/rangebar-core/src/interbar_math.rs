@@ -3939,6 +3939,183 @@ mod kyle_kaufman_edge_tests {
 }
 
 #[cfg(test)]
+mod volume_moments_edge_tests {
+    use super::*;
+    use crate::interbar_types::TradeSnapshot;
+    use crate::FixedPoint;
+
+    fn make_snapshot(ts: i64, price: f64, volume: f64, is_buyer_maker: bool) -> TradeSnapshot {
+        TradeSnapshot {
+            timestamp: ts,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint((volume * 1e8) as i64),
+            is_buyer_maker,
+            turnover: (price * volume * 1e8) as i128,
+        }
+    }
+
+    #[test]
+    fn test_moments_empty() {
+        let refs: Vec<&TradeSnapshot> = vec![];
+        let (s, k) = compute_volume_moments(&refs);
+        assert_eq!(s, 0.0);
+        assert_eq!(k, 0.0);
+    }
+
+    #[test]
+    fn test_moments_one_trade() {
+        let trades = vec![make_snapshot(1000, 50000.0, 5.0, false)];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (s, k) = compute_volume_moments(&refs);
+        assert_eq!(s, 0.0, "n < 3 → 0.0");
+        assert_eq!(k, 0.0, "n < 3 → 0.0");
+    }
+
+    #[test]
+    fn test_moments_two_trades() {
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 1.0, false),
+            make_snapshot(2000, 50000.0, 10.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (s, k) = compute_volume_moments(&refs);
+        assert_eq!(s, 0.0, "n < 3 → 0.0");
+        assert_eq!(k, 0.0, "n < 3 → 0.0");
+    }
+
+    #[test]
+    fn test_moments_symmetric_distribution() {
+        // Symmetric volumes → skewness near 0
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 1.0, false),
+            make_snapshot(2000, 50000.0, 5.0, true),
+            make_snapshot(3000, 50000.0, 9.0, false),
+            make_snapshot(4000, 50000.0, 5.0, true),
+            make_snapshot(5000, 50000.0, 1.0, false),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (s, _k) = compute_volume_moments(&refs);
+        assert!(s.abs() < 0.5, "symmetric distribution → skew near 0, got {s}");
+    }
+
+    #[test]
+    fn test_moments_cached_matches_trade_version() {
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 1.0, false),
+            make_snapshot(2000, 50000.0, 3.0, true),
+            make_snapshot(3000, 50000.0, 7.0, false),
+            make_snapshot(4000, 50000.0, 2.0, true),
+            make_snapshot(5000, 50000.0, 5.0, false),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (s1, k1) = compute_volume_moments(&refs);
+
+        let volumes: Vec<f64> = trades.iter().map(|t| t.volume.to_f64()).collect();
+        let (s2, k2) = compute_volume_moments_cached(&volumes);
+
+        assert!(
+            (s1 - s2).abs() < 1e-10,
+            "skew mismatch: trade={s1}, cached={s2}"
+        );
+        assert!(
+            (k1 - k2).abs() < 1e-10,
+            "kurt mismatch: trade={k1}, cached={k2}"
+        );
+    }
+
+    #[test]
+    fn test_moments_cached_empty() {
+        let (s, k) = compute_volume_moments_cached(&[]);
+        assert_eq!(s, 0.0);
+        assert_eq!(k, 0.0);
+    }
+}
+
+#[cfg(test)]
+mod burstiness_edge_tests {
+    use super::*;
+    use crate::interbar_types::TradeSnapshot;
+    use crate::FixedPoint;
+
+    fn make_snapshot(ts: i64, price: f64, volume: f64, is_buyer_maker: bool) -> TradeSnapshot {
+        TradeSnapshot {
+            timestamp: ts,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint((volume * 1e8) as i64),
+            is_buyer_maker,
+            turnover: (price * volume * 1e8) as i128,
+        }
+    }
+
+    #[test]
+    fn test_burstiness_empty() {
+        let refs: Vec<&TradeSnapshot> = vec![];
+        let b = compute_burstiness(&refs);
+        assert_eq!(b, 0.0, "empty → 0.0");
+    }
+
+    #[test]
+    fn test_burstiness_single_trade() {
+        let trades = vec![make_snapshot(1000, 50000.0, 1.0, false)];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let b = compute_burstiness(&refs);
+        assert_eq!(b, 0.0, "single trade → 0.0 (n < 2)");
+    }
+
+    #[test]
+    fn test_burstiness_two_trades() {
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 1.0, false),
+            make_snapshot(2000, 50000.0, 1.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let b = compute_burstiness(&refs);
+        // Only 1 inter-arrival interval, sigma = 0 → B = (0 - mu) / (0 + mu) = -1
+        assert!(b.is_finite(), "burstiness must be finite for 2 trades");
+        assert!(b >= -1.0 && b <= 1.0, "burstiness out of [-1, 1]: {b}");
+    }
+
+    #[test]
+    fn test_burstiness_regular_intervals() {
+        // Perfect regularity: all intervals identical → sigma = 0 → B = -1
+        let trades: Vec<_> = (0..20)
+            .map(|i| make_snapshot(i * 1000, 50000.0, 1.0, false))
+            .collect();
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let b = compute_burstiness(&refs);
+        assert!((b - (-1.0)).abs() < 0.01, "regular intervals → B ≈ -1, got {b}");
+    }
+
+    #[test]
+    fn test_burstiness_same_timestamp() {
+        // All same timestamp → all intervals = 0 → mean = 0, sigma = 0 → denominator guarded
+        let trades: Vec<_> = (0..10)
+            .map(|_| make_snapshot(1000, 50000.0, 1.0, false))
+            .collect();
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let b = compute_burstiness(&refs);
+        assert!(b.is_finite(), "same-timestamp must not produce NaN");
+    }
+
+    #[test]
+    fn test_burstiness_bounded() {
+        // Variable intervals: mix of fast and slow arrivals
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 1.0, false),
+            make_snapshot(1001, 50000.0, 1.0, true),  // 1 us gap
+            make_snapshot(1002, 50000.0, 1.0, false),  // 1 us gap
+            make_snapshot(5000, 50000.0, 1.0, true),   // 3998 us gap (bursty)
+            make_snapshot(5001, 50000.0, 1.0, false),  // 1 us gap
+            make_snapshot(10000, 50000.0, 1.0, true),  // 4999 us gap (bursty)
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let b = compute_burstiness(&refs);
+        assert!(b >= -1.0 && b <= 1.0, "burstiness out of [-1, 1]: {b}");
+        assert!(b > 0.0, "variable intervals should show positive burstiness, got {b}");
+    }
+}
+
+#[cfg(test)]
 mod permutation_entropy_edge_tests {
     use super::*;
 
