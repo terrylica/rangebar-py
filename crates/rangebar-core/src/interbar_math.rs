@@ -4031,6 +4031,71 @@ mod entropy_readonly_cache_tests {
 }
 
 #[cfg(test)]
+mod entropy_adaptive_cached_tests {
+    use super::*;
+
+    #[test]
+    fn test_cached_matches_uncached_pe_path() {
+        // n < 500 → Permutation Entropy path
+        let prices: Vec<f64> = (0..200).map(|i| 100.0 + (i as f64 * 0.7).sin() * 5.0).collect();
+        let uncached = compute_entropy_adaptive(&prices);
+        let mut cache = EntropyCache::new();
+        let cached = compute_entropy_adaptive_cached(&prices, &mut cache);
+        assert!(
+            (uncached - cached).abs() < 1e-14,
+            "PE path mismatch: uncached={uncached}, cached={cached}"
+        );
+    }
+
+    #[test]
+    fn test_cached_matches_uncached_apen_path() {
+        // n >= 500 → Approximate Entropy path
+        let prices: Vec<f64> = (0..600).map(|i| 100.0 + (i as f64 * 0.3).sin() * 10.0).collect();
+        let uncached = compute_entropy_adaptive(&prices);
+        let mut cache = EntropyCache::new();
+        let cached = compute_entropy_adaptive_cached(&prices, &mut cache);
+        assert!(
+            (uncached - cached).abs() < 1e-14,
+            "ApEn path mismatch: uncached={uncached}, cached={cached}"
+        );
+    }
+
+    #[test]
+    fn test_cached_second_call_hits_cache() {
+        let prices: Vec<f64> = (0..100).map(|i| 50.0 + i as f64).collect();
+        let mut cache = EntropyCache::new();
+
+        let first = compute_entropy_adaptive_cached(&prices, &mut cache);
+        let (hits_before, misses_before, _) = cache.metrics();
+
+        let second = compute_entropy_adaptive_cached(&prices, &mut cache);
+        let (hits_after, _misses_after, _) = cache.metrics();
+
+        assert!(
+            (first - second).abs() < 1e-14,
+            "Same prices must produce identical entropy"
+        );
+        assert_eq!(hits_after, hits_before + 1, "Second call should be a cache hit");
+        assert_eq!(misses_before, 1, "First call should be a cache miss");
+    }
+
+    #[test]
+    fn test_cached_different_sequences_miss() {
+        let mut cache = EntropyCache::new();
+        let prices_a: Vec<f64> = (0..100).map(|i| 100.0 + i as f64).collect();
+        let prices_b: Vec<f64> = (0..100).map(|i| 200.0 + i as f64 * 2.0).collect();
+
+        let _ea = compute_entropy_adaptive_cached(&prices_a, &mut cache);
+        let (_, misses_after_a, _) = cache.metrics();
+        assert_eq!(misses_after_a, 1);
+
+        let _eb = compute_entropy_adaptive_cached(&prices_b, &mut cache);
+        let (_, misses_after_b, _) = cache.metrics();
+        assert_eq!(misses_after_b, 2, "Different sequence should miss cache");
+    }
+}
+
+#[cfg(test)]
 mod gk_negative_variance_tests {
     use super::*;
 
