@@ -1150,6 +1150,58 @@ mod tests {
         assert!(pe_asc < 0.1, "Pure ascending should have PE near 0: {}", pe_asc);
     }
 
+    #[test]
+    fn test_lehmer_code_bijection_m3() {
+        // Verify ordinal_indices_to_pattern_index is a bijection for all 6 permutations of m=3
+        // After the Lehmer factor fix [1,2,1] → [2,1,1], each permutation must map uniquely
+        use smallvec::SmallVec;
+        let permutations: [[usize; 3]; 6] = [
+            [0, 1, 2], [0, 2, 1], [1, 0, 2],
+            [1, 2, 0], [2, 0, 1], [2, 1, 0],
+        ];
+        let mut seen = std::collections::HashSet::new();
+        for perm in &permutations {
+            let sv: SmallVec<[usize; 4]> = SmallVec::from_slice(perm);
+            let idx = ordinal_indices_to_pattern_index(&sv);
+            assert!(idx < 6, "m=3 index must be in [0,5]: {:?} → {}", perm, idx);
+            assert!(seen.insert(idx), "Collision! {:?} → {} already used", perm, idx);
+        }
+        assert_eq!(seen.len(), 6, "Must map to exactly 6 unique indices");
+    }
+
+    #[test]
+    fn test_lehmer_code_bijection_m4() {
+        // Verify bijection for all 24 permutations of m=4
+        use smallvec::SmallVec;
+        let mut seen = std::collections::HashSet::new();
+        // Generate all 24 permutations of [0,1,2,3]
+        let mut perm = [0usize, 1, 2, 3];
+        loop {
+            let sv: SmallVec<[usize; 4]> = SmallVec::from_slice(&perm);
+            let idx = ordinal_indices_to_pattern_index(&sv);
+            assert!(idx < 24, "m=4 index must be in [0,23]: {:?} → {}", perm, idx);
+            assert!(seen.insert(idx), "Collision! {:?} → {} already used", perm, idx);
+            if !next_permutation(&mut perm) {
+                break;
+            }
+        }
+        assert_eq!(seen.len(), 24, "Must map to exactly 24 unique indices");
+    }
+
+    /// Generate next lexicographic permutation. Returns false when last permutation reached.
+    fn next_permutation(arr: &mut [usize]) -> bool {
+        let n = arr.len();
+        if n < 2 { return false; }
+        let mut i = n - 1;
+        while i > 0 && arr[i - 1] >= arr[i] { i -= 1; }
+        if i == 0 { return false; }
+        let mut j = n - 1;
+        while arr[j] <= arr[i - 1] { j -= 1; }
+        arr.swap(i - 1, j);
+        arr[i..].reverse();
+        true
+    }
+
     // === Task #12: Intra-bar features edge case tests ===
 
     #[test]
