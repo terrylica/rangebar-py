@@ -686,10 +686,12 @@ fn compute_permutation_entropy(prices: &[f64], m: usize) -> f64 {
     }
 
     // Compute Shannon entropy from pattern counts
+    // Issue #96: Pre-compute reciprocal — replaces per-pattern division with multiplication
+    let inv_num_patterns = 1.0 / num_patterns as f64;
     let mut entropy = 0.0;
     for &count in &pattern_counts[..max_patterns] {
         if count > 0 {
-            let p = count as f64 / num_patterns as f64;
+            let p = count as f64 * inv_num_patterns;
             entropy -= p * p.ln();
         }
     }
@@ -779,10 +781,12 @@ fn fallback_permutation_entropy(prices: &[f64], m: usize) -> f64 {
         *pattern_counts.entry(pattern_key).or_insert(0usize) += 1;
     }
 
+    // Issue #96: Pre-compute reciprocal — replaces per-pattern division with multiplication
+    let inv_num_patterns = 1.0 / num_patterns as f64;
     let mut entropy = 0.0;
     for &count in pattern_counts.values() {
         if count > 0 {
-            let p = count as f64 / num_patterns as f64;
+            let p = count as f64 * inv_num_patterns;
             entropy -= p * p.ln();
         }
     }
