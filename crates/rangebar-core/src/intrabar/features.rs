@@ -1528,6 +1528,42 @@ mod tests {
             assert!(pe < 0.1, "Monotonic descending → low PE: {}", pe);
         }
     }
+
+    #[test]
+    fn test_intra_bar_zero_volume_trades() {
+        // All trades have zero volume: tests division-by-zero handling in
+        // OFI, VWAP, Kyle Lambda, volume_per_trade, turnover_imbalance
+        let trades: Vec<AggTrade> = (0..20)
+            .map(|i| create_test_trade(100.0 + i as f64 * 0.1, 0.0, i * 1_000_000, i % 2 == 0))
+            .collect();
+
+        let features = compute_intra_bar_features(&trades);
+
+        // Should not panic — all features must be finite
+        assert_eq!(features.intra_trade_count, Some(20));
+
+        // OFI: (0-0)/0 → guarded to 0.0
+        if let Some(ofi) = features.intra_ofi {
+            assert!(ofi.is_finite(), "OFI must be finite with zero volume: {}", ofi);
+            assert!((ofi).abs() < f64::EPSILON, "OFI should be 0.0 with zero volume: {}", ofi);
+        }
+
+        // VWAP position: zero total_vol → falls back to first_price for vwap
+        if let Some(vp) = features.intra_vwap_position {
+            assert!(vp.is_finite(), "VWAP position must be finite: {}", vp);
+        }
+
+        // Kyle Lambda: total_vol=0 → None
+        assert!(features.intra_kyle_lambda.is_none(), "Kyle Lambda undefined with zero volume");
+
+        // Duration and intensity should still be valid
+        if let Some(d) = features.intra_duration_us {
+            assert!(d > 0, "Duration should be positive: {}", d);
+        }
+        if let Some(intensity) = features.intra_intensity {
+            assert!(intensity.is_finite() && intensity > 0.0, "Intensity finite: {}", intensity);
+        }
+    }
 }
 
 /// Property-based tests for intra-bar feature bounds invariants.
