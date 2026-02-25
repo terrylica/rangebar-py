@@ -148,3 +148,154 @@ impl InterBarFeatures {
         self.lookback_permutation_entropy = other.lookback_permutation_entropy;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // === InterBarConfig tests ===
+
+    #[test]
+    fn test_inter_bar_config_default() {
+        let config = InterBarConfig::default();
+        assert!(matches!(config.lookback_mode, LookbackMode::FixedCount(500)));
+        assert!(config.compute_tier2);
+        assert!(config.compute_tier3);
+    }
+
+    // === InterBarFeatures::default tests ===
+
+    #[test]
+    fn test_inter_bar_features_default_all_none() {
+        let f = InterBarFeatures::default();
+        // Tier 1
+        assert!(f.lookback_trade_count.is_none());
+        assert!(f.lookback_ofi.is_none());
+        assert!(f.lookback_duration_us.is_none());
+        assert!(f.lookback_intensity.is_none());
+        assert!(f.lookback_vwap.is_none());
+        assert!(f.lookback_vwap_position.is_none());
+        assert!(f.lookback_count_imbalance.is_none());
+        // Tier 2
+        assert!(f.lookback_kyle_lambda.is_none());
+        assert!(f.lookback_burstiness.is_none());
+        assert!(f.lookback_volume_skew.is_none());
+        assert!(f.lookback_volume_kurt.is_none());
+        assert!(f.lookback_price_range.is_none());
+        // Tier 3
+        assert!(f.lookback_kaufman_er.is_none());
+        assert!(f.lookback_garman_klass_vol.is_none());
+        assert!(f.lookback_hurst.is_none());
+        assert!(f.lookback_permutation_entropy.is_none());
+    }
+
+    // === merge_tier2 tests ===
+
+    #[test]
+    fn test_merge_tier2_overwrites_fields() {
+        let mut base = InterBarFeatures::default();
+        base.lookback_trade_count = Some(100); // Tier 1 — should not be affected
+
+        let mut source = InterBarFeatures::default();
+        source.lookback_kyle_lambda = Some(0.5);
+        source.lookback_burstiness = Some(-0.3);
+        source.lookback_volume_skew = Some(1.2);
+        source.lookback_volume_kurt = Some(3.5);
+        source.lookback_price_range = Some(0.02);
+
+        base.merge_tier2(&source);
+
+        // Tier 2 fields merged
+        assert_eq!(base.lookback_kyle_lambda, Some(0.5));
+        assert_eq!(base.lookback_burstiness, Some(-0.3));
+        assert_eq!(base.lookback_volume_skew, Some(1.2));
+        assert_eq!(base.lookback_volume_kurt, Some(3.5));
+        assert_eq!(base.lookback_price_range, Some(0.02));
+        // Tier 1 untouched
+        assert_eq!(base.lookback_trade_count, Some(100));
+        // Tier 3 untouched
+        assert!(base.lookback_kaufman_er.is_none());
+    }
+
+    #[test]
+    fn test_merge_tier2_none_overwrites_some() {
+        let mut base = InterBarFeatures::default();
+        base.lookback_kyle_lambda = Some(0.5);
+        base.lookback_burstiness = Some(-0.1);
+
+        let source = InterBarFeatures::default(); // all None
+
+        base.merge_tier2(&source);
+
+        // None overwrites Some — merge is unconditional
+        assert!(base.lookback_kyle_lambda.is_none());
+        assert!(base.lookback_burstiness.is_none());
+    }
+
+    // === merge_tier3 tests ===
+
+    #[test]
+    fn test_merge_tier3_overwrites_fields() {
+        let mut base = InterBarFeatures::default();
+        base.lookback_ofi = Some(0.8); // Tier 1 — should not be affected
+        base.lookback_kyle_lambda = Some(0.5); // Tier 2 — should not be affected
+
+        let mut source = InterBarFeatures::default();
+        source.lookback_kaufman_er = Some(0.75);
+        source.lookback_garman_klass_vol = Some(0.001);
+        source.lookback_hurst = Some(0.55);
+        source.lookback_permutation_entropy = Some(0.92);
+
+        base.merge_tier3(&source);
+
+        // Tier 3 fields merged
+        assert_eq!(base.lookback_kaufman_er, Some(0.75));
+        assert_eq!(base.lookback_garman_klass_vol, Some(0.001));
+        assert_eq!(base.lookback_hurst, Some(0.55));
+        assert_eq!(base.lookback_permutation_entropy, Some(0.92));
+        // Tier 1 untouched
+        assert_eq!(base.lookback_ofi, Some(0.8));
+        // Tier 2 untouched
+        assert_eq!(base.lookback_kyle_lambda, Some(0.5));
+    }
+
+    #[test]
+    fn test_merge_tier3_none_overwrites_some() {
+        let mut base = InterBarFeatures::default();
+        base.lookback_hurst = Some(0.5);
+        base.lookback_permutation_entropy = Some(0.9);
+
+        let source = InterBarFeatures::default(); // all None
+
+        base.merge_tier3(&source);
+
+        assert!(base.lookback_hurst.is_none());
+        assert!(base.lookback_permutation_entropy.is_none());
+    }
+
+    // === TradeSnapshot::from tests ===
+
+    #[test]
+    fn test_trade_snapshot_from_agg_trade() {
+        let price = FixedPoint::from_str("50000.0").unwrap();
+        let volume = FixedPoint::from_str("1.5").unwrap();
+        let trade = AggTrade {
+            agg_trade_id: 42,
+            price,
+            volume,
+            first_trade_id: 100,
+            last_trade_id: 105,
+            timestamp: 1_700_000_000_000_000,
+            is_buyer_maker: true,
+            is_best_match: Some(true),
+        };
+
+        let snap = TradeSnapshot::from(&trade);
+
+        assert_eq!(snap.price, price);
+        assert_eq!(snap.volume, volume);
+        assert_eq!(snap.timestamp, 1_700_000_000_000_000);
+        assert!(snap.is_buyer_maker);
+        assert_eq!(snap.turnover, trade.turnover());
+    }
+}
