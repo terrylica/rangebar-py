@@ -2293,4 +2293,77 @@ mod tests {
             "Pruning stats should be reasonable"
         );
     }
+
+    // === EDGE CASE TESTS (Issue #96 Task #22) ===
+
+    fn make_agg_trade(id: i64, price: f64, timestamp: i64) -> AggTrade {
+        AggTrade {
+            agg_trade_id: id,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint(100000000), // 1.0
+            first_trade_id: id,
+            last_trade_id: id,
+            timestamp,
+            is_buyer_maker: false,
+            is_best_match: None,
+        }
+    }
+
+    #[test]
+    fn test_get_lookback_empty_history() {
+        let history = TradeHistory::new(InterBarConfig::default());
+        let lookback = history.get_lookback_trades(1000);
+        assert!(lookback.is_empty(), "Empty history should return empty lookback");
+    }
+
+    #[test]
+    fn test_has_lookback_empty_history() {
+        let history = TradeHistory::new(InterBarConfig::default());
+        assert!(!history.has_lookback_trades(1000), "Empty history should have no lookback");
+    }
+
+    #[test]
+    fn test_get_lookback_all_trades_after_bar_open() {
+        let mut history = TradeHistory::new(InterBarConfig::default());
+        for i in 0..5 {
+            history.push(&make_agg_trade(i, 100.0, 2000 + i));
+        }
+        let lookback = history.get_lookback_trades(1000);
+        assert!(lookback.is_empty(), "All trades after bar_open_time should yield empty lookback");
+    }
+
+    #[test]
+    fn test_compute_features_minimum_lookback() {
+        let mut history = TradeHistory::new(InterBarConfig::default());
+        history.push(&make_agg_trade(1, 100.0, 1000));
+        history.push(&make_agg_trade(2, 101.0, 2000));
+
+        let features = history.compute_features(3000);
+        assert!(features.lookback_ofi.is_some(), "OFI should compute with 2 trades");
+        assert_eq!(features.lookback_trade_count, Some(2));
+    }
+
+    #[test]
+    fn test_has_lookback_cache_hit_path() {
+        let mut history = TradeHistory::new(InterBarConfig::default());
+        for i in 0..10 {
+            history.push(&make_agg_trade(i, 100.0, i * 100));
+        }
+        let has1 = history.has_lookback_trades(500);
+        let has2 = history.has_lookback_trades(500);
+        assert_eq!(has1, has2, "Cache hit should return same result");
+        assert!(has1, "Should have lookback trades before ts=500");
+    }
+
+    #[test]
+    fn test_get_lookback_trades_at_exact_timestamp() {
+        let mut history = TradeHistory::new(InterBarConfig::default());
+        for i in 1..=3i64 {
+            history.push(&make_agg_trade(i, 100.0, i * 100));
+        }
+        // bar_open_time = 200: should get trades BEFORE 200 (only ts=100)
+        let lookback = history.get_lookback_trades(200);
+        assert_eq!(lookback.len(), 1, "Should get 1 trade before ts=200");
+        assert_eq!(lookback[0].timestamp, 100);
+    }
 }
