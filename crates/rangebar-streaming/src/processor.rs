@@ -473,7 +473,7 @@ mod tests {
         // Send 1000 trades
         for i in 0..1000 {
             let trade = create_test_trade(i, 23000.0 + (i as f64), 1659312000000 + i);
-            if let Ok(bar_opt) = processor.process_single_trade(trade).await {
+            if let Ok(bar_opt) = processor.process_single_trade(&trade).await {
                 // Verify no accumulation - at most one bar per aggTrade
                 assert!(bar_opt.is_none() || bar_opt.is_some());
             }
@@ -511,6 +511,114 @@ mod tests {
 
         // Should close
         assert_eq!(circuit_breaker.state, CircuitBreakerState::Closed);
+    }
+
+    // === Circuit Breaker State Machine Tests ===
+
+    #[test]
+    fn test_circuit_breaker_stays_closed_below_threshold() {
+        let mut cb = CircuitBreaker::new(0.5, Duration::from_secs(10));
+
+        // 8 successes, 2 failures = 20% failure rate, below 50% threshold
+        for _ in 0..8 {
+            cb.record_success();
+        }
+        for _ in 0..2 {
+            cb.record_failure();
+        }
+
+        // Should remain closed (20% < 50%)
+        assert_eq!(cb.state, CircuitBreakerState::Closed);
+        assert!(cb.can_process());
+    }
+
+    #[test]
+    fn test_circuit_breaker_minimum_sample_size() {
+        let mut cb = CircuitBreaker::new(0.5, Duration::from_secs(10));
+
+        // 9 failures, 0 successes = 100% failure rate, but only 9 requests (< 10 minimum)
+        for _ in 0..9 {
+            cb.record_failure();
+        }
+
+        // Should remain closed (minimum sample size not met)
+        assert_eq!(cb.state, CircuitBreakerState::Closed);
+        assert!(cb.can_process());
+
+        // 10th failure triggers open
+        cb.record_failure();
+        assert_eq!(cb.state, CircuitBreakerState::Open);
+    }
+
+    #[test]
+    fn test_circuit_breaker_halfopen_failure_reopens() {
+        let mut cb = CircuitBreaker::new(0.5, Duration::from_secs(0));
+
+        // Trip the breaker: 10 failures opens it
+        for _ in 0..10 {
+            cb.record_failure();
+        }
+        assert_eq!(cb.state, CircuitBreakerState::Open);
+
+        // Zero-second timeout → immediately transitions to HalfOpen on can_process
+        assert!(cb.can_process());
+        assert_eq!(cb.state, CircuitBreakerState::HalfOpen);
+
+        // Record failure in HalfOpen → should re-open
+        // (failure_count accumulates, total >= 10, rate >= threshold)
+        cb.record_failure();
+        assert_eq!(cb.state, CircuitBreakerState::Open);
+    }
+
+    #[test]
+    fn test_circuit_breaker_closed_resets_failure_count() {
+        let mut cb = CircuitBreaker::new(0.5, Duration::from_secs(0));
+
+        // Trip the breaker
+        for _ in 0..10 {
+            cb.record_failure();
+        }
+        assert_eq!(cb.state, CircuitBreakerState::Open);
+
+        // Transition to HalfOpen
+        assert!(cb.can_process());
+        assert_eq!(cb.state, CircuitBreakerState::HalfOpen);
+
+        // Record success → closes and resets failure_count
+        cb.record_success();
+        assert_eq!(cb.state, CircuitBreakerState::Closed);
+        assert_eq!(cb.failure_count, 0);
+    }
+
+    #[test]
+    fn test_circuit_breaker_open_blocks_until_timeout() {
+        let mut cb = CircuitBreaker::new(0.5, Duration::from_secs(3600)); // 1 hour timeout
+
+        // Trip the breaker
+        for _ in 0..10 {
+            cb.record_failure();
+        }
+
+        // Should be blocked — timeout hasn't elapsed
+        assert!(!cb.can_process());
+        assert_eq!(cb.state, CircuitBreakerState::Open);
+    }
+
+    #[test]
+    fn test_metrics_zero_trades() {
+        let metrics = MetricsSummary {
+            trades_processed: 0,
+            bars_generated: 0,
+            errors_total: 0,
+            backpressure_events: 0,
+            circuit_breaker_trips: 0,
+            memory_usage_bytes: 0,
+        };
+
+        // Division by zero guarded
+        assert_eq!(metrics.bars_per_aggtrade(), 0.0);
+        assert_eq!(metrics.error_rate(), 0.0);
+        assert_eq!(metrics.memory_usage_mb(), 0.0);
     }
 
     #[test]
