@@ -292,4 +292,64 @@ mod tests {
         let v1 = soft_clamp_hurst_lut(1.0);
         assert!(v1 > 0.95, "h=1.0 should be near 1: {}", v1);
     }
+
+    // === Task #28: NaN and infinity edge case tests ===
+
+    #[test]
+    fn test_sigmoid_lut_nan_no_panic() {
+        // NaN input should not panic — returns a valid LUT entry (NaN casts to 0 in `as usize`)
+        let result = sigmoid_lut(f64::NAN);
+        assert!(result.is_finite(), "sigmoid_lut(NaN) should return finite value");
+    }
+
+    #[test]
+    fn test_sigmoid_lut_infinity_clamps() {
+        let pos = sigmoid_lut(f64::INFINITY);
+        let max = sigmoid_lut(1.0);
+        assert!((pos - max).abs() < f64::EPSILON, "+inf should clamp to max");
+
+        let neg = sigmoid_lut(f64::NEG_INFINITY);
+        let min = sigmoid_lut(0.0);
+        assert!((neg - min).abs() < f64::EPSILON, "-inf should clamp to min");
+    }
+
+    #[test]
+    fn test_tanh_lut_nan_no_panic() {
+        let result = tanh_lut(f64::NAN);
+        assert!(result.is_finite(), "tanh_lut(NaN) should return finite value");
+    }
+
+    #[test]
+    fn test_tanh_lut_infinity_clamps() {
+        let pos = tanh_lut(f64::INFINITY);
+        let max = tanh_lut(5.0);
+        assert!((pos - max).abs() < f64::EPSILON, "+inf should clamp to max");
+
+        let neg = tanh_lut(f64::NEG_INFINITY);
+        let min = tanh_lut(0.0);
+        assert!((neg - min).abs() < f64::EPSILON, "-inf should clamp to min");
+    }
+
+    #[test]
+    fn test_cv_sigmoid_lut_nan_no_panic() {
+        let result = cv_sigmoid_lut(f64::NAN);
+        assert!(result.is_finite(), "cv_sigmoid_lut(NaN) should return finite value");
+    }
+
+    #[test]
+    fn test_soft_clamp_hurst_lut_nan_no_panic() {
+        let result = soft_clamp_hurst_lut(f64::NAN);
+        assert!(result.is_finite(), "soft_clamp_hurst_lut(NaN) should return finite value");
+    }
+
+    #[test]
+    fn test_soft_clamp_hurst_lut_extreme_inputs() {
+        // Very negative h: should clamp near 0
+        let v_neg = soft_clamp_hurst_lut(-10.0);
+        assert!(v_neg < 0.05, "h=-10 should soft-clamp near 0: {}", v_neg);
+
+        // Very positive h: should clamp near 1
+        let v_pos = soft_clamp_hurst_lut(10.0);
+        assert!(v_pos > 0.95, "h=10 should soft-clamp near 1: {}", v_pos);
+    }
 }
