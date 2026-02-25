@@ -322,12 +322,13 @@ impl RangeBar {
     pub fn new(trade: &AggTrade) -> Self {
         let trade_turnover = trade.turnover();
         let individual_trades = trade.individual_trade_count() as u32;
+        let volume_i128 = trade.volume.0 as i128;
 
         // Segregate order flow based on is_buyer_maker (Issue #88: i128 accumulators)
         let (buy_volume, sell_volume) = if trade.is_buyer_maker {
-            (0i128, trade.volume.0 as i128) // Seller aggressive = sell pressure
+            (0i128, volume_i128) // Seller aggressive = sell pressure
         } else {
-            (trade.volume.0 as i128, 0i128) // Buyer aggressive = buy pressure
+            (volume_i128, 0i128) // Buyer aggressive = buy pressure
         };
 
         let (buy_trade_count, sell_trade_count) = if trade.is_buyer_maker {
@@ -349,7 +350,7 @@ impl RangeBar {
             high: trade.price,
             low: trade.price,
             close: trade.price,
-            volume: trade.volume.0 as i128,
+            volume: volume_i128,
             turnover: trade_turnover,
 
             // NEW: Enhanced counting
