@@ -915,3 +915,48 @@ fn test_rangebar_default() {
     assert!(bar.intra_bull_epoch_density.is_none());
     assert!(bar.intra_hurst.is_none());
 }
+
+// === Issue #96: aggregation_density() method + feature setter tests ===
+
+#[test]
+fn test_aggregation_density_method() {
+    let t1 = test_utils::create_test_agg_trade_with_range(1, "50000.0", "1.0", 1000, 10, 19, false);
+    let bar = RangeBar::new(&t1);
+    assert!((bar.aggregation_density() - 10.0).abs() < 0.01);
+
+    // Zero agg_record_count → 0.0 (not NaN)
+    let mut zero_bar = RangeBar::default();
+    zero_bar.individual_trade_count = 5;
+    assert_eq!(zero_bar.aggregation_density(), 0.0);
+
+    // Method matches computed field
+    let t2 = test_utils::create_test_agg_trade_with_range(2, "50100.0", "1.0", 2000, 20, 22, true);
+    let mut bar2 = RangeBar::new(&t1);
+    bar2.update_with_trade(&t2);
+    bar2.compute_microstructure_features();
+    assert!((bar2.aggregation_density() - bar2.aggregation_density_f64).abs() < f64::EPSILON);
+}
+
+#[test]
+fn test_set_inter_bar_features() {
+    use rangebar_core::interbar_types::InterBarFeatures;
+    use rangebar_core::fixed_point::FixedPoint;
+
+    let mut bar = RangeBar::default();
+    let mut features = InterBarFeatures::default();
+    features.lookback_trade_count = Some(42);
+    features.lookback_ofi = Some(0.75);
+    features.lookback_hurst = Some(0.65);
+    features.lookback_vwap = Some(FixedPoint(5000000000000));
+    bar.set_inter_bar_features(&features);
+    assert_eq!(bar.lookback_trade_count, Some(42));
+    assert_eq!(bar.lookback_ofi, Some(0.75));
+    assert_eq!(bar.lookback_hurst, Some(0.65));
+    assert_eq!(bar.lookback_vwap_raw, Some(5000000000000));
+
+    // None propagation
+    let mut bar2 = RangeBar::default();
+    bar2.set_inter_bar_features(&InterBarFeatures::default());
+    assert!(bar2.lookback_ofi.is_none());
+    assert!(bar2.lookback_hurst.is_none());
+}
