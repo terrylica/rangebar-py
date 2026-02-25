@@ -317,6 +317,8 @@ pub struct RangeBar {
 
 impl RangeBar {
     /// Create new range bar from opening AggTrade record
+    /// Issue #96: #[inline] for bar-open hot path
+    #[inline]
     pub fn new(trade: &AggTrade) -> Self {
         let trade_turnover = trade.turnover();
         let individual_trades = trade.individual_trade_count() as u32;
@@ -438,6 +440,8 @@ impl RangeBar {
 
     /// Update bar with new AggTrade record (always call before checking breach)
     /// Maintains market microstructure metrics incrementally
+    /// Issue #96: #[inline] for per-trade hot path (called on every non-opening trade)
+    #[inline]
     pub fn update_with_trade(&mut self, trade: &AggTrade) {
         // Update price extremes
         if trade.price > self.high {
