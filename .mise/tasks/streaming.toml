@@ -22,11 +22,12 @@ description = "Start sidecar for all Tier 1 symbols (all thresholds)"
 depends = ["db:ensure"]
 run = """
 python scripts/streaming_sidecar.py \
-    --symbol BTCUSDT --symbol ETHUSDT --symbol BNBUSDT \
-    --symbol SOLUSDT --symbol XRPUSDT --symbol ADAUSDT \
-    --symbol DOGEUSDT --symbol DOTUSDT --symbol LINKUSDT \
-    --symbol LTCUSDT --symbol BCHUSDT --symbol AVAXUSDT \
-    --symbol NEARUSDT --symbol ATOMUSDT --symbol UNIUSDT
+    --symbol AAVEUSDT --symbol ADAUSDT --symbol AVAXUSDT \
+    --symbol BCHUSDT --symbol BNBUSDT --symbol BTCUSDT \
+    --symbol DOGEUSDT --symbol ETHUSDT --symbol FILUSDT \
+    --symbol LINKUSDT --symbol LTCUSDT --symbol NEARUSDT \
+    --symbol SOLUSDT --symbol SUIUSDT --symbol UNIUSDT \
+    --symbol WIFUSDT --symbol WLDUSDT --symbol XRPUSDT
 """
 
 # =============================================================================

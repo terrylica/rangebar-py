@@ -683,6 +683,11 @@ Examples:
         "--json", action="store_true",
         help="Output as JSON for programmatic consumption.",
     )
+    parser.add_argument(
+        "--tier1-only", action="store_true",
+        help="Only check TIER1 symbols (18 symbols x standard thresholds). "
+             "Ignores non-TIER1 data in ClickHouse.",
+    )
     return parser.parse_args()
 
 
@@ -701,8 +706,13 @@ def main() -> int:
 
     try:
         # Build symbol/threshold filters
-        symbols = [args.symbol] if args.symbol else None
-        thresholds = [args.threshold] if args.threshold else None
+        # --tier1-only: deterministic TIER1 x standard thresholds (ignores EXTRA data)
+        if args.tier1_only and not args.symbol and not args.threshold:
+            symbols = [f"{b}USDT" for b in TIER1_BASES]
+            thresholds = list(THRESHOLDS)
+        else:
+            symbols = [args.symbol] if args.symbol else None
+            thresholds = [args.threshold] if args.threshold else None
 
         print("Running gap detection...", file=sys.stderr)
         result = run_detection(

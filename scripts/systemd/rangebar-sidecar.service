@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=tca
 WorkingDirectory=/home/tca/rangebar-py
-ExecStart=/home/tca/rangebar-py/.venv/bin/python3 -m rangebar.sidecar
+ExecStart=/home/tca/rangebar-py/.venv/bin/python3 /home/tca/rangebar-py/scripts/streaming_sidecar.py --from-env
 
 # Restart policy (Issue #107 P3)
 Restart=always

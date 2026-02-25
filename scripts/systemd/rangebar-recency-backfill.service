@@ -1,0 +1,37 @@
+# Issue #102: Layer 2 recency backfill daemon
+# Bridges gap between Binance Vision archives (~2-day lag) and current time via REST API.
+# Discovers cached (symbol, threshold) pairs from ClickHouse and backfills adaptively.
+
+[Unit]
+Description=rangebar-py recency backfill daemon (Issue #102)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tca
+WorkingDirectory=/home/tca/rangebar-py
+ExecStart=/home/tca/rangebar-py/.venv/bin/python3 /home/tca/rangebar-py/scripts/recency_backfill.py --loop
+
+# Restart policy (less aggressive than sidecar — backfill is not latency-critical)
+Restart=always
+RestartSec=30
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+# Memory limits (lightweight: processes one pair at a time via REST API)
+MemoryHigh=1G
+MemoryMax=1.5G
+MemorySwapMax=0
+OOMScoreAdjust=-400
+
+# Process limits
+LimitNOFILE=65536
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rangebar-recency-backfill
+
+[Install]
+WantedBy=default.target
