@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone)]
 pub struct SimpleMovingAverage {
     window_size: usize,
+    // Issue #96: Pre-computed reciprocal — replaces per-update division with multiplication
+    inv_window_size: f64,
     values: Vec<f64>,
     current_index: usize,
     filled: bool,
@@ -24,6 +26,7 @@ impl SimpleMovingAverage {
 
         Ok(Self {
             window_size,
+            inv_window_size: 1.0 / window_size as f64,
             values: vec![0.0; window_size],
             current_index: 0,
             filled: false,
@@ -40,7 +43,7 @@ impl SimpleMovingAverage {
         }
 
         if self.filled {
-            Some(self.values.iter().sum::<f64>() / self.window_size as f64)
+            Some(self.values.iter().sum::<f64>() * self.inv_window_size)
         } else {
             None
         }
@@ -160,6 +163,8 @@ pub struct MACDValue {
 #[derive(Debug, Clone)]
 pub struct RSI {
     period: usize,
+    // Issue #96: Pre-computed reciprocal — replaces per-update division with multiplication
+    inv_period: f64,
     gains: Vec<f64>,
     losses: Vec<f64>,
     current_index: usize,
@@ -176,6 +181,7 @@ impl RSI {
 
         Ok(Self {
             period,
+            inv_period: 1.0 / period as f64,
             gains: vec![0.0; period],
             losses: vec![0.0; period],
             current_index: 0,
@@ -203,8 +209,8 @@ impl RSI {
             }
 
             if self.filled {
-                let avg_gain = self.gains.iter().sum::<f64>() / self.period as f64;
-                let avg_loss = self.losses.iter().sum::<f64>() / self.period as f64;
+                let avg_gain = self.gains.iter().sum::<f64>() * self.inv_period;
+                let avg_loss = self.losses.iter().sum::<f64>() * self.inv_period;
 
                 if avg_loss == 0.0 {
                     Some(100.0)
@@ -231,6 +237,8 @@ impl RSI {
 #[derive(Debug, Clone)]
 pub struct CCI {
     period: usize,
+    // Issue #96: Pre-computed reciprocal — replaces per-update division with multiplication
+    inv_period: f64,
     typical_prices: Vec<f64>,
     current_index: usize,
     filled: bool,
@@ -245,6 +253,7 @@ impl CCI {
 
         Ok(Self {
             period,
+            inv_period: 1.0 / period as f64,
             typical_prices: vec![0.0; period],
             current_index: 0,
             filled: false,
@@ -263,13 +272,13 @@ impl CCI {
         }
 
         if self.filled {
-            let sma = self.typical_prices.iter().sum::<f64>() / self.period as f64;
+            let sma = self.typical_prices.iter().sum::<f64>() * self.inv_period;
             let mean_deviation = self
                 .typical_prices
                 .iter()
                 .map(|&tp| (tp - sma).abs())
                 .sum::<f64>()
-                / self.period as f64;
+                * self.inv_period;
 
             if mean_deviation == 0.0 {
                 Some(0.0)
