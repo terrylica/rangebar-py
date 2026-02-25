@@ -58,11 +58,15 @@ impl AggTrade {
     ///
     /// Each AggTrade record represents multiple individual trades that occurred
     /// at the same price within the same ~100ms window on the exchange.
+    /// Issue #96: #[inline] for per-trade hot path (called in RangeBar::new + update_with_trade)
+    #[inline]
     pub fn individual_trade_count(&self) -> i64 {
         self.last_trade_id - self.first_trade_id + 1
     }
 
     /// Turnover (price * volume) as i128 to prevent overflow
+    /// Issue #96: #[inline] for per-trade hot path (called in RangeBar::new + update_with_trade)
+    #[inline]
     pub fn turnover(&self) -> i128 {
         (self.price.0 as i128) * (self.volume.0 as i128)
     }
