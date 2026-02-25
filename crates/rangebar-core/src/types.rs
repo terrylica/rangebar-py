@@ -460,9 +460,11 @@ impl RangeBar {
         // Cache trade metrics for efficiency
         let trade_turnover = trade.turnover();
         let individual_trades = trade.individual_trade_count() as u32;
+        // Issue #96: Cache i128 cast to avoid 3 redundant conversions per trade
+        let volume_i128 = trade.volume.0 as i128;
 
         // Update totals (Issue #88: i128 prevents overflow for high-volume tokens)
-        self.volume += trade.volume.0 as i128;
+        self.volume += volume_i128;
         self.turnover += trade_turnover;
 
         // Enhanced counting
@@ -474,12 +476,12 @@ impl RangeBar {
         // Update order flow segregation (Issue #88: i128 accumulators)
         if trade.is_buyer_maker {
             // Seller aggressive = sell pressure
-            self.sell_volume += trade.volume.0 as i128;
+            self.sell_volume += volume_i128;
             self.sell_trade_count += individual_trades;
             self.sell_turnover += trade_turnover;
         } else {
             // Buyer aggressive = buy pressure
-            self.buy_volume += trade.volume.0 as i128;
+            self.buy_volume += volume_i128;
             self.buy_trade_count += individual_trades;
             self.buy_turnover += trade_turnover;
         }
