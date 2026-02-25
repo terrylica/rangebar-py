@@ -127,6 +127,8 @@ pub struct InterBarFeatures {
 
 impl InterBarFeatures {
     /// Merge Tier 2 features from another InterBarFeatures struct
+    /// Issue #96 Task #90: #[inline] — per-bar field merge at finalization
+    #[inline]
     pub fn merge_tier2(&mut self, other: &InterBarFeatures) {
         self.lookback_kyle_lambda = other.lookback_kyle_lambda;
         self.lookback_burstiness = other.lookback_burstiness;
@@ -136,6 +138,8 @@ impl InterBarFeatures {
     }
 
     /// Merge Tier 3 features from another InterBarFeatures struct
+    /// Issue #96 Task #90: #[inline] — per-bar field merge at finalization
+    #[inline]
     pub fn merge_tier3(&mut self, other: &InterBarFeatures) {
         self.lookback_kaufman_er = other.lookback_kaufman_er;
         self.lookback_garman_klass_vol = other.lookback_garman_klass_vol;

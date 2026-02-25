@@ -648,6 +648,8 @@ impl RangeBar {
     /// This method is called when a bar is finalized with inter-bar feature
     /// computation enabled. The features are computed from trades that occurred
     /// BEFORE the bar opened, ensuring no lookahead bias.
+    /// Issue #96 Task #90: #[inline] — per-bar field assignment at finalization
+    #[inline]
     pub fn set_inter_bar_features(&mut self, features: &crate::interbar::InterBarFeatures) {
         // Tier 1: Core features
         self.lookback_trade_count = features.lookback_trade_count;
@@ -677,6 +679,8 @@ impl RangeBar {
     /// This method is called when a bar is finalized with intra-bar feature
     /// computation enabled. The features are computed from trades WITHIN the bar,
     /// from open_time to close_time.
+    /// Issue #96 Task #90: #[inline] — per-bar field assignment at finalization
+    #[inline]
     pub fn set_intra_bar_features(&mut self, features: &crate::intrabar::IntraBarFeatures) {
         // ITH features (8)
         self.intra_bull_epoch_density = features.intra_bull_epoch_density;
