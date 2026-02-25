@@ -20,7 +20,7 @@
 
 use linreg::linear_regression;
 
-pub mod utils;
+pub(crate) mod utils;
 
 use utils::*;
 
