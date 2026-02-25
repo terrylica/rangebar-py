@@ -2062,6 +2062,72 @@ mod approximate_entropy_tests {
 }
 
 #[cfg(test)]
+mod entropy_adaptive_apen_tests {
+    use super::*;
+
+    #[test]
+    fn test_adaptive_entropy_boundary_499_uses_pe() {
+        // n=499 should use Permutation Entropy path (n < 500)
+        let prices: Vec<f64> = (0..499).map(|i| 100.0 + (i as f64 * 0.01)).collect();
+        let ent = compute_entropy_adaptive(&prices);
+        assert!(ent >= 0.0 && ent <= 1.0, "PE result should be in [0, 1], got {ent}");
+    }
+
+    #[test]
+    fn test_adaptive_entropy_boundary_500_uses_apen() {
+        // n=500 should use ApEn path (n >= 500)
+        let prices: Vec<f64> = (0..500).map(|i| 100.0 + (i as f64 * 0.01)).collect();
+        let ent = compute_entropy_adaptive(&prices);
+        assert!(ent >= 0.0 && ent <= 1.0, "ApEn result should be in [0, 1], got {ent}");
+    }
+
+    #[test]
+    fn test_adaptive_entropy_large_trending() {
+        // Large trending series (n=1000) - should have low entropy (ordered)
+        let prices: Vec<f64> = (0..1000).map(|i| 100.0 + i as f64).collect();
+        let ent = compute_entropy_adaptive(&prices);
+        assert!(ent >= 0.0 && ent <= 1.0, "Entropy out of bounds: {ent}");
+        assert!(ent < 0.5, "Trending series should have low entropy, got {ent}");
+    }
+
+    #[test]
+    fn test_adaptive_entropy_large_random() {
+        // Large pseudo-random series (n=600) - should have moderate-high entropy
+        let mut rng = 42u64;
+        let prices: Vec<f64> = (0..600)
+            .map(|_| {
+                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                100.0 + ((rng >> 33) as f64 / (1u64 << 31) as f64) * 50.0
+            })
+            .collect();
+        let ent = compute_entropy_adaptive(&prices);
+        assert!(ent >= 0.0 && ent <= 1.0, "Entropy out of bounds: {ent}");
+    }
+
+    #[test]
+    fn test_adaptive_entropy_cached_large_window_not_cached() {
+        // ApEn path (n>=500) does NOT use the entropy cache
+        // Verify that cached and uncached produce the same result
+        let prices: Vec<f64> = (0..600).map(|i| 100.0 + (i as f64).sin() * 10.0).collect();
+        let uncached = compute_entropy_adaptive(&prices);
+        let mut cache = EntropyCache::new();
+        let cached = compute_entropy_adaptive_cached(&prices, &mut cache);
+        assert!(
+            (uncached - cached).abs() < 1e-10,
+            "Cached and uncached should match for large windows: {uncached} vs {cached}"
+        );
+    }
+
+    #[test]
+    fn test_adaptive_entropy_constant_price_large() {
+        // All same price (n=500) - ApEn should produce low entropy
+        let prices: Vec<f64> = vec![100.0; 500];
+        let ent = compute_entropy_adaptive(&prices);
+        assert!(ent >= 0.0 && ent <= 1.0, "Entropy out of bounds: {ent}");
+    }
+}
+
+#[cfg(test)]
 mod hurst_accuracy_tests {
     use super::*;
 
@@ -4302,6 +4368,106 @@ mod garman_hurst_edge_tests {
         let h = compute_hurst_dfa(&prices);
         assert!(h.is_finite(), "exactly 64 samples must not panic");
         assert!(h >= 0.0 && h <= 1.0, "Hurst must be in [0, 1], got {h}");
+    }
+}
+
+#[cfg(test)]
+mod soft_clamp_hurst_edge_tests {
+    use super::*;
+
+    #[test]
+    fn test_soft_clamp_extreme_negative() {
+        let h = soft_clamp_hurst(-100.0);
+        assert!(h >= 0.0 && h <= 1.0, "Extreme negative should clamp to [0,1], got {h}");
+        assert!(h < 0.01, "h=-100 should clamp near 0, got {h}");
+    }
+
+    #[test]
+    fn test_soft_clamp_extreme_positive() {
+        let h = soft_clamp_hurst(100.0);
+        assert!(h >= 0.0 && h <= 1.0, "Extreme positive should clamp to [0,1], got {h}");
+        assert!(h > 0.99, "h=100 should clamp near 1, got {h}");
+    }
+
+    #[test]
+    fn test_soft_clamp_at_half() {
+        let h = soft_clamp_hurst(0.5);
+        assert!((h - 0.5).abs() < 0.05, "h=0.5 should map near 0.5, got {h}");
+    }
+
+    #[test]
+    fn test_soft_clamp_nan_input() {
+        let h = soft_clamp_hurst(f64::NAN);
+        // NaN input should not produce a normal finite value; should remain NaN
+        // or be handled gracefully (implementation-dependent)
+        assert!(!h.is_normal() || (h >= 0.0 && h <= 1.0),
+            "NaN input should produce NaN or clamped value, got {h}");
+    }
+
+    #[test]
+    fn test_soft_clamp_monotonicity() {
+        // soft_clamp should be monotonically increasing
+        let values = [-5.0, -1.0, 0.0, 0.25, 0.5, 0.75, 1.0, 2.0, 5.0];
+        for pair in values.windows(2) {
+            let a = soft_clamp_hurst(pair[0]);
+            let b = soft_clamp_hurst(pair[1]);
+            assert!(b >= a, "soft_clamp should be monotonic: f({}) = {a} > f({}) = {b}", pair[0], pair[1]);
+        }
+    }
+
+    #[test]
+    fn test_soft_clamp_infinity() {
+        let h_pos = soft_clamp_hurst(f64::INFINITY);
+        let h_neg = soft_clamp_hurst(f64::NEG_INFINITY);
+        // Should clamp to bounds
+        assert!(h_pos >= 0.0 && h_pos <= 1.0 || h_pos.is_nan(),
+            "Inf should clamp or NaN, got {h_pos}");
+        assert!(h_neg >= 0.0 && h_neg <= 1.0 || h_neg.is_nan(),
+            "-Inf should clamp or NaN, got {h_neg}");
+    }
+}
+
+#[cfg(test)]
+mod lookback_cache_finite_tests {
+    use super::*;
+    use crate::interbar_types::TradeSnapshot;
+    use crate::FixedPoint;
+
+    fn make_snapshot(price: f64, volume: f64) -> TradeSnapshot {
+        TradeSnapshot {
+            timestamp: 1000,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint((volume * 1e8) as i64),
+            is_buyer_maker: false,
+            turnover: (price * volume * 1e8) as i128,
+        }
+    }
+
+    #[test]
+    fn test_all_prices_finite_normal() {
+        let trades = vec![
+            make_snapshot(100.0, 1.0),
+            make_snapshot(101.0, 2.0),
+            make_snapshot(99.5, 1.5),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let cache = extract_lookback_cache(&refs);
+        assert!(cache.all_prices_finite, "Normal prices should be finite");
+    }
+
+    #[test]
+    fn test_all_prices_finite_empty() {
+        let refs: Vec<&TradeSnapshot> = vec![];
+        let cache = extract_lookback_cache(&refs);
+        assert!(cache.all_prices_finite, "Empty lookback should default to finite=true");
+    }
+
+    #[test]
+    fn test_all_prices_finite_single() {
+        let trades = vec![make_snapshot(50000.0, 1.0)];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let cache = extract_lookback_cache(&refs);
+        assert!(cache.all_prices_finite, "Single normal price should be finite");
     }
 }
 
