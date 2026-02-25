@@ -3393,6 +3393,80 @@ mod hurst_accuracy_tests {
         // Results should be bit-identical
         assert_eq!(entropy_cached, entropy_uncached, "Cached and uncached must produce identical results");
     }
+
+    // Issue #96: EntropyCache public API coverage (with_capacity, metrics, reset_metrics)
+
+    #[test]
+    fn test_entropy_cache_with_capacity() {
+        // Verify with_capacity creates a functional cache
+        let mut cache = EntropyCache::with_capacity(512);
+        let prices = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+
+        // Should work identically to new() — insert and retrieve
+        let entropy = compute_entropy_adaptive(&prices);
+        cache.insert(&prices, entropy);
+        let cached = cache.get(&prices);
+        assert_eq!(cached, Some(entropy), "with_capacity cache should store and retrieve");
+    }
+
+    #[test]
+    fn test_entropy_cache_with_capacity_zero() {
+        // Edge case: zero capacity — should not panic
+        let cache = EntropyCache::with_capacity(0);
+        let (hits, misses, ratio) = cache.metrics();
+        assert_eq!((hits, misses), (0, 0));
+        assert_eq!(ratio, 0.0);
+    }
+
+    #[test]
+    fn test_entropy_cache_metrics_tracking() {
+        let mut cache = EntropyCache::new();
+
+        // Initial state: all zeros
+        let (h, m, ratio) = cache.metrics();
+        assert_eq!((h, m), (0, 0), "initial metrics should be zero");
+        assert_eq!(ratio, 0.0, "initial ratio should be 0.0");
+
+        // Miss: query for a key not in cache
+        let prices_a = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        assert!(cache.get(&prices_a).is_none());
+        let (h, m, ratio) = cache.metrics();
+        assert_eq!((h, m), (0, 1), "should have 1 miss");
+        assert_eq!(ratio, 0.0, "0 hits / 1 total = 0%");
+
+        // Insert then hit
+        cache.insert(&prices_a, 0.42);
+        assert!(cache.get(&prices_a).is_some());
+        let (h, m, ratio) = cache.metrics();
+        assert_eq!((h, m), (1, 1), "should have 1 hit + 1 miss");
+        assert!((ratio - 50.0).abs() < 0.01, "1/2 = 50%, got {ratio}");
+    }
+
+    #[test]
+    fn test_entropy_cache_reset_metrics() {
+        let mut cache = EntropyCache::new();
+
+        // Accumulate some metrics
+        let prices = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        cache.get(&prices); // miss
+        cache.insert(&prices, 0.5);
+        cache.get(&prices); // hit
+
+        let (h, m, _) = cache.metrics();
+        assert!(h + m > 0, "should have accumulated metrics");
+
+        // Reset
+        cache.reset_metrics();
+        let (h, m, ratio) = cache.metrics();
+        assert_eq!((h, m), (0, 0), "reset should clear all counters");
+        assert_eq!(ratio, 0.0, "reset ratio should be 0.0");
+
+        // Verify counters work after reset
+        cache.get(&prices); // hit (data still in cache)
+        let (h, m, ratio) = cache.metrics();
+        assert_eq!((h, m), (1, 0), "should track after reset");
+        assert!((ratio - 100.0).abs() < 0.01, "100% hit rate");
+    }
 }
 
 /// SIMD vs scalar parity tests
