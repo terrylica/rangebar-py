@@ -49,6 +49,9 @@ pub struct LookbackCache {
     /// Issue #96 Task #45: All prices are finite (no NaN/Inf)
     /// Pre-computed during extraction to eliminate O(n) scan in Tier 3
     pub all_prices_finite: bool,
+    /// Issue #96 Task #49: All volumes are finite (no NaN/Inf)
+    /// Pre-computed during extraction for volume moments validation
+    pub all_volumes_finite: bool,
 }
 
 /// Cold path: empty lookback cache (Issue #96 Task #4: cold path optimization)
@@ -66,6 +69,7 @@ fn empty_lookback_cache() -> LookbackCache {
         first_volume: 0.0,
         total_volume: 0.0,
         all_prices_finite: true,
+        all_volumes_finite: true,
     }
 }
 
@@ -100,18 +104,20 @@ pub fn extract_lookback_cache(lookback: &[&TradeSnapshot]) -> LookbackCache {
         first_volume: first_trade.volume.to_f64(),
         total_volume: 0.0,
         all_prices_finite: true,
+        all_volumes_finite: true,
     };
 
-    // Single pass: extract prices, volumes, compute OHLC, total volume, and finite check
-    // Issue #96 Task #45: Track all_prices_finite during extraction (eliminates O(n) scan in Tier 3)
+    // Single pass: extract prices, volumes, compute OHLC, total volume, and finite checks
+    // Issue #96 Task #45/#49: Track finite flags during extraction (eliminates O(n) scans)
     for trade in lookback {
         let p = trade.price.to_f64();
         let v = trade.volume.to_f64();
         cache.prices.push(p);
         cache.volumes.push(v);
         cache.total_volume += v;
-        // Branchless finite check: &= avoids branch misprediction
+        // Branchless finite checks: &= avoids branch misprediction
         cache.all_prices_finite &= p.is_finite();
+        cache.all_volumes_finite &= v.is_finite();
         if p > cache.high {
             cache.high = p;
         }
@@ -4469,6 +4475,25 @@ mod lookback_cache_finite_tests {
         let cache = extract_lookback_cache(&refs);
         assert!(cache.all_prices_finite, "Single normal price should be finite");
     }
+
+    #[test]
+    fn test_all_volumes_finite_normal() {
+        let trades = vec![
+            make_snapshot(100.0, 1.0),
+            make_snapshot(101.0, 2.5),
+            make_snapshot(99.5, 0.5),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let cache = extract_lookback_cache(&refs);
+        assert!(cache.all_volumes_finite, "Normal volumes should be finite");
+    }
+
+    #[test]
+    fn test_all_volumes_finite_empty() {
+        let refs: Vec<&TradeSnapshot> = vec![];
+        let cache = extract_lookback_cache(&refs);
+        assert!(cache.all_volumes_finite, "Empty lookback should default to volumes finite=true");
+    }
 }
 
 #[cfg(test)]
@@ -4606,6 +4631,30 @@ mod proptest_bounds {
             prop_assert!(cache.total_volume >= 0.0, "total_volume negative");
             prop_assert_eq!(cache.prices.len(), n, "prices length mismatch");
             prop_assert_eq!(cache.volumes.len(), n, "volumes length mismatch");
+        }
+
+        /// Issue #96 Task #50: all_prices_finite and all_volumes_finite must match manual scan
+        #[test]
+        fn lookback_cache_finite_invariant(
+            n in 1_usize..50,
+            seed in 0_u64..10000,
+        ) {
+            let mut rng = seed;
+            let trades: Vec<TradeSnapshot> = (0..n).map(|i| {
+                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let price = 100.0 + ((rng >> 33) as f64 / u32::MAX as f64) * 50.0;
+                let volume = 0.1 + ((rng >> 17) as f64 / u32::MAX as f64) * 10.0;
+                make_snapshot(i as i64 * 1000, price, volume, rng % 2 == 0)
+            }).collect();
+            let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+
+            let cache = extract_lookback_cache(&refs);
+            let expected_prices_finite = cache.prices.iter().all(|p| p.is_finite());
+            let expected_volumes_finite = cache.volumes.iter().all(|v| v.is_finite());
+            prop_assert_eq!(cache.all_prices_finite, expected_prices_finite,
+                "all_prices_finite mismatch");
+            prop_assert_eq!(cache.all_volumes_finite, expected_volumes_finite,
+                "all_volumes_finite mismatch");
         }
     }
 }
