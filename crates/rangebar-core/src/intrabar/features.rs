@@ -1204,6 +1204,34 @@ mod tests {
         true
     }
 
+    #[test]
+    fn test_lehmer_code_bijection_m2() {
+        // Verify m=2: exactly 2 patterns
+        use smallvec::SmallVec;
+        let asc: SmallVec<[usize; 4]> = SmallVec::from_slice(&[0, 1]);
+        let desc: SmallVec<[usize; 4]> = SmallVec::from_slice(&[1, 0]);
+        let idx_asc = ordinal_indices_to_pattern_index(&asc);
+        let idx_desc = ordinal_indices_to_pattern_index(&desc);
+        assert_eq!(idx_asc, 0, "ascending [0,1] → 0");
+        assert_eq!(idx_desc, 1, "descending [1,0] → 1");
+        assert_ne!(idx_asc, idx_desc);
+    }
+
+    #[test]
+    fn test_lehmer_code_m3_specific_values() {
+        // Verify exact Lehmer code values for m=3 (not just uniqueness)
+        use smallvec::SmallVec;
+        // [0,1,2] → lesser_0=0, lesser_1=0 → code = 0*2 + 0*1 = 0
+        let p012: SmallVec<[usize; 4]> = SmallVec::from_slice(&[0, 1, 2]);
+        assert_eq!(ordinal_indices_to_pattern_index(&p012), 0);
+        // [2,1,0] → lesser_0=2, lesser_1=1 → code = 2*2 + 1*1 = 5
+        let p210: SmallVec<[usize; 4]> = SmallVec::from_slice(&[2, 1, 0]);
+        assert_eq!(ordinal_indices_to_pattern_index(&p210), 5);
+        // [1,0,2] → lesser_0=1, lesser_1=0 → code = 1*2 + 0*1 = 2
+        let p102: SmallVec<[usize; 4]> = SmallVec::from_slice(&[1, 0, 2]);
+        assert_eq!(ordinal_indices_to_pattern_index(&p102), 2);
+    }
+
     // === Task #12: Intra-bar features edge case tests ===
 
     #[test]

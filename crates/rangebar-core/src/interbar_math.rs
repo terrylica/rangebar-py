@@ -4859,6 +4859,112 @@ mod lookback_cache_finite_tests {
 }
 
 #[cfg(test)]
+mod extract_lookback_cache_comprehensive_tests {
+    use super::*;
+    use crate::interbar_types::TradeSnapshot;
+    use crate::FixedPoint;
+
+    fn make_snapshot(ts: i64, price: f64, volume: f64, is_buyer_maker: bool) -> TradeSnapshot {
+        TradeSnapshot {
+            timestamp: ts,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint((volume * 1e8) as i64),
+            is_buyer_maker,
+            turnover: (price * volume * 1e8) as i128,
+        }
+    }
+
+    #[test]
+    fn test_ohlc_extraction_correct() {
+        let trades = vec![
+            make_snapshot(1000, 100.0, 1.0, false),  // open
+            make_snapshot(2000, 110.0, 2.0, true),    // high
+            make_snapshot(3000, 90.0, 1.5, false),    // low
+            make_snapshot(4000, 105.0, 3.0, true),    // close
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let cache = extract_lookback_cache(&refs);
+
+        assert!((cache.open - 100.0).abs() < 1e-6, "open should be first price");
+        assert!((cache.close - 105.0).abs() < 1e-6, "close should be last price");
+        assert!((cache.high - 110.0).abs() < 1e-6, "high should be max price");
+        assert!((cache.low - 90.0).abs() < 1e-6, "low should be min price");
+    }
+
+    #[test]
+    fn test_total_volume_accumulation() {
+        let trades = vec![
+            make_snapshot(1000, 100.0, 1.0, false),
+            make_snapshot(2000, 101.0, 2.5, true),
+            make_snapshot(3000, 99.0, 0.5, false),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let cache = extract_lookback_cache(&refs);
+
+        let expected_total = 1.0 + 2.5 + 0.5;
+        assert!((cache.total_volume - expected_total).abs() < 1e-6,
+            "total_volume={}, expected={}", cache.total_volume, expected_total);
+    }
+
+    #[test]
+    fn test_prices_vector_matches_trades() {
+        let trades = vec![
+            make_snapshot(1000, 100.0, 1.0, false),
+            make_snapshot(2000, 105.0, 2.0, true),
+            make_snapshot(3000, 95.0, 1.0, false),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let cache = extract_lookback_cache(&refs);
+
+        assert_eq!(cache.prices.len(), 3);
+        assert!((cache.prices[0] - 100.0).abs() < 1e-6);
+        assert!((cache.prices[1] - 105.0).abs() < 1e-6);
+        assert!((cache.prices[2] - 95.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_first_volume_is_first_trade() {
+        let trades = vec![
+            make_snapshot(1000, 100.0, 7.5, false),
+            make_snapshot(2000, 101.0, 2.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let cache = extract_lookback_cache(&refs);
+        assert!((cache.first_volume - 7.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_single_trade_ohlc_all_same() {
+        let trades = vec![make_snapshot(1000, 50000.0, 1.0, false)];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let cache = extract_lookback_cache(&refs);
+
+        assert!((cache.open - 50000.0).abs() < 1e-6);
+        assert!((cache.close - 50000.0).abs() < 1e-6);
+        assert!((cache.high - 50000.0).abs() < 1e-6);
+        assert!((cache.low - 50000.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_high_low_invariants() {
+        let trades = vec![
+            make_snapshot(1000, 100.0, 1.0, false),
+            make_snapshot(2000, 200.0, 1.0, true),
+            make_snapshot(3000, 50.0, 1.0, false),
+            make_snapshot(4000, 150.0, 1.0, true),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let cache = extract_lookback_cache(&refs);
+
+        assert!(cache.high >= cache.low, "high must >= low");
+        assert!(cache.high >= cache.open, "high must >= open");
+        assert!(cache.high >= cache.close, "high must >= close");
+        assert!(cache.low <= cache.open, "low must <= open");
+        assert!(cache.low <= cache.close, "low must <= close");
+    }
+}
+
+#[cfg(test)]
 mod proptest_bounds {
     use super::*;
     use crate::interbar_types::TradeSnapshot;
