@@ -36,14 +36,14 @@ use crate::types::AggTrade;
 use rayon::join; // Issue #115: Parallelization of Tier 2/3 features
 use smallvec::SmallVec;
 use std::collections::VecDeque;
-use once_cell::sync::Lazy; // Issue #96 Task #191: Lazy static for warm-up initialization
+use std::sync::LazyLock; // std::sync::LazyLock (stable since Rust 1.80, replaces once_cell)
 
 // Re-export types from interbar_types.rs (Phase 2b extraction)
 pub use crate::interbar_types::{InterBarConfig, InterBarFeatures, LookbackMode, TradeSnapshot};
 
 /// Issue #96 Task #191: Lazy initialization of entropy cache warm-up
 /// Ensures warm-up runs exactly once, on first TradeHistory creation in the process
-static ENTROPY_CACHE_WARMUP: Lazy<()> = Lazy::new(|| {
+static ENTROPY_CACHE_WARMUP: LazyLock<()> = LazyLock::new(|| {
     crate::entropy_cache_global::warm_up_entropy_cache();
 });
 

@@ -31,7 +31,7 @@
 //! ```
 
 use crate::interbar_math::EntropyCache;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use std::sync::Arc;
 use parking_lot::RwLock;
 
@@ -48,7 +48,7 @@ pub const GLOBAL_ENTROPY_CACHE_CAPACITY: u64 = 1024;
 
 /// Global entropy cache shared across all processors
 ///
-/// This static is initialized lazily on first access via `once_cell::sync::Lazy`.
+/// This static is initialized lazily on first access via `std::sync::LazyLock`.
 /// Thread-safe via Arc<RwLock<>> — multiple processors can read/write concurrently.
 ///
 /// ## Characteristics
@@ -65,7 +65,7 @@ pub const GLOBAL_ENTROPY_CACHE_CAPACITY: u64 = 1024;
 /// - Hit ratio: 34.5% → 50%+ (from larger cache + symbol-independent hashing)
 /// - Memory: 20-30% reduction on multi-symbol workloads (5 symbols × 4 thresholds)
 /// - Latency: <5% overhead (lock contention acceptable due to low entropy usage)
-pub static GLOBAL_ENTROPY_CACHE: Lazy<Arc<RwLock<EntropyCache>>> = Lazy::new(|| {
+pub static GLOBAL_ENTROPY_CACHE: LazyLock<Arc<RwLock<EntropyCache>>> = LazyLock::new(|| {
     Arc::new(RwLock::new(
         EntropyCache::with_capacity(GLOBAL_ENTROPY_CACHE_CAPACITY)
     ))
