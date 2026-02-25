@@ -2445,4 +2445,86 @@ mod tests {
         assert_eq!(bars_incl[0].open, bars_incl[0].close);
         assert_eq!(bars_incl[0].high, bars_incl[0].low);
     }
+
+    // === Issue #96: Configuration method coverage tests ===
+
+    #[test]
+    fn test_with_options_gate_disabled_same_timestamp_closes() {
+        // Issue #36: with prevent_same_timestamp_close=false, bar should close
+        // even when breach trade has same timestamp as open
+        let mut processor = RangeBarProcessor::with_options(250, false).unwrap();
+        assert!(!processor.prevent_same_timestamp_close());
+
+        let trades = vec![
+            AggTrade {
+                agg_trade_id: 1, price: FixedPoint::from_str("50000.0").unwrap(),
+                volume: FixedPoint::from_str("1.0").unwrap(),
+                first_trade_id: 1, last_trade_id: 1, timestamp: 1000000,
+                is_buyer_maker: false, is_best_match: None,
+            },
+            AggTrade {
+                agg_trade_id: 2, price: FixedPoint::from_str("50200.0").unwrap(), // +0.4% > 0.25%
+                volume: FixedPoint::from_str("1.0").unwrap(),
+                first_trade_id: 2, last_trade_id: 2, timestamp: 1000000, // Same timestamp!
+                is_buyer_maker: false, is_best_match: None,
+            },
+        ];
+        let bars = processor.process_agg_trade_records(&trades).unwrap();
+        assert_eq!(bars.len(), 1, "Gate disabled: same-timestamp breach should close bar");
+    }
+
+    #[test]
+    fn test_inter_bar_config_enables_features() {
+        use crate::interbar::LookbackMode;
+        let processor = RangeBarProcessor::new(250).unwrap();
+        assert!(!processor.inter_bar_enabled(), "Default: inter-bar disabled");
+
+        let processor = processor.with_inter_bar_config(InterBarConfig {
+            lookback_mode: LookbackMode::FixedCount(100),
+            compute_tier2: false,
+            compute_tier3: false,
+        });
+        assert!(processor.inter_bar_enabled(), "After config: inter-bar enabled");
+    }
+
+    #[test]
+    fn test_intra_bar_feature_toggle() {
+        let processor = RangeBarProcessor::new(250).unwrap();
+        assert!(!processor.intra_bar_enabled(), "Default: intra-bar disabled");
+
+        let processor = processor.with_intra_bar_features();
+        assert!(processor.intra_bar_enabled(), "After toggle: intra-bar enabled");
+    }
+
+    #[test]
+    fn test_set_inter_bar_config_after_construction() {
+        use crate::interbar::LookbackMode;
+        let mut processor = RangeBarProcessor::new(500).unwrap();
+        assert!(!processor.inter_bar_enabled());
+
+        processor.set_inter_bar_config(InterBarConfig {
+            lookback_mode: LookbackMode::FixedCount(200),
+            compute_tier2: true,
+            compute_tier3: false,
+        });
+        assert!(processor.inter_bar_enabled(), "set_inter_bar_config should enable");
+    }
+
+    #[test]
+    fn test_process_with_options_incomplete_false_vs_true() {
+        let trades = scenarios::single_breach_sequence(250);
+
+        // Without incomplete: only completed bars
+        let mut p1 = RangeBarProcessor::new(250).unwrap();
+        let bars_strict = p1.process_agg_trade_records_with_options(&trades, false).unwrap();
+
+        // With incomplete: completed + 1 partial
+        let mut p2 = RangeBarProcessor::new(250).unwrap();
+        let bars_incl = p2.process_agg_trade_records_with_options(&trades, true).unwrap();
+
+        assert!(
+            bars_incl.len() >= bars_strict.len(),
+            "inclusive ({}) must be >= strict ({})", bars_incl.len(), bars_strict.len()
+        );
+    }
 }
