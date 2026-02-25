@@ -690,19 +690,17 @@ impl TradeHistory {
         }
 
         // Issue #96 Task #183: Check feature result cache with try-lock to reduce contention
-        // Fast path: Non-blocking read attempt (typical case in multi-symbol streaming)
-        // Slow path: Skip cache check if lock is held (cache miss is acceptable)
-        if let Some(cache) = &self.feature_result_cache {
-            let cache_key = crate::interbar_cache::InterBarCacheKey::from_lookback(&lookback);
-            // Try non-blocking read first (parking_lot feature for reduced contention)
+        // Task #15: Compute cache key once, reuse for both read and write paths
+        let cache_key = self.feature_result_cache.as_ref().map(|_| {
+            crate::interbar_cache::InterBarCacheKey::from_lookback(&lookback)
+        });
+        if let (Some(cache), Some(key)) = (&self.feature_result_cache, &cache_key) {
             if let Some(cache_guard) = cache.try_read() {
-                if let Some(cached_features) = cache_guard.get(&cache_key) {
+                if let Some(cached_features) = cache_guard.get(key) {
                     return cached_features;
                 }
-                drop(cache_guard); // Release read lock before computation
+                drop(cache_guard);
             }
-            // If try_read failed (lock held by writer), skip cache check
-            // This is safe: cache miss in high-contention scenario, will recompute
         }
 
         let mut features = InterBarFeatures::default();
@@ -789,15 +787,11 @@ impl TradeHistory {
         }
 
         // Issue #96 Task #183: Store computed features in cache with try-write
-        // Non-blocking write attempt to reduce contention in multi-symbol streaming
-        // If write-lock held by other thread, skip cache insert (cache miss on concurrent access)
-        if let Some(cache) = &self.feature_result_cache {
-            let cache_key = crate::interbar_cache::InterBarCacheKey::from_lookback(&lookback);
-            // Try non-blocking write (avoid blocking on contention)
+        // Task #15: Reuse cache_key computed above (avoids duplicate from_lookback call)
+        if let (Some(cache), Some(key)) = (&self.feature_result_cache, cache_key) {
             if let Some(cache_guard) = cache.try_write() {
-                cache_guard.insert(cache_key, features.clone());
+                cache_guard.insert(key, features.clone());
             }
-            // If try_write fails, skip cache insert (trade-off: miss cache opportunity for reduced lock wait)
         }
 
         features
