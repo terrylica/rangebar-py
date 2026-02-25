@@ -19,6 +19,11 @@ use super::ith::{bear_ith, bull_ith};
 use super::normalize::{
     normalize_cv, normalize_drawdown, normalize_epochs, normalize_excess, normalize_runup,
 };
+use super::normalization_lut::soft_clamp_hurst_lut;
+
+/// Pre-computed ln(3!) = ln(6) for permutation entropy normalization (m=3, Bandt-Pompe).
+/// Avoids per-bar ln() call. Task #9.
+const MAX_ENTROPY_M3: f64 = 1.791_759_469_228_327;
 
 /// All 22 intra-bar features computed from constituent trades.
 ///
@@ -607,8 +612,8 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
         0.5
     };
 
-    // Soft-clamp to [0, 1] using sigmoid
-    1.0 / (1.0 + (-4.0 * (hurst - 0.5)).exp())
+    // Soft-clamp to [0, 1] using LUT (Task #198 → Task #8: O(1) lookup replaces exp())
+    soft_clamp_hurst_lut(hurst)
 }
 
 /// Compute normalized permutation entropy.
@@ -679,8 +684,12 @@ fn compute_permutation_entropy(prices: &[f64], m: usize) -> f64 {
         }
     }
 
-    // Normalize by maximum entropy (log(m!))
-    let max_entropy = (max_patterns as f64).ln();
+    // Normalize by maximum entropy — use pre-computed constant for m=3 (Task #9)
+    let max_entropy = if m == 3 {
+        MAX_ENTROPY_M3
+    } else {
+        (max_patterns as f64).ln()
+    };
     if max_entropy > f64::EPSILON {
         (entropy / max_entropy).clamp(0.0, 1.0)
     } else {
@@ -767,7 +776,11 @@ fn fallback_permutation_entropy(prices: &[f64], m: usize) -> f64 {
         }
     }
 
-    let max_entropy = (factorial(m) as f64).ln();
+    let max_entropy = if m == 3 {
+        MAX_ENTROPY_M3
+    } else {
+        (factorial(m) as f64).ln()
+    };
     if max_entropy > f64::EPSILON {
         (entropy / max_entropy).clamp(0.0, 1.0)
     } else {

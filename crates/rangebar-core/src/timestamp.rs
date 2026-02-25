@@ -148,4 +148,50 @@ mod tests {
         // Invalid: Far future (2050+)
         assert!(!validate_timestamp(2_524_608_000_000_000)); // 2050-01-01
     }
+
+    // Issue #96: Additional edge case coverage
+
+    #[test]
+    fn test_validate_timestamp_negative() {
+        assert!(!validate_timestamp(-1));
+        assert!(!validate_timestamp(i64::MIN));
+    }
+
+    #[test]
+    fn test_validate_timestamp_zero() {
+        assert!(!validate_timestamp(0));
+    }
+
+    #[test]
+    fn test_validate_timestamp_exact_boundaries() {
+        // Exact min boundary (2000-01-01): valid
+        assert!(validate_timestamp(946_684_800_000_000));
+        // One microsecond before min: invalid
+        assert!(!validate_timestamp(946_684_800_000_000 - 1));
+        // Exact max boundary (2035-01-01): valid
+        assert!(validate_timestamp(2_051_222_400_000_000));
+        // One microsecond after max: invalid
+        assert!(!validate_timestamp(2_051_222_400_000_000 + 1));
+    }
+
+    #[test]
+    fn test_normalize_timestamp_zero() {
+        // Zero is below threshold → converted (0 * 1000 = 0)
+        assert_eq!(normalize_timestamp(0), 0);
+    }
+
+    #[test]
+    fn test_create_aggtrade_normalizes_timestamp() {
+        use crate::FixedPoint;
+        let trade = create_aggtrade_with_normalized_timestamp(
+            1,
+            FixedPoint::from_str("100.0").unwrap(),
+            FixedPoint::from_str("1.0").unwrap(),
+            10,
+            10,
+            1609459200000, // 13-digit millis
+            false,
+        );
+        assert_eq!(trade.timestamp, 1609459200000000); // Converted to 16-digit micros
+    }
 }
