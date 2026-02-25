@@ -4279,6 +4279,136 @@ mod volume_moments_edge_tests {
 }
 
 #[cfg(test)]
+mod volume_moments_with_mean_tests {
+    use super::*;
+    use crate::interbar_types::TradeSnapshot;
+    use crate::FixedPoint;
+
+    fn make_snapshot(ts: i64, price: f64, volume: f64, is_buyer_maker: bool) -> TradeSnapshot {
+        TradeSnapshot {
+            timestamp: ts,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint((volume * 1e8) as i64),
+            is_buyer_maker,
+            turnover: (price * volume * 1e8) as i128,
+        }
+    }
+
+    #[test]
+    fn test_with_mean_matches_standard() {
+        let trades = vec![
+            make_snapshot(1000, 50000.0, 1.0, false),
+            make_snapshot(2000, 50000.0, 3.0, true),
+            make_snapshot(3000, 50000.0, 7.0, false),
+            make_snapshot(4000, 50000.0, 2.0, true),
+            make_snapshot(5000, 50000.0, 5.0, false),
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let (s1, k1) = compute_volume_moments(&refs);
+
+        let volumes: Vec<f64> = trades.iter().map(|t| t.volume.to_f64()).collect();
+        let mean = volumes.iter().sum::<f64>() / volumes.len() as f64;
+        let (s2, k2) = compute_volume_moments_with_mean(&volumes, mean);
+
+        assert!(
+            (s1 - s2).abs() < 1e-10,
+            "skew mismatch: standard={s1}, with_mean={s2}"
+        );
+        assert!(
+            (k1 - k2).abs() < 1e-10,
+            "kurt mismatch: standard={k1}, with_mean={k2}"
+        );
+    }
+
+    #[test]
+    fn test_with_mean_too_few() {
+        let (s, k) = compute_volume_moments_with_mean(&[1.0, 2.0], 1.5);
+        assert_eq!(s, 0.0);
+        assert_eq!(k, 0.0);
+    }
+
+    #[test]
+    fn test_with_mean_constant_volumes() {
+        let vols = vec![5.0; 10];
+        let (s, k) = compute_volume_moments_with_mean(&vols, 5.0);
+        assert_eq!(s, 0.0, "constant volumes → zero skewness");
+        assert_eq!(k, 0.0, "constant volumes → zero kurtosis");
+    }
+
+    #[test]
+    fn test_with_mean_right_skewed() {
+        // Right-skewed: most volumes small, one very large
+        let vols = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 100.0];
+        let mean = vols.iter().sum::<f64>() / vols.len() as f64;
+        let (s, _k) = compute_volume_moments_with_mean(&vols, mean);
+        assert!(s > 0.5, "right-skewed distribution → positive skew, got {s}");
+    }
+}
+
+#[cfg(test)]
+mod garman_klass_ohlc_tests {
+    use super::*;
+    use crate::interbar_types::TradeSnapshot;
+    use crate::FixedPoint;
+
+    fn make_snapshot(ts: i64, price: f64, volume: f64, is_buyer_maker: bool) -> TradeSnapshot {
+        TradeSnapshot {
+            timestamp: ts,
+            price: FixedPoint((price * 1e8) as i64),
+            volume: FixedPoint((volume * 1e8) as i64),
+            is_buyer_maker,
+            turnover: (price * volume * 1e8) as i128,
+        }
+    }
+
+    #[test]
+    fn test_ohlc_matches_trade_version() {
+        // Build trades with known OHLC: open=100, high=110, low=95, close=105
+        let trades = vec![
+            make_snapshot(1000, 100.0, 1.0, false),  // open
+            make_snapshot(2000, 110.0, 1.0, true),    // high
+            make_snapshot(3000, 95.0, 1.0, false),    // low
+            make_snapshot(4000, 105.0, 1.0, true),    // close
+        ];
+        let refs: Vec<&TradeSnapshot> = trades.iter().collect();
+        let gk_trades = compute_garman_klass(&refs);
+        let gk_ohlc = compute_garman_klass_with_ohlc(100.0, 110.0, 95.0, 105.0);
+
+        assert!(
+            (gk_trades - gk_ohlc).abs() < 1e-10,
+            "GK mismatch: trades={gk_trades}, ohlc={gk_ohlc}"
+        );
+    }
+
+    #[test]
+    fn test_ohlc_flat_price() {
+        let gk = compute_garman_klass_with_ohlc(100.0, 100.0, 100.0, 100.0);
+        assert_eq!(gk, 0.0, "flat price → zero volatility");
+    }
+
+    #[test]
+    fn test_ohlc_zero_price_guard() {
+        let gk = compute_garman_klass_with_ohlc(0.0, 100.0, 50.0, 75.0);
+        assert_eq!(gk, 0.0, "zero open → guard returns 0");
+    }
+
+    #[test]
+    fn test_ohlc_high_volatility() {
+        // Large range: high/low = 2x
+        let gk = compute_garman_klass_with_ohlc(100.0, 200.0, 100.0, 150.0);
+        assert!(gk > 0.0, "wide range → positive volatility");
+        assert!(gk > 0.3, "very wide range → high volatility, got {gk}");
+    }
+
+    #[test]
+    fn test_ohlc_close_equals_open() {
+        // Doji-like: close == open, but high/low differ
+        let gk = compute_garman_klass_with_ohlc(100.0, 110.0, 90.0, 100.0);
+        assert!(gk > 0.0, "range exists even if close==open");
+    }
+}
+
+#[cfg(test)]
 mod burstiness_edge_tests {
     use super::*;
     use crate::interbar_types::TradeSnapshot;
