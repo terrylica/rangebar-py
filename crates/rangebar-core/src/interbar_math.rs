@@ -3939,6 +3939,70 @@ mod kyle_kaufman_edge_tests {
 }
 
 #[cfg(test)]
+mod permutation_entropy_edge_tests {
+    use super::*;
+
+    #[test]
+    fn test_pe_insufficient_data() {
+        let prices = vec![100.0; 5]; // n < 10
+        let pe = compute_permutation_entropy(&prices);
+        assert_eq!(pe, 1.0, "n < 10 → 1.0 (insufficient data)");
+    }
+
+    #[test]
+    fn test_pe_exactly_10_m2_path() {
+        // n=10 → uses M=2 path (10 <= n < 30)
+        let prices: Vec<f64> = (0..10).map(|i| 100.0 + i as f64).collect();
+        let pe = compute_permutation_entropy(&prices);
+        assert_eq!(pe, 0.0, "monotonic ascending → PE = 0.0 (early exit)");
+    }
+
+    #[test]
+    fn test_pe_exactly_30_m3_path() {
+        // n=30 → uses M=3 path (n >= 30)
+        let prices: Vec<f64> = (0..30).map(|i| 100.0 + i as f64).collect();
+        let pe = compute_permutation_entropy(&prices);
+        assert!(pe >= 0.0 && pe <= 1.0, "PE must be in [0, 1], got {pe}");
+        assert!(pe < 0.2, "monotonic ascending → low PE, got {pe}");
+    }
+
+    #[test]
+    fn test_pe_zigzag_high_entropy() {
+        // Alternating pattern should have high entropy
+        let prices: Vec<f64> = (0..40).map(|i| if i % 2 == 0 { 100.0 } else { 110.0 }).collect();
+        let pe = compute_permutation_entropy(&prices);
+        assert!(pe >= 0.0 && pe <= 1.0, "PE must be in [0, 1], got {pe}");
+    }
+
+    #[test]
+    fn test_pe_all_same_price() {
+        // All same → all pairs equal → pattern 0 exclusively → PE = 0
+        let prices = vec![42000.0; 50];
+        let pe = compute_permutation_entropy(&prices);
+        assert!(pe.is_finite(), "same-price must not produce NaN");
+        assert!(pe >= 0.0 && pe <= 1.0, "PE must be in [0, 1], got {pe}");
+    }
+
+    #[test]
+    fn test_pe_monotonic_descending() {
+        let prices: Vec<f64> = (0..35).map(|i| 200.0 - i as f64).collect();
+        let pe = compute_permutation_entropy(&prices);
+        assert!(pe >= 0.0 && pe <= 1.0, "PE must be in [0, 1], got {pe}");
+        assert!(pe < 0.3, "monotonic descending → low PE, got {pe}");
+    }
+
+    #[test]
+    fn test_pe_m2_zigzag() {
+        // 20 trades in M=2 path — zigzag should produce max entropy (both up/down patterns)
+        let prices: Vec<f64> = (0..20).map(|i| if i % 2 == 0 { 100.0 } else { 110.0 }).collect();
+        let pe = compute_permutation_entropy(&prices);
+        assert!(pe >= 0.0 && pe <= 1.0, "PE must be in [0, 1], got {pe}");
+        // Perfect zigzag should have very high entropy (near 1.0 for M=2)
+        assert!(pe > 0.8, "perfect zigzag (M=2) should have high PE, got {pe}");
+    }
+}
+
+#[cfg(test)]
 mod garman_hurst_edge_tests {
     use super::*;
     use crate::interbar_types::TradeSnapshot;

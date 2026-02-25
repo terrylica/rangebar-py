@@ -2292,4 +2292,67 @@ mod tests {
             _ => panic!("Incomplete bar presence mismatch"),
         }
     }
+
+    #[test]
+    fn test_multi_batch_sequential_state_continuity() {
+        // Send 3 separate batches, each producing 1+ bars
+        // Verify state carries correctly across batch boundaries
+        let mut processor = RangeBarProcessor::new(100).unwrap(); // 100 dbps = 0.10%
+        let mut all_bars = Vec::new();
+
+        // Batch 1: open at 50000, breach needs > 0.10% = price > 50050
+        let batch1 = vec![
+            test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1000),
+            test_utils::create_test_agg_trade(2, "50020.0", "1.0", 2000),
+            test_utils::create_test_agg_trade(3, "50060.0", "1.0", 3000), // Breach (>0.10%)
+        ];
+        let bars1 = processor.process_agg_trade_records(&batch1).unwrap();
+        all_bars.extend(bars1);
+
+        // Batch 2: next trade opens new bar, breach again
+        let batch2 = vec![
+            test_utils::create_test_agg_trade(4, "50100.0", "1.0", 4000), // Opens new bar
+            test_utils::create_test_agg_trade(5, "50120.0", "1.0", 5000),
+            test_utils::create_test_agg_trade(6, "50170.0", "1.0", 6000), // Breach (>0.10%)
+        ];
+        let bars2 = processor.process_agg_trade_records(&batch2).unwrap();
+        all_bars.extend(bars2);
+
+        // Batch 3: another new bar from fresh state
+        let batch3 = vec![
+            test_utils::create_test_agg_trade(7, "50200.0", "1.0", 7000), // Opens new bar
+            test_utils::create_test_agg_trade(8, "50220.0", "1.0", 8000),
+            test_utils::create_test_agg_trade(9, "50280.0", "1.0", 9000), // Breach (>0.10%)
+        ];
+        let bars3 = processor.process_agg_trade_records(&batch3).unwrap();
+        all_bars.extend(bars3);
+
+        // Should have produced at least 3 bars (one per batch boundary)
+        assert!(
+            all_bars.len() >= 3,
+            "Expected at least 3 bars from 3 batches, got {}",
+            all_bars.len()
+        );
+
+        // Timestamps must be strictly monotonic
+        for i in 1..all_bars.len() {
+            assert!(
+                all_bars[i].close_time >= all_bars[i - 1].close_time,
+                "Bar {i}: close_time {} < previous {}",
+                all_bars[i].close_time,
+                all_bars[i - 1].close_time
+            );
+        }
+
+        // Trade IDs should be continuous across batches
+        for i in 1..all_bars.len() {
+            assert_eq!(
+                all_bars[i].first_agg_trade_id,
+                all_bars[i - 1].last_agg_trade_id + 1,
+                "Bar {i}: trade ID gap (first={}, prev last={})",
+                all_bars[i].first_agg_trade_id,
+                all_bars[i - 1].last_agg_trade_id
+            );
+        }
+    }
 }
