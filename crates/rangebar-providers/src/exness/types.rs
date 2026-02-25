@@ -416,6 +416,70 @@ mod tests {
         assert!(stats.max_spread.0 > 0);
     }
 
+    // === Issue #96: ExnessInstrument utility method tests ===
+
+    #[test]
+    fn test_instrument_all_returns_10() {
+        let all = ExnessInstrument::all();
+        assert_eq!(all.len(), 10, "Should have 10 instruments, got {}", all.len());
+    }
+
+    #[test]
+    fn test_raw_spread_symbol_format() {
+        assert_eq!(ExnessInstrument::EURUSD.raw_spread_symbol(), "EURUSD_Raw_Spread");
+        assert_eq!(ExnessInstrument::XAUUSD.raw_spread_symbol(), "XAUUSD_Raw_Spread");
+    }
+
+    #[test]
+    fn test_price_range_covers_all_instruments() {
+        for instr in ExnessInstrument::all() {
+            let (min, max) = instr.price_range();
+            assert!(min > 0.0, "{}: min price must be > 0", instr);
+            assert!(max > min, "{}: max must be > min", instr);
+        }
+    }
+
+    #[test]
+    fn test_is_jpy_pair() {
+        assert!(ExnessInstrument::USDJPY.is_jpy_pair());
+        assert!(ExnessInstrument::EURJPY.is_jpy_pair());
+        assert!(ExnessInstrument::GBPJPY.is_jpy_pair());
+        assert!(!ExnessInstrument::EURUSD.is_jpy_pair());
+        assert!(!ExnessInstrument::XAUUSD.is_jpy_pair());
+    }
+
+    #[test]
+    fn test_spread_tolerance_gold_vs_forex() {
+        let gold_tol = ExnessInstrument::XAUUSD.spread_tolerance();
+        let forex_tol = ExnessInstrument::EURUSD.spread_tolerance();
+        assert!(gold_tol > forex_tol, "Gold tolerance ({gold_tol}) should be > forex ({forex_tol})");
+        assert_eq!(gold_tol, 0.10);
+        assert!(forex_tol < 0.001);
+    }
+
+    #[test]
+    fn test_display_matches_symbol() {
+        for instr in ExnessInstrument::all() {
+            assert_eq!(format!("{instr}"), instr.symbol());
+        }
+    }
+
+    #[test]
+    fn test_spread_stats_default_matches_new() {
+        let from_new = SpreadStats::new();
+        let from_default = SpreadStats::default();
+        assert_eq!(from_new.tick_count, from_default.tick_count);
+        assert_eq!(from_new.spread_sum.0, from_default.spread_sum.0);
+        assert_eq!(from_new.min_spread.0, from_default.min_spread.0);
+        assert_eq!(from_new.max_spread.0, from_default.max_spread.0);
+    }
+
+    #[test]
+    fn test_avg_spread_zero_ticks() {
+        let stats = SpreadStats::new();
+        assert_eq!(stats.avg_spread().0, 0, "Zero ticks should yield zero avg spread");
+    }
+
     #[test]
     fn test_spread_stats_min_max_tracking() {
         let mut stats = SpreadStats::new();
