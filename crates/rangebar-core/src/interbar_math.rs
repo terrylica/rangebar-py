@@ -1040,9 +1040,12 @@ pub fn compute_volume_moments(lookback: &[&TradeSnapshot]) -> (f64, f64) {
         return (0.0, 0.0);
     }
 
+    // Issue #96: Pre-compute reciprocal — replaces 4 divisions with 1 division + 4 multiplications
+    let n_inv = 1.0 / n;
+
     // Phase 1: Compute mean from volume stream
     let sum_vol = lookback.iter().fold(0.0, |acc, t| acc + t.volume.to_f64());
-    let mu = sum_vol / n;
+    let mu = sum_vol * n_inv;
 
     // Phase 2: Central moments in single pass (no Vec allocation)
     let (m2, m3, m4) = lookback.iter().fold((0.0, 0.0, 0.0), |(m2, m3, m4), t| {
@@ -1051,9 +1054,9 @@ pub fn compute_volume_moments(lookback: &[&TradeSnapshot]) -> (f64, f64) {
         let d2 = d * d;
         (m2 + d2, m3 + d2 * d, m4 + d2 * d2)
     });
-    let m2 = m2 / n;
-    let m3 = m3 / n;
-    let m4 = m4 / n;
+    let m2 = m2 * n_inv;
+    let m3 = m3 * n_inv;
+    let m4 = m4 * n_inv;
 
     let sigma = m2.sqrt();
 
@@ -1062,7 +1065,6 @@ pub fn compute_volume_moments(lookback: &[&TradeSnapshot]) -> (f64, f64) {
     }
 
     // Issue #96 Task #202: Pre-compute powers instead of powi() calls
-    // powi() is ~20-30 CPU cycles, multiplication is ~1-2 cycles
     let sigma2 = sigma * sigma;
     let sigma3 = sigma2 * sigma;
     let sigma4 = sigma2 * sigma2;
@@ -1116,9 +1118,11 @@ pub fn compute_volume_moments_with_mean(volumes: &[f64], mu: f64) -> (f64, f64) 
         let d2 = d * d;
         (m2 + d2, m3 + d2 * d, m4 + d2 * d2)
     });
-    let m2 = m2 / n;
-    let m3 = m3 / n;
-    let m4 = m4 / n;
+    // Issue #96: Pre-compute reciprocal — replaces 3 divisions with 1 division + 3 multiplications
+    let n_inv = 1.0 / n;
+    let m2 = m2 * n_inv;
+    let m3 = m3 * n_inv;
+    let m4 = m4 * n_inv;
 
     let sigma = m2.sqrt();
 
@@ -1127,7 +1131,6 @@ pub fn compute_volume_moments_with_mean(volumes: &[f64], mu: f64) -> (f64, f64) 
     }
 
     // Issue #96 Task #202: Pre-compute powers instead of powi() calls
-    // powi() is ~20-30 CPU cycles, multiplication is ~1-2 cycles
     let sigma2 = sigma * sigma;
     let sigma3 = sigma2 * sigma;
     let sigma4 = sigma2 * sigma2;
