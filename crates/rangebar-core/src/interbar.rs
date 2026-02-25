@@ -2375,4 +2375,142 @@ mod tests {
         assert!(!history2.is_empty(), "History with 1 trade should not be empty");
         assert_eq!(history2.len(), 1, "History length should be 1");
     }
+
+    // Issue #96 Task #94: Integration test for Tier 2/3 dispatch paths
+    // All prior tests use compute_tier2: false, compute_tier3: false.
+    // This exercises the 4-branch parallelization dispatch (lines 656-695).
+
+    #[test]
+    fn test_tier2_features_computed_when_enabled() {
+        let config = InterBarConfig {
+            lookback_mode: LookbackMode::FixedCount(500),
+            compute_tier2: true,
+            compute_tier3: false,
+        };
+        let mut history = TradeHistory::new(config);
+
+        // Push 120 trades with realistic price variation and mixed buy/sell
+        for i in 0..120i64 {
+            let price = 50000.0 + (i as f64 * 0.7).sin() * 50.0;
+            let volume = 1.0 + (i % 5) as f64 * 0.5;
+            let trade = AggTrade {
+                agg_trade_id: i,
+                price: FixedPoint((price * 1e8) as i64),
+                volume: FixedPoint((volume * 1e8) as i64),
+                first_trade_id: i,
+                last_trade_id: i,
+                timestamp: i * 500, // 500us apart
+                is_buyer_maker: i % 3 == 0, // ~33% sellers
+                is_best_match: None,
+            };
+            history.push(&trade);
+        }
+
+        let features = history.compute_features(120 * 500);
+
+        // Tier 1 should always be present
+        assert!(features.lookback_trade_count.is_some(), "trade_count should be Some");
+        assert!(features.lookback_ofi.is_some(), "ofi should be Some");
+
+        // Tier 2 features should be computed
+        assert!(features.lookback_kyle_lambda.is_some(), "kyle_lambda should be Some with tier2 enabled");
+        assert!(features.lookback_burstiness.is_some(), "burstiness should be Some with tier2 enabled");
+        assert!(features.lookback_volume_skew.is_some(), "volume_skew should be Some with tier2 enabled");
+        assert!(features.lookback_volume_kurt.is_some(), "volume_kurt should be Some with tier2 enabled");
+        assert!(features.lookback_price_range.is_some(), "price_range should be Some with tier2 enabled");
+
+        // Tier 3 features should remain None
+        assert!(features.lookback_kaufman_er.is_none(), "kaufman_er should be None with tier3 disabled");
+        assert!(features.lookback_hurst.is_none(), "hurst should be None with tier3 disabled");
+    }
+
+    #[test]
+    fn test_tier3_features_computed_when_enabled() {
+        let config = InterBarConfig {
+            lookback_mode: LookbackMode::FixedCount(500),
+            compute_tier2: false,
+            compute_tier3: true,
+        };
+        let mut history = TradeHistory::new(config);
+
+        // Push 120 trades (>64 for Hurst, >60 for PE)
+        for i in 0..120i64 {
+            let price = 50000.0 + (i as f64 * 0.7).sin() * 50.0;
+            let trade = AggTrade {
+                agg_trade_id: i,
+                price: FixedPoint((price * 1e8) as i64),
+                volume: FixedPoint((1.5 * 1e8) as i64),
+                first_trade_id: i,
+                last_trade_id: i,
+                timestamp: i * 500,
+                is_buyer_maker: i % 2 == 0,
+                is_best_match: None,
+            };
+            history.push(&trade);
+        }
+
+        let features = history.compute_features(120 * 500);
+
+        // Tier 1 should be present
+        assert!(features.lookback_trade_count.is_some(), "trade_count should be Some");
+
+        // Tier 2 should remain None
+        assert!(features.lookback_kyle_lambda.is_none(), "kyle_lambda should be None with tier2 disabled");
+        assert!(features.lookback_burstiness.is_none(), "burstiness should be None with tier2 disabled");
+
+        // Tier 3 features should be computed (120 trades > 64 for Hurst, > 60 for PE)
+        assert!(features.lookback_kaufman_er.is_some(), "kaufman_er should be Some with tier3 enabled");
+        assert!(features.lookback_garman_klass_vol.is_some(), "garman_klass should be Some with tier3 enabled");
+    }
+
+    #[test]
+    fn test_all_tiers_enabled_parallel_dispatch() {
+        let config = InterBarConfig {
+            lookback_mode: LookbackMode::FixedCount(500),
+            compute_tier2: true,
+            compute_tier3: true,
+        };
+        let mut history = TradeHistory::new(config);
+
+        // Push 200 trades to exceed parallel thresholds (80 for Tier2, 150 for Tier3)
+        for i in 0..200i64 {
+            let price = 50000.0 + (i as f64 * 0.3).sin() * 100.0;
+            let volume = 0.5 + (i % 7) as f64 * 0.3;
+            let trade = AggTrade {
+                agg_trade_id: i,
+                price: FixedPoint((price * 1e8) as i64),
+                volume: FixedPoint((volume * 1e8) as i64),
+                first_trade_id: i,
+                last_trade_id: i + 2, // aggregation_density > 1
+                timestamp: i * 1000,
+                is_buyer_maker: i % 4 == 0, // ~25% sellers
+                is_best_match: None,
+            };
+            history.push(&trade);
+        }
+
+        let features = history.compute_features(200 * 1000);
+
+        // All tiers should be computed
+        assert!(features.lookback_trade_count.is_some(), "trade_count");
+        assert!(features.lookback_ofi.is_some(), "ofi");
+        assert!(features.lookback_intensity.is_some(), "intensity");
+        assert!(features.lookback_vwap.is_some(), "vwap");
+
+        // Tier 2
+        assert!(features.lookback_kyle_lambda.is_some(), "kyle_lambda");
+        assert!(features.lookback_burstiness.is_some(), "burstiness");
+        assert!(features.lookback_volume_skew.is_some(), "volume_skew");
+        assert!(features.lookback_volume_kurt.is_some(), "volume_kurt");
+        assert!(features.lookback_price_range.is_some(), "price_range");
+
+        // Tier 3
+        assert!(features.lookback_kaufman_er.is_some(), "kaufman_er");
+        assert!(features.lookback_garman_klass_vol.is_some(), "garman_klass_vol");
+
+        // Verify feature values are finite
+        assert!(features.lookback_ofi.unwrap().is_finite(), "ofi should be finite");
+        assert!(features.lookback_kyle_lambda.unwrap().is_finite(), "kyle_lambda should be finite");
+        assert!(features.lookback_kaufman_er.unwrap().is_finite(), "kaufman_er should be finite");
+    }
 }
