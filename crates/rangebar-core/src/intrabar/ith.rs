@@ -296,46 +296,38 @@ fn calculate_intervals_cv_numba_style(epochs: &[bool], num_of_epochs: usize) -> 
         return f64::NAN;
     }
 
-    // Build epoch_indices: [0, epoch_idx1, epoch_idx2, ...]
-    // This matches the Numba code exactly
-    let mut epoch_indices = Vec::with_capacity(num_of_epochs + 1);
-    epoch_indices.push(0); // Always start with 0
+    // Task #16: Single-pass interval computation — eliminates two Vec allocations
+    // Track prev_idx, accumulate sum and sum_sq on the fly for mean/variance
+    let mut prev_idx: usize = 0;
+    let mut sum = 0.0_f64;
+    let mut sum_sq = 0.0_f64;
+    let mut count: usize = 0;
 
     for (i, &is_epoch) in epochs.iter().enumerate() {
         if is_epoch {
-            epoch_indices.push(i);
+            let interval = (i - prev_idx) as f64;
+            sum += interval;
+            sum_sq += interval * interval;
+            count += 1;
+            prev_idx = i;
+            if count >= num_of_epochs {
+                break;
+            }
         }
     }
 
-    // Calculate intervals (np.diff equivalent)
-    // epoch_indices[: num_of_epochs + 1] gives us [0, idx1, idx2, ..., idx_n]
-    // np.diff gives us [idx1-0, idx2-idx1, ..., idx_n - idx_{n-1}]
-    let intervals: Vec<f64> = epoch_indices
-        .windows(2)
-        .take(num_of_epochs) // Match Numba: epoch_indices[: num_of_epochs + 1]
-        .map(|w| (w[1] - w[0]) as f64)
-        .collect();
-
-    if intervals.is_empty() {
+    if count == 0 {
         return f64::NAN;
     }
 
-    let mean: f64 = intervals.iter().sum::<f64>() / intervals.len() as f64;
+    let n = count as f64;
+    let mean = sum / n;
     if mean <= 0.0 {
         return f64::NAN;
     }
 
-    // Calculate std (population std, matching numpy default)
-    // Issue #96: powi(2) → multiplication for hot-path variance
-    let variance: f64 = intervals
-        .iter()
-        .map(|&x| {
-            let d = x - mean;
-            d * d
-        })
-        .sum::<f64>()
-        / intervals.len() as f64;
-
+    // Population variance: E[X²] - E[X]² (equivalent to Σ(x-μ)²/n)
+    let variance = (sum_sq / n - mean * mean).max(0.0);
     let std_dev = variance.sqrt();
 
     std_dev / mean
