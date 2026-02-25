@@ -1845,7 +1845,9 @@ fn compute_phi_sampled(prices: &[f64], m: usize, r: f64) -> f64 {
         return 0.0;
     }
 
-    let c = count as f64 / (num_patterns * (num_patterns - 1) / 2) as f64;
+    // Issue #96: Pre-compute reciprocal of C(n,2) binomial coefficient
+    let inv_total_pairs = 2.0 / (num_patterns as f64 * (num_patterns - 1) as f64);
+    let c = count as f64 * inv_total_pairs;
     -c * libm::log(c)  // Issue #116: Use libm for 1.2-1.5x speedup
 }
 
@@ -1884,7 +1886,9 @@ fn compute_phi(prices: &[f64], m: usize, r: f64) -> f64 {
         return 0.0;
     }
 
-    let c = count as f64 / (num_patterns * (num_patterns - 1) / 2) as f64;
+    // Issue #96: Pre-compute reciprocal of C(n,2) binomial coefficient
+    let inv_total_pairs = 2.0 / (num_patterns as f64 * (num_patterns - 1) as f64);
+    let c = count as f64 * inv_total_pairs;
     -c * libm::log(c)  // Issue #116: Use libm for 1.2-1.5x speedup
 }
 
