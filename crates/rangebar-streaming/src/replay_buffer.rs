@@ -367,4 +367,99 @@ mod tests {
         let trades = buffer.get_trades_from(1);
         assert_eq!(trades.len(), 0); // Should not panic
     }
+
+    // === Issue #96: Expanded replay buffer + replay stream coverage ===
+
+    #[test]
+    fn test_push_len_is_empty() {
+        let buffer = ReplayBuffer::new(Duration::from_secs(300));
+        assert!(buffer.is_empty());
+        assert_eq!(buffer.len(), 0);
+
+        let base = 1_704_067_200_000_000_i64;
+        buffer.push(create_test_trade(1, base, 50000.0));
+        assert!(!buffer.is_empty());
+        assert_eq!(buffer.len(), 1);
+
+        buffer.push(create_test_trade(2, base + 1_000_000, 50100.0));
+        assert_eq!(buffer.len(), 2);
+    }
+
+    #[test]
+    fn test_push_eviction_by_capacity() {
+        // 10 second capacity
+        let buffer = ReplayBuffer::new(Duration::from_secs(10));
+        let base = 1_704_067_200_000_000_i64;
+
+        // Add 20 trades 1 second apart (20 sec span)
+        for i in 0..20 {
+            buffer.push(create_test_trade(i, base + (i * 1_000_000), 50000.0));
+        }
+
+        // Capacity is 10s, so ~last 10 trades should remain
+        let len = buffer.len();
+        assert!(len <= 12, "Expected <=12 trades after eviction, got {len}");
+        assert!(len >= 10, "Expected >=10 trades retained, got {len}");
+    }
+
+    #[test]
+    fn test_replay_stream_set_speed() {
+        let trades = vec![
+            create_test_trade(1, 1_704_067_200_000_000, 50000.0),
+            create_test_trade(2, 1_704_067_201_000_000, 50100.0),
+        ];
+        let mut stream = ReplayStream::new(trades, 1.0);
+        assert!((stream.speed() - 1.0).abs() < f32::EPSILON);
+
+        stream.set_speed(5.0);
+        assert!((stream.speed() - 5.0).abs() < f32::EPSILON);
+
+        // Minimum speed clamp
+        stream.set_speed(0.01);
+        assert!((stream.speed() - 0.1).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_replay_stream_remaining_total_progress() {
+        let base = 1_704_067_200_000_000_i64;
+        let trades = vec![
+            create_test_trade(1, base, 50000.0),
+            create_test_trade(2, base + 1_000_000, 50100.0),
+            create_test_trade(3, base + 2_000_000, 50200.0),
+            create_test_trade(4, base + 3_000_000, 50300.0),
+        ];
+        let stream = ReplayStream::new(trades, 10.0);
+
+        assert_eq!(stream.total(), 4);
+        assert_eq!(stream.remaining(), 4);
+        assert!((stream.progress() - 0.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_replay_stream_empty_progress() {
+        let stream = ReplayStream::new(vec![], 1.0);
+        assert_eq!(stream.total(), 0);
+        assert_eq!(stream.remaining(), 0);
+        assert!((stream.progress() - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_buffer_stats() {
+        let buffer = ReplayBuffer::new(Duration::from_secs(60));
+        let base = 1_704_067_200_000_000_i64;
+
+        let stats = buffer.stats();
+        assert_eq!(stats.trade_count, 0);
+        assert!(stats.first_timestamp.is_none());
+        assert!(stats.last_timestamp.is_none());
+
+        buffer.push(create_test_trade(1, base, 50000.0));
+        buffer.push(create_test_trade(2, base + 5_000_000, 50100.0));
+
+        let stats = buffer.stats();
+        assert_eq!(stats.trade_count, 2);
+        assert_eq!(stats.first_timestamp, Some(base));
+        assert_eq!(stats.last_timestamp, Some(base + 5_000_000));
+        assert!(stats.memory_usage_bytes > 0);
+    }
 }

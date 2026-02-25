@@ -370,4 +370,77 @@ mod tests {
         assert!(RSI::new(0).is_err());
         assert!(CCI::new(0).is_err());
     }
+
+    // === Issue #96: Extended indicator edge case tests ===
+
+    #[test]
+    fn test_macd_with_custom_periods() {
+        let macd = MACD::with_periods(5, 10, 3);
+        assert!(macd.is_ok());
+
+        let mut macd = macd.unwrap();
+        // Feed a trending sequence and verify MACD diverges from zero
+        for i in 1..=20 {
+            macd.update(100.0 + i as f64);
+        }
+        let result = macd.update(121.0);
+        assert!(result.macd_line > 0.0, "Uptrend should produce positive MACD line");
+    }
+
+    #[test]
+    fn test_sma_constant_values() {
+        let mut sma = SimpleMovingAverage::new(3).unwrap();
+        sma.update(5.0);
+        sma.update(5.0);
+        let result = sma.update(5.0);
+        assert_eq!(result, Some(5.0), "Constant values should produce exact SMA");
+    }
+
+    #[test]
+    fn test_sma_window_size_1() {
+        let mut sma = SimpleMovingAverage::new(1).unwrap();
+        // Window=1: every update should return the input
+        assert_eq!(sma.update(42.0), Some(42.0));
+        assert_eq!(sma.update(100.0), Some(100.0));
+    }
+
+    #[test]
+    fn test_ema_constant_values() {
+        let mut ema = ExponentialMovingAverage::new(5).unwrap();
+        for _ in 0..10 {
+            let result = ema.update(50.0);
+            assert!((result - 50.0).abs() < 1e-10, "Constant input should produce constant EMA");
+        }
+    }
+
+    #[test]
+    fn test_rsi_all_gains() {
+        let mut rsi = RSI::new(3).unwrap();
+        rsi.update(10.0); // initial
+        rsi.update(11.0);
+        rsi.update(12.0);
+        let result = rsi.update(13.0);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 100.0, "All gains should produce RSI=100");
+    }
+
+    #[test]
+    fn test_rsi_all_losses() {
+        let mut rsi = RSI::new(3).unwrap();
+        rsi.update(13.0); // initial
+        rsi.update(12.0);
+        rsi.update(11.0);
+        let result = rsi.update(10.0);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 0.0, "All losses should produce RSI=0");
+    }
+
+    #[test]
+    fn test_cci_constant_ohlc() {
+        let mut cci = CCI::new(3).unwrap();
+        cci.update(10.0, 10.0, 10.0);
+        cci.update(10.0, 10.0, 10.0);
+        let result = cci.update(10.0, 10.0, 10.0);
+        assert_eq!(result, Some(0.0), "Constant OHLC should produce CCI=0");
+    }
 }
