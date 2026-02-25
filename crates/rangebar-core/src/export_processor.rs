@@ -129,7 +129,17 @@ impl ExportRangeBarProcessor {
 
         if self.current_bar.is_none() {
             // Start new bar
-            let trade_turnover = (trade.price.to_f64() * trade.volume.to_f64()) as i128;
+            // Issue #96: Use integer turnover (matches main processor) — eliminates 2 f64 conversions
+            let trade_turnover = trade.turnover();
+            let vol = trade.volume.0 as i128;
+
+            // Single branch for buy/sell classification
+            let (buy_vol, sell_vol, buy_count, sell_count, buy_turn, sell_turn) =
+                if trade.is_buyer_maker {
+                    (0i128, vol, 0i64, 1i64, 0i128, trade_turnover)
+                } else {
+                    (vol, 0i128, 1i64, 0i64, trade_turnover, 0i128)
+                };
 
             self.current_bar = Some(InternalRangeBar {
                 open_time: trade.timestamp,
@@ -139,7 +149,7 @@ impl ExportRangeBarProcessor {
                 low: trade.price,
                 close: trade.price,
                 // Issue #88: i128 volume accumulators
-                volume: trade.volume.0 as i128,
+                volume: vol,
                 turnover: trade_turnover,
                 individual_trade_count: 1,
                 agg_record_count: 1,
@@ -149,29 +159,13 @@ impl ExportRangeBarProcessor {
                 first_agg_trade_id: trade.agg_trade_id,
                 last_agg_trade_id: trade.agg_trade_id,
                 // Market microstructure fields (Issue #88: i128)
-                buy_volume: if trade.is_buyer_maker {
-                    0i128
-                } else {
-                    trade.volume.0 as i128
-                },
-                sell_volume: if trade.is_buyer_maker {
-                    trade.volume.0 as i128
-                } else {
-                    0i128
-                },
-                buy_trade_count: if trade.is_buyer_maker { 0 } else { 1 },
-                sell_trade_count: if trade.is_buyer_maker { 1 } else { 0 },
+                buy_volume: buy_vol,
+                sell_volume: sell_vol,
+                buy_trade_count: buy_count,
+                sell_trade_count: sell_count,
                 vwap: trade.price,
-                buy_turnover: if trade.is_buyer_maker {
-                    0
-                } else {
-                    trade_turnover
-                },
-                sell_turnover: if trade.is_buyer_maker {
-                    trade_turnover
-                } else {
-                    0
-                },
+                buy_turnover: buy_turn,
+                sell_turnover: sell_turn,
             });
             return;
         }
@@ -179,7 +173,8 @@ impl ExportRangeBarProcessor {
         // Process existing bar - work with reference
         // SAFETY: current_bar guaranteed Some - early return above if None
         let bar = self.current_bar.as_mut().unwrap();
-        let trade_turnover = (trade.price.to_f64() * trade.volume.to_f64()) as i128;
+        // Issue #96: Use integer turnover (matches main processor) — eliminates 2 f64 conversions
+        let trade_turnover = trade.turnover();
 
         // CRITICAL FIX: Use fixed-point integer arithmetic for precise threshold calculation
         // v3.0.0: threshold now in dbps, using BASIS_POINTS_SCALE = 100_000
