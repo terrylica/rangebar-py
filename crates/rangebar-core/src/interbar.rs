@@ -543,47 +543,25 @@ impl TradeHistory {
         } // Lock is released here
 
         // Issue #96 Task #167 Phase 2: Trend-guided binary search with lookahead hint
-        // Analyzes recent search history to predict if next index will trend higher/lower
-        // Enables partitioned search for 0.5-1% speedup on typical streaming data
-
-        // Issue #96 Task #167 Phase 2: Trend-guided binary search
-        // Uses lookahead hint to narrow search space for 0.5-1% improvement
+        // Uses hint for O(1) boundary check; falls back to O(log n) VecDeque binary search.
+        // Task #20: Removed O(n) Vec collect that negated the predicted region optimization.
         let cutoff_idx = if let Some((should_check_higher, last_idx)) = self.compute_search_hint() {
-            // Hint suggests trend direction: check if index will trend higher or lower
-            // For partitioned search: validate hint by checking predicted region first
             let check_region_end = if should_check_higher {
-                // Trend suggests index increasing: extend upward from last position
                 std::cmp::min(last_idx + (last_idx / 2), self.trades.len())
             } else {
-                // Trend suggests index decreasing: search from beginning to last position
                 last_idx
             };
 
-            // Quick validation: check if predicted region contains the answer
-            let mut found = false;
-            let mut result_idx = 0;
-
-            // For small regions, check the prediction first
-            if check_region_end > 0 {
-                // Check trade at the predicted boundary
-                if self.trades[check_region_end - 1].timestamp < bar_open_time {
-                    // Answer is in predicted region, do search there
-                    let trades_slice = self.trades.iter().take(check_region_end).collect::<Vec<_>>();
-                    match trades_slice.binary_search_by(|trade| {
-                        if trade.timestamp < bar_open_time {
-                            Ordering::Less
-                        } else {
-                            Ordering::Greater
-                        }
-                    }) {
-                        Ok(idx) => { result_idx = idx; found = true; },
-                        Err(idx) => { result_idx = idx; found = true; },
-                    }
-                }
-            }
-
-            if !found {
-                // Prediction was wrong: fall back to full binary search
+            // O(1) boundary probe: if all trades in predicted region are before bar_open_time,
+            // the cutoff is at least check_region_end. Verify with full binary search.
+            if check_region_end > 0
+                && check_region_end == self.trades.len()
+                && self.trades[check_region_end - 1].timestamp < bar_open_time
+            {
+                // All trades are before bar_open_time — cutoff is the full length
+                check_region_end
+            } else {
+                // Binary search the full VecDeque — O(log n), no allocation
                 match self.trades.binary_search_by(|trade| {
                     if trade.timestamp < bar_open_time {
                         Ordering::Less
@@ -591,13 +569,10 @@ impl TradeHistory {
                         Ordering::Greater
                     }
                 }) {
-                    Ok(idx) => result_idx = idx,
-                    Err(idx) => result_idx = idx,
+                    Ok(idx) | Err(idx) => idx,
                 }
             }
-            result_idx
         } else {
-            // No trend hint available: fall back to standard binary search
             match self.trades.binary_search_by(|trade| {
                 if trade.timestamp < bar_open_time {
                     Ordering::Less
@@ -605,8 +580,7 @@ impl TradeHistory {
                     Ordering::Greater
                 }
             }) {
-                Ok(idx) => idx,  // Found exact match - exclude trades at bar_open_time
-                Err(idx) => idx, // Insertion point - all trades before this are < bar_open_time
+                Ok(idx) | Err(idx) => idx,
             }
         };
 
