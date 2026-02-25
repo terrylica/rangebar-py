@@ -551,32 +551,28 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
                 break;
             }
 
-            // Linear detrend via least squares (xx_sum pre-computed above)
+            // Issue #96: Single-pass linear detrend + RMS via algebraic identity
+            // Fuses two passes into one: accumulate xy_sum, y_sum, sum_y_sq in a single loop.
+            // Then RMS = sqrt((yy_sum - xy_sum²/xx_sum) / n) where yy_sum = sum_y_sq - y_sum²/n
             let mut xy_sum = 0.0;
             let mut y_sum = 0.0;
+            let mut sum_y_sq = 0.0;
 
             for (i, &yi) in y[start..end].iter().enumerate() {
                 let delta_x = i as f64 - x_mean;
                 xy_sum += delta_x * yi;
                 y_sum += yi;
+                sum_y_sq += yi * yi;
             }
 
-            let y_mean = y_sum * inv_scale;
-            let slope = if xx_sum > f64::EPSILON {
-                xy_sum / xx_sum
+            // Detrended RMS via closed-form: rms² = (yy - xy²/xx) / n
+            let yy_sum = sum_y_sq - y_sum * y_sum * inv_scale;
+            let rms = if xx_sum > f64::EPSILON {
+                let rms_sq = yy_sum - xy_sum * xy_sum / xx_sum;
+                (rms_sq.max(0.0) * inv_scale).sqrt()
             } else {
-                0.0
+                (yy_sum.max(0.0) * inv_scale).sqrt()
             };
-
-            // Compute RMS of detrended segment
-            let mut rms = 0.0;
-            for (i, &yi) in y[start..end].iter().enumerate() {
-                let trend = y_mean + slope * (i as f64 - x_mean);
-                let residual = yi - trend;
-                // Issue #96 Task #195: Replace powi(2) with multiplication
-                rms += residual * residual;
-            }
-            rms = (rms * inv_scale).sqrt();
 
             total_fluctuation += rms;
             segment_count += 1;
