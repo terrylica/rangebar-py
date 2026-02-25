@@ -200,4 +200,96 @@ mod tests {
             assert!(error < 0.002, "tanh_lut accuracy error {} at input {}", error, input);
         }
     }
+
+    // === Task #14: CV sigmoid LUT tests ===
+
+    #[test]
+    fn test_cv_sigmoid_lut_bounds() {
+        // All entries must be in (0, 1)
+        for i in 0..=50 {
+            let cv = i as f64 / 10.0;
+            let result = cv_sigmoid_lut(cv);
+            assert!(
+                result > 0.0 && result < 1.0,
+                "cv_sigmoid_lut({}) = {} out of (0,1)",
+                cv, result
+            );
+        }
+    }
+
+    #[test]
+    fn test_cv_sigmoid_lut_accuracy() {
+        // CV LUT was generated with Python high-precision → should match within 0.001
+        // Reference: sigmoid(x, center=0.5, scale=4.0) = 1 / (1 + exp(-(x - 0.5) * 4))
+        for i in 0..=50 {
+            let cv = i as f64 / 10.0;
+            let lut_value = cv_sigmoid_lut(cv);
+            let actual = 1.0 / (1.0 + (-(cv - 0.5) * 4.0).exp());
+            let error = (lut_value - actual).abs();
+            assert!(
+                error < 0.02,
+                "cv_sigmoid_lut({}) = {} vs actual {} (error {})",
+                cv, lut_value, actual, error
+            );
+        }
+    }
+
+    #[test]
+    fn test_cv_sigmoid_lut_known_values() {
+        // cv=0.0: sigmoid(-2.0) = 1/(1+e^2) ≈ 0.1192
+        let v0 = cv_sigmoid_lut(0.0);
+        assert!((v0 - 0.1192).abs() < 0.001, "cv=0 should be ~0.1192: {}", v0);
+
+        // cv=0.5: sigmoid(0.0) = 0.5 exactly
+        let v05 = cv_sigmoid_lut(0.5);
+        assert!((v05 - 0.5).abs() < f64::EPSILON, "cv=0.5 should be exactly 0.5: {}", v05);
+
+        // cv=5.0: saturates near 1.0
+        let v5 = cv_sigmoid_lut(5.0);
+        assert!(v5 > 0.999, "cv=5.0 should saturate near 1.0: {}", v5);
+    }
+
+    #[test]
+    fn test_cv_sigmoid_lut_monotonicity() {
+        // Sigmoid is monotonically increasing
+        let mut prev = cv_sigmoid_lut(0.0);
+        for i in 1..=50 {
+            let cv = i as f64 / 10.0;
+            let curr = cv_sigmoid_lut(cv);
+            assert!(
+                curr >= prev,
+                "cv_sigmoid_lut not monotonic: {}={} < {}={}",
+                cv, curr, (i - 1) as f64 / 10.0, prev
+            );
+            prev = curr;
+        }
+    }
+
+    #[test]
+    fn test_cv_sigmoid_lut_clamping() {
+        // Negative CV clamped to 0
+        let neg = cv_sigmoid_lut(-1.0);
+        let zero = cv_sigmoid_lut(0.0);
+        assert!((neg - zero).abs() < f64::EPSILON, "negative CV should clamp to cv=0");
+
+        // CV > 5.0 clamped to 5.0
+        let big = cv_sigmoid_lut(100.0);
+        let max = cv_sigmoid_lut(5.0);
+        assert!((big - max).abs() < f64::EPSILON, "CV>5 should clamp to cv=5");
+    }
+
+    #[test]
+    fn test_soft_clamp_hurst_lut_known_values() {
+        // h=0.5 (random walk): 0.5 + 0.5*tanh(0) = 0.5
+        let v = soft_clamp_hurst_lut(0.5);
+        assert!((v - 0.5).abs() < 0.01, "h=0.5 should map to ~0.5: {}", v);
+
+        // h=0.0: 0.5 + 0.5*tanh(-2.0) ≈ 0.5 - 0.5*0.964 ≈ 0.018
+        let v0 = soft_clamp_hurst_lut(0.0);
+        assert!(v0 < 0.05, "h=0.0 should be near 0: {}", v0);
+
+        // h=1.0: 0.5 + 0.5*tanh(2.0) ≈ 0.5 + 0.5*0.964 ≈ 0.982
+        let v1 = soft_clamp_hurst_lut(1.0);
+        assert!(v1 > 0.95, "h=1.0 should be near 1: {}", v1);
+    }
 }
