@@ -2136,4 +2136,89 @@ mod tests {
         processor.process_single_trade(&t3).unwrap();
         assert!(processor.get_incomplete_bar().is_some(), "Should have new bar after reset");
     }
+
+    // === EDGE CASE TESTS (Issue #96 Task #21) ===
+
+    #[test]
+    fn test_single_trade_no_bar() {
+        // A single trade cannot breach — no bar should be produced
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+        let trade = test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1000);
+        let bars = processor.process_agg_trade_records(&[trade]).unwrap();
+        assert_eq!(bars.len(), 0, "Single trade should not produce a completed bar");
+        assert!(processor.get_incomplete_bar().is_some(), "Should have incomplete bar");
+    }
+
+    #[test]
+    fn test_identical_timestamps_no_close() {
+        // Issue #36: Bar cannot close when breach tick has same timestamp as open
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+        let t1 = test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1000);
+        let t2 = test_utils::create_test_agg_trade(2, "50200.0", "1.0", 1000); // Same timestamp, breaches
+        let bars = processor.process_agg_trade_records(&[t1, t2]).unwrap();
+        assert_eq!(bars.len(), 0, "Bar should not close on same timestamp as open (Issue #36)");
+    }
+
+    #[test]
+    fn test_identical_timestamps_then_different_closes() {
+        // Same-timestamp trades followed by different-timestamp breach should close
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+        let t1 = test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1000);
+        let t2 = test_utils::create_test_agg_trade(2, "50050.0", "1.0", 1000); // Same ts
+        let t3 = test_utils::create_test_agg_trade(3, "50200.0", "1.0", 2000); // Different ts, breach
+        let bars = processor.process_agg_trade_records(&[t1, t2, t3]).unwrap();
+        assert_eq!(bars.len(), 1, "Should close when breach at different timestamp");
+    }
+
+    #[test]
+    fn test_streaming_defer_open_semantics() {
+        // After breach via process_single_trade, next trade should open new bar
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+        let t1 = test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1000);
+        let t2 = test_utils::create_test_agg_trade(2, "50200.0", "1.0", 2000); // Breach
+        let t3 = test_utils::create_test_agg_trade(3, "51000.0", "1.0", 3000); // Opens new bar
+
+        processor.process_single_trade(&t1).unwrap();
+        let bar = processor.process_single_trade(&t2).unwrap();
+        assert!(bar.is_some(), "Trade 2 should cause a breach");
+
+        // After breach, no incomplete bar (defer_open state)
+        assert!(processor.get_incomplete_bar().is_none());
+
+        // Next trade opens a fresh bar
+        let bar2 = processor.process_single_trade(&t3).unwrap();
+        assert!(bar2.is_none(), "Trade 3 should open new bar, not breach");
+        let incomplete = processor.get_incomplete_bar().unwrap();
+        assert_eq!(incomplete.open.to_f64(), 51000.0, "New bar should open at t3 price");
+    }
+
+    #[test]
+    fn test_process_empty_then_trades() {
+        // Processing empty slice should be no-op, then normal processing works
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+        let bars = processor.process_agg_trade_records(&[]).unwrap();
+        assert_eq!(bars.len(), 0);
+        assert!(processor.get_incomplete_bar().is_none());
+
+        // Now process a real trade
+        let trade = test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1000);
+        let bars = processor.process_agg_trade_records(&[trade]).unwrap();
+        assert_eq!(bars.len(), 0);
+        assert!(processor.get_incomplete_bar().is_some());
+    }
+
+    #[test]
+    fn test_multiple_breaches_in_batch() {
+        // Multiple bars should form from a batch with repeated breaches
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+        let trades = vec![
+            test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1000),
+            test_utils::create_test_agg_trade(2, "50200.0", "1.0", 2000),  // Breach 1
+            test_utils::create_test_agg_trade(3, "50500.0", "1.0", 3000),  // Opens bar 2
+            test_utils::create_test_agg_trade(4, "50700.0", "1.0", 4000),  // Breach 2
+            test_utils::create_test_agg_trade(5, "51000.0", "1.0", 5000),  // Opens bar 3
+        ];
+        let bars = processor.process_agg_trade_records(&trades).unwrap();
+        assert_eq!(bars.len(), 2, "Should produce 2 completed bars from 2 breaches");
+    }
 }
