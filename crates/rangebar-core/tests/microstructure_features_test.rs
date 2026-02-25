@@ -546,3 +546,88 @@ fn test_all_interbar_features_when_enabled() {
         }
     }
 }
+
+// === Edge case tests for compute_microstructure_features (Issue #96 Task #66) ===
+
+#[test]
+fn test_microstructure_all_buy_trades() {
+    // All buy trades: OFI should be 1.0, turnover_imbalance should be 1.0
+    let mut processor = RangeBarProcessor::new(250).expect("failed to create processor");
+
+    // Large price move to force bar close, all buys (is_buyer_maker=false)
+    let trades = vec![
+        create_trade(1, "50000.0", "1.0", 1640995200000, false),
+        create_trade(2, "50200.0", "1.5", 1640995201000, false),
+        create_trade(3, "50400.0", "2.0", 1640995202000, false),
+    ];
+
+    let bars = processor.process_agg_trade_records(&trades).expect("failed");
+    for bar in &bars {
+        assert!((bar.ofi - 1.0).abs() < f64::EPSILON, "All-buy OFI should be 1.0, got {}", bar.ofi);
+        assert!((bar.turnover_imbalance - 1.0).abs() < 0.01,
+            "All-buy turnover_imbalance should be ~1.0, got {}", bar.turnover_imbalance);
+        assert!(bar.aggression_ratio == 100.0, "All-buy aggression_ratio should be 100.0");
+    }
+}
+
+#[test]
+fn test_microstructure_all_sell_trades() {
+    // All sell trades: OFI should be -1.0, turnover_imbalance should be -1.0
+    let mut processor = RangeBarProcessor::new(250).expect("failed to create processor");
+
+    // Large price drop to force bar close, all sells (is_buyer_maker=true)
+    let trades = vec![
+        create_trade(1, "50000.0", "1.0", 1640995200000, true),
+        create_trade(2, "49800.0", "1.5", 1640995201000, true),
+        create_trade(3, "49600.0", "2.0", 1640995202000, true),
+    ];
+
+    let bars = processor.process_agg_trade_records(&trades).expect("failed");
+    for bar in &bars {
+        assert!((bar.ofi - (-1.0)).abs() < f64::EPSILON,
+            "All-sell OFI should be -1.0, got {}", bar.ofi);
+        assert!((bar.turnover_imbalance - (-1.0)).abs() < 0.01,
+            "All-sell turnover_imbalance should be ~-1.0, got {}", bar.turnover_imbalance);
+    }
+}
+
+#[test]
+fn test_microstructure_single_trade_bar() {
+    // A bar with a single trade that breaches threshold
+    // (needs 2 trades minimum to close: open + breach)
+    let mut processor = RangeBarProcessor::new(250).expect("failed to create processor");
+
+    let trades = vec![
+        create_trade(1, "50000.0", "1.0", 1640995200000, false),
+        create_trade(2, "50200.0", "0.5", 1640995201000, true), // breach
+    ];
+
+    let bars = processor.process_agg_trade_records(&trades).expect("failed");
+    for bar in &bars {
+        assert!(bar.volume_per_trade.is_finite(), "volume_per_trade should be finite");
+        assert!(bar.trade_intensity.is_finite(), "trade_intensity should be finite");
+        assert!(bar.price_impact.is_finite(), "price_impact should be finite");
+        assert!(bar.kyle_lambda_proxy.is_finite(), "kyle_lambda should be finite");
+    }
+}
+
+#[test]
+fn test_microstructure_flat_price_bar() {
+    // All trades at same price: VWAP=price, range=0, vwap_close_deviation=0
+    let mut processor = RangeBarProcessor::new(250).expect("failed to create processor");
+
+    let trades = vec![
+        create_trade(1, "50000.0", "1.0", 1640995200000, false),
+        create_trade(2, "50000.0", "2.0", 1640995201000, true),
+        create_trade(3, "50000.0", "1.5", 1640995202000, false),
+        // Force breach with a large move
+        create_trade(4, "50200.0", "1.0", 1640995203000, false),
+    ];
+
+    let bars = processor.process_agg_trade_records(&trades).expect("failed");
+    // The closed bar should have VWAP close to the flat price
+    for bar in &bars {
+        assert!(bar.vwap_close_deviation.is_finite(),
+            "vwap_close_deviation should be finite even with small range");
+    }
+}
