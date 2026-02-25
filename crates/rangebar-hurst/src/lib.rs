@@ -164,4 +164,27 @@ mod tests {
         let h = rssimple(&prices);
         assert!(h >= 0.0 && h <= 1.5, "Hurst should be in reasonable range: {}", h);
     }
+
+    #[test]
+    fn test_rssimple_two_elements() {
+        let h = rssimple(&[100.0, 200.0]);
+        assert!(h.is_finite(), "Two-element series must be finite: {}", h);
+    }
+
+    #[test]
+    fn test_rssimple_nan_in_series() {
+        // NaN values should not cause panic, but result may be NaN/non-finite
+        let prices = vec![100.0, f64::NAN, 102.0, 101.0, 99.0];
+        let h = rssimple(&prices);
+        // Just ensure no panic — NaN propagation is acceptable
+        let _ = h;
+    }
+
+    #[test]
+    fn test_rssimple_negative_prices() {
+        // Negative prices (e.g., futures spread) should work
+        let prices: Vec<f64> = (0..50).map(|i| -10.0 + i as f64 * 0.1).collect();
+        let h = rssimple(&prices);
+        assert!(h.is_finite(), "Negative prices must produce finite H: {}", h);
+    }
 }
