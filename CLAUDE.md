@@ -25,6 +25,7 @@
 | API reference            | [docs/api/INDEX.md](/docs/api/INDEX.md)                                                                 | Full Python API docs                                  |
 | Research                 | [docs/research/INDEX.md](/docs/research/INDEX.md)                                                       | ML labeling, regime patterns, TDA                     |
 | Oracle verification      | [docs/verification/](/docs/verification/)                                                               | Bit-exact cross-reference reports                     |
+| Source validation        | [.claude/skills/source-validation/SKILL.md](/.claude/skills/source-validation/SKILL.md)                 | Vision→REST→WS junction proof, fromId pagination      |
 
 ---
 

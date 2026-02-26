@@ -165,6 +165,117 @@ fn workspace_test_data_path(relative_path: &str) -> std::path::PathBuf {
     workspace_root.join("test_data").join(relative_path)
 }
 
+/// Resolve tests/fixtures path from workspace root
+/// Issue #96: Support real market data fixtures for statistical test accuracy
+fn workspace_fixtures_path(relative_path: &str) -> std::path::PathBuf {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let workspace_root = std::path::Path::new(manifest_dir)
+        .parent() // crates/
+        .unwrap()
+        .parent() // workspace root
+        .unwrap();
+
+    workspace_root.join("tests").join("fixtures").join(relative_path)
+}
+
+/// Binance aggTrades CSV record for headerless fixtures (8 columns)
+///
+/// Issue #96: Real 10K fixture has no header row + includes is_best_match column
+/// Columns: agg_trade_id, price, quantity, first_trade_id, last_trade_id, timestamp, is_buyer_maker, is_best_match
+#[derive(Debug, serde::Deserialize)]
+struct AggTradeRecordHeaderless {
+    agg_trade_id: i64,
+    price: String,
+    quantity: String,
+    first_trade_id: i64,
+    last_trade_id: i64,
+    timestamp: i64,
+    is_buyer_maker: String,
+    is_best_match: String,
+}
+
+impl AggTradeRecordHeaderless {
+    fn into_agg_trade(self) -> Result<AggTrade, crate::fixed_point::FixedPointError> {
+        Ok(AggTrade {
+            agg_trade_id: self.agg_trade_id,
+            price: FixedPoint::from_str(&self.price)?,
+            volume: FixedPoint::from_str(&self.quantity)?,
+            first_trade_id: self.first_trade_id,
+            last_trade_id: self.last_trade_id,
+            timestamp: self.timestamp,
+            is_buyer_maker: self.is_buyer_maker == "True",
+            is_best_match: Some(self.is_best_match == "True"),
+        })
+    }
+}
+
+/// Load real BTCUSDT 10K trade fixture (10,001 trades from 2024-01-01)
+///
+/// Issue #96: Provides real market data with natural statistical properties
+/// (timestamp clustering, volume skew, directional flow, aggregation density)
+/// for tests that require non-degenerate microstructure.
+///
+/// Source: tests/fixtures/BTCUSDT-aggTrades-sample-10k.csv (headerless, 8 columns)
+pub fn load_real_btcusdt_10k() -> Result<Vec<AggTrade>, LoaderError> {
+    let path = workspace_fixtures_path("BTCUSDT-aggTrades-sample-10k.csv");
+    load_headerless_data(path, 10001)
+}
+
+/// Generic headerless CSV loader with record count validation
+///
+/// Issue #96: For fixture files without header rows (positional column mapping)
+fn load_headerless_data<P: AsRef<Path>>(
+    path: P,
+    expected_count: usize,
+) -> Result<Vec<AggTrade>, LoaderError> {
+    let path_str = path.as_ref().to_string_lossy().to_string();
+
+    let file = std::fs::File::open(&path).map_err(|e| LoaderError::Io {
+        path: path_str.clone(),
+        source: e,
+    })?;
+
+    let csv_buffer_size = (expected_count * 100).max(64 * 1024).min(2 * 1024 * 1024);
+
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .buffer_capacity(csv_buffer_size)
+        .from_reader(file);
+
+    let mut trades = Vec::with_capacity(expected_count);
+    let mut line = 1; // No header, data starts at line 1
+
+    for result in reader.deserialize() {
+        let record: AggTradeRecordHeaderless = result.map_err(|e| LoaderError::CsvParse {
+            path: path_str.clone(),
+            line,
+            source: e,
+        })?;
+
+        let trade = record
+            .into_agg_trade()
+            .map_err(|e| LoaderError::FixedPoint {
+                path: path_str.clone(),
+                line,
+                source: e,
+            })?;
+
+        trades.push(trade);
+        line += 1;
+    }
+
+    let actual_count = trades.len();
+    if actual_count != expected_count {
+        return Err(LoaderError::CountMismatch {
+            path: path_str,
+            expected: expected_count,
+            actual: actual_count,
+        });
+    }
+
+    Ok(trades)
+}
+
 /// Generic CSV loader with record count validation
 ///
 /// SLO Guarantees:

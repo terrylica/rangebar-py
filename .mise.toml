@@ -202,4 +202,5 @@ includes = [
     ".mise/tasks/telemetry.toml",
     ".mise/tasks/recency.toml",
     ".mise/tasks/deploy.toml",
+    ".mise/tasks/sketch.toml",
 ]

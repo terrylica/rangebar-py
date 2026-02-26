@@ -18,6 +18,10 @@ members = [
     "crates/rangebar-cli",
     "crates/rangebar",
 ]
+exclude = [
+    "tools/chart",  # Standalone iced canvas chart (separate dep tree)
+    ".claude/skills/source-validation/scripts",  # Standalone validation binary
+]
 
 [workspace.package]
 version = "12.29.0"
