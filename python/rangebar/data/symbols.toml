@@ -82,6 +82,7 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2018-05-04
+min_threshold = 500
 processing_notes = "Provisional min 500 dbps (Issue #89). At 250 dbps: ~555 bars/day avg, 72,898 max (2021-02-01 pump). Pending benchmark to determine if 250 is feasible."
 keywords = ["ripple", "xrp"]
 
@@ -92,6 +93,7 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2018-04-17
+min_threshold = 500
 processing_notes = "Provisional min 500 dbps (Issue #89). At 250 dbps: ~513 bars/day avg, 44,159 max (2021-05-19 crash). Pending benchmark."
 keywords = ["cardano", "ada"]
 
