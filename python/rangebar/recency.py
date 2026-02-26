@@ -1,3 +1,4 @@
+# FILE-SIZE-OK: Recency backfill logic (REST, fromId, adaptive loop)
 """Layer 2 recency backfill for range bar cache (Issue #92).
 
 Bridges the gap between the latest Binance Vision archive data and the current
@@ -298,6 +299,46 @@ def _fetch_aggtrades_rest(
             f"REST API fetch failed for {symbol} "
             f"[{start_ms}-{end_ms}]: {e}"
         )
+        raise RuntimeError(msg) from e
+
+
+def _fetch_aggtrades_by_id(
+    symbol: str,
+    from_id: int,
+    limit: int = 1000,
+) -> list[dict]:
+    """Fetch aggregated trades by fromId (zero-gap pagination via Rust).
+
+    Uses ``fromId`` parameter instead of ``startTime`` to avoid dropping
+    trades at millisecond boundaries.  Delegates to Rust
+    ``fetch_aggtrades_by_id()`` which includes 429 backoff.
+
+    Returns list of trade dicts compatible with RangeBarProcessor.process_trades().
+    """
+    from rangebar._core import fetch_aggtrades_by_id
+
+    try:
+        return fetch_aggtrades_by_id(symbol, from_id, limit)
+    except Exception as e:
+        msg = (
+            f"REST API fetch (fromId) failed for {symbol} "
+            f"[fromId={from_id}, limit={limit}]: {e}"
+        )
+        raise RuntimeError(msg) from e
+
+
+def _fetch_latest_aggtrade(symbol: str) -> dict:
+    """Fetch the latest aggregated trade for a symbol via Rust.
+
+    Single REST call with ``limit=1``.  Returns single trade dict as
+    anchor point for cursor-based ``fromId`` pagination.
+    """
+    from rangebar._core import fetch_latest_aggtrade
+
+    try:
+        return fetch_latest_aggtrade(symbol)
+    except Exception as e:
+        msg = f"REST API fetch (latest) failed for {symbol}: {e}"
         raise RuntimeError(msg) from e
 
 
