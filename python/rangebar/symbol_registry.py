@@ -87,6 +87,9 @@ class SymbolEntry:
         Known data quality issues (e.g., corrupted CSVs, missing dates).
     processing_notes : str | None
         Operational notes from production processing experience.
+    min_threshold : int | None
+        Minimum threshold in dbps. SSoT for per-symbol enforcement.
+        If None, falls back to asset-class default.
     """
 
     symbol: str
@@ -103,6 +106,7 @@ class SymbolEntry:
     first_clean_date: date | None = None
     data_anomalies: tuple[str, ...] = ()
     processing_notes: str | None = None
+    min_threshold: int | None = None
 
 
 @dataclass(frozen=True)
@@ -184,6 +188,7 @@ def get_symbol_entries() -> types.MappingProxyType[str, SymbolEntry]:
             first_clean_date=data.get("first_clean_date"),
             data_anomalies=tuple(data.get("data_anomalies", [])),
             processing_notes=data.get("processing_notes"),
+            min_threshold=data.get("min_threshold"),
         )
 
     return types.MappingProxyType(entries)

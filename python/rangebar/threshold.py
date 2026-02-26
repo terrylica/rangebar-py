@@ -147,20 +147,31 @@ def get_min_threshold_for_symbol(symbol: str) -> int:
     """
     symbol_upper = symbol.upper()
 
-    # 1. Check per-symbol override (highest priority)
+    # 1. Check per-symbol env var override (highest priority — operational escape hatch)
     symbol_env_var = _SYMBOL_ENV_PATTERN.format(symbol_upper)
     symbol_value = os.environ.get(symbol_env_var)
     if symbol_value is not None:
         return int(symbol_value)
 
-    # 2. Check asset-class default
+    # 2. Check symbol registry (SSoT for per-symbol min_threshold)
+    try:
+        from rangebar.symbol_registry import get_symbol_entries
+
+        entries = get_symbol_entries()
+        entry = entries.get(symbol_upper)
+        if entry is not None and entry.min_threshold is not None:
+            return entry.min_threshold
+    except (ImportError, OSError):
+        pass  # Registry unavailable — fall through to asset-class
+
+    # 3. Check asset-class default
     asset_class = detect_asset_class(symbol)
     class_env_var = _ASSET_CLASS_ENV_PATTERN.format(asset_class.name)
     class_value = os.environ.get(class_env_var)
     if class_value is not None:
         return int(class_value)
 
-    # 3. Fallback with warning (mise.toml should define these)
+    # 4. Fallback with warning (mise.toml should define these)
     fallback = _FALLBACK_DEFAULTS.get(asset_class, 1)
     warnings.warn(
         f"Using fallback threshold {fallback} dbps for {asset_class.value}. "
