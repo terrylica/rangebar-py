@@ -14,7 +14,7 @@ keywords = ["binance", "exness", "trading", "data-provider"]
 categories = ["finance", "api-bindings"]
 
 [dependencies]
-rangebar-core = { path = "../rangebar-core", version = "12.23.1" }
+rangebar-core = { path = "../rangebar-core", version = "12.29.0" }
 
 # Serialization
 serde.workspace = true
@@ -57,7 +57,7 @@ tokio-util = { workspace = true }
 tracing-subscriber = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
-rangebar-core = { path = "../rangebar-core", version = "12.23.1" }
+rangebar-core = { path = "../rangebar-core", version = "12.29.0" }
 
 [features]
 default = ["binance"]
