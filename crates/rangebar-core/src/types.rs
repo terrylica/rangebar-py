@@ -1,3 +1,4 @@
+// FILE-SIZE-OK: 1009 lines — inline tests for RangeBar microstructure edge cases
 //! Type definitions for range bar processing
 
 // Issue #88: SCALE imported for i128 volume→f64 conversion
@@ -428,6 +429,22 @@ impl RangeBar {
             intra_hurst: None,
             intra_permutation_entropy: None,
         }
+    }
+
+    /// Issue #112: Validate that bar's price range does not exceed N * threshold
+    ///
+    /// A valid range bar should have (high - low) <= multiplier * threshold_delta,
+    /// where threshold_delta = open * threshold_ratio / SCALE.
+    ///
+    /// # Arguments
+    ///
+    /// * `threshold_ratio` - Pre-computed threshold ratio from RangeBarProcessor
+    /// * `multiplier` - Safety multiplier (typically 2)
+    pub fn is_valid_range(&self, threshold_ratio: i64, multiplier: i64) -> bool {
+        let threshold_delta = (self.open.0 as i128 * threshold_ratio as i128) / SCALE as i128;
+        let max_range = threshold_delta * multiplier as i128;
+        let actual_range = (self.high.0 - self.low.0) as i128;
+        actual_range <= max_range
     }
 
     /// Average number of individual trades per AggTrade record (aggregation density)

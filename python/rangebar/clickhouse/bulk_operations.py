@@ -62,10 +62,68 @@ def _guard_volume_non_negative(
             raise ValueError(msg)
 
 
-def _run_write_guards(df: object) -> None:
+def _guard_bar_range_invariant(
+    df: object,
+    threshold_decimal_bps: int | None = None,
+    multiplier: int = 3,
+) -> None:
+    """Issue #112: Reject writes with bars exceeding N * threshold range.
+
+    Defense-in-depth: Rust should catch oversized bars first, but if a bug
+    slips through, Python rejects at the ClickHouse write boundary.
+
+    Args:
+        df: DataFrame with Open, High, Low columns (or open, high, low).
+        threshold_decimal_bps: Threshold in dbps. If None, skip check.
+        multiplier: Safety multiplier (default 3 — generous to avoid false
+            positives from rounding; Rust uses 2 in debug_assert).
+    """
+    if threshold_decimal_bps is None:
+        return
+
+    # Determine column names (capitalized or lowercase)
+    cols = set(df.columns) if hasattr(df, "columns") else set()
+    if {"Open", "High", "Low"}.issubset(cols):
+        open_col, high_col, low_col = "Open", "High", "Low"
+    elif {"open", "high", "low"}.issubset(cols):
+        open_col, high_col, low_col = "open", "high", "low"
+    else:
+        return  # Cannot validate without OHLC columns
+
+    threshold_ratio = threshold_decimal_bps / 100_000  # dbps → ratio
+    max_range_ratio = threshold_ratio * multiplier
+
+    # Check each bar's range
+    highs = df[high_col]
+    lows = df[low_col]
+    opens = df[open_col]
+    ranges = (highs - lows) / opens
+
+    if hasattr(ranges, "max"):  # pandas/polars
+        max_observed = ranges.max()
+        if max_observed > max_range_ratio:
+            idx = (
+                ranges.idxmax()
+                if hasattr(ranges, "idxmax")
+                else "unknown"
+            )
+            msg = (
+                f"Issue #112: Oversized bar detected at index {idx}. "
+                f"Range ratio {max_observed:.6f} exceeds "
+                f"{multiplier}x threshold ({max_range_ratio:.6f}). "
+                f"threshold_decimal_bps={threshold_decimal_bps}"
+            )
+            raise ValueError(msg)
+
+
+def _run_write_guards(
+    df: object,
+    threshold_decimal_bps: int | None = None,
+) -> None:
     """Run all pre-write data integrity guards."""
     _guard_timestamp_ms_scale(df)
     _guard_volume_non_negative(df)
+    _guard_bar_range_invariant(df, threshold_decimal_bps)
 
 
 def _build_insert_settings(
@@ -215,7 +273,7 @@ class BulkStoreMixin:
         else:
             df = bars.copy()
 
-        _run_write_guards(df)
+        _run_write_guards(df, threshold_decimal_bps)
 
         # Normalize column names (lowercase)
         df.columns = df.columns.str.lower()
@@ -414,7 +472,7 @@ class BulkStoreMixin:
                     .alias("timestamp_ms")
                 ).drop("timestamp")
 
-        _run_write_guards(df)
+        _run_write_guards(df, threshold_decimal_bps)
 
         # Add cache metadata
         # Schema evolution: use __version__ if version not specified

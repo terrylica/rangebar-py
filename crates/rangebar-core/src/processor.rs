@@ -93,6 +93,16 @@ pub struct RangeBarProcessor {
     /// Features include ITH (Investment Time Horizon), statistical, and
     /// complexity metrics. When false, all intra_* fields are None.
     include_intra_bar_features: bool,
+
+    /// Issue #112: Maximum timestamp gap in microseconds before discarding a forming bar
+    ///
+    /// When resuming from checkpoint with a forming bar, if the gap between
+    /// the forming bar's close_time and the first incoming trade exceeds this
+    /// threshold, the forming bar is discarded as an orphan (same as ouroboros reset).
+    /// This prevents "oversized" bars caused by large data gaps (e.g., 38-hour outages).
+    ///
+    /// Default: 3,600,000,000 μs (1 hour)
+    max_gap_us: i64,
 }
 
 /// Cold path: scan trades to find first unsorted pair and return error
@@ -208,6 +218,7 @@ impl RangeBarProcessor {
             trade_history: None,               // Issue #59: disabled by default
             inter_bar_config: None,            // Issue #59: disabled by default
             include_intra_bar_features: false, // Issue #59: disabled by default
+            max_gap_us: 3_600_000_000,         // Issue #112: 1 hour default
         })
     }
 
@@ -285,6 +296,25 @@ impl RangeBarProcessor {
     /// Check if inter-bar features are enabled
     pub fn inter_bar_enabled(&self) -> bool {
         self.inter_bar_config.is_some()
+    }
+
+    /// Issue #112: Configure maximum timestamp gap for checkpoint recovery
+    ///
+    /// When resuming from checkpoint with a forming bar, if the gap between
+    /// the forming bar's close_time and the first incoming trade exceeds this
+    /// threshold, the forming bar is discarded as an orphan.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_gap_us` - Maximum gap in microseconds (default: 3,600,000,000 = 1 hour)
+    pub fn with_max_gap(mut self, max_gap_us: i64) -> Self {
+        self.max_gap_us = max_gap_us;
+        self
+    }
+
+    /// Get the maximum gap threshold in microseconds
+    pub fn max_gap_us(&self) -> i64 {
+        self.max_gap_us
     }
 
     /// Enable intra-bar feature computation (Issue #59)
@@ -569,7 +599,24 @@ impl RangeBarProcessor {
         let mut current_bar: Option<RangeBarState> = if self.resumed_from_checkpoint {
             // Continue from checkpoint's incomplete bar
             self.resumed_from_checkpoint = false; // Consume the flag
-            self.current_bar_state.take()
+            let restored_bar = self.current_bar_state.take();
+
+            // Issue #112: Gap-aware checkpoint recovery
+            // If the forming bar's close_time is too far from the first incoming trade,
+            // discard it as an orphan to prevent oversized bars from data gaps.
+            if let Some(ref bar_state) = restored_bar {
+                let first_trade_ts = agg_trade_records[0].timestamp;
+                let gap = first_trade_ts - bar_state.bar.close_time;
+                if gap > self.max_gap_us {
+                    self.anomaly_summary.record_gap();
+                    // Discard forming bar — same treatment as ouroboros reset
+                    None
+                } else {
+                    restored_bar
+                }
+            } else {
+                restored_bar
+            }
         } else {
             // Start fresh for normal batch processing
             self.current_bar_state = None;
@@ -854,6 +901,7 @@ impl RangeBarProcessor {
             trade_history: None,               // Issue #59: Must be re-enabled after restore
             inter_bar_config: None,            // Issue #59: Must be re-enabled after restore
             include_intra_bar_features: false, // Issue #59: Must be re-enabled after restore
+            max_gap_us: 3_600_000_000,         // Issue #112: 1 hour default
         })
     }
 
@@ -2637,5 +2685,173 @@ mod tests {
 
         let p1000 = RangeBarProcessor::new(1000).unwrap();
         assert_eq!(p1000.threshold_decimal_bps(), 1000);
+    }
+
+    // =========================================================================
+    // Issue #112: Gap-aware checkpoint recovery tests
+    // =========================================================================
+
+    #[test]
+    fn test_checkpoint_gap_discards_forming_bar() {
+        // Process some trades, checkpoint, then resume with a 2-hour gap
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+
+        // Create trades that don't breach (stay within 0.25%)
+        let trades = vec![
+            test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1640995200_000_000), // t=0
+            test_utils::create_test_agg_trade(2, "50010.0", "1.0", 1640995201_000_000), // t=+1s
+            test_utils::create_test_agg_trade(3, "50020.0", "1.0", 1640995202_000_000), // t=+2s
+        ];
+
+        let bars = processor.process_agg_trade_records(&trades).unwrap();
+        assert_eq!(bars.len(), 0, "No breach = no completed bars");
+
+        // Create checkpoint (should have forming bar)
+        let checkpoint = processor.create_checkpoint("BTCUSDT");
+        assert!(checkpoint.has_incomplete_bar(), "Should have forming bar");
+
+        // Resume from checkpoint
+        let mut restored = RangeBarProcessor::from_checkpoint(checkpoint).unwrap();
+
+        // Feed trades with 2-hour gap (7,200,000,000 μs > 1-hour default max_gap)
+        let gap_trades = vec![
+            test_utils::create_test_agg_trade(4, "50030.0", "1.0", 1641002402_000_000), // +2h gap
+            test_utils::create_test_agg_trade(5, "50040.0", "1.0", 1641002403_000_000),
+        ];
+
+        let bars = restored.process_agg_trade_records(&gap_trades).unwrap();
+        // Forming bar should have been discarded, no oversized bar emitted
+        assert_eq!(bars.len(), 0, "No bars should complete — forming bar was discarded");
+        assert_eq!(
+            restored.anomaly_summary().gaps_detected, 1,
+            "Gap should be recorded in anomaly summary"
+        );
+    }
+
+    #[test]
+    fn test_checkpoint_small_gap_continues_bar() {
+        // Resume with a gap UNDER the threshold — bar should continue
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+
+        let trades = vec![
+            test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1640995200_000_000),
+            test_utils::create_test_agg_trade(2, "50010.0", "1.0", 1640995201_000_000),
+        ];
+
+        let _ = processor.process_agg_trade_records(&trades).unwrap();
+        let checkpoint = processor.create_checkpoint("BTCUSDT");
+        let mut restored = RangeBarProcessor::from_checkpoint(checkpoint).unwrap();
+
+        // Feed trades with 30-minute gap (1,800,000,000 μs < 1-hour max_gap)
+        let small_gap_trades = vec![
+            test_utils::create_test_agg_trade(3, "50020.0", "1.0", 1640997001_000_000), // +30m
+            test_utils::create_test_agg_trade(4, "50125.01", "1.0", 1640997002_000_000), // breach
+        ];
+
+        let bars = restored.process_agg_trade_records(&small_gap_trades).unwrap();
+        assert_eq!(bars.len(), 1, "Bar should complete normally with small gap");
+        // Bar should span from original open (trade 1) through gap trades
+        assert_eq!(bars[0].open_time, 1640995200_000_000);
+        assert_eq!(
+            restored.anomaly_summary().gaps_detected, 0,
+            "No gap anomaly for small gap"
+        );
+    }
+
+    #[test]
+    fn test_checkpoint_gap_custom_max_gap() {
+        // Test with custom max_gap_us set to 30 minutes
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+
+        let trades = vec![
+            test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1640995200_000_000),
+        ];
+        let _ = processor.process_agg_trade_records(&trades).unwrap();
+        let checkpoint = processor.create_checkpoint("BTCUSDT");
+
+        // Restore with custom 30-minute max gap
+        let mut restored = RangeBarProcessor::from_checkpoint(checkpoint)
+            .unwrap()
+            .with_max_gap(1_800_000_000); // 30 minutes
+
+        // 45-minute gap should discard with 30-min threshold
+        let gap_trades = vec![
+            test_utils::create_test_agg_trade(2, "50010.0", "1.0", 1640997900_000_000), // +45min
+        ];
+
+        let _ = restored.process_agg_trade_records(&gap_trades).unwrap();
+        assert_eq!(
+            restored.anomaly_summary().gaps_detected, 1,
+            "45-min gap should be detected with 30-min threshold"
+        );
+    }
+
+    #[test]
+    fn test_is_valid_range_rejects_oversized() {
+        use crate::fixed_point::FixedPoint;
+
+        let threshold_decimal_bps: u32 = 250; // 0.25%
+        let threshold_ratio = ((threshold_decimal_bps as i64) * crate::fixed_point::SCALE)
+            / (crate::fixed_point::BASIS_POINTS_SCALE as i64);
+
+        // Bar with 0.50% range — exceeds 2x threshold (2 * 0.25% = 0.50%)
+        // open=50000.0, high=50250.01, low=50000.0 → range=250.01/50000 ≈ 0.5%+
+        let mut oversized = RangeBar::default();
+        oversized.open = FixedPoint::from_str("50000.0").unwrap();
+        oversized.high = FixedPoint::from_str("50250.01").unwrap();
+        oversized.low = FixedPoint::from_str("50000.0").unwrap();
+        assert!(
+            !oversized.is_valid_range(threshold_ratio, 2),
+            "Bar exceeding 2x threshold should be invalid"
+        );
+
+        // Bar with 0.20% range — within threshold
+        let mut valid = RangeBar::default();
+        valid.open = FixedPoint::from_str("50000.0").unwrap();
+        valid.high = FixedPoint::from_str("50100.0").unwrap();
+        valid.low = FixedPoint::from_str("50000.0").unwrap();
+        assert!(
+            valid.is_valid_range(threshold_ratio, 2),
+            "Bar within threshold should be valid"
+        );
+
+        // Bar at exact breach boundary (0.25%) — should be valid (breach triggers AT threshold)
+        let mut exact = RangeBar::default();
+        exact.open = FixedPoint::from_str("50000.0").unwrap();
+        exact.high = FixedPoint::from_str("50125.0").unwrap();
+        exact.low = FixedPoint::from_str("50000.0").unwrap();
+        assert!(
+            exact.is_valid_range(threshold_ratio, 2),
+            "Bar at exact threshold should be valid"
+        );
+    }
+
+    #[test]
+    fn test_checkpoint_no_incomplete_bar_gap_is_noop() {
+        // If checkpoint has no forming bar, gap detection is irrelevant
+        let mut processor = RangeBarProcessor::new(250).unwrap();
+
+        // Process trades that complete a bar (produce breach)
+        let trades = vec![
+            test_utils::create_test_agg_trade(1, "50000.0", "1.0", 1640995200_000_000),
+            test_utils::create_test_agg_trade(2, "50200.0", "1.0", 1640995201_000_000), // breach
+        ];
+        let bars = processor.process_agg_trade_records(&trades).unwrap();
+        assert_eq!(bars.len(), 1);
+
+        let checkpoint = processor.create_checkpoint("BTCUSDT");
+        assert!(!checkpoint.has_incomplete_bar());
+
+        let mut restored = RangeBarProcessor::from_checkpoint(checkpoint).unwrap();
+
+        // Large gap doesn't matter — no forming bar to discard
+        let gap_trades = vec![
+            test_utils::create_test_agg_trade(3, "50010.0", "1.0", 1641081600_000_000), // +24h
+        ];
+        let _ = restored.process_agg_trade_records(&gap_trades).unwrap();
+        assert_eq!(
+            restored.anomaly_summary().gaps_detected, 0,
+            "No gap anomaly when no forming bar exists"
+        );
     }
 }

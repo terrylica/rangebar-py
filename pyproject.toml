@@ -155,6 +155,7 @@ ignore = [
 "tests/*" = [
     "ANN001",  # Missing type annotation for function argument
     "ANN201",  # Missing return type annotation
+    "ANN202",  # Missing return type for private function
     "ANN401",  # Using Any type
     "ARG001",  # Unused function argument (pytest hooks require specific param names)
     "ARG002",  # Unused method argument (common in fixtures)
@@ -167,6 +168,8 @@ ignore = [
     "E501",    # Line too long (test output messages can be verbose)
     "B007",    # Loop control variable not used (common in iterrows)
     "PLC0415", # Lazy imports inside test functions (ClickHouse, PyO3, etc.)
+    "PT011",   # pytest.raises too broad (test-internal ValueError matching)
+    "PLW0108", # Lambda may be unnecessary (callback patterns in tests)
 ]
 "examples/*" = [
     "PD901",   # Generic variable name 'df'
