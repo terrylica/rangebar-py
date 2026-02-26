@@ -21,7 +21,7 @@ from rangebar.health_checks import run_all_checks
 def main() -> None:
     parser = argparse.ArgumentParser(description="Issue #109: rangebar-py health check")
     parser.add_argument("--host", type=str, default="localhost", help="ClickHouse host")
-    parser.add_argument("--port", type=int, default=18123, help="ClickHouse HTTP port")
+    parser.add_argument("--port", type=int, default=8123, help="ClickHouse HTTP port")
     parser.add_argument("--memory-threshold", type=int, default=2048, help="Memory threshold (MB)")
     parser.add_argument("--min-free-gb", type=float, default=10.0, help="Minimum free disk (GB)")
     args = parser.parse_args()
