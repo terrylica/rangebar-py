@@ -391,6 +391,33 @@ ORDER BY (request_id)
 TTL requested_at + INTERVAL 7 DAY;
 
 -- ============================================================================
+-- Kintsugi Repair Log (Issue #115: Self-Healing Gap Reconciliation)
+-- ============================================================================
+-- Tracks every gap repair operation for audit and rate-limiting.
+-- Kintsugi discovers gaps ("shards") and repairs them using Ariadne (fromId
+-- pagination) + Ouroboros (boundary-aware splits). TTL auto-cleans after 90 days.
+
+CREATE TABLE IF NOT EXISTS rangebar_cache.kintsugi_log (
+    timestamp DateTime64(3, 'UTC') DEFAULT now64(3),
+    symbol LowCardinality(String),
+    threshold_decimal_bps UInt32,
+    priority LowCardinality(String),          -- P0, P1, P2
+    gap_start_ms Int64,
+    gap_end_ms Int64,
+    gap_hours Float64,
+    action LowCardinality(String),            -- backfill_recent, populate_cache, skip
+    result LowCardinality(String),            -- healed, failed, timeout, skipped
+    ariadne_from_id Int64 DEFAULT 0,          -- Ariadne anchor (0 = startTime fallback)
+    ouroboros_splits UInt8 DEFAULT 0,          -- Number of Ouroboros boundary splits
+    bars_written UInt32 DEFAULT 0,
+    duration_seconds Float64 DEFAULT 0,
+    error_message String DEFAULT ''
+)
+ENGINE = MergeTree()
+ORDER BY (timestamp, symbol, threshold_decimal_bps)
+TTL timestamp + INTERVAL 90 DAY;
+
+-- ============================================================================
 -- Indexes (ClickHouse creates automatically based on ORDER BY)
 -- ============================================================================
 -- No additional indexes needed - ORDER BY creates primary key index

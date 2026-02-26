@@ -1,0 +1,36 @@
+# Issue #115: Kintsugi self-healing gap reconciler
+[Unit]
+Description=RangeBar Kintsugi (Self-Healing Gap Reconciler)
+After=network-online.target clickhouse-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tca
+WorkingDirectory=/home/tca/rangebar-py
+ExecStart=/home/tca/rangebar-py/.venv/bin/python3 /home/tca/rangebar-py/scripts/kintsugi.py --daemon
+
+# Restart policy
+Restart=always
+RestartSec=60
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+# Resource limits (lower priority than sidecar)
+Nice=5
+MemoryHigh=3G
+MemoryMax=4G
+MemorySwapMax=0
+OOMScoreAdjust=-200
+
+# Process limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Standard output/error
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rangebar-kintsugi
+
+[Install]
+WantedBy=default.target

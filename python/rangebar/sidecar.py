@@ -40,6 +40,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 
@@ -455,7 +456,6 @@ def _restart_engine_with_recovery(
     engine: object,
     config: SidecarConfig,
     trace_id: str,
-    gap_fill_results: dict | None,
     bars_written: int,
     restart_attempt: int,
 ) -> tuple[object | None, bool]:
@@ -488,8 +488,15 @@ def _restart_engine_with_recovery(
         except (RuntimeError, OSError, TimeoutError, ValueError) as e:
             logger.warning("engine.shutdown() raised: %s", e)
 
-        # Step 4: Create new engine
-        new_engine, _ = _create_engine(config, trace_id, gap_fill_results)
+        # Step 4: Fresh gap-fill before creating new engine (Issue #115 Phase 1b)
+        logger.info(
+            "running fresh gap-fill after watchdog restart #%d",
+            restart_attempt,
+        )
+        fresh_gap_fill = _gap_fill(config.symbols, config.thresholds)
+
+        # Step 5: Create new engine with fresh gap-fill results
+        new_engine, _ = _create_engine(config, trace_id, fresh_gap_fill)
         logger.info("engine restart #%d succeeded", restart_attempt)
     except Exception:
         logger.exception(
@@ -578,6 +585,95 @@ def _start_health_server(port: int) -> HTTPServer | None:
 
 
 # =============================================================================
+# Dead-letter + retry helpers (Issue #115: Kintsugi sidecar hardening)
+# =============================================================================
+
+_DEAD_LETTER_DIR = Path("/tmp/rangebar-dead-letter")
+_MAX_FLUSH_RETRIES = 3
+_FLUSH_RETRY_DELAYS = (1.0, 2.0, 4.0)  # Exponential backoff
+
+
+def _write_dead_letter(
+    symbol: str, threshold: int, bar_dicts: list[dict[str, Any]],
+) -> Path | None:
+    """Serialize failed bars to a dead-letter Parquet file for later replay.
+
+    Returns the path written, or None on failure.
+    """
+    try:
+        import polars as pl
+
+        _DEAD_LETTER_DIR.mkdir(parents=True, exist_ok=True)
+        ts = int(time.time())
+        path = _DEAD_LETTER_DIR / f"{symbol}_{threshold}_{ts}.parquet"
+        clean = [
+            {k: v for k, v in d.items() if not k.startswith("_")}
+            for d in bar_dicts
+        ]
+        pl.DataFrame(clean).write_parquet(path)
+    except (OSError, RuntimeError, ValueError):
+        logger.exception(
+            "dead-letter: failed to write for %s@%d", symbol, threshold,
+        )
+        return None
+    else:
+        logger.warning(
+            "dead-letter: wrote %d bars to %s", len(bar_dicts), path,
+        )
+        return path
+
+
+def _notify_dead_letter(symbol: str, threshold: int, n_bars: int, path: Path) -> None:
+    """Send Telegram alert when bars are written to dead-letter."""
+    try:
+        from rangebar.notify.telegram import send_telegram
+    except ImportError:
+        return
+    try:
+        msg = (
+            "<b>DEAD LETTER</b>\n"
+            f"{symbol}@{threshold}: {n_bars} bars lost to dead-letter\n"
+            f"path: <code>{path}</code>\n"
+            "ClickHouse write failed after 3 retries"
+        )
+        send_telegram(msg, disable_notification=False)
+    except Exception:
+        logger.exception("dead-letter: failed to send Telegram alert")
+
+
+def _write_batch_with_retry(
+    symbol: str, threshold: int, bar_dicts: list[dict[str, Any]],
+) -> bool:
+    """Write a batch to ClickHouse with retry + dead-letter fallback.
+
+    Returns True if write succeeded (including dead-letter), False if all failed.
+    """
+    for attempt in range(_MAX_FLUSH_RETRIES):
+        try:
+            _write_bars_batch_to_clickhouse(symbol, threshold, bar_dicts)
+        except (OSError, RuntimeError, ConnectionError, ValueError) as e:
+            delay = _FLUSH_RETRY_DELAYS[attempt]
+            logger.warning(
+                "flush retry %d/%d for %s@%d (%d bars), backoff %.1fs: %s",
+                attempt + 1, _MAX_FLUSH_RETRIES, symbol, threshold,
+                len(bar_dicts), delay, e,
+            )
+            time.sleep(delay)
+        else:
+            return True
+
+    # All retries exhausted — dead-letter
+    logger.error(
+        "flush FAILED after %d retries for %s@%d (%d bars) — writing dead-letter",
+        _MAX_FLUSH_RETRIES, symbol, threshold, len(bar_dicts),
+    )
+    dl_path = _write_dead_letter(symbol, threshold, bar_dicts)
+    if dl_path is not None:
+        _notify_dead_letter(symbol, threshold, len(bar_dicts), dl_path)
+    return False
+
+
+# =============================================================================
 # Main sidecar loop
 # =============================================================================
 
@@ -606,6 +702,13 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
             "Set RANGEBAR_STREAMING_SYMBOLS or pass symbols list."
         )
         raise ValueError(msg)
+
+    # Validate all (symbol, threshold) pairs against per-symbol minimums
+    from rangebar.threshold import resolve_and_validate_threshold
+
+    for sym in config.symbols:
+        for thr in config.thresholds:
+            resolve_and_validate_threshold(sym, thr)
 
     if config.verbose:
         logging.basicConfig(level=logging.DEBUG)
@@ -659,19 +762,16 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
     last_batch_flush_time = time.monotonic()
 
     def _flush_all_batches() -> int:
-        """Flush all accumulated batches to ClickHouse. Returns bars written."""
+        """Flush all accumulated batches to ClickHouse with retry + dead-letter.
+
+        Issue #115 (Kintsugi Phase 1a): Uses _write_batch_with_retry() for
+        exponential backoff (1s, 2s, 4s) and dead-letter on final failure.
+        """
         nonlocal last_batch_flush_time
         written = 0
         for (symbol, threshold), bars in bar_batch_buffer.items():
-            if bars:
-                try:
-                    _write_bars_batch_to_clickhouse(symbol, threshold, bars)
-                    written += len(bars)
-                except Exception:
-                    logger.exception(
-                        "failed to write batch for %s@%d (%d bars)",
-                        symbol, threshold, len(bars),
-                    )
+            if bars and _write_batch_with_retry(symbol, threshold, bars):
+                written += len(bars)
         bar_batch_buffer.clear()
         last_batch_flush_time = time.monotonic()
         return written
@@ -744,7 +844,7 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
 
                             # Use error-tolerant restart (Issue #107, TGI #2)
                             new_engine, success = _restart_engine_with_recovery(
-                                engine, config, trace_id, gap_fill_results,
+                                engine, config, trace_id,
                                 bars_written, watchdog_restarts + 1,
                             )
 
@@ -787,24 +887,17 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
             _save_checkpoint(symbol, threshold, bar)
 
             # Flush batch if size threshold reached
+            # Issue #115 (Kintsugi Phase 1a): retry + dead-letter on failure
             if len(bar_batch_buffer[batch_key]) >= batch_max_size:
-                try:
-                    batch = bar_batch_buffer[batch_key]
-                    _write_bars_batch_to_clickhouse(
-                        symbol, threshold, batch,
-                    )
-                    if config.verbose or bars_written % 100 == 0:
+                batch = bar_batch_buffer[batch_key]
+                wrote = _write_batch_with_retry(symbol, threshold, batch)
+                if wrote and (config.verbose or bars_written % 100 == 0):
                         logger.info(
                             "%s@%d: batch written (%d bars, total=%d, close=%s)",
                             symbol, threshold, len(batch),
                             bars_written, bar.get("close"),
                         )
-                    bar_batch_buffer[batch_key] = []
-                except Exception:
-                    logger.exception(
-                        "failed to write batch for %s@%d",
-                        symbol, threshold,
-                    )
+                bar_batch_buffer[batch_key] = []
 
     finally:
         # Flush all pending bars on shutdown

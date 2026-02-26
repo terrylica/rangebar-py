@@ -351,10 +351,11 @@ def _fetch_and_process_gap(
     include_microstructure: bool = True,
     verbose: bool = False,
 ) -> int:
-    """Fetch trades from Binance REST API and process into range bars.
+    """Fetch trades and process into range bars using Ariadne (fromId).
 
-    Paginates through /api/v3/aggTrades, processes through Rust
-    RangeBarProcessor, and writes completed bars to ClickHouse.
+    Issue #115 (Kintsugi Phase 2a): Uses Ariadne fromId pagination when
+    a last_agg_trade_id anchor exists in ClickHouse. Falls back to
+    startTime only for first-ever backfill (no bars at all).
 
     Returns number of bars written.
     """
@@ -365,24 +366,34 @@ def _fetch_and_process_gap(
         _create_processor,
     )
 
-    # Fetch trades from Binance REST API (paginated)
-    trades = _fetch_aggtrades_rest(symbol, start_ms, end_ms)
+    # Step 1: Try Ariadne (fromId) first — zero-gap by construction
+    ariadne_anchor: int | None = None
+    with RangeBarCache() as cache:
+        ariadne_anchor = cache.get_ariadne_high_water_mark(
+            symbol, threshold_decimal_bps,
+        )
+
+    if ariadne_anchor is not None:
+        trades = _fetch_trades_ariadne(
+            symbol, ariadne_anchor + 1, end_ms, verbose=verbose,
+        )
+        logger.debug(
+            "%s: Ariadne fetched %d trades (from_id=%d)",
+            symbol, len(trades), ariadne_anchor + 1,
+        )
+    else:
+        # Fallback to startTime (first-ever backfill only)
+        trades = _fetch_aggtrades_rest(symbol, start_ms, end_ms)
+        logger.debug(
+            "%s: startTime fallback fetched %d trades (%d-%d ms)",
+            symbol, len(trades), start_ms, end_ms,
+        )
 
     if not trades:
         logger.debug(
-            "%s: no trades in gap %d-%d",
-            symbol,
-            start_ms,
-            end_ms,
+            "%s: no trades in gap %d-%d", symbol, start_ms, end_ms,
         )
         return 0
-
-    logger.debug(
-        "%s: fetched %d trades from REST API (%d ms range)",
-        symbol,
-        len(trades),
-        end_ms - start_ms,
-    )
 
     # Process trades through Rust processor
     processor = _create_processor(
@@ -393,7 +404,9 @@ def _fetch_and_process_gap(
     bars = processor.process_trades(trades)
 
     if not bars:
-        logger.debug("%s: no completed bars from %d trades", symbol, len(trades))
+        logger.debug(
+            "%s: no completed bars from %d trades", symbol, len(trades),
+        )
         return 0
 
     # Convert bars to Polars DataFrame for batch storage
@@ -410,9 +423,71 @@ def _fetch_and_process_gap(
     return written
 
 
+def _fetch_trades_ariadne(
+    symbol: str,
+    from_id: int,
+    end_ms: int,
+    *,
+    batch_size: int = 1000,
+    verbose: bool = False,
+) -> list[dict]:
+    """Paginate trades using Ariadne fromId cursor until end_ms.
+
+    Returns all trades from from_id up to end_ms (inclusive).
+    """
+    all_trades: list[dict] = []
+    current_id = from_id
+
+    while True:
+        batch = _fetch_aggtrades_by_id(symbol, current_id, batch_size)
+        if not batch:
+            break
+
+        for trade in batch:
+            ts = trade.get("timestamp") or trade.get("time", 0)
+            if ts > end_ms:
+                return all_trades
+            all_trades.append(trade)
+
+        # Advance cursor past this batch
+        last_id = batch[-1].get("agg_trade_id", batch[-1].get("a", 0))
+        if last_id <= current_id:
+            break  # Safety: no progress
+        current_id = last_id + 1
+
+        if verbose and len(all_trades) % 10000 == 0:
+            logger.debug(
+                "%s: Ariadne progress %d trades, current_id=%d",
+                symbol, len(all_trades), current_id,
+            )
+
+    return all_trades
+
+
 # =============================================================================
 # Multi-Symbol Backfill
 # =============================================================================
+
+# Issue #115 (Kintsugi Phase 2b): Sustained failure tracking
+_SUSTAINED_FAILURE_THRESHOLD = 5
+
+
+def _notify_sustained_failure(consecutive_errors: int) -> None:
+    """Send Telegram alert after N consecutive backfill failures."""
+    try:
+        from rangebar.notify.telegram import send_telegram
+    except ImportError:
+        return
+    try:
+        msg = (
+            "<b>BACKFILL SUSTAINED FAILURE</b>\n"
+            f"{consecutive_errors} consecutive errors in backfill_all_recent\n"
+            "Check REST API connectivity and ClickHouse status"
+        )
+        send_telegram(msg, disable_notification=False)
+    except (OSError, RuntimeError, ConnectionError):
+        logger.exception("failed to send sustained failure alert")
+
 
 def backfill_all_recent(
     *,
@@ -424,6 +499,9 @@ def backfill_all_recent(
     Queries ClickHouse for all distinct (symbol, threshold) pairs and runs
     backfill_recent for each.
 
+    Issue #115 (Kintsugi Phase 2b): Sends Telegram alert after 5 consecutive
+    errors across the batch (sustained failure detection).
+
     Returns
     -------
     list[BackfillResult]
@@ -433,6 +511,7 @@ def backfill_all_recent(
     logger.info("Backfilling %d symbol x threshold pairs", len(pairs))
 
     results = []
+    consecutive_errors = 0
     for symbol, threshold in pairs:
         try:
             result = backfill_recent(
@@ -442,6 +521,10 @@ def backfill_all_recent(
                 verbose=verbose,
             )
             results.append(result)
+            if result.error:
+                consecutive_errors += 1
+            else:
+                consecutive_errors = 0
         except (ValueError, RuntimeError, OSError, ConnectionError) as e:
             logger.warning(
                 "Backfill failed for %s @ %d: %s",
@@ -460,6 +543,11 @@ def backfill_all_recent(
                     error=str(e),
                 )
             )
+            consecutive_errors += 1
+
+        if consecutive_errors >= _SUSTAINED_FAILURE_THRESHOLD:
+            _notify_sustained_failure(consecutive_errors)
+            consecutive_errors = 0  # Reset after alert
 
     total_bars = sum(r.bars_written for r in results)
     errors = sum(1 for r in results if r.error)

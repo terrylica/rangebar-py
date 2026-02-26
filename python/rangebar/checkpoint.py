@@ -604,6 +604,13 @@ def populate_cache_resumable(
     validate_symbol_registered(symbol, operation="populate_cache_resumable")
     start_date = validate_and_clamp_start_date(symbol, start_date)
 
+    # Threshold validation: enforce per-symbol minimums (Issue #115)
+    from rangebar.threshold import resolve_and_validate_threshold
+
+    threshold_decimal_bps = resolve_and_validate_threshold(
+        symbol, threshold_decimal_bps,
+    )
+
     # T-1 guard: Binance Vision publishes with ~1-day lag.
     # Attempting to fetch today's data causes RuntimeError: "No data available"
     # which crashes the job after checkpoint is written but before ClickHouse

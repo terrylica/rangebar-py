@@ -187,6 +187,9 @@ ignore = [
     "N802",    # do_GET required by BaseHTTPRequestHandler
     "PLC0415", # Lazy imports (avoid importing heavy deps at module level)
 ]
+"python/rangebar/kintsugi.py" = [
+    "PLC0415", # Lazy imports (avoid circular imports with clickhouse/recency)
+]
 "python/rangebar/__init__.pyi" = [
     "PYI021",  # Docstrings in stubs (kept for documentation)
     "PYI034",  # Self return type (intentional RangeBarCache return)
