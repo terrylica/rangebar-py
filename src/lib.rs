@@ -101,6 +101,14 @@ fn _core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
             binance_bindings::fetch_aggtrades_rest,
             m
         )?)?;
+        m.add_function(wrap_pyfunction!(
+            binance_bindings::fetch_aggtrades_by_id,
+            m
+        )?)?;
+        m.add_function(wrap_pyfunction!(
+            binance_bindings::fetch_latest_aggtrade,
+            m
+        )?)?;
 
         // Phase 3: Arrow-native stream (requires both data-providers and arrow-export)
         #[cfg(feature = "arrow-export")]

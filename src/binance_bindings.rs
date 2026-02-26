@@ -1,3 +1,4 @@
+// FILE-SIZE-OK: Canonical location for all Binance PyO3 bindings (Vision + REST + streaming)
 use super::*;
 use chrono::NaiveDate;
 
@@ -180,6 +181,98 @@ pub fn fetch_aggtrades_rest(
     }
 
     Ok(results)
+}
+
+/// Fetch aggregated trades by `fromId` (zero-gap pagination).
+///
+/// Uses `fromId` parameter instead of `startTime` to avoid dropping trades
+/// at millisecond boundaries. This is the correct pagination method for
+/// gap-free trade sequences.
+///
+/// Args:
+///     symbol: Trading symbol (e.g., "BTCUSDT")
+///     from_id: Starting agg_trade_id (inclusive)
+///     limit: Maximum trades to return (1-1000). Default: 1000.
+///
+/// Returns:
+///     List of trade dicts with keys: timestamp (ms), price, quantity,
+///     agg_trade_id, first_trade_id, last_trade_id, is_buyer_maker
+///
+/// Raises:
+///     RuntimeError: If REST API request fails, times out, or rate limited
+#[pyfunction]
+#[pyo3(signature = (symbol, from_id, limit = 1000))]
+pub fn fetch_aggtrades_by_id(
+    py: Python,
+    symbol: &str,
+    from_id: i64,
+    limit: u16,
+) -> PyResult<Vec<PyObject>> {
+    let loader = HistoricalDataLoader::new(symbol);
+
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {e}")))?;
+
+    let trades = rt
+        .block_on(loader.fetch_aggtrades_by_id(from_id, limit))
+        .map_err(|e| PyRuntimeError::new_err(format!("REST API error: {e}")))?;
+
+    let mut results = Vec::with_capacity(trades.len());
+    for trade in &trades {
+        let dict = PyDict::new_bound(py);
+        // Convert us → ms for Python API consistency
+        dict.set_item("timestamp", trade.timestamp / 1000)?;
+        dict.set_item("price", trade.price.to_f64())?;
+        dict.set_item("quantity", trade.volume.to_f64())?;
+        dict.set_item("agg_trade_id", trade.agg_trade_id)?;
+        dict.set_item("first_trade_id", trade.first_trade_id)?;
+        dict.set_item("last_trade_id", trade.last_trade_id)?;
+        dict.set_item("is_buyer_maker", trade.is_buyer_maker)?;
+        results.push(dict.into());
+    }
+
+    Ok(results)
+}
+
+/// Fetch the latest aggregated trade for a symbol.
+///
+/// Single REST call with `limit=1` — returns the most recent trade as an
+/// anchor point for cursor-based `fromId` pagination.
+///
+/// Args:
+///     symbol: Trading symbol (e.g., "BTCUSDT")
+///
+/// Returns:
+///     Single trade dict with keys: timestamp (ms), price, quantity,
+///     agg_trade_id, first_trade_id, last_trade_id, is_buyer_maker
+///
+/// Raises:
+///     RuntimeError: If REST API request fails or no trades returned
+#[pyfunction]
+#[pyo3(signature = (symbol,))]
+pub fn fetch_latest_aggtrade(
+    py: Python,
+    symbol: &str,
+) -> PyResult<PyObject> {
+    let loader = HistoricalDataLoader::new(symbol);
+
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {e}")))?;
+
+    let trade = rt
+        .block_on(loader.fetch_latest_aggtrade())
+        .map_err(|e| PyRuntimeError::new_err(format!("REST API error: {e}")))?;
+
+    let dict = PyDict::new_bound(py);
+    dict.set_item("timestamp", trade.timestamp / 1000)?;
+    dict.set_item("price", trade.price.to_f64())?;
+    dict.set_item("quantity", trade.volume.to_f64())?;
+    dict.set_item("agg_trade_id", trade.agg_trade_id)?;
+    dict.set_item("first_trade_id", trade.first_trade_id)?;
+    dict.set_item("last_trade_id", trade.last_trade_id)?;
+    dict.set_item("is_buyer_maker", trade.is_buyer_maker)?;
+
+    Ok(dict.into())
 }
 
 // ========================================================================
