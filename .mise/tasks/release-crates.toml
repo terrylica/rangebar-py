@@ -6,6 +6,7 @@
 
 ["release:crates"]
 description = "Publish Rust crates to crates.io (native workspace publish)"
+depends = ["release:version"]
 run = """
 #!/usr/bin/env bash
 set -euo pipefail

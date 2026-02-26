@@ -4,6 +4,7 @@
 
 ["deploy:bigblack"]
 description = "Deploy latest release to bigblack GPU workstation"
+depends = ["release:pypi"]
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
