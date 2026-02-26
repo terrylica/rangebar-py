@@ -190,6 +190,7 @@ zig = "0.13"
 includes = [
     ".mise/tasks/dev.toml",
     ".mise/tasks/release.toml",
+    ".mise/tasks/release-crates.toml",
     ".mise/tasks/bench.toml",
     ".mise/tasks/prof.toml",
     ".mise/tasks/deps.toml",

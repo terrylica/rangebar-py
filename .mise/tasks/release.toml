@@ -173,25 +173,60 @@ run = """
 set -euo pipefail
 
 echo "=== PREFLIGHT ==="
+FAIL=0
+
+# --- Git state ---
 git update-index --refresh -q || true
 
 if [ -n "$(git status --porcelain)" ]; then
     echo "FAIL: Working directory not clean"
     git status --short
-    exit 1
+    FAIL=1
 fi
 
 BRANCH=$(git branch --show-current)
 if [ "$BRANCH" != "main" ]; then
     echo "FAIL: Not on main branch (on: $BRANCH)"
-    exit 1
+    FAIL=1
 fi
 
+# --- Crates.io dry-run (auto-discovered from cargo metadata) ---
+echo "Verifying crates.io packaging..."
+CRATES=$(cargo metadata --no-deps --format-version 1 | \
+  jq -r '.packages[] | select(.source == null) | select(.publish == null) | select(.name != "rangebar-py") | .name')
+for crate in $CRATES; do
+    if ! cargo publish -p "$crate" --dry-run 2>&1 | tail -1 | grep -qE "warning|Packaged|Finished"; then
+        echo "FAIL: $crate cannot package for crates.io"
+        cargo publish -p "$crate" --dry-run 2>&1 | grep -i error || true
+        FAIL=1
+    fi
+done
+echo "OK: All publishable crates package successfully ($CRATES)"
+
+# --- ClickHouse port consistency across scripts ---
+echo "Checking ClickHouse port consistency..."
+EXPECTED_PORT=8123
+for script in scripts/*.py; do
+    PORT=$(grep -oE 'default=[0-9]+' "$script" 2>/dev/null | grep -oE '[0-9]+' | grep -E '^[0-9]*123$' || true)
+    if [ -n "$PORT" ] && [ "$PORT" != "$EXPECTED_PORT" ]; then
+        echo "FAIL: $script defaults to port $PORT, expected $EXPECTED_PORT"
+        FAIL=1
+    fi
+done
+echo "OK: ClickHouse port consistent"
+
+# --- Clean dist ---
 if [ -d dist ]; then
     echo "Cleaning dist/ directory..."
     rm -rf dist
 fi
 mkdir -p dist
+
+if [ $FAIL -ne 0 ]; then
+    echo ""
+    echo "FAIL: Preflight failed — fix issues above before releasing"
+    exit 1
+fi
 
 echo "OK: Preflight passed"
 """
@@ -375,65 +410,4 @@ echo ""
 echo "OK: v$VERSION published to PyPI"
 """
 
-# =============================================================================
-# crates.io Publishing (Issue #97)
-# =============================================================================
-
-["release:crates"]
-description = "Publish Rust crates to crates.io (dependency order)"
-run = """
-#!/usr/bin/env bash
-set -euo pipefail
-
-echo "=== Publishing to crates.io ==="
-
-VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
-echo "Version: $VERSION"
-
-# Get token: 1Password first, file fallback
-CARGO_REGISTRY_TOKEN=$(OP_SERVICE_ACCOUNT_TOKEN="$(cat ~/.claude/.secrets/op-service-account-token)" \
-  op read "op://Claude Automation/crates-io-token/credential" 2>/dev/null) || \
-CARGO_REGISTRY_TOKEN=$(cat ~/.claude/.secrets/crates-io-token 2>/dev/null) || {
-  echo "FAIL: No crates.io token found"
-  echo "  Option 1: Store in 1Password Claude Automation vault as 'crates-io-token'"
-  echo "  Option 2: echo TOKEN > ~/.claude/.secrets/crates-io-token && chmod 600 ~/.claude/.secrets/crates-io-token"
-  exit 1
-}
-export CARGO_REGISTRY_TOKEN
-
-# Publish in dependency order (hurst before core, core before providers/streaming)
-for crate in rangebar-hurst rangebar-core rangebar-providers rangebar-streaming; do
-  echo ""
-  echo "Publishing $crate v$VERSION..."
-  if cargo publish -p "$crate" 2>&1; then
-    echo "OK: $crate published"
-  else
-    echo "WARN: $crate publish failed (may already exist on crates.io)"
-  fi
-  # crates.io index propagation delay
-  sleep 15
-done
-
-echo ""
-echo "OK: Published to crates.io"
-echo "  https://crates.io/crates/rangebar-hurst/$VERSION"
-echo "  https://crates.io/crates/rangebar-core/$VERSION"
-echo "  https://crates.io/crates/rangebar-providers/$VERSION"
-echo "  https://crates.io/crates/rangebar-streaming/$VERSION"
-"""
-
-["release:crates-dry"]
-description = "Dry-run crates.io publish (verify packaging)"
-run = """
-#!/usr/bin/env bash
-set -euo pipefail
-
-echo "=== Dry-run crates.io publish ==="
-for crate in rangebar-hurst rangebar-core rangebar-providers rangebar-streaming; do
-  echo ""
-  echo "--- $crate ---"
-  cargo publish -p "$crate" --dry-run 2>&1
-done
-echo ""
-echo "OK: All crates package successfully"
-"""
+# crates.io tasks moved to release-crates.toml (auto-discovery from cargo metadata)

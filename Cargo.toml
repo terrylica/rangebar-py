@@ -2,7 +2,8 @@
 # Workspace Configuration
 # =============================================================================
 # This workspace consolidates the rangebar Rust crates with Python bindings.
-# Published to crates.io: rangebar-core, rangebar-providers, rangebar-streaming
+# Published to crates.io (order matters for dependency resolution):
+#   rangebar-hurst → rangebar-core → rangebar-providers → rangebar-streaming
 # Internal only (publish=false): rangebar-config, rangebar-io, rangebar-batch, rangebar-cli, rangebar
 
 [workspace]
