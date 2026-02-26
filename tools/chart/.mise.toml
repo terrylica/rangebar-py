@@ -1,0 +1,47 @@
+# =============================================================================
+# tools/chart — Live Streaming Range Bar Chart (Issue #108)
+# =============================================================================
+# Standalone iced canvas chart, excluded from main workspace.
+# Uses rangebar-core + rangebar-streaming via path deps (crates.io after publish).
+#
+# Run from project root: mise run sketch
+# Run from this dir:     mise run build && mise run run
+
+[env]
+# Default streaming parameters (overridable via CLI args)
+RANGEBAR_CHART_SYMBOL = "BTCUSDT"
+RANGEBAR_CHART_THRESHOLD = "250"
+
+# Tracing filter for chart + streaming engine
+# Default: only show chart + provider info. Suppress GPU/font/WS plumbing.
+RUST_LOG = "warn,rangebar_chart=info,rangebar_providers=info"
+
+# =============================================================================
+# Tasks
+# =============================================================================
+
+[tasks.build]
+description = "Build the chart (release)"
+run = "cargo build --release"
+
+[tasks.run]
+description = "Run live streaming chart (default: BTCUSDT@250)"
+depends = ["build"]
+run = "cargo run --release -- $@"
+
+[tasks.dev]
+description = "Run chart in debug mode (faster compile, slower runtime)"
+run = "cargo run -- $@"
+
+[tasks.csv]
+description = "Run chart from CSV file: mise run csv -- <path>"
+depends = ["build"]
+run = "cargo run --release -- --csv $@"
+
+[tasks.clean]
+description = "Clean chart build artifacts"
+run = "cargo clean"
+
+[tasks.check]
+description = "Type-check without building"
+run = "cargo check"

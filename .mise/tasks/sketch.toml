@@ -1,0 +1,40 @@
+# Sketch Tasks — root runners for tools/chart/ (nested mise sub-project)
+#
+# These tasks proxy into tools/chart/.mise.toml so the chart is runnable
+# from the project root. The nested config owns env, build, and local tasks.
+#
+# Usage:
+#   mise run sketch                                   # Live stream BTCUSDT@250
+#   mise run sketch -- --symbol ETHUSDT --threshold 500
+#   mise run sketch:csv -- path/to/bars.csv
+#   cd tools/chart && mise run build                  # Local nested tasks
+
+[sketch]
+description = "Run live streaming chart (default: BTCUSDT@250). Pass -- --symbol X --threshold Y"
+dir = "tools/chart"
+run = "cargo run --release -- $@"
+
+["sketch:build"]
+description = "Build the range bar chart sketch (release)"
+dir = "tools/chart"
+run = "cargo build --release"
+
+["sketch:dev"]
+description = "Run the range bar chart sketch in debug mode"
+dir = "tools/chart"
+run = "cargo run -- $@"
+
+["sketch:csv"]
+description = "Run chart from CSV file: mise run sketch:csv -- <path>"
+dir = "tools/chart"
+run = "cargo run --release -- --csv $@"
+
+["sketch:clean"]
+description = "Clean chart build artifacts"
+dir = "tools/chart"
+run = "cargo clean"
+
+["sketch:check"]
+description = "Type-check chart without building"
+dir = "tools/chart"
+run = "cargo check"

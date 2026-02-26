@@ -1,0 +1,28 @@
+[package]
+name = "rangebar-chart"
+version = "0.1.0"
+edition = "2024"
+description = "Range bar chart renderer using iced canvas — same drawing stack as flowsurface"
+
+[dependencies]
+iced = { version = "0.14.0", default-features = false, features = [
+    "wgpu", "canvas", "tokio", "advanced",
+] }
+rangebar-core = { path = "../../crates/rangebar-core" }
+rangebar-providers = { path = "../../crates/rangebar-providers", features = ["binance"] }
+
+# Async runtime (needed for subscriptions + streaming)
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "sync"] }
+tokio-util = "0.7"
+
+# CLI argument parsing
+clap = { version = "4.0", features = ["derive"] }
+
+# Data formats
+csv = "1"
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
