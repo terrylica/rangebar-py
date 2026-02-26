@@ -1,3 +1,24 @@
+# [12.31.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.30.0...v12.31.0) (2026-02-26)
+
+
+### Bug Fixes
+
+* **#113,#114:** add rangebar-hurst to crates.io publish chain + fix cleanup port ([d211421](https://github.com-terrylica/terrylica/rangebar-py/commit/d21142179017b486e55a34bc3b3c68e22aa4f57a))
+* health_check.py default port 18123 -> 8123 ([dae744d](https://github.com-terrylica/terrylica/rangebar-py/commit/dae744d188abaddfdf49a362dd29d9df27c44185))
+* **release:** wire missing dependencies in release:full pipeline ([9d285b0](https://github.com-terrylica/terrylica/rangebar-py/commit/9d285b00628651fd950e47296e97f0bb78a8bfae))
+
+
+### Features
+
+* **#113:** replace bespoke topo sort with native cargo publish --workspace ([43822ac](https://github.com-terrylica/terrylica/rangebar-py/commit/43822ac598800359041040585bbf96c0a94183cc)), closes [#113](https://github.com-terrylica/terrylica/rangebar-py/issues/113)
+* **#115:** add min_threshold to symbol registry for Kintsugi validation ([5e31beb](https://github.com-terrylica/terrylica/rangebar-py/commit/5e31beb7f3c01697b01366061cc912d6167c18f2)), closes [#115](https://github.com-terrylica/terrylica/rangebar-py/issues/115)
+* **#115:** Kintsugi self-healing gap reconciliation ([7cb0bf5](https://github.com-terrylica/terrylica/rangebar-py/commit/7cb0bf58ad54f543b6e8ab1bd68d998efe580963)), closes [#115](https://github.com-terrylica/terrylica/rangebar-py/issues/115)
+* **#115:** set min_threshold 500 dbps for DOGE and SOL in symbols.toml ([e5fc9f4](https://github.com-terrylica/terrylica/rangebar-py/commit/e5fc9f4b76879d4cffa254a31059f396da821a99)), closes [#115](https://github.com-terrylica/terrylica/rangebar-py/issues/115)
+* **#115:** set min_threshold 500 dbps for XRP and ADA in symbols.toml ([fa1ea71](https://github.com-terrylica/terrylica/rangebar-py/commit/fa1ea718bc418731cf7ac28fbd34e65afa01a000)), closes [#115](https://github.com-terrylica/terrylica/rangebar-py/issues/115) [#89](https://github.com-terrylica/terrylica/rangebar-py/issues/89)
+* **#115:** set min_threshold for remaining tier-1 symbols in symbols.toml ([7a45dba](https://github.com-terrylica/terrylica/rangebar-py/commit/7a45dba46dce41441dc218aa68bbe2ce267571d6)), closes [#115](https://github.com-terrylica/terrylica/rangebar-py/issues/115) [#89](https://github.com-terrylica/terrylica/rangebar-py/issues/89)
+* **#115:** set min_threshold for tier-2 symbols (WIF, TRX, ZEC, FTM, PEPE, TON) ([845c942](https://github.com-terrylica/terrylica/rangebar-py/commit/845c94202d1dc937fcdb2f5ed61094cfef147fc7)), closes [#115](https://github.com-terrylica/terrylica/rangebar-py/issues/115) [#89](https://github.com-terrylica/terrylica/rangebar-py/issues/89)
+* **release:** auto-discover publishable crates from cargo metadata ([d6d9203](https://github.com-terrylica/terrylica/rangebar-py/commit/d6d9203b3f1009a100778be783dd2c04d96486b6)), closes [#114](https://github.com-terrylica/terrylica/rangebar-py/issues/114)
+
 # [12.30.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.29.0...v12.30.0) (2026-02-26)
 
 
