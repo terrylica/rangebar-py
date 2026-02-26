@@ -65,6 +65,8 @@ class CheckpointOperationsMixin:
         # Issue #72: Full Audit Trail - agg_trade_id range in incomplete bar
         first_agg_trade_id_in_bar: int | None = None,
         last_agg_trade_id_in_bar: int | None = None,
+        # Issue #111 (Ariadne): High-water mark for deterministic resume
+        last_processed_agg_trade_id: int | None = None,
     ) -> None:
         """Save population checkpoint to ClickHouse.
 
@@ -103,12 +105,14 @@ class CheckpointOperationsMixin:
              last_completed_date, last_trade_timestamp_ms, bars_written,
              processor_checkpoint, include_microstructure, ouroboros_mode,
              first_agg_trade_id_in_bar, last_agg_trade_id_in_bar,
+             last_processed_agg_trade_id,
              updated_at)
             VALUES
             ({symbol:String}, {threshold:UInt32}, {start_date:String},
              {end_date:String}, {last_date:String}, {last_ts:Int64},
              {bars:UInt64}, {checkpoint:String}, {micro:UInt8},
              {ouroboros:String}, {first_agg:Int64}, {last_agg:Int64},
+             {hwm_agg:Int64},
              now64(3))
         """
         self.client.command(
@@ -126,6 +130,7 @@ class CheckpointOperationsMixin:
                 "ouroboros": ouroboros_mode,
                 "first_agg": first_agg_trade_id_in_bar or 0,  # Issue #72
                 "last_agg": last_agg_trade_id_in_bar or 0,    # Issue #72
+                "hwm_agg": last_processed_agg_trade_id or 0,  # Issue #111
             },
         )
         logger.debug(
@@ -177,7 +182,10 @@ class CheckpointOperationsMixin:
                 processor_checkpoint,
                 bars_written,
                 include_microstructure,
-                ouroboros_mode
+                ouroboros_mode,
+                first_agg_trade_id_in_bar,
+                last_agg_trade_id_in_bar,
+                last_processed_agg_trade_id
             FROM rangebar_cache.population_checkpoints FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}
@@ -214,6 +222,10 @@ class CheckpointOperationsMixin:
             "bars_written": row[3],
             "include_microstructure": bool(row[4]),
             "ouroboros_mode": row[5],
+            # Issue #72 / #111: Trade ID tracking
+            "first_agg_trade_id_in_bar": row[6] if row[6] > 0 else None,
+            "last_agg_trade_id_in_bar": row[7] if row[7] > 0 else None,
+            "last_processed_agg_trade_id": row[8] if row[8] > 0 else None,
         }
 
     def delete_checkpoint(
@@ -289,6 +301,7 @@ class CheckpointOperationsMixin:
                 processor_checkpoint String DEFAULT '',
                 first_agg_trade_id_in_bar Int64 DEFAULT 0,
                 last_agg_trade_id_in_bar Int64 DEFAULT 0,
+                last_processed_agg_trade_id Int64 DEFAULT 0,
                 include_microstructure UInt8 DEFAULT 0,
                 ouroboros_mode LowCardinality(String) DEFAULT 'year',
                 created_at DateTime64(3) DEFAULT now64(3),

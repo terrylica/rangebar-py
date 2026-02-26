@@ -338,6 +338,10 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.population_checkpoints (
     first_agg_trade_id_in_bar Int64 DEFAULT 0,
     last_agg_trade_id_in_bar Int64 DEFAULT 0,
 
+    -- Issue #111 (Ariadne): High-water mark for deterministic resume via fromId
+    -- Last fully-processed agg_trade_id (all completed bars up to this point)
+    last_processed_agg_trade_id Int64 DEFAULT 0,
+
     -- Metadata
     include_microstructure UInt8 DEFAULT 0,
     ouroboros_mode LowCardinality(String) DEFAULT 'year',

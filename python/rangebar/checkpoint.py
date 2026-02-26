@@ -104,6 +104,8 @@ class PopulationCheckpoint:
     # Issue #72: Full Audit Trail - agg_trade_id range in incomplete bar
     first_agg_trade_id_in_bar: int | None = None
     last_agg_trade_id_in_bar: int | None = None
+    # Issue #111 (Ariadne): High-water mark for deterministic resume via fromId
+    last_processed_agg_trade_id: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -111,8 +113,12 @@ class PopulationCheckpoint:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PopulationCheckpoint:
-        """Create from dictionary."""
-        return cls(**data)
+        """Create from dictionary, ignoring unknown keys (e.g., provenance)."""
+        import dataclasses
+
+        field_names = {f.name for f in dataclasses.fields(cls)}
+        filtered = {k: v for k, v in data.items() if k in field_names}
+        return cls(**filtered)
 
     def save(self, path: Path) -> None:
         """Save checkpoint to file with atomic write.
@@ -274,6 +280,8 @@ def _load_checkpoint_from_clickhouse(
                 # Issue #72: Full Audit Trail
                 first_agg_trade_id_in_bar=data.get("first_agg_trade_id_in_bar"),
                 last_agg_trade_id_in_bar=data.get("last_agg_trade_id_in_bar"),
+                # Issue #111 (Ariadne): High-water mark
+                last_processed_agg_trade_id=data.get("last_processed_agg_trade_id"),
             )
     except (ImportError, ConnectionError, OSError, RuntimeError) as e:
         logger.debug("ClickHouse checkpoint load failed: %s", e)
@@ -310,6 +318,8 @@ def _save_checkpoint_to_clickhouse(checkpoint: PopulationCheckpoint) -> None:
                 # Issue #72: Full Audit Trail
                 first_agg_trade_id_in_bar=checkpoint.first_agg_trade_id_in_bar,
                 last_agg_trade_id_in_bar=checkpoint.last_agg_trade_id_in_bar,
+                # Issue #111 (Ariadne): High-water mark
+                last_processed_agg_trade_id=checkpoint.last_processed_agg_trade_id,
             )
     except (ImportError, ConnectionError, OSError, RuntimeError) as e:
         logger.debug("ClickHouse checkpoint save failed (non-fatal): %s", e)
@@ -371,6 +381,133 @@ def _date_range(start_date: str, end_date: str) -> Iterator[str]:
     while current <= end:
         yield current.strftime("%Y-%m-%d")
         current += timedelta(days=1)
+
+
+def _ariadne_enabled() -> bool:
+    """Check if Ariadne (trade-ID resume) is enabled via feature flag."""
+    val = os.environ.get("RANGEBAR_ARIADNE_ENABLED", "")
+    return val.lower() in ("1", "true", "yes")
+
+
+def _ariadne_resume(
+    symbol: str,
+    last_processed_agg_trade_id: int,
+    end_date: str,
+    threshold_decimal_bps: int,
+    processor: object,
+    *,
+    include_microstructure: bool = False,  # noqa: ARG001
+    ouroboros: str = "year",
+    notify: bool = True,  # noqa: ARG001
+    trace_id: str | None = None,  # noqa: ARG001
+) -> int:
+    """Issue #111: Resume processing from last trade ID via Rust fromId fetch.
+
+    Fetches trades starting from ``last_processed_agg_trade_id + 1`` in
+    batches via the Rust ``fetch_aggtrades_by_id()`` PyO3 binding, feeds
+    each batch to the Rust processor, and writes completed bars to ClickHouse.
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol.
+    last_processed_agg_trade_id : int
+        High-water mark: last fully processed agg_trade_id.
+    end_date : str
+        Stop processing when trade timestamps exceed this date.
+    threshold_decimal_bps : int
+        Threshold in decimal basis points.
+    processor : RangeBarProcessor
+        Active processor with restored state.
+    include_microstructure : bool
+        Whether microstructure features are enabled.
+    ouroboros : str
+        Ouroboros reset mode.
+    notify : bool
+        Whether to emit hook events.
+    trace_id : str | None
+        Trace ID for telemetry.
+
+    Returns
+    -------
+    int
+        Total bars written via Ariadne resume.
+    """
+    from rangebar._core import fetch_aggtrades_by_id
+    from rangebar.orchestration.range_bars_cache import fatal_cache_write
+
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=UTC)
+    end_ms = int((end_dt + timedelta(days=1)).timestamp() * 1000)
+    batch_size = 1000
+    from_id = last_processed_agg_trade_id + 1
+    total_bars = 0
+
+    logger.info(
+        "Ariadne resume: %s from agg_trade_id=%d (end_date=%s)",
+        symbol,
+        from_id,
+        end_date,
+    )
+
+    while True:
+        try:
+            trades = fetch_aggtrades_by_id(symbol, from_id, batch_size)
+        except (RuntimeError, OSError) as e:
+            logger.warning("Ariadne fetch failed at from_id=%d: %s", from_id, e)
+            break
+
+        if not trades:
+            logger.info("Ariadne: no more trades after from_id=%d", from_id)
+            break
+
+        # Check if we've gone past end_date
+        last_trade_ts = trades[-1]["timestamp"]
+        if last_trade_ts > end_ms:
+            # Filter trades to only include those within range
+            trades = [t for t in trades if t["timestamp"] <= end_ms]
+            if not trades:
+                logger.info("Ariadne: all trades past end_date, stopping")
+                break
+
+        # Process through Rust processor
+        bars_df = processor.process_trades(
+            [
+                {
+                    "timestamp": t["timestamp"],
+                    "price": t["price"],
+                    "quantity": t["quantity"],
+                    "is_buyer_maker": t["is_buyer_maker"],
+                }
+                for t in trades
+            ],
+        )
+
+        if bars_df is not None and len(bars_df) > 0:
+            import pandas as pd
+
+            if not isinstance(bars_df, pd.DataFrame):
+                bars_df = pd.DataFrame(bars_df)
+            if not bars_df.empty:
+                written = fatal_cache_write(
+                    bars_df, symbol, threshold_decimal_bps, ouroboros,
+                )
+                total_bars += written
+
+        # Advance cursor to next batch
+        from_id = trades[-1]["agg_trade_id"] + 1
+
+        # Check if this was a partial batch (end of data)
+        if last_trade_ts > end_ms:
+            break
+
+    logger.info(
+        "Ariadne resume complete: %s — %d bars written (from_id reached %d)",
+        symbol,
+        total_bars,
+        from_id,
+    )
+
+    return total_bars
 
 
 def populate_cache_resumable(
@@ -684,6 +821,33 @@ def populate_cache_resumable(
         checkpoint.created_at if checkpoint else datetime.now(UTC).isoformat()
     )
 
+    # Issue #111 (Ariadne): If high-water mark is available and feature enabled,
+    # resume via trade ID instead of day-by-day timestamp fetching.
+    if (
+        _ariadne_enabled()
+        and checkpoint is not None
+        and checkpoint.last_processed_agg_trade_id
+        and active_processor is not None
+    ):
+        logger.info(
+            "Ariadne enabled: resuming %s via trade ID %d",
+            symbol,
+            checkpoint.last_processed_agg_trade_id,
+        )
+        ariadne_bars = _ariadne_resume(
+            symbol,
+            checkpoint.last_processed_agg_trade_id,
+            end_date,
+            threshold_decimal_bps,
+            active_processor,
+            include_microstructure=include_microstructure,
+            ouroboros=ouroboros,
+            notify=notify,
+            trace_id=trace_id,
+        )
+        total_bars += ariadne_bars
+        return total_bars
+
     # Issue #96 Phase 4: Initialize thread pool for concurrent ClickHouse writes
     thread_pool = None
     if num_async_writers > 0:
@@ -877,6 +1041,10 @@ def populate_cache_resumable(
                     )
                     if proc_cp
                     else None
+                ),
+                # Issue #111 (Ariadne): High-water mark from processor
+                last_processed_agg_trade_id=(
+                    proc_cp.get("last_trade_id") if proc_cp else None
                 ),
             )
             # Save to local filesystem (fast)
