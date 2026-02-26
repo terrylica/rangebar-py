@@ -104,7 +104,8 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2019-07-05
-processing_notes = "At 250 dbps, DOGEUSDT produces ~1,000 bars/day average and 219,893 bars on pump day (2021-01-28), making intra-bar feature computation infeasible (Hurst DFA + Permutation Entropy per bar). Minimum threshold enforced via mise.toml RANGEBAR_MIN_THRESHOLD_DOGEUSDT=500."
+min_threshold = 500
+processing_notes = "At 250 dbps, DOGEUSDT produces ~1,000 bars/day average and 219,893 bars on pump day (2021-01-28), making intra-bar feature computation infeasible (Hurst DFA + Permutation Entropy per bar)."
 keywords = ["dogecoin", "doge", "meme"]
 
 [symbols.SOLUSDT]
@@ -114,6 +115,7 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2020-08-11
+min_threshold = 500
 processing_notes = "Provisional min 500 dbps (Issue #89). At 250 dbps: ~727 bars/day avg (2nd highest), 33,036 max (2021-05-19). Pending benchmark."
 keywords = ["solana", "sol"]
 
@@ -123,6 +125,7 @@ asset_class = "crypto"
 exchange = "binance"
 market = "spot"
 listing_date = 2020-08-18
+min_threshold = 500
 processing_notes = "Provisional min 500 dbps (Issue #89). At 250 dbps: ~534 bars/day avg, 38,116 max (2021-05-19). Pending benchmark."
 keywords = ["polkadot", "dot"]
 
