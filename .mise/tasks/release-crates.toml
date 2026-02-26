@@ -1,9 +1,11 @@
 # crates.io Publishing Tasks
-# Auto-discovers publishable crates from cargo metadata and topologically sorts by dependency order.
-# No manual crate list — add publish=false to internal crates, everything else publishes automatically.
+# Uses native `cargo publish --workspace` (Rust 1.90+) which auto-discovers
+# publishable crates, topologically sorts by dependency order, and pre-validates
+# the entire workspace builds before publishing any crate.
+# Crates with `publish = false` in their Cargo.toml are automatically skipped.
 
 ["release:crates"]
-description = "Publish Rust crates to crates.io (auto-discovered, dependency order)"
+description = "Publish Rust crates to crates.io (native workspace publish)"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
@@ -24,119 +26,23 @@ CARGO_REGISTRY_TOKEN=$(cat ~/.claude/.secrets/crates-io-token 2>/dev/null) || {
 }
 export CARGO_REGISTRY_TOKEN
 
-# Auto-discover publishable crates and topologically sort by dependency order
-CRATES=$(cargo metadata --format-version 1 | python3 -c '
-import json, sys
-from collections import deque
-
-meta = json.load(sys.stdin)
-# Publishable = local crates without publish=false, excluding the PyO3 wrapper
-pubs = {p["name"] for p in meta["packages"]
-        if p.get("source") is None
-        and p.get("publish") is None
-        and p["name"] != "rangebar-py"}
-
-# Build dependency graph: crate -> [workspace crates it depends on]
-deps = {}
-for p in meta["packages"]:
-    if p["name"] in pubs:
-        deps[p["name"]] = list({d["name"] for d in p["dependencies"] if d["name"] in pubs})
-
-# Topological sort (Kahn algorithm) — dependencies before dependents
-indeg = {n: len(ds) for n, ds in deps.items()}
-queue = deque(sorted(n for n in pubs if indeg.get(n, 0) == 0))
-order = []
-while queue:
-    n = queue.popleft()
-    order.append(n)
-    for m, m_deps in deps.items():
-        if n in m_deps:
-            indeg[m] -= 1
-            if indeg[m] == 0:
-                queue.append(m)
-
-if len(order) != len(pubs):
-    print(f"ERROR: circular dependency detected among {pubs - set(order)}", file=sys.stderr)
-    sys.exit(1)
-for c in order:
-    print(c)
-')
-
-if [ -z "$CRATES" ]; then
-  echo "FAIL: No publishable crates found"
-  exit 1
-fi
-
-echo "Publish order (auto-discovered):"
-echo "$CRATES" | sed 's/^/  /'
-echo ""
-
-for crate in $CRATES; do
-  echo "Publishing $crate v$VERSION..."
-  if cargo publish -p "$crate" 2>&1; then
-    echo "OK: $crate published"
-  else
-    echo "WARN: $crate publish failed (may already exist on crates.io)"
-  fi
-  # crates.io index propagation delay
-  sleep 15
-done
+# Native workspace publish (Rust 1.90+):
+# - Auto-discovers publishable crates (skips publish=false)
+# - Topologically sorts by dependency order
+# - Pre-validates entire workspace builds before publishing any crate
+cargo publish --workspace
 
 echo ""
 echo "OK: Published to crates.io"
-for crate in $CRATES; do
-  echo "  https://crates.io/crates/$crate/$VERSION"
-done
 """
 
 ["release:crates-dry"]
-description = "Dry-run crates.io publish (auto-discovered, dependency order)"
+description = "Dry-run crates.io workspace publish"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
 
 echo "=== Dry-run crates.io publish ==="
-
-# Same auto-discovery as release:crates
-CRATES=$(cargo metadata --format-version 1 | python3 -c '
-import json, sys
-from collections import deque
-
-meta = json.load(sys.stdin)
-pubs = {p["name"] for p in meta["packages"]
-        if p.get("source") is None
-        and p.get("publish") is None
-        and p["name"] != "rangebar-py"}
-
-deps = {}
-for p in meta["packages"]:
-    if p["name"] in pubs:
-        deps[p["name"]] = list({d["name"] for d in p["dependencies"] if d["name"] in pubs})
-
-indeg = {n: len(ds) for n, ds in deps.items()}
-queue = deque(sorted(n for n in pubs if indeg.get(n, 0) == 0))
-order = []
-while queue:
-    n = queue.popleft()
-    order.append(n)
-    for m, m_deps in deps.items():
-        if n in m_deps:
-            indeg[m] -= 1
-            if indeg[m] == 0:
-                queue.append(m)
-
-for c in order:
-    print(c)
-')
-
-echo "Publish order (auto-discovered):"
-echo "$CRATES" | sed 's/^/  /'
-echo ""
-
-for crate in $CRATES; do
-  echo "--- $crate ---"
-  cargo publish -p "$crate" --dry-run 2>&1
-  echo ""
-done
+cargo publish --workspace --dry-run
 echo "OK: All crates package successfully"
 """

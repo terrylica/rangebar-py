@@ -190,18 +190,13 @@ if [ "$BRANCH" != "main" ]; then
     FAIL=1
 fi
 
-# --- Crates.io dry-run (auto-discovered from cargo metadata) ---
+# --- Crates.io dry-run (native workspace publish, Rust 1.90+) ---
 echo "Verifying crates.io packaging..."
-CRATES=$(cargo metadata --no-deps --format-version 1 | \
-  jq -r '.packages[] | select(.source == null) | select(.publish == null) | select(.name != "rangebar-py") | .name')
-for crate in $CRATES; do
-    if ! cargo publish -p "$crate" --dry-run 2>&1 | tail -1 | grep -qE "warning|Packaged|Finished"; then
-        echo "FAIL: $crate cannot package for crates.io"
-        cargo publish -p "$crate" --dry-run 2>&1 | grep -i error || true
-        FAIL=1
-    fi
-done
-echo "OK: All publishable crates package successfully ($CRATES)"
+if ! cargo publish --workspace --dry-run 2>&1; then
+    echo "FAIL: cargo publish --workspace --dry-run failed"
+    FAIL=1
+fi
+echo "OK: All publishable crates package successfully"
 
 # --- ClickHouse port consistency across scripts ---
 echo "Checking ClickHouse port consistency..."
