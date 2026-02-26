@@ -1523,13 +1523,13 @@ mod tests {
         // Push one more trade to trigger prune with new boundary
         history.push(&make_trade(35, 35000));
 
-        // Now: bar_close_indices = [10, 30, 35], total_pushed = 36
-        // keep_count = 36 - 30 = 6 (trades from bar 2 boundary onwards)
-        // But we also have protected_until which prevents pruning lookback trades
-        // Without protection set (no on_bar_open called), all trades can be pruned
-        assert!(
-            history.len() <= 26, // 25 from bars 2+3 + 1 new, minus pruned old ones
-            "Should prune old bars, got {} trades",
+        // Issue #96 Task #155: max_safe_capacity for BarRelative = 2000.
+        // With only 36 trades total, prune_if_needed() never fires (36 < 2000).
+        // All trades are preserved — this is correct capacity-based behavior.
+        assert_eq!(
+            history.len(),
+            36,
+            "All trades preserved below max_safe_capacity (2000), got {}",
             history.len()
         );
     }
@@ -1564,14 +1564,13 @@ mod tests {
         // Push one more to trigger prune
         history.push(&make_trade(58, 58000));
 
-        // With BarRelative(2), after 3 bars:
-        // bar_close_indices has max n+1=3 entries: [5, 55, 58]
-        // Oldest boundary for pruning: [len-n_bars] = [3-2] = index 1 = 55
-        // keep_count = 59 - 55 = 4 (3 from bar 3 + 1 new)
-        // This correctly adapts: bar 2 had 50 trades but bar 3 only had 3
-        assert!(
-            history.len() <= 54, // bar 2 + bar 3 + 1 = 54 max
-            "Mixed bar sizes should prune correctly, got {} trades",
+        // Issue #96 Task #155: max_safe_capacity for BarRelative = 2000.
+        // With only 59 trades total, prune_if_needed() never fires (59 < 2000).
+        // All trades are preserved — this is correct capacity-based behavior.
+        assert_eq!(
+            history.len(),
+            59,
+            "All trades preserved below max_safe_capacity (2000), got {}",
             history.len()
         );
     }
