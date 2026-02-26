@@ -221,6 +221,7 @@ def _load_checkpoint_from_clickhouse(
     threshold_decimal_bps: int,
     start_date: str,
     end_date: str,
+    ouroboros_mode: str = "year",
 ) -> PopulationCheckpoint | None:
     """Load checkpoint from ClickHouse for cross-machine resume.
 
@@ -236,6 +237,9 @@ def _load_checkpoint_from_clickhouse(
         Start date (YYYY-MM-DD).
     end_date : str
         End date (YYYY-MM-DD).
+    ouroboros_mode : str
+        Ouroboros reset mode filter (default: "year").
+        Prevents cross-mode checkpoint pollution.
 
     Returns
     -------
@@ -247,7 +251,8 @@ def _load_checkpoint_from_clickhouse(
 
         with RangeBarCache() as cache:
             data = cache.load_checkpoint(
-                symbol, threshold_decimal_bps, start_date, end_date
+                symbol, threshold_decimal_bps, start_date, end_date,
+                ouroboros_mode=ouroboros_mode,
             )
             if data is None:
                 return None
@@ -336,8 +341,9 @@ def _is_ouroboros_boundary(date_str: str, ouroboros: str) -> bool:
         return d.month == 1 and d.day == 1
     if ouroboros == "month":
         return d.day == 1
+    _sunday = 6
     if ouroboros == "week":
-        return d.weekday() == 0  # Monday (ISO convention for week start)
+        return d.weekday() == _sunday  # Sunday (matches ouroboros.py SSoT)
     return False
 
 
@@ -502,7 +508,8 @@ def populate_cache_resumable(
             with RangeBarCache() as cache:
                 cache.delete_bars(symbol, threshold_decimal_bps, start_ts, end_ts)
                 cache.delete_checkpoint(
-                    symbol, threshold_decimal_bps, start_date, end_date
+                    symbol, threshold_decimal_bps, start_date, end_date,
+                    ouroboros_mode=ouroboros,
                 )
                 logger.debug("Deleted cached bars and ClickHouse checkpoint")
         except (ImportError, ConnectionError) as e:
@@ -516,7 +523,8 @@ def populate_cache_resumable(
         # Issue #69: Try ClickHouse checkpoint for cross-machine resume
         if checkpoint is None:
             checkpoint = _load_checkpoint_from_clickhouse(
-                symbol, threshold_decimal_bps, start_date, end_date
+                symbol, threshold_decimal_bps, start_date, end_date,
+                ouroboros_mode=ouroboros,
             )
 
     resume_date = start_date

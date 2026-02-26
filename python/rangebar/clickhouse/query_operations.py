@@ -43,6 +43,7 @@ class QueryOperationsMixin:
         include_microstructure: bool = False,
         min_schema_version: str | None = None,
         include_plugin_features: bool = False,
+        ouroboros_mode: str = "year",
     ) -> tuple[pd.DataFrame | None, int]:
         """Get N bars from cache, ordered chronologically (oldest first).
 
@@ -76,7 +77,10 @@ class QueryOperationsMixin:
             - available_count is total bars available (may be > len(bars_df))
         """
         # First get the count (for reporting)
-        available_count = self.count_bars(symbol, threshold_decimal_bps, before_ts)
+        available_count = self.count_bars(
+            symbol, threshold_decimal_bps, before_ts,
+            ouroboros_mode=ouroboros_mode,
+        )
 
         if available_count == 0:
             return None, 0
@@ -140,6 +144,7 @@ class QueryOperationsMixin:
                 FROM rangebar_cache.range_bars FINAL
                 WHERE symbol = {{symbol:String}}
                   AND threshold_decimal_bps = {{threshold:UInt32}}
+                  AND ouroboros_mode = {{ouroboros_mode:String}}
                   AND timestamp_ms < {{end_ts:Int64}}
                   {version_filter}
                 ORDER BY timestamp_ms DESC
@@ -148,6 +153,7 @@ class QueryOperationsMixin:
             params: dict[str, str | int] = {
                 "symbol": symbol,
                 "threshold": threshold_decimal_bps,
+                "ouroboros_mode": ouroboros_mode,
                 "end_ts": before_ts,
                 "n_bars": n_bars,
             }
@@ -163,6 +169,7 @@ class QueryOperationsMixin:
                 FROM rangebar_cache.range_bars FINAL
                 WHERE symbol = {{symbol:String}}
                   AND threshold_decimal_bps = {{threshold:UInt32}}
+                  AND ouroboros_mode = {{ouroboros_mode:String}}
                   {version_filter}
                 ORDER BY timestamp_ms DESC
                 LIMIT {{n_bars:UInt64}}
@@ -170,6 +177,7 @@ class QueryOperationsMixin:
             params = {
                 "symbol": symbol,
                 "threshold": threshold_decimal_bps,
+                "ouroboros_mode": ouroboros_mode,
                 "n_bars": n_bars,
             }
             if effective_min_version:

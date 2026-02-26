@@ -150,6 +150,7 @@ def populate_job(
     end_date: str | None = None,
     force_refresh: bool = False,
     include_microstructure: bool = True,
+    ouroboros: str = "year",
 ) -> int:
     """Run a single population job. Returns bar count."""
     from rangebar import populate_cache_resumable
@@ -169,6 +170,7 @@ def populate_job(
             threshold_decimal_bps=threshold,
             include_microstructure=include_microstructure,
             force_refresh=force_refresh,
+            ouroboros=ouroboros,
             notify=True,
         )
         elapsed = (datetime.now(tz=UTC) - start_time).total_seconds() / 60
@@ -188,6 +190,7 @@ def run_phase(
     *,
     force_refresh: bool = False,
     include_microstructure: bool = True,
+    ouroboros: str = "year",
 ) -> None:
     """Run a specific phase with optional parallelization."""
     if phase_num not in PHASES:
@@ -229,6 +232,7 @@ def run_phase(
                 symbol, threshold, start_date,
                 force_refresh=force_refresh,
                 include_microstructure=include_microstructure,
+                ouroboros=ouroboros,
             )
     else:
         # Bounded parallel execution using subprocess isolation
@@ -252,6 +256,8 @@ def run_phase(
                 cmd.append("--force-refresh")
             if not include_microstructure:
                 cmd.append("--no-microstructure")
+            if ouroboros != "year":
+                cmd.extend(["--ouroboros", ouroboros])
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             return (sym, thresh, result.returncode, result.stderr)
 
@@ -401,6 +407,11 @@ Examples:
         "--no-microstructure", action="store_true",
         help="Disable microstructure features",
     )
+    parser.add_argument(
+        "--ouroboros", type=str, default="year",
+        choices=["year", "month", "week"],
+        help="Ouroboros reset period (default: year). Use 'month' for finer-grained parallelism.",
+    )
 
     args = parser.parse_args()
 
@@ -421,12 +432,14 @@ Examples:
             end_date=args.end_date,
             force_refresh=args.force_refresh,
             include_microstructure=include_micro,
+            ouroboros=args.ouroboros,
         )
     elif args.phase:
         run_phase(
             args.phase, args.parallel,
             force_refresh=args.force_refresh,
             include_microstructure=include_micro,
+            ouroboros=args.ouroboros,
         )
     else:
         parser.print_help()

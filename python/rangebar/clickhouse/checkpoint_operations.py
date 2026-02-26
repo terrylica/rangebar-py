@@ -142,6 +142,7 @@ class CheckpointOperationsMixin:
         threshold_decimal_bps: int,
         start_date: str,
         end_date: str,
+        ouroboros_mode: str = "year",
     ) -> dict | None:
         """Load population checkpoint from ClickHouse.
 
@@ -157,6 +158,9 @@ class CheckpointOperationsMixin:
             Population start date (YYYY-MM-DD)
         end_date : str
             Population end date (YYYY-MM-DD)
+        ouroboros_mode : str
+            Ouroboros reset mode filter (default: "year").
+            Prevents cross-mode checkpoint pollution.
 
         Returns
         -------
@@ -179,6 +183,7 @@ class CheckpointOperationsMixin:
               AND threshold_decimal_bps = {threshold:UInt32}
               AND start_date = {start_date:String}
               AND end_date = {end_date:String}
+              AND ouroboros_mode = {ouroboros:String}
             LIMIT 1
         """
         try:
@@ -189,6 +194,7 @@ class CheckpointOperationsMixin:
                     "threshold": threshold_decimal_bps,
                     "start_date": start_date,
                     "end_date": end_date,
+                    "ouroboros": ouroboros_mode,
                 },
             )
         except (OSError, RuntimeError) as e:
@@ -216,6 +222,7 @@ class CheckpointOperationsMixin:
         threshold_decimal_bps: int,
         start_date: str,
         end_date: str,
+        ouroboros_mode: str = "year",
     ) -> None:
         """Delete population checkpoint from ClickHouse.
 
@@ -231,6 +238,8 @@ class CheckpointOperationsMixin:
             Population start date (YYYY-MM-DD)
         end_date : str
             Population end date (YYYY-MM-DD)
+        ouroboros_mode : str
+            Ouroboros reset mode filter (default: "year").
         """
         query = """
             ALTER TABLE rangebar_cache.population_checkpoints
@@ -238,6 +247,7 @@ class CheckpointOperationsMixin:
               AND threshold_decimal_bps = {threshold:UInt32}
               AND start_date = {start_date:String}
               AND end_date = {end_date:String}
+              AND ouroboros_mode = {ouroboros:String}
         """
         try:
             self.client.command(
@@ -247,6 +257,7 @@ class CheckpointOperationsMixin:
                     "threshold": threshold_decimal_bps,
                     "start_date": start_date,
                     "end_date": end_date,
+                    "ouroboros": ouroboros_mode,
                 },
             )
             logger.debug(
@@ -284,7 +295,8 @@ class CheckpointOperationsMixin:
                 updated_at DateTime64(3) DEFAULT now64(3)
             )
             ENGINE = ReplacingMergeTree(updated_at)
-            ORDER BY (symbol, threshold_decimal_bps, start_date, end_date)
+            ORDER BY (symbol, threshold_decimal_bps,
+                     start_date, end_date, ouroboros_mode)
         """
         try:
             self.client.command(create_sql)

@@ -1,3 +1,4 @@
+# FILE-SIZE-OK: bulk store + batch store + mode guard are cohesive
 # Issue #46: Modularization M5 - Extract bulk operations from cache.py
 """Bulk store operations for ClickHouse range bar cache.
 
@@ -93,6 +94,54 @@ class BulkStoreMixin:
     Requires `self.client` from ClickHouseClientMixin.
     """
 
+    def _guard_ouroboros_mode_consistency(
+        self,
+        symbol: str,
+        threshold_decimal_bps: int,
+        ouroboros_mode: str,
+    ) -> None:
+        """Guard against mixing ouroboros modes for the same (symbol, threshold) pair.
+
+        Issue #97: Since ouroboros_mode is NOT in the range_bars ORDER BY,
+        monthly and yearly bars would coexist without dedup. This guard
+        enforces single-mode-per-pair at application level.
+
+        Raises
+        ------
+        CacheWriteError
+            If existing data uses a different ouroboros mode.
+        """
+        try:
+            result = self.client.query(
+                """
+                SELECT DISTINCT ouroboros_mode
+                FROM rangebar_cache.range_bars FINAL
+                WHERE symbol = {symbol:String}
+                  AND threshold_decimal_bps = {threshold:UInt32}
+                LIMIT 2
+                """,
+                parameters={"symbol": symbol, "threshold": threshold_decimal_bps},
+            )
+            if result.result_rows:
+                existing_mode = result.result_rows[0][0]
+                if existing_mode and existing_mode != ouroboros_mode:
+                    msg = (
+                        f"Cannot write {ouroboros_mode} bars for "
+                        f"{symbol}@{threshold_decimal_bps}: "
+                        f"existing data uses {existing_mode}. "
+                        f"Use force_refresh=True to clear existing data first."
+                    )
+                    raise CacheWriteError(  # noqa: TRY301
+                        msg,
+                        symbol=symbol,
+                        operation="mode_guard",
+                    )
+        except CacheWriteError:
+            raise
+        except (OSError, RuntimeError) as e:
+            # If we can't check, log and proceed (table might not exist yet)
+            logger.debug("Mode consistency check skipped: %s", e)
+
     def store_bars_bulk(  # noqa: PLR0915
         self,
         symbol: str,
@@ -133,10 +182,15 @@ class BulkStoreMixin:
         Raises
         ------
         CacheWriteError
-            If the insert operation fails.
+            If the insert operation fails or mode mismatch detected.
         """
         if bars.empty:
             return 0
+
+        # Issue #97: Guard against mixed ouroboros modes
+        self._guard_ouroboros_mode_consistency(
+            symbol, threshold_decimal_bps, ouroboros_mode,
+        )
 
         # Issue #48: Emit CACHE_WRITE_START hook
         emit_hook(
@@ -329,6 +383,11 @@ class BulkStoreMixin:
 
         if bars.is_empty():
             return 0
+
+        # Issue #97: Guard against mixed ouroboros modes
+        self._guard_ouroboros_mode_consistency(
+            symbol, threshold_decimal_bps, ouroboros_mode,
+        )
 
         # Normalize column names (lowercase)
         # Issue #96 Task #34: Fast-path skip rename when all columns lowercase

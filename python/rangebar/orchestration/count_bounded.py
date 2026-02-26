@@ -66,6 +66,7 @@ def get_n_range_bars(
     cache_dir: str | None = None,
     # Bar-relative lookback (Issue #81)
     inter_bar_lookback_bars: int | None = None,
+    ouroboros_mode: str = "year",
 ) -> pd.DataFrame:
     """Get exactly N range bars ending at or before a given date.
 
@@ -289,6 +290,7 @@ def get_n_range_bars(
                     n_bars=n_bars,
                     before_ts=end_ts,
                     include_microstructure=include_microstructure,
+                    ouroboros_mode=ouroboros_mode,
                 )
 
                 if bars_df is not None and len(bars_df) >= n_bars:

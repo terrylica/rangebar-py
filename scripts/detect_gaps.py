@@ -314,6 +314,7 @@ def detect_gaps_for_pair(
     min_gap_ms: int,
     price_gap_dbps: float,
     recent_cutoff_ms: int | None = None,
+    ouroboros_mode: str = "year",
 ) -> tuple[list[Gap], CoverageSummary | None]:
     """Detect gaps for a single (symbol, threshold) pair.
 
@@ -322,7 +323,7 @@ def detect_gaps_for_pair(
     """
     # First get coverage summary
     where_clause = ""
-    params: dict = {"symbol": symbol, "threshold": threshold}
+    params: dict = {"symbol": symbol, "threshold": threshold, "ouroboros": ouroboros_mode}
     if recent_cutoff_ms is not None:
         where_clause = "AND timestamp_ms >= {cutoff:Int64}"
         params["cutoff"] = recent_cutoff_ms
@@ -335,6 +336,7 @@ def detect_gaps_for_pair(
         FROM rangebar_cache.range_bars FINAL
         WHERE symbol = {{symbol:String}}
           AND threshold_decimal_bps = {{threshold:UInt32}}
+          AND ouroboros_mode = {{ouroboros:String}}
           {where_clause}
     """
     result = client.query(summary_query, parameters=params)
@@ -370,6 +372,7 @@ def detect_gaps_for_pair(
             FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {{symbol:String}}
               AND threshold_decimal_bps = {{threshold:UInt32}}
+              AND ouroboros_mode = {{ouroboros:String}}
               {where_clause}
         )
         WHERE rn > 1
@@ -435,6 +438,7 @@ def run_detection(
     price_gap_dbps: float = DEFAULT_PRICE_GAP_DBPS,
     recent_days: int | None = None,
     max_stale_hours: float | None = None,
+    ouroboros_mode: str = "year",
 ) -> DetectionResult:
     """Run gap detection across all specified (symbol, threshold) pairs."""
     min_gap_ms = int(min_gap_hours * 3600 * 1000)
@@ -463,6 +467,7 @@ def run_detection(
             min_gap_ms=min_gap_ms,
             price_gap_dbps=price_gap_dbps,
             recent_cutoff_ms=recent_cutoff_ms,
+            ouroboros_mode=ouroboros_mode,
         )
         if coverage is None:
             result.skipped_pairs += 1
@@ -688,6 +693,11 @@ Examples:
         help="Only check TIER1 symbols (18 symbols x standard thresholds). "
              "Ignores non-TIER1 data in ClickHouse.",
     )
+    parser.add_argument(
+        "--ouroboros-mode", type=str, default="year",
+        choices=["year", "month", "week"],
+        help="Ouroboros mode filter: only check bars of this mode (default: year).",
+    )
     return parser.parse_args()
 
 
@@ -723,6 +733,7 @@ def main() -> int:
             price_gap_dbps=args.price_gap_dbps,
             recent_days=args.recent_days,
             max_stale_hours=args.max_stale_hours,
+            ouroboros_mode=args.ouroboros_mode,
         )
 
         # Output

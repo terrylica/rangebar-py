@@ -345,7 +345,19 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.population_checkpoints (
     updated_at DateTime64(3) DEFAULT now64(3)
 )
 ENGINE = ReplacingMergeTree(updated_at)
-ORDER BY (symbol, threshold_decimal_bps, start_date, end_date);
+ORDER BY (symbol, threshold_decimal_bps, start_date, end_date, ouroboros_mode);
+
+-- ============================================================================
+-- Migration for monthly Ouroboros (ouroboros_mode in checkpoint ORDER BY)
+-- ============================================================================
+-- Run this ONCE if upgrading from existing installation with checkpoints:
+--
+-- ALTER TABLE rangebar_cache.population_checkpoints
+--     MODIFY ORDER BY (symbol, threshold_decimal_bps, start_date, end_date, ouroboros_mode);
+--
+-- Prevents ReplacingMergeTree from overwriting year-mode checkpoints with
+-- month-mode ones (and vice versa).
+-- Note: New installations do not need this migration.
 
 -- ============================================================================
 -- Backfill Request Queue (Issue #97: On-demand trigger from flowsurface)

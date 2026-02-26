@@ -25,6 +25,7 @@ class BarCountMixin:
         symbol: str,
         threshold_decimal_bps: int,
         before_ts: int | None = None,
+        ouroboros_mode: str = "year",
     ) -> int:
         """Count available bars in cache.
 
@@ -39,6 +40,8 @@ class BarCountMixin:
         before_ts : int | None
             Only count bars with timestamp_ms < before_ts.
             If None, counts all bars for symbol/threshold.
+        ouroboros_mode : str
+            Ouroboros reset mode filter (default: "year").
 
         Returns
         -------
@@ -52,6 +55,7 @@ class BarCountMixin:
                 FROM rangebar_cache.range_bars FINAL
                 WHERE symbol = {symbol:String}
                   AND threshold_decimal_bps = {threshold:UInt32}
+                  AND ouroboros_mode = {ouroboros_mode:String}
                   AND timestamp_ms < {end_ts:Int64}
             """
             result = self.client.command(
@@ -59,6 +63,7 @@ class BarCountMixin:
                 parameters={
                     "symbol": symbol,
                     "threshold": threshold_decimal_bps,
+                    "ouroboros_mode": ouroboros_mode,
                     "end_ts": before_ts,
                 },
                 settings=FINAL_READ_SETTINGS,
@@ -70,12 +75,14 @@ class BarCountMixin:
                 FROM rangebar_cache.range_bars FINAL
                 WHERE symbol = {symbol:String}
                   AND threshold_decimal_bps = {threshold:UInt32}
+                  AND ouroboros_mode = {ouroboros_mode:String}
             """
             result = self.client.command(
                 query,
                 parameters={
                     "symbol": symbol,
                     "threshold": threshold_decimal_bps,
+                    "ouroboros_mode": ouroboros_mode,
                 },
                 settings=FINAL_READ_SETTINGS,
             )
