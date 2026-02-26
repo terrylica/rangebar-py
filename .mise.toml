@@ -22,8 +22,9 @@
 
 [env]
 # =============================================================================
-# SSoT: Minimum Thresholds by Asset Class (Issue #62)
+# Minimum Thresholds by Asset Class (Issue #62)
 # =============================================================================
+# Fallback when no per-symbol min_threshold in symbols.toml.
 # Values are in decimal basis points (dbps): 1000 dbps = 1%
 RANGEBAR_CRYPTO_MIN_THRESHOLD = "250"
 RANGEBAR_FOREX_MIN_THRESHOLD = "50"
