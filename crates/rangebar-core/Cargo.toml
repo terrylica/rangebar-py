@@ -32,7 +32,7 @@ arrow-schema = { workspace = true, optional = true }
 
 # rangebar-hurst: Internal MIT-licensed fork of evrom/hurst (GPL-3.0) for license compatibility
 # Issue #96 Task #149/150: GPL-3.0 license conflict resolution
-rangebar-hurst = { path = "../rangebar-hurst", version = "12.29.0" }
+rangebar-hurst = { path = "../rangebar-hurst", version = "12.30.0" }
 
 # SmallVec for allocation-efficient lookback trade tracking (Issue #96 Task #10)
 smallvec = "1.13"

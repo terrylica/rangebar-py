@@ -108,7 +108,7 @@ def main() -> None:
     parser.add_argument("--delete", action="store_true", help="Actually delete (default: dry-run)")
     parser.add_argument("--dry-run", action="store_true", help="Just report, don't delete")
     parser.add_argument("--host", type=str, default="localhost", help="ClickHouse host")
-    parser.add_argument("--port", type=int, default=18123, help="ClickHouse HTTP port")
+    parser.add_argument("--port", type=int, default=8123, help="ClickHouse HTTP port")
     args = parser.parse_args()
 
     client = clickhouse_connect.get_client(host=args.host, port=args.port)
