@@ -1,3 +1,5 @@
+// FILE-SIZE-OK: Canonical location for all Binance historical data loading (Vision + REST + fromId)
+// Issue #92: REST recency backfill + fromId pagination (source-validation skill)
 //! Historical data loading utilities
 //!
 //! Consolidated data loading functionality extracted from examples to eliminate
@@ -71,6 +73,10 @@ pub enum HistoricalError {
     /// REST API error (Issue #92: recency backfill)
     #[error("REST API error: {0}")]
     RestApiError(String),
+
+    /// Rate limited by Binance API (HTTP 429)
+    #[error("Rate limited for {symbol}: exceeded {max_retries} retries")]
+    RateLimited { symbol: String, max_retries: u32 },
 }
 
 #[derive(Debug, Deserialize)]
@@ -151,6 +157,21 @@ impl From<CsvAggTrade> for AggTrade {
     }
 }
 
+impl From<RestAggTrade> for AggTrade {
+    fn from(rest: RestAggTrade) -> Self {
+        AggTrade {
+            agg_trade_id: rest.agg_trade_id,
+            price: FixedPoint::from_str(&rest.price).unwrap_or(FixedPoint(0)),
+            volume: FixedPoint::from_str(&rest.quantity).unwrap_or(FixedPoint(0)),
+            first_trade_id: rest.first_trade_id,
+            last_trade_id: rest.last_trade_id,
+            timestamp: normalize_timestamp(rest.trade_time as u64),
+            is_buyer_maker: rest.is_buyer_maker,
+            is_best_match: None,
+        }
+    }
+}
+
 impl CsvAggTrade {
     /// Convert to AggTrade with market-aware timestamp conversion
     pub fn to_agg_trade(&self, _market_type: &str) -> AggTrade {
@@ -168,6 +189,64 @@ impl CsvAggTrade {
             is_best_match: None, // Not available in historical CSV data
         }
     }
+}
+
+/// Maximum retries for HTTP 429 rate limiting
+const RATE_LIMIT_MAX_RETRIES: u32 = 5;
+/// Initial backoff in milliseconds (doubles each retry: 1s → 2s → 4s → 8s → 16s)
+const RATE_LIMIT_INITIAL_BACKOFF_MS: u64 = 1_000;
+
+/// Send an HTTP request with exponential backoff on 429 rate limiting.
+///
+/// Retries up to `RATE_LIMIT_MAX_RETRIES` times with doubling backoff.
+/// Non-429 errors are returned immediately.
+async fn send_with_rate_limit_backoff(
+    request_builder: impl Fn() -> reqwest::RequestBuilder,
+    symbol: &str,
+) -> Result<reqwest::Response, HistoricalError> {
+    let mut backoff_ms = RATE_LIMIT_INITIAL_BACKOFF_MS;
+
+    for attempt in 0..=RATE_LIMIT_MAX_RETRIES {
+        let response = tokio::time::timeout(
+            Duration::from_secs(30),
+            request_builder().send(),
+        )
+        .await
+        .map_err(|_| HistoricalError::RestApiError(format!(
+            "Timeout fetching {} (attempt {})",
+            symbol, attempt
+        )))?
+        .map_err(|e| HistoricalError::RestApiError(format!(
+            "HTTP error for {}: {e}",
+            symbol
+        )))?;
+
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            if attempt == RATE_LIMIT_MAX_RETRIES {
+                return Err(HistoricalError::RateLimited {
+                    symbol: symbol.to_string(),
+                    max_retries: RATE_LIMIT_MAX_RETRIES,
+                });
+            }
+            warn!(
+                symbol = %symbol,
+                attempt = attempt,
+                backoff_ms = backoff_ms,
+                "Rate limited (429), backing off"
+            );
+            tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+            backoff_ms = (backoff_ms * 2).min(16_000); // Cap at 16s
+            continue;
+        }
+
+        return Ok(response);
+    }
+
+    // Unreachable due to loop structure, but satisfies compiler
+    Err(HistoricalError::RateLimited {
+        symbol: symbol.to_string(),
+        max_retries: RATE_LIMIT_MAX_RETRIES,
+    })
 }
 
 /// Historical data loader for Binance aggTrades
@@ -337,27 +416,25 @@ impl HistoricalDataLoader {
         );
 
         while current_start < end_ms {
-            let response = tokio::time::timeout(
-                Duration::from_secs(30),
-                self.client
-                    .get(url)
-                    .query(&[
-                        ("symbol", self.symbol.as_str()),
-                        ("startTime", &current_start.to_string()),
-                        ("endTime", &end_ms.to_string()),
-                        ("limit", "1000"),
-                    ])
-                    .send(),
+            let client = &self.client;
+            let symbol = &self.symbol;
+            let current = current_start;
+            let end = end_ms;
+
+            let response = send_with_rate_limit_backoff(
+                || {
+                    client
+                        .get(url)
+                        .query(&[
+                            ("symbol", symbol.as_str()),
+                            ("startTime", &current.to_string()),
+                            ("endTime", &end.to_string()),
+                            ("limit", "1000"),
+                        ])
+                },
+                symbol,
             )
-            .await
-            .map_err(|_| HistoricalError::RestApiError(format!(
-                "Timeout fetching {} from {current_start}",
-                self.symbol
-            )))?
-            .map_err(|e| HistoricalError::RestApiError(format!(
-                "HTTP error for {}: {e}",
-                self.symbol
-            )))?;
+            .await?;
 
             if !response.status().is_success() {
                 return Err(HistoricalError::RestApiError(format!(
@@ -380,22 +457,9 @@ impl HistoricalDataLoader {
             }
 
             let last_ts = batch.last().unwrap().trade_time;
+            let batch_len = batch.len();
 
-            for raw in &batch {
-                all_trades.push(AggTrade {
-                    agg_trade_id: raw.agg_trade_id,
-                    price: FixedPoint::from_str(&raw.price)
-                        .unwrap_or(FixedPoint(0)),
-                    volume: FixedPoint::from_str(&raw.quantity)
-                        .unwrap_or(FixedPoint(0)),
-                    first_trade_id: raw.first_trade_id,
-                    last_trade_id: raw.last_trade_id,
-                    // Convert ms → us (rangebar-core convention)
-                    timestamp: raw.trade_time * 1000,
-                    is_buyer_maker: raw.is_buyer_maker,
-                    is_best_match: None,
-                });
-            }
+            all_trades.extend(batch.into_iter().map(AggTrade::from));
 
             // Advance past last trade timestamp to avoid duplicates
             if last_ts <= current_start {
@@ -405,7 +469,7 @@ impl HistoricalDataLoader {
             current_start = last_ts + 1;
 
             // If we got fewer than limit, we've exhausted the range
-            if batch.len() < 1000 {
+            if batch_len < 1000 {
                 break;
             }
         }
@@ -421,6 +485,112 @@ impl HistoricalDataLoader {
         );
 
         Ok(all_trades)
+    }
+
+    /// Fetch aggregated trades by `fromId` (zero-gap pagination).
+    ///
+    /// Single REST call using `fromId` parameter — caller controls cursor.
+    /// This is the **correct** pagination method; `startTime` drops trades
+    /// at millisecond boundaries.
+    ///
+    /// # Arguments
+    ///
+    /// * `from_id` - Starting agg_trade_id (inclusive)
+    /// * `limit` - Maximum trades to return (1-1000)
+    ///
+    /// # Returns
+    ///
+    /// Vec of `AggTrade` with timestamps in microseconds.
+    pub async fn fetch_aggtrades_by_id(
+        &self,
+        from_id: i64,
+        limit: u16,
+    ) -> Result<Vec<AggTrade>, HistoricalError> {
+        let url = "https://api.binance.com/api/v3/aggTrades";
+        let limit_str = limit.min(1000).to_string();
+        let from_id_str = from_id.to_string();
+        let client = &self.client;
+        let symbol = &self.symbol;
+
+        let response = send_with_rate_limit_backoff(
+            || {
+                client
+                    .get(url)
+                    .query(&[
+                        ("symbol", symbol.as_str()),
+                        ("fromId", from_id_str.as_str()),
+                        ("limit", limit_str.as_str()),
+                    ])
+            },
+            symbol,
+        )
+        .await?;
+
+        if !response.status().is_success() {
+            return Err(HistoricalError::RestApiError(format!(
+                "HTTP {} for {} fromId={from_id}",
+                response.status(),
+                self.symbol,
+            )));
+        }
+
+        let batch: Vec<RestAggTrade> = response
+            .json()
+            .await
+            .map_err(|e| HistoricalError::RestApiError(format!(
+                "JSON parse error for {}: {e}",
+                self.symbol
+            )))?;
+
+        Ok(batch.into_iter().map(AggTrade::from).collect())
+    }
+
+    /// Fetch the latest aggregated trade for the symbol.
+    ///
+    /// Single REST call with `limit=1`, no `fromId` or `startTime`.
+    /// Returns the most recent trade as an anchor point for cursor-based pagination.
+    pub async fn fetch_latest_aggtrade(&self) -> Result<AggTrade, HistoricalError> {
+        let url = "https://api.binance.com/api/v3/aggTrades";
+        let client = &self.client;
+        let symbol = &self.symbol;
+
+        let response = send_with_rate_limit_backoff(
+            || {
+                client
+                    .get(url)
+                    .query(&[
+                        ("symbol", symbol.as_str()),
+                        ("limit", "1"),
+                    ])
+            },
+            symbol,
+        )
+        .await?;
+
+        if !response.status().is_success() {
+            return Err(HistoricalError::RestApiError(format!(
+                "HTTP {} for {} (latest)",
+                response.status(),
+                self.symbol,
+            )));
+        }
+
+        let batch: Vec<RestAggTrade> = response
+            .json()
+            .await
+            .map_err(|e| HistoricalError::RestApiError(format!(
+                "JSON parse error for {}: {e}",
+                self.symbol
+            )))?;
+
+        batch
+            .into_iter()
+            .next()
+            .map(AggTrade::from)
+            .ok_or_else(|| HistoricalError::RestApiError(format!(
+                "No trades returned for {} (latest)",
+                self.symbol,
+            )))
     }
 
     /// Load single day trades with optional checksum verification
@@ -979,5 +1149,65 @@ mod tests {
         assert_eq!(HistoricalDataLoader::new_with_market("BTCUSDT", "um").get_market_path(), "futures/um");
         assert_eq!(HistoricalDataLoader::new_with_market("BTCUSDT", "cm").get_market_path(), "futures/cm");
         assert_eq!(HistoricalDataLoader::new_with_market("BTCUSDT", "unknown").get_market_path(), "spot");
+    }
+
+    // === fromId pagination + 429 backoff tests ===
+
+    #[test]
+    fn test_rest_agg_trade_from_impl() {
+        let rest = RestAggTrade {
+            agg_trade_id: 42,
+            price: "50000.12345678".to_string(),
+            quantity: "1.5".to_string(),
+            first_trade_id: 100,
+            last_trade_id: 102,
+            trade_time: 1700000000000,
+            is_buyer_maker: true,
+        };
+        let trade: AggTrade = rest.into();
+        assert_eq!(trade.agg_trade_id, 42);
+        assert_eq!(trade.first_trade_id, 100);
+        assert_eq!(trade.last_trade_id, 102);
+        assert!(trade.is_buyer_maker);
+        // From impl uses normalize_timestamp: ms → us
+        assert_eq!(trade.timestamp, 1700000000000 * 1000);
+        assert!(trade.price.to_f64() > 49999.0);
+        assert!(trade.volume.to_f64() > 1.0);
+    }
+
+    #[test]
+    fn test_rest_agg_trade_from_consistency_with_csv() {
+        // REST and CSV should produce the same normalized timestamp
+        let rest = RestAggTrade {
+            agg_trade_id: 1,
+            price: "50000.0".to_string(),
+            quantity: "1.0".to_string(),
+            first_trade_id: 1,
+            last_trade_id: 1,
+            trade_time: 1640995200000,
+            is_buyer_maker: false,
+        };
+        let csv = CsvAggTrade(1, 50000.0, 1.0, 1, 1, 1640995200000, false);
+
+        let rest_trade: AggTrade = rest.into();
+        let csv_trade = csv.to_agg_trade("spot");
+
+        // Both should normalize ms → us identically
+        assert_eq!(rest_trade.timestamp, csv_trade.timestamp);
+        assert_eq!(rest_trade.agg_trade_id, csv_trade.agg_trade_id);
+        assert_eq!(rest_trade.is_buyer_maker, csv_trade.is_buyer_maker);
+    }
+
+    #[test]
+    fn test_rate_limit_constants() {
+        assert_eq!(RATE_LIMIT_MAX_RETRIES, 5);
+        assert_eq!(RATE_LIMIT_INITIAL_BACKOFF_MS, 1_000);
+        // Verify backoff schedule: 1s → 2s → 4s → 8s → 16s (capped)
+        let mut backoff = RATE_LIMIT_INITIAL_BACKOFF_MS;
+        let expected = [1_000, 2_000, 4_000, 8_000, 16_000];
+        for &exp in &expected {
+            assert_eq!(backoff, exp);
+            backoff = (backoff * 2).min(16_000);
+        }
     }
 }
