@@ -31,18 +31,15 @@ RANGEBAR_EQUITIES_MIN_THRESHOLD = "100"
 RANGEBAR_UNKNOWN_MIN_THRESHOLD = "1"
 
 # =============================================================================
-# SSoT: Per-Symbol Minimum Thresholds (Issue #89)
+# Per-Symbol Minimum Thresholds (Issue #89)
 # =============================================================================
-# Per-symbol floors enforced by threshold.py:get_min_threshold_for_symbol().
-# Resolution: per-symbol env > asset-class env > fallback default.
-# These env vars are the SOLE SSoT — no parallel config in symbols.toml.
+# SSoT: symbols.toml `min_threshold` field. These env vars are operational
+# overrides only — threshold.py reads the registry first, then falls back here.
+# Resolution: per-symbol env > symbols.toml min_threshold > asset-class env > fallback.
 #
-# Tier A: Confirmed infeasible below 1000 dbps (meme coins — extreme price volatility)
-# Rule: any meme coin where pump-day bar count exceeds ~100K bars at a threshold is
-# classified Tier A. Hurst DFA + Permutation Entropy per-bar is infeasible at that density.
-#
-# SHIBUSDT: 110,727 bars on 2021-05-10 listing pump day at 500 dbps. Hard floor: 1000 dbps.
-RANGEBAR_MIN_THRESHOLD_SHIBUSDT = "1000"
+# Tier A: Meme coins with extreme price volatility
+# SHIBUSDT: min 750 dbps (110K bars on pump day at 500 dbps — infeasible below 750).
+RANGEBAR_MIN_THRESHOLD_SHIBUSDT = "750"
 # WIFUSDT: dogwifhat meme coin — 40x price move in first weeks after 2024-03-05 listing.
 #   No benchmark data yet but meme coin classification + extreme listing volatility
 #   guarantees infeasibility below 1000 dbps. Hard floor: 1000 dbps.
