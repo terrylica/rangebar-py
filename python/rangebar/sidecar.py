@@ -34,9 +34,11 @@ import json
 import logging
 import os
 import signal
+import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import polars as pl
@@ -74,6 +76,7 @@ class SidecarConfig:
     watchdog_timeout_s: int = 300  # 5 min of zero trade increment → dead
     max_watchdog_restarts: int = 3  # Max engine restarts before exit
     max_pending_bars: int = 10_000  # Issue #96 Task #6: Backpressure bound
+    health_port: int = 8081  # Issue #109: Health check HTTP port (0 = disabled)
 
     @classmethod
     def from_env(cls) -> SidecarConfig:
@@ -107,6 +110,7 @@ class SidecarConfig:
                 "RANGEBAR_STREAMING_MAX_WATCHDOG_RESTARTS", 3
             ),
             max_pending_bars=_env_int("RANGEBAR_MAX_PENDING_BARS", 10_000),
+            health_port=_env_int("RANGEBAR_HEALTH_PORT", 8081),
         )
 
 
@@ -166,9 +170,9 @@ def _save_checkpoint(
 # =============================================================================
 
 def _write_bar_to_clickhouse(symbol: str, threshold: int, bar_dict: dict) -> None:
-    """Write a single completed bar to ClickHouse via store_bars_batch() (legacy single-bar path).
+    """Write a single completed bar to ClickHouse (legacy single-bar path).
 
-    Note: This is kept for backward compatibility. For streaming optimization,
+    Kept for backward compatibility. For streaming optimization,
     use _write_bars_batch_to_clickhouse() instead.
     """
     from rangebar.clickhouse.cache import RangeBarCache
@@ -483,13 +487,13 @@ def _restart_engine_with_recovery(
         # Step 4: Create new engine
         new_engine, _ = _create_engine(config, trace_id, gap_fill_results)
         logger.info("engine restart #%d succeeded", restart_attempt)
-        return new_engine, True
-
     except Exception:
         logger.exception(
             "WATCHDOG RESTART FAILED (attempt #%d)", restart_attempt
         )
         return None, False
+    else:
+        return new_engine, True
 
 
 def _notify_restart_failure(
@@ -516,6 +520,57 @@ def _notify_restart_failure(
         logger.info("restart failure alert sent via Telegram")
     except Exception:
         logger.exception("failed to send restart failure alert")
+
+
+# =============================================================================
+# Issue #109: Health check HTTP endpoint
+# =============================================================================
+
+def _start_health_server(port: int) -> HTTPServer | None:
+    """Start a lightweight HTTP health server on a background daemon thread.
+
+    Returns the server instance (for shutdown) or None if port=0 (disabled).
+    """
+    if port == 0:
+        return None
+
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            if self.path != "/health":
+                self.send_error(404)
+                return
+
+            from rangebar.health_checks import run_all_checks
+
+            results = run_all_checks()
+            bool_checks = {k: v for k, v in results.items() if isinstance(v, bool)}
+            all_pass = all(bool_checks.values())
+
+            body = json.dumps(
+                {"status": "healthy" if all_pass else "unhealthy", "checks": results},
+            ).encode()
+            self.send_response(200 if all_pass else 503)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+            # Suppress per-request access logs (too noisy for health probes)
+            pass
+
+    try:
+        server = HTTPServer(("0.0.0.0", port), HealthHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        logger.info("health endpoint listening on port %d", port)
+    except OSError as e:
+        logger.warning(
+            "failed to start health server on port %d: %s", port, e,
+        )
+        return None
+    else:
+        return server
 
 
 # =============================================================================
@@ -557,6 +612,9 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
         config.symbols, config.thresholds, config.include_microstructure,
         config.watchdog_timeout_s, config.max_watchdog_restarts,
     )
+
+    # Issue #109: Start health check HTTP server (daemon thread)
+    health_server = _start_health_server(config.health_port)
 
     # Gap-fill (Layer 2) for all symbol x threshold pairs
     gap_fill_results = None
@@ -727,16 +785,22 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
             # Flush batch if size threshold reached
             if len(bar_batch_buffer[batch_key]) >= batch_max_size:
                 try:
-                    _write_bars_batch_to_clickhouse(symbol, threshold, bar_batch_buffer[batch_key])
+                    batch = bar_batch_buffer[batch_key]
+                    _write_bars_batch_to_clickhouse(
+                        symbol, threshold, batch,
+                    )
                     if config.verbose or bars_written % 100 == 0:
                         logger.info(
                             "%s@%d: batch written (%d bars, total=%d, close=%s)",
-                            symbol, threshold, len(bar_batch_buffer[batch_key]),
+                            symbol, threshold, len(batch),
                             bars_written, bar.get("close"),
                         )
                     bar_batch_buffer[batch_key] = []
                 except Exception:
-                    logger.exception("failed to write batch for %s@%d", symbol, threshold)
+                    logger.exception(
+                        "failed to write batch for %s@%d",
+                        symbol, threshold,
+                    )
 
     finally:
         # Flush all pending bars on shutdown
@@ -750,6 +814,11 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
         _extract_checkpoints(engine, trace_id, bars_written)
 
         engine.shutdown()
+
+        # Issue #109: Shut down health server
+        if health_server is not None:
+            health_server.shutdown()
+
         metrics = engine.get_metrics()
         logger.info(
             "sidecar stopped: bars_written=%d, engine_metrics=%s",

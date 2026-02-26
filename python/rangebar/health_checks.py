@@ -11,7 +11,6 @@ import subprocess
 
 import clickhouse_connect
 import psutil
-from clickhouse_connect.common import ConnectError
 from clickhouse_connect.driver.exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
@@ -35,7 +34,7 @@ def check_clickhouse(host: str = "localhost", port: int = 8123) -> bool:
     try:
         client = clickhouse_connect.get_client(host=host, port=port)
         result = client.query("SELECT 1")
-    except (ConnectError, DatabaseError, OSError):
+    except (DatabaseError, OSError):
         logger.warning("ClickHouse health check failed", exc_info=True)
         return False
     else:
@@ -181,9 +180,21 @@ def run_all_checks(
     dict[str, bool]
         Dictionary mapping check names to their results.
     """
+    # Issue #108: Include circuit breaker state from fatal_cache_write
+    circuit_breaker_state = "unknown"
+    try:
+        from rangebar.orchestration.range_bars_cache import (
+            get_fatal_write_breaker,
+        )
+
+        circuit_breaker_state = get_fatal_write_breaker().state.value
+    except ImportError:
+        pass
+
     return {
         "clickhouse": check_clickhouse(ch_host, ch_port),
         "memory": check_memory(memory_threshold_mb),
         "disk_space": check_disk_space(min_free_gb),
         "websocket": check_websocket(service_name),
+        "circuit_breaker": circuit_breaker_state,
     }
