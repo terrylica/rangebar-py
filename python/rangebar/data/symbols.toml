@@ -303,7 +303,8 @@ exchange = "binance"
 market = "spot"
 tier = 1
 listing_date = 2024-03-05
-processing_notes = "Meme coin with extreme listing volatility: 40x price move in first weeks after 2024-03-05 listing (from ~$0.10 to ~$4.00+). Hurst DFA + Permutation Entropy computation infeasible at sub-1000 dbps bar densities. Hard minimum: 1000 dbps (RANGEBAR_MIN_THRESHOLD_WIFUSDT=1000). Same classification as SHIBUSDT (Tier A meme coin)."
+min_threshold = 1000
+processing_notes = "Meme coin with extreme listing volatility: 40x price move in first weeks after 2024-03-05 listing (from ~$0.10 to ~$4.00+). Hurst DFA + Permutation Entropy computation infeasible at sub-1000 dbps bar densities. Tier A meme coin alongside SHIBUSDT."
 keywords = ["dogwifhat", "wif", "meme"]
 
 [symbols.WLDUSDT]
@@ -321,6 +322,7 @@ asset_class = "crypto"
 exchange = "binance"
 market = "spot"
 listing_date = 2018-06-11
+min_threshold = 500
 processing_notes = "Tron — listed June 2018 with TRX mainnet token swap. USDT pair added simultaneously with mainnet migration announcement. Provisional min 500 dbps (Issue #89)."
 keywords = ["tron", "trx"]
 
@@ -330,6 +332,7 @@ asset_class = "crypto"
 exchange = "binance"
 market = "spot"
 listing_date = 2019-03-21
+min_threshold = 500
 processing_notes = "Zcash USDT pair added March 2019 as additional pair (ZEC/BTC existed since Binance early days). Privacy coin — subject to potential Binance delisting due to regulatory pressure; monitor listing status before investing in long pipeline runs. Provisional min 500 dbps (Issue #89)."
 keywords = ["zcash", "zec", "privacy", "shielded"]
 
@@ -339,6 +342,7 @@ asset_class = "crypto"
 exchange = "binance"
 market = "spot"
 listing_date = 2019-09-29
+min_threshold = 500
 data_anomalies = [
     "2019-09-29 to 2019-09-30: First Binance Vision archive file (2019-09) contains only ~2 days of data — trading opened on Sep 29.",
 ]
@@ -360,7 +364,8 @@ asset_class = "crypto"
 exchange = "binance"
 market = "spot"
 listing_date = 2023-05-05
-processing_notes = "PEPE meme coin (Pepe the Frog). Micro-cent fractional price token with extreme aggTrade file sizes (~200 MB/month). On pump days, sub-1000 dbps thresholds would generate infeasible bar densities for Hurst DFA + Permutation Entropy. Hard minimum: 1000 dbps (RANGEBAR_MIN_THRESHOLD_PEPEUSDT=1000). Tier A meme coin alongside SHIBUSDT and WIFUSDT. Listed in Binance Innovation Zone (higher risk)."
+min_threshold = 1000
+processing_notes = "PEPE meme coin (Pepe the Frog). Micro-cent fractional price token with extreme aggTrade file sizes (~200 MB/month). On pump days, sub-1000 dbps thresholds would generate infeasible bar densities for Hurst DFA + Permutation Entropy. Tier A meme coin. Listed in Binance Innovation Zone (higher risk)."
 keywords = ["pepe", "meme", "frog"]
 
 [symbols.TONUSDT]
@@ -369,6 +374,7 @@ asset_class = "crypto"
 exchange = "binance"
 market = "spot"
 listing_date = 2024-08-08
+min_threshold = 500
 processing_notes = "Toncoin (The Open Network — Telegram blockchain). Late Binance listing August 2024 with Seed Tag applied (users must pass risk acknowledgment quiz every 90 days). Only ~18 months of Binance Vision data as of Feb 2026. Provisional min 500 dbps (Issue #89)."
 keywords = ["ton", "toncoin", "telegram", "the open network"]
 
