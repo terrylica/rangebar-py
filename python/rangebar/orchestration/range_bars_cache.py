@@ -5,6 +5,7 @@ Provides standalone functions extracted from get_range_bars() to reduce
 module size and improve testability:
 - try_cache_read(): Fast-path cache lookup for precomputed bars
 - try_cache_write(): Non-fatal cache write after bar computation
+- fatal_cache_write(): Raises on failure (for populate_cache_resumable)
 """
 
 from __future__ import annotations
@@ -13,11 +14,63 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from rangebar.exceptions import CacheWriteError
+from rangebar.resilience import CircuitBreaker, CircuitState
+
 if TYPE_CHECKING:
     import pandas as pd
     import polars as pl
 
 logger = logging.getLogger(__name__)
+
+# Issue #108: Module-level circuit breaker for fatal cache writes.
+# failure_threshold=3: Open after 3 consecutive failures
+# recovery_timeout=60: Try again after 60 seconds
+_fatal_write_breaker = CircuitBreaker(
+    name="fatal_cache_write",
+    failure_threshold=3,
+    recovery_timeout=60,
+    expected_exception=CacheWriteError,
+)
+
+
+def _on_circuit_state_change(new_state: CircuitState) -> None:
+    """Issue #108: Log circuit breaker state transitions as NDJSON."""
+    try:
+        from rangebar.logging import get_logger
+
+        get_logger().bind(
+            component="circuit_breaker",
+            event="state_transition",
+            name="fatal_cache_write",
+            to_state=new_state.value,
+            failure_count=_fatal_write_breaker.failure_count,
+        ).warning(f"Circuit breaker fatal_cache_write → {new_state.value}")
+    except (ImportError, AttributeError, OSError):
+        logger.warning("Circuit breaker fatal_cache_write → %s", new_state.value)
+
+    # Telegram alert on circuit open
+    if new_state == CircuitState.OPEN:
+        try:
+            from rangebar.notify.telegram import send_telegram
+
+            send_telegram(
+                f"🔴 <b>Circuit breaker OPEN</b>: fatal_cache_write\n"
+                f"ClickHouse writes disabled after "
+                f"{_fatal_write_breaker.failure_count} consecutive failures.\n"
+                f"Will retry in {_fatal_write_breaker.recovery_timeout}s.",
+                disable_notification=False,
+            )
+        except (ImportError, ConnectionError, OSError):
+            logger.debug("Telegram notification failed (non-fatal)")
+
+
+_fatal_write_breaker.add_callback(_on_circuit_state_change)
+
+
+def get_fatal_write_breaker() -> CircuitBreaker:
+    """Get the module-level circuit breaker for health check reporting."""
+    return _fatal_write_breaker
 
 
 def try_cache_read(
@@ -181,48 +234,13 @@ def try_cache_write(
         logger.warning("Cache write failed (non-fatal): %s", e)
 
 
-def fatal_cache_write(
-    bars: pd.DataFrame | pl.DataFrame,  # Issue #96 Task #13: Accept both formats
+def _do_fatal_cache_write(
+    bars: pd.DataFrame | pl.DataFrame,
     symbol: str,
     threshold_decimal_bps: int,
     ouroboros: str,
 ) -> int:
-    """Write bars to ClickHouse cache. Raises on failure.
-
-    Unlike try_cache_write(), this function is for populate_cache_resumable()
-    where ClickHouse IS the destination, not an optional cache layer.
-    Failures must be visible to the caller so that:
-    - bars_written reflects reality (actual persisted count, not computed count)
-    - checkpoints are only saved for days that succeeded
-    - force_refresh + write failure does not silently lose data
-
-    Parameters
-    ----------
-    bars : pd.DataFrame | pl.DataFrame
-        Range bar data to write (Pandas or Polars DataFrame).
-        Issue #96 Task #13: Arrow optimization - accepts both formats.
-    symbol : str
-        Trading symbol (e.g., "BTCUSDT").
-    threshold_decimal_bps : int
-        Threshold in decimal basis points.
-    ouroboros : str
-        Ouroboros mode ("year", "month", "week").
-
-    Returns
-    -------
-    int
-        Number of rows actually written to ClickHouse.
-
-    Raises
-    ------
-    CacheWriteError
-        If the write fails for any reason (connection, schema, disk, etc.).
-    """
-    from rangebar.exceptions import CacheWriteError
-
-    if bars is None or (hasattr(bars, "is_empty") and bars.is_empty()) or (hasattr(bars, "empty") and bars.empty):
-        return 0
-
+    """Inner write logic for fatal_cache_write (called through circuit breaker)."""
     try:
         import polars as pl
 
@@ -234,8 +252,6 @@ def fatal_cache_write(
             if isinstance(bars, pl.DataFrame):
                 bars_pl = bars
             else:
-                # Pandas path: convert to Polars (fallback)
-                # Use include_index=True to avoid unnecessary reset_index() copy
                 bars_pl = pl.from_pandas(bars, include_index=True)
             written = cache.store_bars_batch(
                 symbol=symbol,
@@ -272,3 +288,50 @@ def fatal_cache_write(
             symbol=symbol,
             operation="fatal_cache_write",
         ) from e
+
+
+def fatal_cache_write(
+    bars: pd.DataFrame | pl.DataFrame,  # Issue #96 Task #13: Accept both formats
+    symbol: str,
+    threshold_decimal_bps: int,
+    ouroboros: str,
+) -> int:
+    """Write bars to ClickHouse cache. Raises on failure.
+
+    Issue #108: Wrapped with circuit breaker to prevent cascading failures.
+    After 3 consecutive CacheWriteError failures, the circuit opens and
+    subsequent calls raise CircuitOpenError immediately (no ClickHouse attempt).
+    The circuit auto-recovers after 60 seconds.
+
+    Unlike try_cache_write(), this function is for populate_cache_resumable()
+    where ClickHouse IS the destination, not an optional cache layer.
+
+    Parameters
+    ----------
+    bars : pd.DataFrame | pl.DataFrame
+        Range bar data to write (Pandas or Polars DataFrame).
+    symbol : str
+        Trading symbol (e.g., "BTCUSDT").
+    threshold_decimal_bps : int
+        Threshold in decimal basis points.
+    ouroboros : str
+        Ouroboros mode ("year", "month", "week").
+
+    Returns
+    -------
+    int
+        Number of rows actually written to ClickHouse.
+
+    Raises
+    ------
+    CacheWriteError
+        If the write fails for any reason (connection, schema, disk, etc.).
+    CircuitOpenError
+        If the circuit breaker is open (too many recent failures).
+    """
+    if bars is None or (hasattr(bars, "is_empty") and bars.is_empty()) or (hasattr(bars, "empty") and bars.empty):
+        return 0
+
+    return _fatal_write_breaker.call(
+        _do_fatal_cache_write, bars, symbol, threshold_decimal_bps, ouroboros,
+    )
