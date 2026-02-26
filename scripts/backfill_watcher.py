@@ -156,6 +156,36 @@ def _mark_failed(cache: object, request_ids: list[str], error: str) -> None:
         )
 
 
+def _update_progress(
+    cache: object,
+    request_ids: list[str],
+    bars_written: int,
+    completed_thresholds: int,
+    total_thresholds: int,
+) -> None:
+    """Issue #104: Update in-flight progress for flowsurface to poll.
+
+    Updates bars_written while request is still 'running', so flowsurface
+    can display incremental progress without waiting for full completion.
+    """
+    for request_id in request_ids:
+        cache.client.command(
+            "ALTER TABLE rangebar_cache.backfill_requests UPDATE "
+            "bars_written = {bars_written:UInt32} "
+            "WHERE request_id = {request_id:String} AND status = 'running'",
+            parameters={
+                "request_id": request_id,
+                "bars_written": bars_written,
+            },
+        )
+    logger.debug(
+        "Progress: %d/%d thresholds, %d bars written",
+        completed_thresholds,
+        total_thresholds,
+        bars_written,
+    )
+
+
 def _resolve_thresholds(cache: object, symbol: str, threshold: int) -> list[int]:
     """Resolve threshold_decimal_bps, handling the DEFAULT 0 case.
 
@@ -283,7 +313,7 @@ def _process_request_group(
     any_failed = False
     last_error = ""
 
-    for t in actionable:
+    for i, t in enumerate(actionable):
         try:
             result = backfill_recent(
                 symbol,
@@ -326,6 +356,9 @@ def _process_request_group(
             result.bars_written,
             result.gap_seconds / 60,
         )
+
+        # Issue #104: Incremental progress update after each threshold completes
+        _update_progress(cache, all_ids, total_bars, i + 1, len(actionable))
 
     if any_failed and total_bars == 0:
         _mark_failed(cache, all_ids, last_error)

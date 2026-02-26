@@ -1,3 +1,4 @@
+# FILE-SIZE-OK: query methods are cohesive
 # polars-exception: backtesting.py requires Pandas DataFrames with DatetimeIndex
 # Issue #46: Modularization M6 - Extract query operations from cache.py
 """Query operations for ClickHouse range bar cache.
@@ -256,6 +257,71 @@ class QueryOperationsMixin:
             return None
 
         return result.result_rows[0][0]
+
+    def get_backfill_status(
+        self,
+        symbol: str,
+        limit: int = 10,
+    ) -> list[dict]:
+        """Get backfill request status for a symbol (Issue #104).
+
+        Returns recent backfill requests for flowsurface to poll.
+        Includes in-flight progress (bars_written updates incrementally
+        while status is 'running').
+
+        Parameters
+        ----------
+        symbol : str
+            Trading symbol (e.g., "BTCUSDT")
+        limit : int
+            Maximum number of recent requests to return.
+
+        Returns
+        -------
+        list[dict]
+            List of request status dicts with keys:
+            request_id, symbol, threshold_decimal_bps, status,
+            requested_at, started_at, completed_at, bars_written,
+            gap_seconds, error.
+        """
+        query = """
+            SELECT
+                toString(request_id) AS request_id,
+                symbol,
+                threshold_decimal_bps,
+                status,
+                requested_at,
+                started_at,
+                completed_at,
+                bars_written,
+                gap_seconds,
+                error
+            FROM rangebar_cache.backfill_requests FINAL
+            WHERE symbol = {symbol:String}
+            ORDER BY requested_at DESC
+            LIMIT {limit:UInt32}
+        """
+        try:
+            result = self.client.query(
+                query,
+                parameters={"symbol": symbol, "limit": limit},
+                settings=FINAL_READ_SETTINGS,
+            )
+        except (OSError, RuntimeError):
+            logger.exception(
+                "Failed to query backfill status for %s", symbol,
+            )
+            return []
+
+        columns = [
+            "request_id", "symbol", "threshold_decimal_bps", "status",
+            "requested_at", "started_at", "completed_at", "bars_written",
+            "gap_seconds", "error",
+        ]
+        return [
+            dict(zip(columns, row, strict=False))
+            for row in result.result_rows
+        ]
 
     def get_bars_by_timestamp_range(
         self,
