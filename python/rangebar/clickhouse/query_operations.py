@@ -21,6 +21,7 @@ from ..constants import (
     INTRA_BAR_FEATURE_COLUMNS,
     MICROSTRUCTURE_COLUMNS,
     MIN_VERSION_FOR_MICROSTRUCTURE,
+    TRADE_ID_RANGE_COLUMNS,  # Issue #111: Ariadne at every boundary
 )
 from ..conversion import normalize_arrow_dtypes
 from ..exceptions import CacheReadError
@@ -97,6 +98,8 @@ class QueryOperationsMixin:
         """
         # Issue #101: Bar flags always included (lightweight boolean metadata)
         base_cols += "," + ",".join(BAR_FLAG_COLUMNS)
+        # Issue #111 (Ariadne): Trade IDs at every read boundary
+        base_cols += "," + ",".join(TRADE_ID_RANGE_COLUMNS)
         if include_microstructure:
             base_cols += """,
             vwap,
@@ -258,6 +261,58 @@ class QueryOperationsMixin:
 
         return result.result_rows[0][0]
 
+    def get_ariadne_high_water_mark(
+        self,
+        symbol: str,
+        threshold_decimal_bps: int,
+    ) -> int | None:
+        """Get the highest last_agg_trade_id written for a symbol x threshold.
+
+        Issue #111 (Ariadne): This is the resume point — every boundary
+        and every touchpoint. Returns the exact trade ID to pass to
+        ``fetch_aggtrades_by_id(symbol, hwm + 1)`` for gap-free resume.
+
+        Parameters
+        ----------
+        symbol : str
+            Trading symbol (e.g., "BTCUSDT")
+        threshold_decimal_bps : int
+            Threshold in decimal basis points
+
+        Returns
+        -------
+        int | None
+            Highest last_agg_trade_id, or None if no bars have trade IDs.
+        """
+        query = """
+            SELECT max(last_agg_trade_id) as hwm
+            FROM rangebar_cache.range_bars FINAL
+            WHERE symbol = {symbol:String}
+              AND threshold_decimal_bps = {threshold:UInt32}
+              AND last_agg_trade_id > 0
+        """
+        params: dict[str, str | int] = {
+            "symbol": symbol,
+            "threshold": threshold_decimal_bps,
+        }
+
+        try:
+            result = self.client.query(
+                query, parameters=params,
+                settings=FINAL_READ_SETTINGS,
+            )
+        except (OSError, RuntimeError):
+            logger.exception(
+                "Failed to query Ariadne HWM for %s @ %d dbps",
+                symbol, threshold_decimal_bps,
+            )
+            return None
+
+        if not result.result_rows or result.result_rows[0][0] == 0:
+            return None
+
+        return result.result_rows[0][0]
+
     def get_backfill_status(
         self,
         symbol: str,
@@ -386,6 +441,8 @@ class QueryOperationsMixin:
         """
         # Issue #101: Bar flags always included (lightweight boolean metadata)
         base_cols += "," + ",".join(BAR_FLAG_COLUMNS)
+        # Issue #111 (Ariadne): Trade IDs at every read boundary
+        base_cols += "," + ",".join(TRADE_ID_RANGE_COLUMNS)
         if include_microstructure:
             base_cols += """,
             vwap,

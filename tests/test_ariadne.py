@@ -1,7 +1,9 @@
 """Tests for Issue #111: Ariadne trade ID tracking.
 
 Validates checkpoint persistence of last_processed_agg_trade_id,
-feature flag gating, and fallback to timestamp-based resume.
+feature flag gating (ON by default), and fallback to timestamp-based resume.
+
+Ariadne sets every boundary and every touchpoint.
 """
 
 from __future__ import annotations
@@ -45,30 +47,30 @@ def test_checkpoint_defaults_to_none():
     assert cp.last_processed_agg_trade_id is None
 
 
-def test_ariadne_feature_flag_off_by_default():
-    """Ariadne is disabled by default."""
-    from rangebar.checkpoint import _ariadne_enabled
+def test_ariadne_on_by_default():
+    """Ariadne is enabled by default (every boundary, every touchpoint)."""
+    from rangebar.checkpoint import _ariadne_disabled
 
     env = {k: v for k, v in os.environ.items() if k != "RANGEBAR_ARIADNE_ENABLED"}
     with patch.dict(os.environ, env, clear=True):
-        assert _ariadne_enabled() is False
+        assert _ariadne_disabled() is False
 
 
-def test_ariadne_feature_flag_enabled():
-    """Ariadne can be enabled via env var."""
-    from rangebar.checkpoint import _ariadne_enabled
-
-    with patch.dict(os.environ, {"RANGEBAR_ARIADNE_ENABLED": "true"}):
-        assert _ariadne_enabled() is True
-
-    with patch.dict(os.environ, {"RANGEBAR_ARIADNE_ENABLED": "1"}):
-        assert _ariadne_enabled() is True
-
-    with patch.dict(os.environ, {"RANGEBAR_ARIADNE_ENABLED": "yes"}):
-        assert _ariadne_enabled() is True
+def test_ariadne_explicit_disable():
+    """Ariadne can be explicitly disabled via env var."""
+    from rangebar.checkpoint import _ariadne_disabled
 
     with patch.dict(os.environ, {"RANGEBAR_ARIADNE_ENABLED": "false"}):
-        assert _ariadne_enabled() is False
+        assert _ariadne_disabled() is True
+
+    with patch.dict(os.environ, {"RANGEBAR_ARIADNE_ENABLED": "0"}):
+        assert _ariadne_disabled() is True
+
+    with patch.dict(os.environ, {"RANGEBAR_ARIADNE_ENABLED": "no"}):
+        assert _ariadne_disabled() is True
+
+    with patch.dict(os.environ, {"RANGEBAR_ARIADNE_ENABLED": "true"}):
+        assert _ariadne_disabled() is False
 
 
 def test_ariadne_fallback_when_no_trade_id():

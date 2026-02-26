@@ -383,10 +383,14 @@ def _date_range(start_date: str, end_date: str) -> Iterator[str]:
         current += timedelta(days=1)
 
 
-def _ariadne_enabled() -> bool:
-    """Check if Ariadne (trade-ID resume) is enabled via feature flag."""
-    val = os.environ.get("RANGEBAR_ARIADNE_ENABLED", "")
-    return val.lower() in ("1", "true", "yes")
+def _ariadne_disabled() -> bool:
+    """Check if Ariadne (trade-ID resume) is explicitly disabled.
+
+    Ariadne is ON by default. Set ``RANGEBAR_ARIADNE_ENABLED=false`` to
+    fall back to timestamp-based resume.
+    """
+    val = os.environ.get("RANGEBAR_ARIADNE_ENABLED", "true")
+    return val.lower() in ("0", "false", "no")
 
 
 def _ariadne_resume(
@@ -821,16 +825,17 @@ def populate_cache_resumable(
         checkpoint.created_at if checkpoint else datetime.now(UTC).isoformat()
     )
 
-    # Issue #111 (Ariadne): If high-water mark is available and feature enabled,
-    # resume via trade ID instead of day-by-day timestamp fetching.
+    # Issue #111 (Ariadne): Resume via trade ID by default.
+    # Deterministic, gap-free — every boundary, every touchpoint.
+    # Disable with RANGEBAR_ARIADNE_ENABLED=false to fall back to timestamps.
     if (
-        _ariadne_enabled()
+        not _ariadne_disabled()
         and checkpoint is not None
         and checkpoint.last_processed_agg_trade_id
         and active_processor is not None
     ):
         logger.info(
-            "Ariadne enabled: resuming %s via trade ID %d",
+            "Ariadne: resuming %s via trade ID %d",
             symbol,
             checkpoint.last_processed_agg_trade_id,
         )

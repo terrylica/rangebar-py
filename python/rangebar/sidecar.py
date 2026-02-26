@@ -153,6 +153,10 @@ def _save_checkpoint(
         ),
         "updated_at": time.time(),
     }
+    # Issue #111 (Ariadne): Track trade ID at the streaming boundary
+    last_trade_id = bar_dict.get("last_agg_trade_id")
+    if last_trade_id and last_trade_id > 0:
+        checkpoint["last_agg_trade_id"] = last_trade_id
     if processor_checkpoint is not None:
         checkpoint["processor_checkpoint"] = processor_checkpoint
     # Issue #97: Provenance metadata for forensic reconstruction
@@ -535,7 +539,7 @@ def _start_health_server(port: int) -> HTTPServer | None:
         return None
 
     class HealthHandler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             if self.path != "/health":
                 self.send_error(404)
                 return

@@ -183,6 +183,10 @@ ignore = [
 "python/rangebar/config.py" = [
     "PLC0415", # Lazy imports to avoid ClickHouse import-time checks
 ]
+"python/rangebar/sidecar.py" = [
+    "N802",    # do_GET required by BaseHTTPRequestHandler
+    "PLC0415", # Lazy imports (avoid importing heavy deps at module level)
+]
 "python/rangebar/__init__.pyi" = [
     "PYI021",  # Docstrings in stubs (kept for documentation)
     "PYI034",  # Self return type (intentional RangeBarCache return)
@@ -201,9 +205,6 @@ ignore = [
     "TRY300",  # Consider moving to else block
     "E501",    # Line too long (docstring examples)
     "E402",    # Module-level import not at top (lazy imports after __all__)
-]
-"python/rangebar/sidecar.py" = [
-    "PLC0415", # Lazy imports (avoid importing heavy deps at module level)
 ]
 "python/rangebar/processors/api.py" = [
     "PLC0415", # Lazy imports for optional ClickHouse/Polars dependencies
