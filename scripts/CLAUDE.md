@@ -19,6 +19,9 @@ Operational scripts for cache population, validation, and distributed job manage
 | Validate dedup hardening   | `mise run cache:validate-dedup`                   | Issue #90                                             |
 | Validate microstructure    | `uv run python scripts/validate_microstructure_*` | [Validation Scripts](#validation-scripts)             |
 | Run streaming sidecar      | `mise run streaming:sidecar`                      | v12.20+, real-time range bars                         |
+| Kintsugi (single pass)     | `mise run kintsugi`                               | [Kintsugi](#kintsugi)                                 |
+| Kintsugi (daemon)          | `mise run kintsugi:daemon`                        | Long-running self-healer                              |
+| Kintsugi (dry-run)         | `mise run kintsugi:check`                         | Discover shards without repairing                     |
 
 ---
 
@@ -227,6 +230,33 @@ Compiled Swift binary at `~/.claude/automation/rangebar-heartbeat/rangebar-heart
 ### Gap Detection Query (SSoT)
 
 Uses ClickHouse `neighbor()` window function to compute inter-bar time deltas within each `(symbol, threshold)` partition. Gaps exceeding `--min-gap-hours` (default 6h) are flagged.
+
+---
+
+## Kintsugi
+
+Self-healing gap reconciliation (Issue #115). Discovers interior gaps ("shards") in the ClickHouse cache and repairs them autonomously using Ariadne (fromId pagination) + Ouroboros (boundary-aware splits).
+
+| Script/File        | Purpose                                |
+| ------------------ | -------------------------------------- |
+| `kintsugi.py`      | CLI entry point + daemon mode          |
+| `kintsugi.toml`    | mise task definitions (`.mise/tasks/`) |
+| `kintsugi.service` | systemd unit (`scripts/systemd/`)      |
+
+### Core engine: `python/rangebar/kintsugi.py`
+
+- `discover_shards()` — runs `detect_gaps.py --json`, enriches with Ariadne anchors + Ouroboros boundaries
+- `repair_shard()` — P0/P1 via `backfill_recent()`, P2 via `populate_cache_resumable()`
+- `verify_repair()` — re-runs gap detection to confirm gap is healed
+- `kintsugi_pass()` — single discover-repair-verify cycle
+- `kintsugi_daemon()` — long-running adaptive polling (30 min clean, 15 min active)
+
+### Safeguards
+
+- Max 3 repair attempts per shard per 24h (rate-limited via `kintsugi_log`)
+- P2 jobs capped by `--max-p2-jobs` (default 1)
+- Sidecar dead-letter replay on daemon startup
+- Telegram alerts on repair failures
 
 ---
 

@@ -273,9 +273,11 @@ This file is the **hub**. Each spoke CLAUDE.md is loaded automatically when work
 
 ## Terminology
 
-| Term                     | Acronym | Definition                                                                                                           |
-| ------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------- |
-| **Decimal Basis Points** | dbps    | 1 dbps = 0.001% = 0.00001. Example: 250 dbps = 0.25%. **All threshold values use dbps.**                             |
-| **Ouroboros**            | —       | Cyclical reset boundary (year/month/week). Resets processor state for reproducibility and cache-friendly processing. |
-| **Orphaned Bar**         | —       | Incomplete bar at an ouroboros boundary. Marked `is_orphan=True` with metadata.                                      |
-| **Dynamic Ouroboros**    | —       | Forex-specific: reset at first tick after weekend gap, auto-handling DST shifts.                                     |
+| Term                  | Acronym | Definition                                                                                                            |
+| --------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
+| **dbps**              | dbps    | 1 dbps = 0.001% = 0.00001. Example: 250 dbps = 0.25%. **All threshold values use dbps.**                              |
+| **Ouroboros**         | —       | Cyclical reset boundary (year/month/week). Resets processor state for reproducibility and cache-friendly processing.  |
+| **Orphaned Bar**      | —       | Incomplete bar at an ouroboros boundary. Marked `is_orphan=True` with metadata.                                       |
+| **Dynamic Ouroboros** | —       | Forex-specific: reset at first tick after weekend gap, auto-handling DST shifts.                                      |
+| **Kintsugi**          | —       | Self-healing gap reconciliation (Issue #115). Discovers gaps ("shards") and repairs using Ariadne+Ouroboros.          |
+| **Shard**             | —       | A gap in the data timeline. Classified P0 (staleness), P1 (recent <48h), P2 (historical >=48h). Repaired by Kintsugi. |

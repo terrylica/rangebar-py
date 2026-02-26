@@ -10,18 +10,19 @@ This directory contains the Python API layer for rangebar-py.
 
 ### Common Tasks & Entry Points
 
-| When Claude is asked to...              | Primary File          | Function/Class                   |
-| --------------------------------------- | --------------------- | -------------------------------- |
-| Generate range bars (date-bounded)      | `__init__.py`         | `get_range_bars()`               |
-| Generate range bars (count-bounded, ML) | `__init__.py`         | `get_n_range_bars()`             |
-| Generate range bars (existing data)     | `__init__.py`         | `process_trades_to_dataframe()`  |
-| Generate range bars (Polars)            | `__init__.py`         | `process_trades_polars()`        |
-| Process large datasets                  | `__init__.py`         | `process_trades_chunked()`       |
-| Run streaming sidecar                   | `sidecar.py`          | `run_sidecar()`, `SidecarConfig` |
-| Populate cache for long ranges          | `checkpoint.py`       | `populate_cache_resumable()`     |
-| Read/write tick data                    | `storage/parquet.py`  | `TickStorage` class              |
-| Bar-count cache operations              | `clickhouse/cache.py` | `count_bars()`, `get_n_bars()`   |
-| Validate microstructure features        | `validation/tier1.py` | `validate_tier1()`               |
+| When Claude is asked to...              | Primary File          | Function/Class                         |
+| --------------------------------------- | --------------------- | -------------------------------------- |
+| Generate range bars (date-bounded)      | `__init__.py`         | `get_range_bars()`                     |
+| Generate range bars (count-bounded, ML) | `__init__.py`         | `get_n_range_bars()`                   |
+| Generate range bars (existing data)     | `__init__.py`         | `process_trades_to_dataframe()`        |
+| Generate range bars (Polars)            | `__init__.py`         | `process_trades_polars()`              |
+| Process large datasets                  | `__init__.py`         | `process_trades_chunked()`             |
+| Run streaming sidecar                   | `sidecar.py`          | `run_sidecar()`, `SidecarConfig`       |
+| Populate cache for long ranges          | `checkpoint.py`       | `populate_cache_resumable()`           |
+| Read/write tick data                    | `storage/parquet.py`  | `TickStorage` class                    |
+| Bar-count cache operations              | `clickhouse/cache.py` | `count_bars()`, `get_n_bars()`         |
+| Validate microstructure features        | `validation/tier1.py` | `validate_tier1()`                     |
+| Self-healing gap reconciliation         | `kintsugi.py`         | `kintsugi_pass()`, `kintsugi_daemon()` |
 
 ### API Selection Guide
 
@@ -49,6 +50,7 @@ Starting Point?
 | `validation/tier1.py`   | Fast validation (<30 sec)                       |
 | `validation/tier2.py`   | Statistical validation (~10 min)                |
 | `exness.py`             | Exness data source utilities                    |
+| `kintsugi.py`           | Self-healing gap reconciliation (Issue #115)    |
 
 ### Performance Optimization Checklist
 
