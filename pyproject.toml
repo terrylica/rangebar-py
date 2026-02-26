@@ -180,6 +180,9 @@ ignore = [
     "B904",    # Within except clause, raise with from
     "E501",    # Line too long (examples can be verbose)
 ]
+"python/rangebar/config.py" = [
+    "PLC0415", # Lazy imports to avoid ClickHouse import-time checks
+]
 "python/rangebar/__init__.pyi" = [
     "PYI021",  # Docstrings in stubs (kept for documentation)
     "PYI034",  # Self return type (intentional RangeBarCache return)
