@@ -1,3 +1,25 @@
+# [12.30.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.29.0...v12.30.0) (2026-02-26)
+
+
+### Bug Fixes
+
+* **#112:** gap-aware checkpoint recovery and bar range validation ([24c4fc1](https://github.com-terrylica/terrylica/rangebar-py/commit/24c4fc17bef2ab17a41b27dd32eddaea71a7936c)), closes [#112](https://github.com-terrylica/terrylica/rangebar-py/issues/112)
+* **#96:** update inter-bar tests for max_safe_capacity and real market data ([a42453c](https://github.com-terrylica/terrylica/rangebar-py/commit/a42453ca1e7a3e349e3da316efffff2373de41ab)), closes [#96](https://github.com-terrylica/terrylica/rangebar-py/issues/96)
+* **deploy:bigblack:** bulletproof git sync and venv installation ([e3b2f25](https://github.com-terrylica/terrylica/rangebar-py/commit/e3b2f25b45fc19373c6db2ea08999d2da22894c3))
+
+
+### Features
+
+* **#104:** backfill progress reporting and status query ([3b7a75b](https://github.com-terrylica/terrylica/rangebar-py/commit/3b7a75bb3c6e16710a52059a96e75776ecac680c)), closes [#104](https://github.com-terrylica/terrylica/rangebar-py/issues/104)
+* **#108:** live streaming range bar chart with direct WS + processor ([0fa2a47](https://github.com-terrylica/terrylica/rangebar-py/commit/0fa2a47513c1446e0e2e1580ab4cd619851556e0)), closes [#108](https://github.com-terrylica/terrylica/rangebar-py/issues/108)
+* **#108:** wire circuit breaker into fatal_cache_write ([c54f80d](https://github.com-terrylica/terrylica/rangebar-py/commit/c54f80dd1fbe3653aa01d4d720155e305ed0bce0)), closes [#108](https://github.com-terrylica/terrylica/rangebar-py/issues/108)
+* **#109:** health check endpoint with CLI and HTTP sidecar ([ab35915](https://github.com-terrylica/terrylica/rangebar-py/commit/ab35915562fc77d80e9ecb27244779361a61bf22)), closes [#109](https://github.com-terrylica/terrylica/rangebar-py/issues/109)
+* **#110:** unified Settings singleton for configuration ([9ebe3b2](https://github.com-terrylica/terrylica/rangebar-py/commit/9ebe3b2120e9f3594b8a55c907163f90b57b14e8)), closes [#110](https://github.com-terrylica/terrylica/rangebar-py/issues/110)
+* **#111:** Ariadne at every boundary and every touchpoint ([8686bc3](https://github.com-terrylica/terrylica/rangebar-py/commit/8686bc31cd4f0608f2cf093151221bdd1f7117ee)), closes [#111](https://github.com-terrylica/terrylica/rangebar-py/issues/111)
+* **#111:** Ariadne trade-ID resume via fromId pagination ([00d9ac8](https://github.com-terrylica/terrylica/rangebar-py/commit/00d9ac8843aa2a499e6840d5a4ee7546a047e424)), closes [#111](https://github.com-terrylica/terrylica/rangebar-py/issues/111)
+* **#97:** add health checks, resilience module, and ouroboros tests ([ce7490a](https://github.com-terrylica/terrylica/rangebar-py/commit/ce7490ad79beed44bc6f14af855f6300cc158c80)), closes [#97](https://github.com-terrylica/terrylica/rangebar-py/issues/97)
+* **#97:** add ouroboros_mode filter to ClickHouse queries and checkpoints ([0e763e7](https://github.com-terrylica/terrylica/rangebar-py/commit/0e763e79f1b0c1996f901a7292f64caf0fdddaf1)), closes [#97](https://github.com-terrylica/terrylica/rangebar-py/issues/97)
+
 # [12.29.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.28.0...v12.29.0) (2026-02-26)
 
 
