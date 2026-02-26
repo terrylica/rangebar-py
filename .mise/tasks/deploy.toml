@@ -21,15 +21,19 @@ if ! ssh -o ConnectTimeout=10 -o BatchMode=yes "$REMOTE_HOST" "echo connected" >
 fi
 echo "OK: SSH connectivity verified"
 
-# Step 2: Git pull latest
-echo "Pulling latest from origin..."
-ssh "$REMOTE_HOST" "cd $REMOTE_DIR && git pull origin main"
-echo "OK: Git pull complete"
+# Step 2: Force-sync to origin/main (bigblack is a deploy target, not a dev env)
+echo "Syncing to origin/main..."
+ssh "$REMOTE_HOST" "cd $REMOTE_DIR && git fetch origin main && git reset --hard origin/main && git clean -fd"
+echo "OK: Git sync complete"
 
 # Step 3: Recreate venv and install latest rangebar from PyPI using uv
 VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+if [ -z "$VERSION" ]; then
+    echo "FAIL: Could not extract version from Cargo.toml"
+    exit 1
+fi
 echo "Recreating venv and installing rangebar==$VERSION from PyPI..."
-ssh "$REMOTE_HOST" "cd $REMOTE_DIR && rm -rf .venv && uv venv .venv && .venv/bin/pip install --upgrade rangebar==$VERSION"
+ssh "$REMOTE_HOST" "cd $REMOTE_DIR && rm -rf .venv && uv venv .venv && uv pip install --python $REMOTE_DIR/.venv/bin/python3 rangebar==$VERSION"
 echo "OK: rangebar $VERSION installed"
 
 # Step 4: Verify version alignment
@@ -93,6 +97,12 @@ echo "rangebar: local=$LOCAL_VERSION remote=$REMOTE_VERSION"
 REMOTE_BRANCH=$(ssh "$REMOTE_HOST" "cd $REMOTE_DIR && git rev-parse --short HEAD")
 LOCAL_BRANCH=$(git rev-parse --short HEAD)
 echo "git HEAD: local=$LOCAL_BRANCH remote=$REMOTE_BRANCH"
+REMOTE_DIRTY=$(ssh "$REMOTE_HOST" "cd $REMOTE_DIR && git status --porcelain" 2>/dev/null || echo "")
+if [ -n "$REMOTE_DIRTY" ]; then
+    echo "git clean: NO (untracked/modified files present)"
+else
+    echo "git clean: YES"
+fi
 
 # ClickHouse
 CH_OK=$(ssh "$REMOTE_HOST" "curl -sf 'http://localhost:8123/?query=SELECT+1'" 2>/dev/null || echo "")
