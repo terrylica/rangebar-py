@@ -3,13 +3,14 @@
 Description=RangeBar Kintsugi (Self-Healing Gap Reconciler)
 After=network-online.target clickhouse-server.service
 Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 # Issue #117: sd_notify("WATCHDOG=1") sent after each kintsugi_pass()
 Type=notify
 NotifyAccess=all
 WatchdogSec=3600
-User=tca
 WorkingDirectory=/home/tca/rangebar-py
 EnvironmentFile=/home/tca/rangebar-py/deploy/rangebar.env
 ExecStart=/home/tca/rangebar-py/.venv/bin/python3 /home/tca/rangebar-py/scripts/kintsugi.py --daemon
@@ -17,8 +18,6 @@ ExecStart=/home/tca/rangebar-py/.venv/bin/python3 /home/tca/rangebar-py/scripts/
 # Restart policy
 Restart=always
 RestartSec=60
-StartLimitIntervalSec=600
-StartLimitBurst=5
 
 # Resource limits (lower priority than sidecar)
 Nice=5

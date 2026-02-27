@@ -2,13 +2,14 @@
 Description=rangebar-py streaming sidecar (Issue #107, #117)
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 # Issue #117: healthdog-rs bridges HTTP health → systemd watchdog
 Type=notify
 NotifyAccess=all
 WatchdogSec=300
-User=tca
 WorkingDirectory=/home/tca/rangebar-py
 EnvironmentFile=/home/tca/rangebar-py/deploy/rangebar.env
 EnvironmentFile=/home/tca/rangebar-py/deploy/sidecar.env
@@ -19,9 +20,6 @@ ExecStart=/home/tca/.cargo/bin/healthdog \
 # Restart policy (Issue #107 P3)
 Restart=always
 RestartSec=10
-StartLimitIntervalSec=600
-StartLimitBurst=5
-StartLimitAction=reboot
 
 # OOM protection (Issue #107 P4 - prevents batch jobs from starving sidecar)
 MemoryHigh=2G
