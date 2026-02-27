@@ -134,7 +134,12 @@ def _checkpoint_path(symbol: str, threshold: int) -> Path:
 def _load_checkpoint(symbol: str, threshold: int) -> dict | None:
     path = _checkpoint_path(symbol, threshold)
     if path.exists():
-        return json.loads(path.read_text())
+        data = json.loads(path.read_text())
+        # Migrate legacy checkpoint key (timestamp_ms → close_time_ms rename)
+        if "last_bar_timestamp_ms" in data and "last_bar_close_time_ms" not in data:
+            data["last_bar_close_time_ms"] = data.pop("last_bar_timestamp_ms")
+            path.write_text(json.dumps(data))
+        return data
     return None
 
 
@@ -149,9 +154,7 @@ def _save_checkpoint(
     checkpoint = {
         "symbol": symbol,
         "threshold": threshold,
-        "last_bar_timestamp_ms": (
-            bar_dict.get("timestamp_ms") or bar_dict.get("close_time")
-        ),
+        "last_bar_close_time_ms": bar_dict.get("close_time_ms"),
         "updated_at": time.time(),
     }
     # Issue #111 (Ariadne): Track trade ID at the streaming boundary
