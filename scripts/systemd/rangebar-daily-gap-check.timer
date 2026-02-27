@@ -1,0 +1,12 @@
+# Issue #122: Daily exhaustive gap detection timer
+# Fires once per day at 06:00 UTC (22:00 PST)
+[Unit]
+Description=RangeBar Daily Exhaustive Gap Detection Timer
+
+[Timer]
+OnCalendar=*-*-* 06:00:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

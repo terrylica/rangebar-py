@@ -1,0 +1,27 @@
+# Issue #122: Daily exhaustive gap detection (not windowed)
+# Runs once per day via rangebar-daily-gap-check.timer
+[Unit]
+Description=RangeBar Daily Exhaustive Gap Detection
+After=network-online.target clickhouse-server.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/tca/rangebar-py
+EnvironmentFile=/home/tca/rangebar-py/deploy/rangebar.env
+Environment=RANGEBAR_MODE=local
+Environment=RANGEBAR_CH_HOSTS=localhost
+ExecStart=/home/tca/rangebar-py/.venv/bin/python3 /home/tca/rangebar-py/scripts/detect_gaps.py --exhaustive --min-gap-hours 24 --max-bar-duration-hours 24 --check-backfill-queue --summary
+
+# Resource limits (one-shot, can use more memory)
+Nice=10
+MemoryMax=2G
+MemorySwapMax=0
+
+# Timeout (exhaustive scan may take a few minutes)
+TimeoutStartSec=600
+
+# Standard output/error
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rangebar-daily-gap-check
