@@ -49,18 +49,18 @@ rangebar-cli         rangebar-batch      rangebar-streaming
 
 10 features computed in Rust during bar construction:
 
-| #   | Feature                   | Formula                                     | Range        |
-| --- | ------------------------- | ------------------------------------------- | ------------ |
-| 1   | `duration_us`             | close_time - open_time                      | [0, +inf)    |
-| 2   | `ofi`                     | (buy_vol - sell_vol) / total                | [-1, 1]      |
-| 3   | `vwap_close_deviation`    | (close - vwap) / (high - low)               | ~[-1, 1]     |
-| 4   | `price_impact`            | abs(close - open) / volume                  | [0, +inf)    |
-| 5   | `kyle_lambda_proxy`       | ((close-open)/open) / (imbalance/total_vol) | (-inf, +inf) |
-| 6   | `trade_intensity`         | trade_count / duration_sec                  | [0, +inf)    |
-| 7   | `volume_per_trade`        | volume / trade_count                        | [0, +inf)    |
-| 8   | `aggression_ratio`        | buy_count / sell_count                      | [0, 100]     |
-| 9   | `aggregation_density_f64` | individual_count / agg_count                | [1, +inf)    |
-| 10  | `turnover_imbalance`      | (buy_turn - sell_turn) / total_turnover     | [-1, 1]      |
+| #   | Feature                | Formula                                     | Range        |
+| --- | ---------------------- | ------------------------------------------- | ------------ |
+| 1   | `duration_us`          | close_time - open_time                      | [0, +inf)    |
+| 2   | `ofi`                  | (buy_vol - sell_vol) / total                | [-1, 1]      |
+| 3   | `vwap_close_deviation` | (close - vwap) / (high - low)               | ~[-1, 1]     |
+| 4   | `price_impact`         | abs(close - open) / volume                  | [0, +inf)    |
+| 5   | `kyle_lambda_proxy`    | ((close-open)/open) / (imbalance/total_vol) | (-inf, +inf) |
+| 6   | `trade_intensity`      | trade_count / duration_sec                  | [0, +inf)    |
+| 7   | `volume_per_trade`     | volume / trade_count                        | [0, +inf)    |
+| 8   | `aggression_ratio`     | buy_count / sell_count                      | [0, 100]     |
+| 9   | `aggregation_density`  | individual_count / agg_count                | [1, +inf)    |
+| 10  | `turnover_imbalance`   | (buy_turn - sell_turn) / total_turnover     | [-1, 1]      |
 
 **Edge cases**: Division by zero returns 0.0 (no information).
 
@@ -344,23 +344,28 @@ let price_f64 = bar.open.to_f64();
 
 ### Timestamp Handling
 
-**Rust Side** (`src/lib.rs`):
+**Rust internal**: `open_time` / `close_time` are i64 **microseconds**.
 
-```rust
-// rangebar uses i64 milliseconds
-let timestamp_ms: i64 = bar.timestamp_ms;
+**Dict export** (`src/helpers.rs` → `rangebar_to_dict()`):
 
-// Convert to RFC3339 string for Python
-let timestamp = chrono::DateTime::from_timestamp_millis(timestamp_ms)
-    .unwrap()
-    .to_rfc3339();
-```
+- `"open_time_ms"` / `"close_time_ms"` — Int64 **milliseconds** (us / 1000)
+- No legacy `"timestamp"` key (removed in timestamp revamp)
 
-**Python Side** (`python/rangebar/__init__.py`):
+**Arrow export** (`arrow_export.rs`):
+
+- `"open_time"` / `"close_time"` — Int64 **microseconds** (raw Rust values)
+
+**ClickHouse**: `close_time_ms` (ORDER BY key) + `open_time_ms`
+
+**DatetimeIndex**: Always `close_time` (when bar completed, actionable signal).
 
 ```python
-# Parse timestamp string to DatetimeIndex
-df["timestamp"] = pd.to_datetime(df["timestamp"])
+# Dict path (conversion.py):
+df["timestamp"] = pd.to_datetime(df["close_time_ms"], unit="ms", utc=True)
+df = df.set_index("timestamp")
+
+# Arrow path (processors/api.py):
+df["timestamp"] = pd.to_datetime(df["close_time"], unit="us")
 df = df.set_index("timestamp")
 ```
 

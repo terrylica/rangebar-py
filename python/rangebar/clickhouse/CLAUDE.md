@@ -186,7 +186,7 @@ import clickhouse_connect
 client = clickhouse_connect.get_client(host='localhost')
 result = client.query('''
     SELECT symbol, threshold_decimal_bps, count(*) as bars,
-           min(timestamp_ms) as earliest, max(timestamp_ms) as latest
+           min(close_time_ms) as earliest, max(close_time_ms) as latest
     FROM rangebar_cache.range_bars
     GROUP BY symbol, threshold_decimal_bps
 ''')
@@ -322,9 +322,9 @@ Validates all 4 runtime layers against live data. See `scripts/validate_dedup_ha
 `scripts/detect_gaps.py` uses ClickHouse `lagInFrame()` window function:
 
 ```sql
-SELECT timestamp_ms,
-       lagInFrame(timestamp_ms, 1) OVER (ORDER BY timestamp_ms) AS prev_ts,
-       (timestamp_ms - prev_ts) / 3600000 AS gap_hours
+SELECT close_time_ms,
+       lagInFrame(close_time_ms, 1) OVER (ORDER BY close_time_ms) AS prev_ts,
+       (close_time_ms - prev_ts) / 3600000 AS gap_hours
 FROM rangebar_cache.range_bars FINAL
 WHERE (symbol, threshold_decimal_bps) = ({symbol:String}, {threshold:UInt32})
 HAVING gap_hours > {min_gap_hours:Float64}
