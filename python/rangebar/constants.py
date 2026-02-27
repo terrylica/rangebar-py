@@ -165,6 +165,21 @@ TRADE_ID_RANGE_COLUMNS: tuple[str, ...] = (
 )
 
 # =============================================================================
+# Timestamp Columns (close_time_ms + open_time_ms for ClickHouse)
+# =============================================================================
+# ClickHouse stores close_time_ms (ORDER BY key) and open_time_ms (bar open time).
+# close_time_ms replaces the legacy "timestamp_ms" column.
+#
+# IMPORTANT: Keep this list in sync with:
+# - src/helpers.rs (rangebar_to_dict output)
+# - python/rangebar/clickhouse/schema.sql (ClickHouse columns)
+
+TIMESTAMP_COLUMNS: tuple[str, ...] = (
+    "close_time_ms",
+    "open_time_ms",
+)
+
+# =============================================================================
 # Bar Flag Columns (Issue #101: Liquidation cascade detection)
 # =============================================================================
 # Boolean flags derived from bar properties. Always included in query output

@@ -39,8 +39,8 @@ def _arrow_bars_to_pandas(
 
     result = bars_pl.to_pandas()
 
-    # Arrow schema uses open_time (microseconds) as the timestamp
-    result["timestamp"] = pd.to_datetime(result["open_time"], unit="us")
+    # Arrow close_time (us) → DatetimeIndex (unified across all paths)
+    result["timestamp"] = pd.to_datetime(result["close_time"], unit="us")
     result = result.set_index("timestamp")
 
     # Drop time columns (not needed for backtesting.py)

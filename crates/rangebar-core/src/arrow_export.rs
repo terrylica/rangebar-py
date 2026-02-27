@@ -290,7 +290,7 @@ pub fn rangebar_schema() -> Schema {
         Field::new("trade_intensity", DataType::Float64, false),
         Field::new("volume_per_trade", DataType::Float64, false),
         Field::new("aggression_ratio", DataType::Float64, false),
-        Field::new("aggregation_density_f64", DataType::Float64, false),
+        Field::new("aggregation_density", DataType::Float64, false),
         Field::new("turnover_imbalance", DataType::Float64, false),
     ])
 }
