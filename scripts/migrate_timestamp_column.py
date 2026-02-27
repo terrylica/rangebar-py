@@ -2,6 +2,8 @@
 # PROCESS-STORM-OK: Migration script intentionally uses subprocess for systemctl/git
 """Migrate ClickHouse range_bars: timestamp_ms → close_time_ms + add open_time_ms.
 
+# Issue #121, #122, #123 — Full Timestamp & Column Naming Revamp (Phase 14)
+
 Full Timestamp & Column Naming Revamp — table recreation via CREATE + INSERT SELECT
 + atomic RENAME. Handles the complete deploy lifecycle when --deploy is passed.
 
@@ -78,10 +80,20 @@ def _start_services() -> None:
 
 
 def _deploy_code() -> None:
-    """Deploy new code: git pull + pip install."""
+    """Deploy new code: git pull + rebuild editable install.
+
+    On bigblack, the venv has no pip — use uv pip install instead.
+    The deploy:bigblack mise task uses PyPI wheels, but for migration
+    we need the local editable install (code just pulled via git).
+    """
     print("\n=== Deploying new code ===")
-    _run(["git", "pull", "--ff-only"])
-    _run(["pip", "install", "--no-deps", "-e", "."])
+    _run(["git", "fetch", "origin", "main"])
+    _run(["git", "reset", "--hard", "origin/main"])
+    # Use uv (available at ~/.local/bin/uv on bigblack)
+    import shutil
+    uv_path = shutil.which("uv") or str(Path.home() / ".local" / "bin" / "uv")
+    venv_python = str(Path.cwd() / ".venv" / "bin" / "python3")
+    _run([uv_path, "pip", "install", "--python", venv_python, "--no-deps", "-e", "."])
 
 
 def _check_legacy_schema(client) -> bool:
