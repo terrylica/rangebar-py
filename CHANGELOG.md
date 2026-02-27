@@ -1,3 +1,10 @@
+## [12.32.1](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.32.0...v12.32.1) (2026-02-27)
+
+
+### Bug Fixes
+
+* **#120:** Multi-threshold sidecar coverage + deploy hardening ([4e8b486](https://github.com-terrylica/terrylica/rangebar-py/commit/4e8b486313d87e13a1db508a56f0ad138c349e7b)), closes [#120](https://github.com-terrylica/terrylica/rangebar-py/issues/120) [#120](https://github.com-terrylica/terrylica/rangebar-py/issues/120) [#120](https://github.com-terrylica/terrylica/rangebar-py/issues/120) [#120](https://github.com-terrylica/terrylica/rangebar-py/issues/120)
+
 # [12.32.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.31.0...v12.32.0) (2026-02-27)
 
 

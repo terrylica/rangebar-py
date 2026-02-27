@@ -25,7 +25,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "12.32.0"
+version = "12.32.1"
 authors = ["Terry Li <terry@eonlabs.com>"]
 categories = ["algorithms", "data-structures", "finance"]
 documentation = "https://docs.rs/rangebar"
