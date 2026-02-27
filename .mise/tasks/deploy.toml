@@ -4,7 +4,7 @@
 
 ["deploy:bigblack"]
 description = "Deploy latest release to bigblack GPU workstation"
-depends = ["release:pypi"]
+depends = ["release:build-all"]
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
@@ -68,10 +68,25 @@ fi
 
 # 3b: Build in staging venv (old .venv untouched)
 echo "Building venv in staging area..."
-ssh "$REMOTE_HOST" "cd $REMOTE_DIR && \
-  rm -rf .venv-staging && \
-  uv venv .venv-staging && \
-  uv pip install --python $REMOTE_DIR/.venv-staging/bin/python3 rangebar==$VERSION"
+ssh "$REMOTE_HOST" "cd $REMOTE_DIR && rm -rf .venv-staging && uv venv .venv-staging"
+
+if [ "$PYPI_READY" = "true" ]; then
+    # Install from PyPI (preferred — includes all dependencies)
+    ssh "$REMOTE_HOST" "uv pip install --python $REMOTE_DIR/.venv-staging/bin/python3 rangebar==$VERSION"
+else
+    # Fallback: SCP local wheel + install from file (Issue #121)
+    echo "  PyPI unavailable — installing from local wheel..."
+    LINUX_WHEEL=$(ls dist/rangebar-${VERSION}-*manylinux*.whl 2>/dev/null | head -1)
+    if [ -z "$LINUX_WHEEL" ]; then
+        echo "FAIL: No local Linux wheel found in dist/ for v$VERSION"
+        echo "  Build first: mise run release:build-all"
+        ssh "$REMOTE_HOST" "rm -rf $REMOTE_DIR/.venv-staging"
+        exit 1
+    fi
+    scp "$LINUX_WHEEL" "$REMOTE_HOST:$REMOTE_DIR/"
+    WHEEL_NAME=$(basename "$LINUX_WHEEL")
+    ssh "$REMOTE_HOST" "uv pip install --python $REMOTE_DIR/.venv-staging/bin/python3 $REMOTE_DIR/$WHEEL_NAME && rm -f $REMOTE_DIR/$WHEEL_NAME"
+fi
 
 # 3c: Verify staging venv works
 STAGING_VERSION=$(ssh "$REMOTE_HOST" "$REMOTE_DIR/.venv-staging/bin/python3 -c 'import rangebar; print(rangebar.__version__)'")

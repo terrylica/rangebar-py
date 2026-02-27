@@ -312,36 +312,63 @@ else
     echo "   Built: dist/${PACKAGE_NAME}-${CURRENT_VERSION}*"
 fi
 
-# Step 3: Publish to PyPI using twine (more reliable for maturin projects)
-echo -e "\n Step 3: Publishing to PyPI..."
-echo "   Using PyPI token from 1Password"
-
-# Use twine for maturin projects (uv publish has issues with pre-built wheels)
-if grep -q '\[tool.maturin\]' pyproject.toml; then
-    # Publish all wheels and sdist for current version
-    TWINE_USERNAME=__token__ TWINE_PASSWORD="${PYPI_TOKEN}" twine upload \
-        "dist/${PACKAGE_NAME}-${CURRENT_VERSION}"-*.whl \
-        "target/wheels/${PACKAGE_NAME}-${CURRENT_VERSION}.tar.gz" 2>&1 || \
-    TWINE_USERNAME=__token__ TWINE_PASSWORD="${PYPI_TOKEN}" twine upload \
-        "dist/${PACKAGE_NAME}-${CURRENT_VERSION}"-*.whl
+# Step 3: Pre-flight — verify PyPI is reachable before uploading (Issue #121)
+echo -e "\n Step 3: Pre-flight PyPI connectivity check..."
+if timeout 5 curl -sf "https://pypi.org/pypi/${PACKAGE_NAME}/json" >/dev/null 2>&1; then
+    echo "   OK: PyPI API reachable"
 else
-    # Use UV_PUBLISH_TOKEN environment variable for security (no token in process list)
-    UV_PUBLISH_TOKEN="${PYPI_TOKEN}" $UV_CMD publish 2>&1 | grep -E "(Uploading|succeeded|Failed)" || \
-        UV_PUBLISH_TOKEN="${PYPI_TOKEN}" $UV_CMD publish
+    echo "   WARN: PyPI API unreachable (network issue?)"
+    echo "   Continuing anyway — upload may fail"
 fi
 
-echo "   Published to PyPI"
+# Check if version already exists on PyPI (idempotent — skip if already published)
+PYPI_EXISTS=false
+if timeout 5 curl -sf "https://pypi.org/pypi/${PACKAGE_NAME}/${CURRENT_VERSION}/json" | grep -q "\"version\":" 2>/dev/null; then
+    PYPI_EXISTS=true
+    echo "   INFO: ${PACKAGE_NAME}==${CURRENT_VERSION} already on PyPI — skipping upload"
+fi
 
-# Step 4: Verify publication on PyPI
-echo -e "\n Step 4: Verifying on PyPI..."
-sleep "$PYPI_VERIFY_DELAY"
+# Step 4: Publish to PyPI using twine (skip if already published)
+if [ "$PYPI_EXISTS" = "false" ]; then
+    echo -e "\n Step 4: Publishing to PyPI..."
+    echo "   Using PyPI token from 1Password"
 
-# Check if package version is live on PyPI
-if curl -s "https://pypi.org/pypi/${PACKAGE_NAME}/${CURRENT_VERSION}/json" | grep -q "\"version\":"; then
-    echo "   Verified: https://pypi.org/project/${PACKAGE_NAME}/${CURRENT_VERSION}/"
+    # Use twine for maturin projects (uv publish has issues with pre-built wheels)
+    if grep -q '\[tool.maturin\]' pyproject.toml; then
+        # Publish all wheels and sdist for current version
+        # --skip-existing handles race conditions where another process uploaded first
+        TWINE_USERNAME=__token__ TWINE_PASSWORD="${PYPI_TOKEN}" twine upload \
+            --skip-existing \
+            "dist/${PACKAGE_NAME}-${CURRENT_VERSION}"-*.whl \
+            "target/wheels/${PACKAGE_NAME}-${CURRENT_VERSION}.tar.gz" 2>&1 || \
+        TWINE_USERNAME=__token__ TWINE_PASSWORD="${PYPI_TOKEN}" twine upload \
+            --skip-existing \
+            "dist/${PACKAGE_NAME}-${CURRENT_VERSION}"-*.whl
+    else
+        # Use UV_PUBLISH_TOKEN environment variable for security (no token in process list)
+        UV_PUBLISH_TOKEN="${PYPI_TOKEN}" $UV_CMD publish 2>&1 | grep -E "(Uploading|succeeded|Failed)" || \
+            UV_PUBLISH_TOKEN="${PYPI_TOKEN}" $UV_CMD publish
+    fi
+
+    echo "   Published to PyPI"
 else
-    echo "   Still propagating (CDN caching)"
-    echo "   Check manually in 30 seconds: https://pypi.org/project/${PACKAGE_NAME}/${CURRENT_VERSION}/"
+    echo -e "\n Step 4: Skipped (already published)"
+fi
+
+# Step 5: Verify publication on PyPI (poll with retries)
+echo -e "\n Step 5: Verifying on PyPI..."
+PYPI_VERIFIED=false
+for attempt in 1 2 3; do
+    sleep "$PYPI_VERIFY_DELAY"
+    if curl -sf "https://pypi.org/pypi/${PACKAGE_NAME}/${CURRENT_VERSION}/json" | grep -q "\"version\":"; then
+        PYPI_VERIFIED=true
+        echo "   Verified: https://pypi.org/project/${PACKAGE_NAME}/${CURRENT_VERSION}/"
+        break
+    fi
+    echo "   Still propagating (attempt $attempt/3)..."
+done
+if [ "$PYPI_VERIFIED" = "false" ]; then
+    echo "   CDN propagation slow — check in 30s: https://pypi.org/project/${PACKAGE_NAME}/${CURRENT_VERSION}/"
 fi
 
 echo -e "\n Complete! Published ${PACKAGE_NAME} v${CURRENT_VERSION} to PyPI"
