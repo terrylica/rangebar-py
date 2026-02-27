@@ -1,11 +1,14 @@
-# Issue #115: Kintsugi self-healing gap reconciler
+# Issue #115, #117: Kintsugi self-healing gap reconciler with watchdog
 [Unit]
 Description=RangeBar Kintsugi (Self-Healing Gap Reconciler)
 After=network-online.target clickhouse-server.service
 Wants=network-online.target
 
 [Service]
-Type=simple
+# Issue #117: sd_notify("WATCHDOG=1") sent after each kintsugi_pass()
+Type=notify
+NotifyAccess=all
+WatchdogSec=3600
 User=tca
 WorkingDirectory=/home/tca/rangebar-py
 ExecStart=/home/tca/rangebar-py/.venv/bin/python3 /home/tca/rangebar-py/scripts/kintsugi.py --daemon

@@ -1,13 +1,18 @@
 [Unit]
-Description=rangebar-py streaming sidecar (Issue #107)
+Description=rangebar-py streaming sidecar (Issue #107, #117)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+# Issue #117: healthdog-rs bridges HTTP health → systemd watchdog
+Type=notify
+NotifyAccess=all
+WatchdogSec=300
 User=tca
 WorkingDirectory=/home/tca/rangebar-py
-ExecStart=/home/tca/rangebar-py/.venv/bin/python3 /home/tca/rangebar-py/scripts/streaming_sidecar.py --from-env
+ExecStart=/home/tca/.cargo/bin/healthdog \
+  --healthcheck-url http://localhost:8081/health \
+  -- /home/tca/rangebar-py/.venv/bin/python3 /home/tca/rangebar-py/scripts/streaming_sidecar.py --from-env
 
 # Restart policy (Issue #107 P3)
 Restart=always

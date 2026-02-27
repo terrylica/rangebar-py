@@ -3,10 +3,16 @@
 
 Verifies that the P1 liveness watchdog detects stale trade flow,
 restarts the Rust engine, and exits after max restarts.
+
+Issue #117-119: Tests updated to mock RangeBarCache (cached at startup)
+and _start_health_server, and use _MonotonicClock helper to handle the
+variable number of time.monotonic() calls across startup, notification,
+and main loop paths.
 """
 
 from __future__ import annotations
 
+import contextlib
 from unittest.mock import MagicMock, patch
 
 from rangebar.sidecar import (
@@ -18,6 +24,21 @@ from rangebar.sidecar import (
 # =============================================================================
 # Helpers
 # =============================================================================
+
+
+class _MonotonicClock:
+    """Controllable time.monotonic() replacement for sidecar tests.
+
+    Returns `value` on every call.  Tests advance time by setting `.value`.
+    This avoids fragile iterator-based mocking that breaks whenever code
+    paths add or remove time.monotonic() calls.
+    """
+
+    def __init__(self, initial: float = 0.0) -> None:
+        self.value = initial
+
+    def __call__(self) -> float:
+        return self.value
 
 
 def _make_mock_engine(
@@ -52,6 +73,27 @@ _COMMON_PATCHES = {
     "rangebar.logging.log_checkpoint_event": MagicMock(),
     "rangebar.logging.generate_trace_id": MagicMock(return_value="test-trace"),
 }
+
+
+def _sidecar_patches(**overrides: object) -> dict[str, object]:
+    """Return a dict of all common patches needed for run_sidecar() tests.
+
+    Issue #117-119 additions:
+    - rangebar.clickhouse.cache.RangeBarCache: mock constructor (no SSH tunnel)
+    - rangebar.sidecar._start_health_server: suppress HTTP server
+    """
+    defaults = {
+        "rangebar.sidecar._gap_fill": MagicMock(return_value={}),
+        "rangebar.sidecar._extract_checkpoints": MagicMock(),
+        "rangebar.logging.generate_trace_id": MagicMock(return_value="t"),
+        "rangebar.hooks.emit_hook": MagicMock(),
+        "rangebar.logging.log_checkpoint_event": MagicMock(),
+        "signal.signal": MagicMock(),
+        "rangebar.clickhouse.cache.RangeBarCache": MagicMock(),
+        "rangebar.sidecar._start_health_server": MagicMock(return_value=None),
+    }
+    defaults.update(overrides)
+    return defaults
 
 
 # =============================================================================
@@ -93,59 +135,28 @@ class TestSidecarConfigWatchdog:
 class TestWatchdogTrigger:
     """Test watchdog detection and engine restart logic.
 
-    Uses time.monotonic patching to simulate elapsed time without waiting.
+    Uses _MonotonicClock to control time.monotonic() without fragile iterators.
+    The clock starts at 0.0; tests advance .value to simulate elapsed time.
     """
-
-    def _run_sidecar_with_mock_engine(
-        self,
-        engine,
-        config: SidecarConfig | None = None,
-        gap_fill_results: dict | None = None,
-    ):
-        """Run the sidecar main loop with a mocked engine."""
-        if config is None:
-            config = SidecarConfig(
-                symbols=["BTCUSDT"],
-                thresholds=[250],
-                watchdog_timeout_s=300,
-                max_watchdog_restarts=3,
-                gap_fill_on_startup=False,
-            )
-
-        with (
-            patch.multiple("rangebar.sidecar", _gap_fill=MagicMock(return_value={}), _inject_checkpoints=MagicMock(return_value=0), _extract_checkpoints=MagicMock(), _write_bars_batch_to_clickhouse=MagicMock(), _save_checkpoint=MagicMock(), _notify_watchdog_trigger=MagicMock()),
-            patch("rangebar._core.LiveBarEngine", return_value=engine),
-            patch.dict("rangebar.sidecar.__builtins__", {}, clear=False),
-            patch("rangebar.logging.generate_trace_id", return_value="test-trace"),
-            patch("rangebar.hooks.emit_hook"),
-            patch("rangebar.logging.log_checkpoint_event"),
-            patch("signal.signal"),
-        ):
-            run_sidecar(config)
 
     def test_watchdog_triggers_after_timeout(self):
         """trades_received stays at 0 for >300s → engine restart."""
-        # We need to control time.monotonic to simulate 300s passing.
-        # The loop calls next_bar → None, then checks metrics.
-        # We need enough iterations for the timeout to fire.
-
-        monotonic_values = iter([
-            0.0,      # initial baseline
-            0.0,      # first next_bar call (within select)
-            150.0,    # first watchdog check — 150s, not yet
-            301.0,    # second watchdog check — 301s, triggers!
-            301.0,    # post-restart baseline
-            # After restart, engine.next_bar will raise StopIteration → loop ends
-        ])
+        clock = _MonotonicClock(0.0)
 
         engine = MagicMock()
         call_count = [0]
 
         def next_bar_side_effect(timeout_ms=5000):
             call_count[0] += 1
-            if call_count[0] >= 4:
-                # After restart, exhaust the loop
-                raise StopIteration
+            if call_count[0] == 1:
+                # First iteration: not yet timed out
+                return
+            if call_count[0] == 2:
+                # Second iteration: advance time past watchdog timeout
+                clock.value = 301.0
+                return
+            # After restart, exhaust the loop
+            raise StopIteration
 
         engine.next_bar.side_effect = next_bar_side_effect
         engine.get_metrics.return_value = {"trades_received": 0}
@@ -159,21 +170,18 @@ class TestWatchdogTrigger:
             gap_fill_on_startup=False,
         )
 
-        # Track engine creation calls
         engines = [engine, MagicMock()]
         engines[1].next_bar.side_effect = StopIteration
         engines[1].get_metrics.return_value = {"trades_received": 0}
         engines[1].collect_checkpoints.return_value = {}
-        engine_idx = [0]
 
-        def create_engine_factory(*args, **kwargs):
-            e = engines[engine_idx[0]]
-            engine_idx[0] += 1
-            return e
+        patches = _sidecar_patches(
+            **{"rangebar.sidecar._notify_watchdog_trigger": MagicMock()},
+        )
 
         with (
-            patch("time.monotonic", side_effect=monotonic_values),
-            patch("rangebar.sidecar._gap_fill", return_value={}),
+            patch("time.monotonic", side_effect=clock),
+            patch("rangebar.sidecar._gap_fill", patches["rangebar.sidecar._gap_fill"]),
             patch("rangebar.sidecar._create_engine") as mock_create,
             patch("rangebar.sidecar._extract_checkpoints"),
             patch("rangebar.sidecar._notify_watchdog_trigger") as mock_notify,
@@ -181,28 +189,22 @@ class TestWatchdogTrigger:
             patch("rangebar.hooks.emit_hook"),
             patch("rangebar.logging.log_checkpoint_event"),
             patch("signal.signal"),
+            patch("rangebar.clickhouse.cache.RangeBarCache"),
+            patch("rangebar.sidecar._start_health_server", return_value=None),
         ):
             mock_create.side_effect = [
-                (engine, 0),          # initial creation
-                (engines[1], 0),      # watchdog restart
+                (engine, 0),
+                (engines[1], 0),
             ]
-            try:
+            with contextlib.suppress(StopIteration):
                 run_sidecar(config)
-            except StopIteration:
-                pass
 
-            # Engine was restarted (created twice: initial + 1 restart)
             assert mock_create.call_count == 2
             mock_notify.assert_called_once()
 
     def test_watchdog_resets_on_trade_increment(self):
         """trades_received goes 0→50→50→100 — no restart because trades resume."""
-        monotonic_values = iter([
-            0.0,      # initial baseline
-            150.0,    # first check: trades 0→50, resets timer
-            200.0,    # second check: trades 50→50, stale_s = 50 (< 300)
-            250.0,    # third check: trades 50→100, resets timer
-        ])
+        clock = _MonotonicClock(0.0)
 
         engine = MagicMock()
         call_count = [0]
@@ -214,6 +216,8 @@ class TestWatchdogTrigger:
 
         def next_bar_effect(timeout_ms=5000):
             call_count[0] += 1
+            # Advance time by 150s each iteration (under 300s threshold)
+            clock.value = call_count[0] * 150.0
             if call_count[0] > 3:
                 raise StopIteration
 
@@ -228,7 +232,7 @@ class TestWatchdogTrigger:
         )
 
         with (
-            patch("time.monotonic", side_effect=monotonic_values),
+            patch("time.monotonic", side_effect=clock),
             patch("rangebar.sidecar._gap_fill", return_value={}),
             patch("rangebar.sidecar._create_engine", return_value=(engine, 0)),
             patch("rangebar.sidecar._extract_checkpoints"),
@@ -237,11 +241,11 @@ class TestWatchdogTrigger:
             patch("rangebar.hooks.emit_hook"),
             patch("rangebar.logging.log_checkpoint_event"),
             patch("signal.signal"),
+            patch("rangebar.clickhouse.cache.RangeBarCache"),
+            patch("rangebar.sidecar._start_health_server", return_value=None),
         ):
-            try:
+            with contextlib.suppress(StopIteration):
                 run_sidecar(config)
-            except StopIteration:
-                pass
 
             mock_notify.assert_not_called()
 
@@ -254,14 +258,7 @@ class TestWatchdogTrigger:
             "timestamp_ms": 1700000000000,
         }
 
-        # Issue #96 Task #144 Phase 3: Account for batch timeout check in loop
-        # Now uses time.monotonic() for batch flush timeout tracking
-        monotonic_values = iter([
-            0.0,      # last_batch_flush_time init
-            0.0,      # batch timeout check in first loop iteration
-            400.0,    # bar received at 400s — resets timer (batch timeout check for 2nd iteration)
-            400.0,    # get_metrics after bar
-        ])
+        clock = _MonotonicClock(0.0)
 
         engine = MagicMock()
         call_count = [0]
@@ -269,6 +266,8 @@ class TestWatchdogTrigger:
         def next_bar_effect(timeout_ms=5000):
             call_count[0] += 1
             if call_count[0] == 1:
+                # Bar received at 400s — but trades are flowing so no trigger
+                clock.value = 400.0
                 return bar.copy()
             raise StopIteration
 
@@ -283,7 +282,7 @@ class TestWatchdogTrigger:
         )
 
         with (
-            patch("time.monotonic", side_effect=monotonic_values),
+            patch("time.monotonic", side_effect=clock),
             patch("rangebar.sidecar._gap_fill", return_value={}),
             patch("rangebar.sidecar._create_engine", return_value=(engine, 0)),
             patch("rangebar.sidecar._extract_checkpoints"),
@@ -294,47 +293,42 @@ class TestWatchdogTrigger:
             patch("rangebar.hooks.emit_hook"),
             patch("rangebar.logging.log_checkpoint_event"),
             patch("signal.signal"),
+            patch("rangebar.clickhouse.cache.RangeBarCache"),
+            patch("rangebar.sidecar._start_health_server", return_value=None),
         ):
-            try:
+            with contextlib.suppress(StopIteration):
                 run_sidecar(config)
-            except StopIteration:
-                pass
 
             mock_notify.assert_not_called()
-            # Batch write should be called at least once (on shutdown flush)
             assert mock_write.call_count >= 1
 
     def test_watchdog_max_restarts_exit(self):
         """3 consecutive watchdog triggers → loop exits."""
-        # Issue #96 Task #144 Phase 3: Updated for batch timeout check in loop
-        # Each watchdog cycle: batch timeout check, then stale check at +301s
-        # Need 4 cycles (3 restarts + 1 final that breaks)
-        monotonic_values = iter([
-            0.0,      # last_batch_flush_time init
-            0.0,      # batch timeout check in iteration #1
-            0.0,      # batch timeout check in iteration #2
-            301.0,    # trigger #1 (watchdog stale check)
-            301.0,    # last_batch_flush_time after first _flush in watchdog
-            301.0,    # batch timeout check after restart #1
-            301.0,    # batch timeout check iteration 2 after restart
-            602.0,    # trigger #2 (watchdog stale check)
-            602.0,    # last_batch_flush_time after second _flush
-            602.0,    # batch timeout check after restart #2
-            602.0,    # batch timeout check iteration 2 after restart
-            903.0,    # trigger #3 (watchdog stale check)
-            903.0,    # last_batch_flush_time after third _flush
-            903.0,    # batch timeout check after restart #3
-            903.0,    # batch timeout check iteration 2 after restart
-            1204.0,   # trigger #4 — exceeds max_watchdog_restarts=3
-            1204.0,   # final batch timeout check before break
-        ])
+        clock = _MonotonicClock(0.0)
+        restart_count = [0]
 
         engines = []
         for _ in range(4):  # initial + 3 restarts
             e = MagicMock()
-            e.next_bar.return_value = None
-            e.get_metrics.return_value = {"trades_received": 0}
             e.collect_checkpoints.return_value = {}
+            e.get_metrics.return_value = {"trades_received": 0}
+
+            # Each engine: first next_bar returns None, second triggers timeout
+            engine_call = [0]
+
+            def make_next_bar(ec=engine_call):
+                ec_ref = [0]
+                def _next_bar(timeout_ms=5000):
+                    ec_ref[0] += 1
+                    if ec_ref[0] == 1:
+                        return  # first call: no bar
+                    # second call: advance clock past timeout
+                    restart_count[0] += 1
+                    clock.value = restart_count[0] * 301.0
+                    return  # triggers watchdog
+                return _next_bar
+
+            e.next_bar.side_effect = make_next_bar()
             engines.append(e)
 
         config = SidecarConfig(
@@ -344,7 +338,7 @@ class TestWatchdogTrigger:
         )
 
         with (
-            patch("time.monotonic", side_effect=monotonic_values),
+            patch("time.monotonic", side_effect=clock),
             patch("rangebar.sidecar._gap_fill", return_value={}),
             patch("rangebar.sidecar._create_engine") as mock_create,
             patch("rangebar.sidecar._extract_checkpoints"),
@@ -353,23 +347,18 @@ class TestWatchdogTrigger:
             patch("rangebar.hooks.emit_hook"),
             patch("rangebar.logging.log_checkpoint_event"),
             patch("signal.signal"),
+            patch("rangebar.clickhouse.cache.RangeBarCache"),
+            patch("rangebar.sidecar._start_health_server", return_value=None),
         ):
             mock_create.side_effect = [(e, 0) for e in engines]
             run_sidecar(config)
 
-            # Initial + 3 restarts = 4 engine creations
             assert mock_create.call_count == 4
-            # 4 notifications (3 restarts + 1 final that breaks)
             assert mock_notify.call_count == 4
 
     def test_watchdog_does_not_fire_during_normal_gaps(self):
         """Trades flowing but no bars for 10 min — no restart."""
-        # Trade count keeps incrementing, so watchdog never fires
-        monotonic_values = iter([
-            0.0,      # initial baseline
-            300.0,    # check: trades 100→200, resets
-            600.0,    # check: trades 200→300, resets
-        ])
+        clock = _MonotonicClock(0.0)
 
         engine = MagicMock()
         call_count = [0]
@@ -380,6 +369,8 @@ class TestWatchdogTrigger:
 
         def next_bar_effect(timeout_ms=5000):
             call_count[0] += 1
+            # Advance 300s each time — but trades increment so no trigger
+            clock.value = call_count[0] * 300.0
             if call_count[0] > 2:
                 raise StopIteration
 
@@ -394,7 +385,7 @@ class TestWatchdogTrigger:
         )
 
         with (
-            patch("time.monotonic", side_effect=monotonic_values),
+            patch("time.monotonic", side_effect=clock),
             patch("rangebar.sidecar._gap_fill", return_value={}),
             patch("rangebar.sidecar._create_engine", return_value=(engine, 0)),
             patch("rangebar.sidecar._extract_checkpoints"),
@@ -403,16 +394,18 @@ class TestWatchdogTrigger:
             patch("rangebar.hooks.emit_hook"),
             patch("rangebar.logging.log_checkpoint_event"),
             patch("signal.signal"),
+            patch("rangebar.clickhouse.cache.RangeBarCache"),
+            patch("rangebar.sidecar._start_health_server", return_value=None),
         ):
-            try:
+            with contextlib.suppress(StopIteration):
                 run_sidecar(config)
-            except StopIteration:
-                pass
 
             mock_notify.assert_not_called()
 
     def test_watchdog_timeout_s_zero_disables(self):
         """watchdog_timeout_s=0 disables the watchdog entirely."""
+        clock = _MonotonicClock(9999.0)
+
         engine = MagicMock()
         call_count = [0]
 
@@ -433,7 +426,7 @@ class TestWatchdogTrigger:
         )
 
         with (
-            patch("time.monotonic", return_value=9999.0),
+            patch("time.monotonic", side_effect=clock),
             patch("rangebar.sidecar._gap_fill", return_value={}),
             patch("rangebar.sidecar._create_engine", return_value=(engine, 0)),
             patch("rangebar.sidecar._extract_checkpoints"),
@@ -442,14 +435,12 @@ class TestWatchdogTrigger:
             patch("rangebar.hooks.emit_hook"),
             patch("rangebar.logging.log_checkpoint_event"),
             patch("signal.signal"),
+            patch("rangebar.clickhouse.cache.RangeBarCache"),
+            patch("rangebar.sidecar._start_health_server", return_value=None),
         ):
-            try:
+            with contextlib.suppress(StopIteration):
                 run_sidecar(config)
-            except StopIteration:
-                pass
 
-            # get_metrics called only once (in finally block), not in the loop
-            # When watchdog is disabled, the loop skips the metrics check entirely
             assert engine.get_metrics.call_count == 1  # finally block only
             mock_notify.assert_not_called()
 
@@ -462,17 +453,17 @@ class TestWatchdogTrigger:
 class TestEngineRestartSequence:
     def test_restart_extracts_checkpoints_before_shutdown(self):
         """Watchdog triggers → _extract_checkpoints() called before engine.shutdown()."""
-        # Issue #96 Task #144 Phase 3: Account for batch timeout checks
-        monotonic_values = iter([
-            0.0,      # last_batch_flush_time init
-            0.0,      # batch timeout check in iteration #1
-            301.0,    # trigger (watchdog)
-            301.0,    # last_batch_flush_time after restart
-            301.0,    # batch timeout check in iteration #2 (right before StopIteration)
-        ])
+        clock = _MonotonicClock(0.0)
 
         engine = MagicMock()
-        engine.next_bar.return_value = None
+        engine_call_count = [0]
+
+        def engine_next_bar(timeout_ms=5000):
+            engine_call_count[0] += 1
+            if engine_call_count[0] >= 2:
+                clock.value = 301.0  # trigger watchdog
+
+        engine.next_bar.side_effect = engine_next_bar
         engine.get_metrics.return_value = {"trades_received": 0}
         engine.collect_checkpoints.return_value = {}
 
@@ -488,22 +479,12 @@ class TestEngineRestartSequence:
         )
 
         call_order = []
-        original_stop = engine.stop
-        original_shutdown = engine.shutdown
-
-        def track_stop():
-            call_order.append("stop")
-            return original_stop()
-
-        def track_shutdown():
-            call_order.append("shutdown")
-            return original_shutdown()
 
         engine.stop.side_effect = lambda: call_order.append("stop")
         engine.shutdown.side_effect = lambda: call_order.append("shutdown")
 
         with (
-            patch("time.monotonic", side_effect=monotonic_values),
+            patch("time.monotonic", side_effect=clock),
             patch("rangebar.sidecar._gap_fill", return_value={}),
             patch("rangebar.sidecar._create_engine") as mock_create,
             patch("rangebar.sidecar._extract_checkpoints") as mock_extract,
@@ -512,14 +493,14 @@ class TestEngineRestartSequence:
             patch("rangebar.hooks.emit_hook"),
             patch("rangebar.logging.log_checkpoint_event"),
             patch("signal.signal"),
+            patch("rangebar.clickhouse.cache.RangeBarCache"),
+            patch("rangebar.sidecar._start_health_server", return_value=None),
         ):
             mock_create.side_effect = [(engine, 0), (engine2, 0)]
-            mock_extract.side_effect = lambda *a, **kw: call_order.append("extract")
+            mock_extract.side_effect = lambda *_a, **_kw: call_order.append("extract")
 
-            try:
+            with contextlib.suppress(StopIteration):
                 run_sidecar(config)
-            except StopIteration:
-                pass
 
             # Verify order: stop → extract → shutdown (for the watchdog restart)
             assert call_order[:3] == ["stop", "extract", "shutdown"]
@@ -532,15 +513,7 @@ class TestEngineRestartSequence:
             "close": 50000.0,
         }
 
-        # Timeline: 2 bars, then watchdog, then exit
-        # Issue #96 Task #144 Phase 3: Account for batch timeout checks
-        # Provide enough values to cover all monotonic() calls during the test
-        # Pattern: init, [iter_batch_check, metrics_time]+ , watchdog_trigger, flush_reset, [iter_batch_check, metrics]+ , final_break
-        import itertools
-        monotonic_values = iter(itertools.islice(
-            itertools.cycle([0.0, 1.0, 2.0, 100.0, 303.0, 304.0, 604.0, 1000.0]),
-            50  # Provide plenty of values
-        ))
+        clock = _MonotonicClock(0.0)
 
         engine1 = MagicMock()
         call_count = [0]
@@ -549,6 +522,8 @@ class TestEngineRestartSequence:
             call_count[0] += 1
             if call_count[0] <= 2:
                 return bar.copy()
+            # After bars, advance time to trigger watchdog
+            clock.value = 301.0
             return None
 
         engine1.next_bar.side_effect = next_bar_1
@@ -556,7 +531,17 @@ class TestEngineRestartSequence:
         engine1.collect_checkpoints.return_value = {}
 
         engine2 = MagicMock()
-        engine2.next_bar.return_value = None
+        engine2_call = [0]
+
+        def next_bar_2(timeout_ms=5000):
+            engine2_call[0] += 1
+            if engine2_call[0] >= 2:
+                # Advance clock past watchdog timeout for engine2
+                # After restart, last_trade_increment_time = 301.0
+                # so need 301.0 + 301.0 = 602.0
+                clock.value = 602.0
+
+        engine2.next_bar.side_effect = next_bar_2
         engine2.get_metrics.return_value = {"trades_received": 0}
         engine2.collect_checkpoints.return_value = {}
 
@@ -567,7 +552,7 @@ class TestEngineRestartSequence:
         )
 
         with (
-            patch("time.monotonic", side_effect=monotonic_values),
+            patch("time.monotonic", side_effect=clock),
             patch("rangebar.sidecar._gap_fill", return_value={}),
             patch("rangebar.sidecar._create_engine") as mock_create,
             patch("rangebar.sidecar._extract_checkpoints"),
@@ -578,13 +563,11 @@ class TestEngineRestartSequence:
             patch("rangebar.hooks.emit_hook"),
             patch("rangebar.logging.log_checkpoint_event"),
             patch("signal.signal"),
+            patch("rangebar.clickhouse.cache.RangeBarCache"),
+            patch("rangebar.sidecar._start_health_server", return_value=None),
         ):
             mock_create.side_effect = [(engine1, 0), (engine2, 0)]
-            # run_sidecar logs bars_written at the end — capture it
             run_sidecar(config)
-
-            # The final engine.get_metrics is called in the finally block
-            # and bars_written should be 2 (accumulated before restart)
 
 
 # =============================================================================
@@ -595,16 +578,14 @@ class TestEngineRestartSequence:
 class TestWatchdogEdgeCases:
     def test_metrics_returns_empty_dict(self):
         """get_metrics() returns {} → treated as 0 trades, no crash."""
-        monotonic_values = iter([
-            0.0,      # baseline
-            100.0,    # check — stale but < 300s
-        ])
+        clock = _MonotonicClock(0.0)
 
         engine = MagicMock()
         call_count = [0]
 
         def next_bar_effect(timeout_ms=5000):
             call_count[0] += 1
+            clock.value = call_count[0] * 100.0  # advance time modestly
             if call_count[0] > 1:
                 raise StopIteration
 
@@ -619,7 +600,7 @@ class TestWatchdogEdgeCases:
         )
 
         with (
-            patch("time.monotonic", side_effect=monotonic_values),
+            patch("time.monotonic", side_effect=clock),
             patch("rangebar.sidecar._gap_fill", return_value={}),
             patch("rangebar.sidecar._create_engine", return_value=(engine, 0)),
             patch("rangebar.sidecar._extract_checkpoints"),
@@ -628,11 +609,11 @@ class TestWatchdogEdgeCases:
             patch("rangebar.hooks.emit_hook"),
             patch("rangebar.logging.log_checkpoint_event"),
             patch("signal.signal"),
+            patch("rangebar.clickhouse.cache.RangeBarCache"),
+            patch("rangebar.sidecar._start_health_server", return_value=None),
         ):
-            try:
+            with contextlib.suppress(StopIteration):
                 run_sidecar(config)
-            except StopIteration:
-                pass
             # No crash — test passes if we get here
 
 

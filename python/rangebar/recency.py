@@ -475,14 +475,17 @@ _SUSTAINED_FAILURE_THRESHOLD = 5
 def _notify_sustained_failure(consecutive_errors: int) -> None:
     """Send Telegram alert after N consecutive backfill failures."""
     try:
-        from rangebar.notify.telegram import send_telegram
+        from rangebar.notify.telegram import _build_context_block, send_telegram
     except ImportError:
         return
     try:
         msg = (
             "<b>BACKFILL SUSTAINED FAILURE</b>\n"
-            f"{consecutive_errors} consecutive errors in backfill_all_recent\n"
-            "Check REST API connectivity and ClickHouse status"
+            f"<b>Consecutive errors:</b> {consecutive_errors}\n"
+            f"<b>Threshold:</b> {_SUSTAINED_FAILURE_THRESHOLD}\n"
+            "<b>Check:</b> REST API connectivity + ClickHouse status\n"
+            "<b>Debug:</b> <code>curl -s 'http://localhost:8123/?query=SELECT+1'</code>"
+            + _build_context_block("backfill")
         )
         send_telegram(msg, disable_notification=False)
     except (OSError, RuntimeError, ConnectionError):

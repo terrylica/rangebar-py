@@ -89,6 +89,12 @@ class HookEvent(Enum):
     # Issue #98: Plugin feature enrichment events
     PLUGIN_ENRICH_COMPLETE = "plugin_enrich_complete"
     PLUGIN_ENRICH_FAILED = "plugin_enrich_failed"
+    # Issue #117-119: Sidecar reliability + monitoring events
+    SYMBOL_COVERAGE_MISMATCH = "symbol_coverage_mismatch"
+    SIDECAR_STARTED = "sidecar_started"
+    SIDECAR_STOPPED = "sidecar_stopped"
+    KINTSUGI_PASS_COMPLETE = "kintsugi_pass_complete"
+    GAP_DETECTED = "gap_detected"
 
 
 @dataclass

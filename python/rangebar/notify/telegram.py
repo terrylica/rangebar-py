@@ -31,6 +31,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
+import time
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -39,9 +41,41 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Issue #117-119: Module-level start time for uptime tracking
+_MODULE_START_TIME: float = time.monotonic()
+
 # Default chat ID (Terry Li @EonLabsOperations) - can be overridden via env
 # SSoT-OK: This is a Telegram chat ID, not a version number
 _DEFAULT_CHAT_ID = "90417581"
+
+
+def set_start_time(t: float) -> None:
+    """Set the module-level start time (call from sidecar/kintsugi startup)."""
+    global _MODULE_START_TIME  # noqa: PLW0603
+    _MODULE_START_TIME = t
+
+
+def _build_context_block(service: str) -> str:
+    """Build standardized context block for Telegram messages (Issue #117-119).
+
+    Every Telegram alert includes host, version, and uptime so the operator
+    can diagnose without SSH-ing in.
+    """
+    host = socket.gethostname()
+    try:
+        import rangebar
+        version = rangebar.__version__
+    except (ImportError, AttributeError):
+        version = "?"
+    elapsed = time.monotonic() - _MODULE_START_TIME
+    days, rem = divmod(int(elapsed), 86400)
+    hours, rem = divmod(rem, 3600)
+    mins = rem // 60
+    uptime = f"{days}d {hours}h {mins}m"
+    return (
+        f"\n\n<b>Host:</b> {host} | <b>v</b>{version}"
+        f"\n<b>Uptime:</b> {uptime} | <b>Service:</b> {service}"
+    )
 
 
 @lru_cache(maxsize=1)
@@ -190,6 +224,8 @@ def telegram_notify(payload: HookPayload) -> None:
 <b>Details:</b>
 <pre>{details_text}</pre>"""
 
+    message += _build_context_block("hook")
+
     # Send silently for success, loudly for failures
     send_telegram(
         message,
@@ -262,10 +298,12 @@ def enable_failure_notifications() -> bool:
 
 
 __all__ = [
+    "_build_context_block",
     "enable_failure_notifications",
     "enable_telegram_notifications",
     "get_telegram_config",
     "is_configured",
     "send_telegram",
+    "set_start_time",
     "telegram_notify",
 ]

@@ -37,6 +37,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import socket as _socket
 import subprocess
 import sys
 import time
@@ -44,6 +46,27 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
+
+
+def _sd_notify(state: str) -> None:
+    """Send sd_notify message to systemd (if NOTIFY_SOCKET is set).
+
+    This is a minimal implementation — no external dependency needed.
+    Used for WatchdogSec integration (Issue #117).
+    """
+    addr = os.environ.get("NOTIFY_SOCKET")
+    if not addr:
+        return
+    try:
+        sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_DGRAM)
+        try:
+            if addr.startswith("@"):
+                addr = "\0" + addr[1:]
+            sock.sendto(state.encode(), addr)
+        finally:
+            sock.close()
+    except OSError:
+        logger.debug("sd_notify(%s) failed", state, exc_info=True)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -172,6 +195,19 @@ def discover_shards(
 
     # Enrich with Ariadne anchors and Ouroboros boundaries
     _enrich_shards(shards)
+
+    # Issue #117-119: Emit GAP_DETECTED hook for each shard
+    if shards:
+        try:
+            from rangebar.hooks import HookEvent, emit_hook
+            for shard in shards:
+                emit_hook(
+                    HookEvent.GAP_DETECTED, symbol=shard.symbol,
+                    threshold_dbps=shard.threshold_decimal_bps,
+                    gap_hours=shard.gap_hours, priority=shard.priority,
+                )
+        except (ImportError, OSError, RuntimeError, ValueError):
+            logger.debug("failed to emit GAP_DETECTED hooks", exc_info=True)
 
     return shards
 
@@ -511,6 +547,7 @@ def kintsugi_pass(
     list[KintsugiResult]
         Results for each shard repaired (or discovered in dry_run).
     """
+    pass_t0 = time.monotonic()
     logger.info("kintsugi pass starting (dry_run=%s)", dry_run)
     shards = discover_shards(symbol=symbol)
 
@@ -585,17 +622,42 @@ def kintsugi_pass(
         results.append(result)
 
     # Summary
+    pass_duration = time.monotonic() - pass_t0
     healed = sum(1 for r in results if r.healed)
     failed = sum(1 for r in results if not r.healed)
     total_bars = sum(r.bars_written for r in results)
     logger.info(
-        "kintsugi pass complete: %d healed, %d failed, %d bars written",
-        healed, failed, total_bars,
+        "kintsugi pass complete: %d healed, %d failed, %d bars written (%.1fs)",
+        healed, failed, total_bars, pass_duration,
     )
+
+    # Issue #117-119: Emit KINTSUGI_PASS_COMPLETE hook + quiet Telegram
+    try:
+        from rangebar.hooks import HookEvent, emit_hook
+        emit_hook(
+            HookEvent.KINTSUGI_PASS_COMPLETE, symbol="*",
+            n_discovered=len(shards), n_healed=healed, n_failed=failed,
+            total_bars=total_bars, pass_duration=pass_duration,
+        )
+    except (ImportError, OSError, RuntimeError, ValueError):
+        logger.debug("failed to emit KINTSUGI_PASS_COMPLETE hook", exc_info=True)
+    try:
+        from rangebar.notify.telegram import _build_context_block, send_telegram
+        pass_msg = (
+            "<b>KINTSUGI PASS COMPLETE</b>\n"
+            f"<b>Duration:</b> {pass_duration:.0f}s\n"
+            f"<b>Shards discovered:</b> {len(shards)}\n"
+            f"<b>Repaired:</b> {healed} | <b>Failed:</b> {failed}\n"
+            f"<b>Bars written:</b> {total_bars:,}"
+            + _build_context_block("kintsugi")
+        )
+        send_telegram(pass_msg, disable_notification=True)
+    except (ImportError, OSError, RuntimeError):
+        logger.debug("failed to send kintsugi pass Telegram", exc_info=True)
 
     # Notify on failures
     if failed > 0:
-        _notify_kintsugi_failures(results)
+        _notify_kintsugi_failures(results, pass_duration=pass_duration)
 
     return results
 
@@ -625,10 +687,13 @@ def _is_rate_limited(shard: Shard) -> bool:
         return count >= _MAX_ATTEMPTS_PER_SHARD
 
 
-def _notify_kintsugi_failures(results: list[KintsugiResult]) -> None:
+def _notify_kintsugi_failures(
+    results: list[KintsugiResult],
+    pass_duration: float = 0.0,
+) -> None:
     """Send Telegram alert for failed repairs."""
     try:
-        from rangebar.notify.telegram import send_telegram
+        from rangebar.notify.telegram import _build_context_block, send_telegram
     except ImportError:
         return
 
@@ -636,15 +701,24 @@ def _notify_kintsugi_failures(results: list[KintsugiResult]) -> None:
     if not failed:
         return
 
-    lines = [f"<b>KINTSUGI</b>: {len(failed)} repair(s) failed\n"]
+    healed_count = sum(1 for r in results if r.healed)
+    total_shards = len(results)
+
+    lines = [
+        f"<b>KINTSUGI</b>: {len(failed)} repair(s) failed\n",
+        f"<b>Pass duration:</b> {pass_duration:.1f}s",
+        f"<b>Total shards:</b> {total_shards} "
+        f"({healed_count} healed, {len(failed)} failed)",
+    ]
     for r in failed[:_MAX_FAILURES_IN_ALERT]:
         lines.append(
             f"  {r.shard.symbol}@{r.shard.threshold_decimal_bps} "
             f"({r.shard.priority}, {r.shard.gap_hours:.1f}h): "
-            f"{r.error or 'unknown'}"
+            f"<code>{r.error or 'unknown'}</code>"
         )
     if len(failed) > _MAX_FAILURES_IN_ALERT:
         lines.append(f"  ... and {len(failed) - _MAX_FAILURES_IN_ALERT} more")
+    lines.append(_build_context_block("kintsugi"))
 
     try:
         send_telegram("\n".join(lines), disable_notification=False)
@@ -684,6 +758,9 @@ def kintsugi_daemon(
                 max_p2_jobs=max_p2_jobs,
                 include_microstructure=include_microstructure,
             )
+
+            # Issue #117: Ping systemd watchdog after each pass
+            _sd_notify("WATCHDOG=1")
 
             has_activity = any(r.healed or r.error for r in results)
             sleep_s = interval_active_s if has_activity else interval_clean_s

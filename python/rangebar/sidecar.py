@@ -196,16 +196,12 @@ def _write_bar_to_clickhouse(symbol: str, threshold: int, bar_dict: dict) -> Non
 
 def _write_bars_batch_to_clickhouse(
     symbol: str, threshold: int, bar_dicts: list[dict],
+    *, cache: object | None = None,
 ) -> None:
     """Write a batch of completed bars to ClickHouse.
 
-    Issue #96 Task #144 Phase 3: Streaming latency optimization via batched writes.
-    Reduces overhead by:
-    1. Batch-converting dicts to Polars DataFrame (single allocation vs per-bar)
-    2. Reducing ClickHouse roundtrips (fewer network calls)
-    3. Better cache locality in dict comprehension loop
-
-    Expected improvement: 5-15% latency reduction for streaming path.
+    Issue #96 Task #144 Phase 3: Streaming latency optimization.
+    Issue #117: Accepts optional cached RangeBarCache instance.
     """
     from rangebar.clickhouse.cache import RangeBarCache
 
@@ -219,12 +215,19 @@ def _write_bars_batch_to_clickhouse(
     ]
     bars_df = pl.DataFrame(clean_bars)
 
-    with RangeBarCache() as cache:
+    if cache is not None:
         cache.store_bars_batch(
             symbol=symbol,
             threshold_decimal_bps=threshold,
             bars=bars_df,
         )
+    else:
+        with RangeBarCache() as ch_cache:
+            ch_cache.store_bars_batch(
+                symbol=symbol,
+                threshold_decimal_bps=threshold,
+                bars=bars_df,
+            )
 
 
 # =============================================================================
@@ -430,7 +433,7 @@ def _notify_watchdog_trigger(
 ) -> None:
     """Send Telegram alert when watchdog detects stale trade flow."""
     try:
-        from rangebar.notify.telegram import send_telegram
+        from rangebar.notify.telegram import _build_context_block, send_telegram
     except ImportError:
         logger.warning("telegram module not available, skipping watchdog notification")
         return
@@ -438,9 +441,10 @@ def _notify_watchdog_trigger(
     try:
         msg = (
             "<b>WATCHDOG TRIGGER</b>\n"
-            f"No trade increment for {stale_seconds:.0f}s\n"
-            f"trades_received={trades_received}\n"
-            f"restart #{restart_count + 1}"
+            f"<b>Stale:</b> {stale_seconds:.0f}s (no trade increment)\n"
+            f"<b>Total trades:</b> {trades_received:,}\n"
+            f"<b>Restart:</b> #{restart_count + 1}"
+            + _build_context_block("sidecar")
         )
         send_telegram(msg, disable_notification=False)
     except Exception:
@@ -514,18 +518,20 @@ def _notify_restart_failure(
 ) -> None:
     """Alert ops when watchdog restart fails via Telegram."""
     try:
-        from rangebar.notify.telegram import send_telegram
+        from rangebar.notify.telegram import _build_context_block, send_telegram
     except ImportError:
         logger.warning("telegram module not available for restart failure alert")
         return
 
     try:
         msg = (
-            "<b>⚠️ WATCHDOG RESTART FAILED</b>\n"
-            f"restart_attempt={restart_number}\n"
-            f"consecutive_timeouts={consecutive_timeouts}\n"
-            f"stale_s={stale_seconds:.0f}\n\n"
-            "Sidecar will exit. Check logs and restart manually."
+            "<b>WATCHDOG RESTART FAILED</b>\n"
+            f"<b>Attempt:</b> {restart_number}\n"
+            f"<b>Consecutive timeouts:</b> {consecutive_timeouts}\n"
+            f"<b>Stale:</b> {stale_seconds:.0f}s\n"
+            "<b>Action:</b> Sidecar will exit. systemd should auto-restart.\n"
+            "<b>Check:</b> <code>journalctl --user -u rangebar-sidecar -n 50</code>"
+            + _build_context_block("sidecar")
         )
         send_telegram(msg, disable_notification=False)
         logger.info("restart failure alert sent via Telegram")
@@ -590,6 +596,7 @@ def _start_health_server(port: int) -> HTTPServer | None:
 
 _DEAD_LETTER_DIR = Path("/tmp/rangebar-dead-letter")
 _MAX_FLUSH_RETRIES = 3
+_STARTUP_SYMBOL_PREVIEW = 5  # Max symbols shown in startup Telegram
 _FLUSH_RETRY_DELAYS = (1.0, 2.0, 4.0)  # Exponential backoff
 
 
@@ -626,15 +633,18 @@ def _write_dead_letter(
 def _notify_dead_letter(symbol: str, threshold: int, n_bars: int, path: Path) -> None:
     """Send Telegram alert when bars are written to dead-letter."""
     try:
-        from rangebar.notify.telegram import send_telegram
+        from rangebar.notify.telegram import _build_context_block, send_telegram
     except ImportError:
         return
     try:
         msg = (
             "<b>DEAD LETTER</b>\n"
-            f"{symbol}@{threshold}: {n_bars} bars lost to dead-letter\n"
-            f"path: <code>{path}</code>\n"
-            "ClickHouse write failed after 3 retries"
+            f"<b>Symbol:</b> {symbol}@{threshold}\n"
+            f"<b>Bars lost:</b> {n_bars:,}\n"
+            f"<b>Path:</b> <code>{path}</code>\n"
+            "<b>Cause:</b> ClickHouse write failed after 3 retries\n"
+            f"<b>Replay:</b> <code>python -m rangebar.sidecar --replay {path}</code>"
+            + _build_context_block("sidecar")
         )
         send_telegram(msg, disable_notification=False)
     except Exception:
@@ -643,14 +653,16 @@ def _notify_dead_letter(symbol: str, threshold: int, n_bars: int, path: Path) ->
 
 def _write_batch_with_retry(
     symbol: str, threshold: int, bar_dicts: list[dict[str, Any]],
+    *, cache: object | None = None,
 ) -> bool:
     """Write a batch to ClickHouse with retry + dead-letter fallback.
 
     Returns True if write succeeded (including dead-letter), False if all failed.
+    Issue #117: Accepts optional cached RangeBarCache.
     """
     for attempt in range(_MAX_FLUSH_RETRIES):
         try:
-            _write_bars_batch_to_clickhouse(symbol, threshold, bar_dicts)
+            _write_bars_batch_to_clickhouse(symbol, threshold, bar_dicts, cache=cache)
         except (OSError, RuntimeError, ConnectionError, ValueError) as e:
             delay = _FLUSH_RETRY_DELAYS[attempt]
             logger.warning(
@@ -695,6 +707,7 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
     from rangebar.logging import generate_trace_id
 
     trace_id = generate_trace_id("sdc")
+    sidecar_start_time = time.monotonic()
 
     if not config.symbols:
         msg = (
@@ -710,6 +723,45 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
         for thr in config.thresholds:
             resolve_and_validate_threshold(sym, thr)
 
+    # Issue #119: Symbol coverage health check
+    env_symbols_str = os.environ.get("RANGEBAR_STREAMING_SYMBOLS", "")
+    env_symbols = [s.strip().upper() for s in env_symbols_str.split(",") if s.strip()]
+    config_upper = {s.upper() for s in config.symbols}
+    if env_symbols and config_upper != set(env_symbols):
+        missing = sorted(set(env_symbols) - config_upper)
+        coverage_msg = (
+            f"Symbol mismatch: {len(config.symbols)}/{len(env_symbols)} symbols. "
+            f"Missing: {missing}. Use --from-env."
+        )
+        logger.warning(coverage_msg)
+        try:
+            from rangebar.hooks import HookEvent, emit_hook
+            emit_hook(
+                HookEvent.SYMBOL_COVERAGE_MISMATCH, symbol="*",
+                active=len(config.symbols), expected=len(env_symbols),
+                missing=missing,
+            )
+        except (ImportError, OSError, RuntimeError, ValueError):
+            logger.debug("failed to emit SYMBOL_COVERAGE_MISMATCH hook", exc_info=True)
+        try:
+            import sys
+
+            from rangebar.notify.telegram import _build_context_block, send_telegram
+            msg = (
+                "<b>SIDECAR PARTIAL COVERAGE</b>\n"
+                f"<b>Active:</b> {len(config.symbols)}/{len(env_symbols)} symbols\n"
+                f"<b>Missing:</b> {', '.join(missing)}\n"
+                "<b>Env var:</b> RANGEBAR_STREAMING_SYMBOLS\n"
+                "<b>Fix:</b> use <code>--from-env</code> flag\n"
+                f"<b>Cmdline:</b> <code>{' '.join(sys.argv)}</code>"
+                + _build_context_block("sidecar")
+            )
+            send_telegram(msg, disable_notification=False)
+        except (ImportError, OSError, RuntimeError):
+            logger.debug(
+                "failed to send coverage mismatch alert", exc_info=True,
+            )
+
     if config.verbose:
         logging.basicConfig(level=logging.DEBUG)
 
@@ -720,8 +772,44 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
         config.watchdog_timeout_s, config.max_watchdog_restarts,
     )
 
+    # Issue #117: Cache RangeBarCache at startup to avoid per-flush schema.sql reads
+    from rangebar.clickhouse.cache import RangeBarCache
+    ch_cache = RangeBarCache()
+
     # Issue #109: Start health check HTTP server (daemon thread)
     health_server = _start_health_server(config.health_port)
+
+    # Issue #117-119: Set start time for uptime tracking + send startup notification
+    try:
+        from rangebar.notify.telegram import set_start_time
+        set_start_time(sidecar_start_time)
+    except ImportError:
+        pass
+    try:
+        from rangebar.hooks import HookEvent, emit_hook
+        emit_hook(
+            HookEvent.SIDECAR_STARTED, symbol="*",
+            symbols=config.symbols, thresholds=config.thresholds,
+            health_port=config.health_port, pid=os.getpid(),
+        )
+    except (ImportError, OSError, RuntimeError, ValueError):
+        logger.debug("failed to emit SIDECAR_STARTED hook", exc_info=True)
+    try:
+        from rangebar.notify.telegram import _build_context_block, send_telegram
+        preview = ", ".join(config.symbols[:_STARTUP_SYMBOL_PREVIEW])
+        ellipsis = "..." if len(config.symbols) > _STARTUP_SYMBOL_PREVIEW else ""
+        startup_msg = (
+            "<b>SIDECAR STARTED</b>\n"
+            f"<b>Symbols:</b> {len(config.symbols)} "
+            f"({preview}{ellipsis})\n"
+            f"<b>Thresholds:</b> {config.thresholds}\n"
+            f"<b>Health:</b> :{config.health_port}/health\n"
+            f"<b>PID:</b> {os.getpid()}"
+            + _build_context_block("sidecar")
+        )
+        send_telegram(startup_msg, disable_notification=True)
+    except (ImportError, OSError, RuntimeError):
+        logger.debug("failed to send sidecar startup Telegram alert", exc_info=True)
 
     # Gap-fill (Layer 2) for all symbol x threshold pairs
     gap_fill_results = None
@@ -766,11 +854,16 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
 
         Issue #115 (Kintsugi Phase 1a): Uses _write_batch_with_retry() for
         exponential backoff (1s, 2s, 4s) and dead-letter on final failure.
+        Issue #117: Threads cached ch_cache to avoid per-flush schema.sql reads.
         """
         nonlocal last_batch_flush_time
         written = 0
         for (symbol, threshold), bars in bar_batch_buffer.items():
-            if bars and _write_batch_with_retry(symbol, threshold, bars):
+            if not bars:
+                continue
+            if _write_batch_with_retry(
+                symbol, threshold, bars, cache=ch_cache,
+            ):
                 written += len(bars)
         bar_batch_buffer.clear()
         last_batch_flush_time = time.monotonic()
@@ -890,7 +983,9 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
             # Issue #115 (Kintsugi Phase 1a): retry + dead-letter on failure
             if len(bar_batch_buffer[batch_key]) >= batch_max_size:
                 batch = bar_batch_buffer[batch_key]
-                wrote = _write_batch_with_retry(symbol, threshold, batch)
+                wrote = _write_batch_with_retry(
+                    symbol, threshold, batch, cache=ch_cache,
+                )
                 if wrote and (config.verbose or bars_written % 100 == 0):
                         logger.info(
                             "%s@%d: batch written (%d bars, total=%d, close=%s)",
@@ -900,6 +995,8 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
                 bar_batch_buffer[batch_key] = []
 
     finally:
+        exit_reason = "clean shutdown" if not running else "exception"
+
         # Flush all pending bars on shutdown
         written = _flush_all_batches()
         if written > 0:
@@ -916,8 +1013,39 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
         if health_server is not None:
             health_server.shutdown()
 
+        # Issue #117: Close cached RangeBarCache
+        try:
+            ch_cache.close()
+        except (OSError, RuntimeError):
+            logger.debug("failed to close cached RangeBarCache", exc_info=True)
+
         metrics = engine.get_metrics()
         logger.info(
             "sidecar stopped: bars_written=%d, engine_metrics=%s",
             bars_written, metrics,
         )
+
+        # Issue #117-119: Shutdown notification + hook
+        try:
+            from rangebar.hooks import HookEvent, emit_hook
+            emit_hook(
+                HookEvent.SIDECAR_STOPPED, symbol="*",
+                bars_written=bars_written, exit_reason=exit_reason,
+                pid=os.getpid(),
+            )
+        except (ImportError, OSError, RuntimeError, ValueError):
+            logger.debug("failed to emit SIDECAR_STOPPED hook", exc_info=True)
+        try:
+            from rangebar.notify.telegram import _build_context_block, send_telegram
+            shutdown_msg = (
+                "<b>SIDECAR STOPPED</b>\n"
+                f"<b>Bars written:</b> {bars_written:,}\n"
+                f"<b>Reason:</b> {exit_reason}\n"
+                f"<b>PID:</b> {os.getpid()}"
+                + _build_context_block("sidecar")
+            )
+            send_telegram(shutdown_msg, disable_notification=False)
+        except (ImportError, OSError, RuntimeError):
+            logger.debug(
+                "failed to send shutdown Telegram alert", exc_info=True,
+            )

@@ -67,6 +67,16 @@ else
     echo "WARN: symbols.toml mismatch — local=$LOCAL_SYMBOLS lines, remote=$REMOTE_SYMBOLS lines"
 fi
 
+# Step 7: Restart sidecar to pick up new code (Issue #117)
+echo "→ Step 7: Restarting sidecar..."
+ssh "$REMOTE_HOST" "systemctl --user restart rangebar-sidecar 2>/dev/null \
+  && echo 'Sidecar restarted' || echo 'Sidecar not running (skipped)'"
+
+# Step 8: Restart Kintsugi daemon (Issue #115)
+echo "→ Step 8: Restarting Kintsugi..."
+ssh "$REMOTE_HOST" "systemctl --user restart rangebar-kintsugi 2>/dev/null \
+  && echo 'Kintsugi restarted' || echo 'Kintsugi not running (skipped)'"
+
 echo ""
 echo "OK: bigblack deployment complete (v$REMOTE_VERSION)"
 """
@@ -117,6 +127,11 @@ fi
 LOCAL_SYMBOLS=$(wc -l < python/rangebar/data/symbols.toml | tr -d ' ')
 REMOTE_SYMBOLS=$(ssh "$REMOTE_HOST" "wc -l < $REMOTE_DIR/python/rangebar/data/symbols.toml" | tr -d ' ')
 echo "symbols.toml: local=$LOCAL_SYMBOLS lines remote=$REMOTE_SYMBOLS lines"
+
+# Service status (Issue #117)
+echo "→ Service status..."
+ssh "$REMOTE_HOST" "systemctl --user is-active rangebar-sidecar 2>/dev/null && echo '  Sidecar: running' || echo '  Sidecar: NOT RUNNING'"
+ssh "$REMOTE_HOST" "systemctl --user is-active rangebar-kintsugi 2>/dev/null && echo '  Kintsugi: running' || echo '  Kintsugi: NOT RUNNING'"
 
 # Verdict
 if [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ] && [ "$REMOTE_BRANCH" = "$LOCAL_BRANCH" ]; then
