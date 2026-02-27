@@ -38,7 +38,7 @@ class BarCountMixin:
         threshold_decimal_bps : int
             Threshold in decimal basis points
         before_ts : int | None
-            Only count bars with timestamp_ms < before_ts.
+            Only count bars with close_time_ms < before_ts.
             If None, counts all bars for symbol/threshold.
         ouroboros_mode : str
             Ouroboros reset mode filter (default: "year").
@@ -56,7 +56,7 @@ class BarCountMixin:
                 WHERE symbol = {symbol:String}
                   AND threshold_decimal_bps = {threshold:UInt32}
                   AND ouroboros_mode = {ouroboros_mode:String}
-                  AND timestamp_ms < {end_ts:Int64}
+                  AND close_time_ms < {end_ts:Int64}
             """
             result = self.client.command(
                 query,
@@ -110,7 +110,7 @@ class BarCountMixin:
             Oldest bar timestamp in milliseconds, or None if no bars
         """
         query = """
-            SELECT min(timestamp_ms)
+            SELECT min(close_time_ms)
             FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}
@@ -148,7 +148,7 @@ class BarCountMixin:
             Newest bar timestamp in milliseconds, or None if no bars
         """
         query = """
-            SELECT max(timestamp_ms)
+            SELECT max(close_time_ms)
             FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}

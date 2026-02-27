@@ -38,7 +38,7 @@ class MaintenanceMixin:
         Returns
         -------
         list[dict]
-            List of dicts with keys: symbol, threshold_decimal_bps, timestamp_ms,
+            List of dicts with keys: symbol, threshold_decimal_bps, close_time_ms,
             duplicate_count, opens, closes. Empty list if no duplicates found.
 
         Examples
@@ -64,15 +64,15 @@ class MaintenanceMixin:
             SELECT
                 symbol,
                 threshold_decimal_bps,
-                timestamp_ms,
+                close_time_ms,
                 count(*) as duplicate_count,
                 groupArray(open) as opens,
                 groupArray(close) as closes
             FROM rangebar_cache.range_bars
             {where_sql}
-            GROUP BY symbol, threshold_decimal_bps, timestamp_ms
+            GROUP BY symbol, threshold_decimal_bps, close_time_ms
             HAVING count(*) > 1
-            ORDER BY symbol, threshold_decimal_bps, timestamp_ms
+            ORDER BY symbol, threshold_decimal_bps, close_time_ms
         """
 
         result = self.client.query(query, parameters=params)
@@ -80,7 +80,7 @@ class MaintenanceMixin:
             {
                 "symbol": row[0],
                 "threshold_decimal_bps": row[1],
-                "timestamp_ms": row[2],
+                "close_time_ms": row[2],
                 "duplicate_count": row[3],
                 "opens": row[4],
                 "closes": row[5],
@@ -102,7 +102,7 @@ class MaintenanceMixin:
 
         ReplacingMergeTree only deduplicates during background merges. This
         method forces an immediate merge to remove duplicate rows (same
-        symbol + threshold + timestamp_ms), keeping the row with the latest
+        symbol + threshold + close_time_ms), keeping the row with the latest
         computed_at timestamp.
 
         Parameters

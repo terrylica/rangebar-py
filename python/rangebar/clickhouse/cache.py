@@ -28,6 +28,7 @@ from .._core import __version__
 from ..constants import (
     EXCHANGE_SESSION_COLUMNS,
     MICROSTRUCTURE_COLUMNS,
+    TIMESTAMP_COLUMNS,
     TRADE_ID_RANGE_COLUMNS,  # Issue #72
 )
 from ..conversion import normalize_arrow_dtypes
@@ -223,6 +224,33 @@ class RangeBarCache(
             # Graceful degradation: older ClickHouse may not support this setting.
             logger.debug("Could not set non_replicated_deduplication_window: %s", e)
 
+        # Timestamp revamp: Add open_time_ms column if missing (idempotent)
+        try:
+            self.client.command(
+                "ALTER TABLE rangebar_cache.range_bars "
+                "ADD COLUMN IF NOT EXISTS open_time_ms Int64 "
+                "DEFAULT close_time_ms - intDiv(duration_us, 1000) "
+                "AFTER close_time_ms"
+            )
+        except (OSError, RuntimeError) as e:
+            logger.debug("Could not add open_time_ms column: %s", e)
+
+        # Detect legacy schema and warn
+        try:
+            result = self.client.query(
+                "SELECT name FROM system.columns "
+                "WHERE database='rangebar_cache' "
+                "AND table='range_bars' AND name='timestamp_ms'"
+            )
+            if result.result_rows:
+                logger.warning(
+                    "Legacy schema detected: 'timestamp_ms' column present. "
+                    "Run migration script to rename to 'close_time_ms'. "
+                    "See scripts/migrate_timestamp_column.py"
+                )
+        except (OSError, RuntimeError):
+            pass
+
         # Issue #98: Auto-migrate plugin feature columns.
         # Discovers installed FeatureProviders and ensures their columns
         # exist in the range_bars table. Idempotent (ADD COLUMN IF NOT EXISTS).
@@ -286,12 +314,13 @@ class RangeBarCache(
         # Handle DatetimeIndex
         if isinstance(df.index, pd.DatetimeIndex):
             df = df.reset_index()
-            if "timestamp" in df.columns:
-                df["timestamp_ms"] = df["timestamp"].dt.as_unit("ms").astype("int64")
-                df = df.drop(columns=["timestamp"])
-            elif "index" in df.columns:
-                df["timestamp_ms"] = df["index"].dt.as_unit("ms").astype("int64")
-                df = df.drop(columns=["index"])
+            # After reset_index(), the DatetimeIndex becomes a column
+            idx_col = bars.index.name or "index"
+            df["close_time_ms"] = df[idx_col].dt.as_unit("ms").astype("int64")
+            df = df.drop(columns=[idx_col], errors="ignore")
+        elif "close_time_ms" not in df.columns:
+            msg = "DataFrame must have DatetimeIndex or 'close_time_ms' column"
+            raise ValueError(msg)
 
         # Normalize column names (lowercase)
         df.columns = df.columns.str.lower()
@@ -310,7 +339,7 @@ class RangeBarCache(
             "symbol",
             "threshold_decimal_bps",
             "ouroboros_mode",
-            "timestamp_ms",
+            "close_time_ms",
             "open",
             "high",
             "low",
@@ -322,19 +351,10 @@ class RangeBarCache(
             "source_end_ts",
         ]
 
-        # Add optional microstructure columns if present (from constants.py SSoT)
-        for col in MICROSTRUCTURE_COLUMNS:
-            if col in df.columns:
-                columns.append(col)
-
-        # Add optional exchange session columns if present (Issue #8)
-        for col in EXCHANGE_SESSION_COLUMNS:
-            if col in df.columns:
-                columns.append(col)
-
-        # Add trade ID range columns if present (Issue #72)
-        for col in TRADE_ID_RANGE_COLUMNS:
-            if col in df.columns:
+        # Add optional columns if present (from constants.py SSoT)
+        for col in (*MICROSTRUCTURE_COLUMNS, *EXCHANGE_SESSION_COLUMNS,
+                     *TRADE_ID_RANGE_COLUMNS, *TIMESTAMP_COLUMNS):
+            if col in df.columns and col not in columns:
                 columns.append(col)
 
         # Filter to existing columns
@@ -393,7 +413,7 @@ class RangeBarCache(
         """
         query = """
             SELECT
-                timestamp_ms,
+                close_time_ms,
                 open as Open,
                 high as High,
                 low as Low,
@@ -404,7 +424,7 @@ class RangeBarCache(
               AND threshold_decimal_bps = {threshold_decimal_bps:UInt32}
               AND source_start_ts = {start_ts:Int64}
               AND source_end_ts = {end_ts:Int64}
-            ORDER BY timestamp_ms
+            ORDER BY close_time_ms
         """
         try:
             # Use Arrow-optimized query for 3x faster DataFrame creation
@@ -448,9 +468,9 @@ class RangeBarCache(
         )
 
         # Convert to TZ-aware UTC DatetimeIndex (Issue #20: consistent timestamps)
-        df["timestamp"] = pd.to_datetime(df["timestamp_ms"], unit="ms", utc=True)
+        df["timestamp"] = pd.to_datetime(df["close_time_ms"], unit="ms", utc=True)
         df = df.set_index("timestamp")
-        df = df.drop(columns=["timestamp_ms"])
+        df = df.drop(columns=["close_time_ms"])
 
         # Convert PyArrow dtypes to numpy for compatibility with fresh computation
         # query_df_arrow returns double[pyarrow], but process_trades returns float64
@@ -565,8 +585,8 @@ class RangeBarCache(
             ALTER TABLE rangebar_cache.range_bars
             DELETE WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}
-              AND timestamp_ms >= {start_ts:Int64}
-              AND timestamp_ms <= {end_ts:Int64}
+              AND close_time_ms >= {start_ts:Int64}
+              AND close_time_ms <= {end_ts:Int64}
         """
         self.client.command(
             query,
@@ -611,12 +631,12 @@ class RangeBarCache(
         ...     print(f"Last close: {bar['Close']}")
         """
         query = """
-            SELECT timestamp_ms, open, high, low, close, volume
+            SELECT close_time_ms, open, high, low, close, volume
             FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}
-              AND timestamp_ms < {before_ts:Int64}
-            ORDER BY timestamp_ms DESC
+              AND close_time_ms < {before_ts:Int64}
+            ORDER BY close_time_ms DESC
             LIMIT 1
         """
         result = self.client.query(
@@ -635,7 +655,7 @@ class RangeBarCache(
 
         row = rows[0]
         return {
-            "timestamp_ms": row[0],
+            "close_time_ms": row[0],
             "Open": row[1],
             "High": row[2],
             "Low": row[3],

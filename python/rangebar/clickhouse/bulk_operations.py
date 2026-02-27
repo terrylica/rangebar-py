@@ -21,6 +21,7 @@ from ..constants import (
     INTER_BAR_FEATURE_COLUMNS,  # Issue #78: Was missing, causing NULL lookback columns
     INTRA_BAR_FEATURE_COLUMNS,  # Issue #78: Also add intra-bar features
     MICROSTRUCTURE_COLUMNS,
+    TIMESTAMP_COLUMNS,
     TRADE_ID_RANGE_COLUMNS,  # Issue #72
 )
 from ..exceptions import CacheWriteError
@@ -32,13 +33,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _guard_timestamp_ms_scale(df: object, column: str = "timestamp_ms") -> None:
-    """Raise if timestamp_ms contains seconds instead of milliseconds (#85)."""
+def _guard_close_time_ms_scale(df: object, column: str = "close_time_ms") -> None:
+    """Raise if close_time_ms contains seconds instead of milliseconds (#85)."""
     if column in (df.columns if hasattr(df, "columns") else []):
         min_ts = df[column].min()
         if min_ts < 1_000_000_000_000:
             msg = (
-                f"timestamp_ms in seconds, not ms (min={min_ts}). "
+                f"close_time_ms in seconds, not ms (min={min_ts}). "
                 f"See Issue #85."
             )
             raise ValueError(msg)
@@ -121,7 +122,7 @@ def _run_write_guards(
     threshold_decimal_bps: int | None = None,
 ) -> None:
     """Run all pre-write data integrity guards."""
-    _guard_timestamp_ms_scale(df)
+    _guard_close_time_ms_scale(df)
     _guard_volume_non_negative(df)
     _guard_bar_range_invariant(df, threshold_decimal_bps)
 
@@ -264,12 +265,12 @@ class BulkStoreMixin:
         # so the prior .copy() was a redundant full-DataFrame copy.
         if isinstance(bars.index, pd.DatetimeIndex):
             df = bars.reset_index()  # creates new DF (no prior .copy() needed)
-            if "timestamp" in df.columns:
-                df["timestamp_ms"] = df["timestamp"].dt.as_unit("ms").astype("int64")
-                df = df.drop(columns=["timestamp"])
-            elif "index" in df.columns:
-                df["timestamp_ms"] = df["index"].dt.as_unit("ms").astype("int64")
-                df = df.drop(columns=["index"])
+            idx_col = bars.index.name or "index"
+            df["close_time_ms"] = df[idx_col].dt.as_unit("ms").astype("int64")
+            df = df.drop(columns=[idx_col], errors="ignore")
+        elif "close_time_ms" not in bars.columns:
+            msg = "DataFrame must have DatetimeIndex or 'close_time_ms' column"
+            raise ValueError(msg)
         else:
             df = bars.copy()
 
@@ -285,9 +286,13 @@ class BulkStoreMixin:
         df["rangebar_version"] = version if version is not None else __version__
 
         # For bulk storage without CacheKey, use timestamp range as source bounds
-        if "timestamp_ms" in df.columns and len(df) > 0:
-            start_ts = df["timestamp_ms"].min()
-            end_ts = df["timestamp_ms"].max()
+        if "close_time_ms" in df.columns and len(df) > 0:
+            start_ts = (
+                df["open_time_ms"].min()
+                if "open_time_ms" in df.columns
+                else df["close_time_ms"].min()
+            )
+            end_ts = df["close_time_ms"].max()
             df["source_start_ts"] = start_ts
             df["source_end_ts"] = end_ts
             # Generate cache_key from symbol, threshold, ouroboros, and timestamp range
@@ -306,7 +311,7 @@ class BulkStoreMixin:
             "symbol",
             "threshold_decimal_bps",
             "ouroboros_mode",
-            "timestamp_ms",
+            "close_time_ms",
             "open",
             "high",
             "low",
@@ -323,8 +328,14 @@ class BulkStoreMixin:
         available_cols = frozenset(df.columns)
 
         # Add optional columns if present (from constants.py SSoT)
-        for col in (*MICROSTRUCTURE_COLUMNS, *TRADE_ID_RANGE_COLUMNS):
-            if col in available_cols:
+        # close_time_ms already in base list; open_time_ms via TIMESTAMP_COLUMNS
+        all_optional = (
+            *MICROSTRUCTURE_COLUMNS,
+            *TRADE_ID_RANGE_COLUMNS,
+            *TIMESTAMP_COLUMNS,
+        )
+        for col in all_optional:
+            if col in available_cols and col not in columns:
                 columns.append(col)
 
         # Add exchange session columns; cast bool_ to int (Issue #8, #50)
@@ -455,22 +466,15 @@ class BulkStoreMixin:
             df = bars
 
         # Handle timestamp conversion from datetime to milliseconds
-        if "timestamp" in df.columns:
-            # Check if it's already datetime or string
-            if df["timestamp"].dtype == pl.Datetime:
-                df = df.with_columns(
-                    (pl.col("timestamp").dt.epoch(time_unit="ms"))
-                    .cast(pl.Int64)
-                    .alias("timestamp_ms")
-                ).drop("timestamp")
-            elif df["timestamp"].dtype == pl.Utf8:
-                df = df.with_columns(
-                    pl.col("timestamp")
-                    .str.to_datetime(format="%Y-%m-%dT%H:%M:%S%.f%:z")
-                    .dt.epoch(time_unit="ms")
-                    .cast(pl.Int64)
-                    .alias("timestamp_ms")
-                ).drop("timestamp")
+        if "timestamp" in df.columns and df["timestamp"].dtype == pl.Datetime:
+            df = df.with_columns(
+                (pl.col("timestamp").dt.epoch(time_unit="ms"))
+                .cast(pl.Int64)
+                .alias("close_time_ms")
+            ).drop("timestamp")
+        elif "close_time_ms" not in df.columns:
+            msg = "DataFrame must have 'close_time_ms' column"
+            raise ValueError(msg)
 
         _run_write_guards(df, threshold_decimal_bps)
 
@@ -485,9 +489,13 @@ class BulkStoreMixin:
         )
 
         # Add source bounds and cache_key
-        if "timestamp_ms" in df.columns and len(df) > 0:
-            start_ts = df["timestamp_ms"].min()
-            end_ts = df["timestamp_ms"].max()
+        if "close_time_ms" in df.columns and len(df) > 0:
+            start_ts = (
+                df["open_time_ms"].min()
+                if "open_time_ms" in df.columns
+                else df["close_time_ms"].min()
+            )
+            end_ts = df["close_time_ms"].max()
             key_str = (
                 f"{symbol}_{threshold_decimal_bps}"
                 f"_{start_ts}_{end_ts}_{ouroboros_mode}"
@@ -511,7 +519,7 @@ class BulkStoreMixin:
             "symbol",
             "threshold_decimal_bps",
             "ouroboros_mode",
-            "timestamp_ms",
+            "close_time_ms",
             "open",
             "high",
             "low",
@@ -523,9 +531,15 @@ class BulkStoreMixin:
             "source_end_ts",
         ]
 
-        # Add optional microstructure columns if present (from constants.py SSoT)
-        for col in MICROSTRUCTURE_COLUMNS:
-            if col in df.columns:
+        # Add optional columns if present (from constants.py SSoT)
+        # close_time_ms already in base list; open_time_ms via TIMESTAMP_COLUMNS
+        all_optional = (
+            *MICROSTRUCTURE_COLUMNS,
+            *TRADE_ID_RANGE_COLUMNS,
+            *TIMESTAMP_COLUMNS,
+        )
+        for col in all_optional:
+            if col in df.columns and col not in columns:
                 columns.append(col)
 
         # Add optional exchange session columns if present (Issue #8)
@@ -535,18 +549,8 @@ class BulkStoreMixin:
                 df = df.with_columns(pl.col(col).cast(pl.UInt8))
                 columns.append(col)
 
-        # Add trade ID range columns if present (Issue #72)
-        for col in TRADE_ID_RANGE_COLUMNS:
-            if col in df.columns:
-                columns.append(col)
-
-        # Add inter-bar feature columns if present (Issue #78: was missing)
-        for col in INTER_BAR_FEATURE_COLUMNS:
-            if col in df.columns:
-                columns.append(col)
-
-        # Add intra-bar feature columns if present (Issue #78)
-        for col in INTRA_BAR_FEATURE_COLUMNS:
+        # Add inter-bar and intra-bar feature columns if present (Issue #78)
+        for col in (*INTER_BAR_FEATURE_COLUMNS, *INTRA_BAR_FEATURE_COLUMNS):
             if col in df.columns:
                 columns.append(col)
 

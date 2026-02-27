@@ -87,7 +87,7 @@ def _build_session_update_sql(
     # toTimezone converts to local time with DST; toHour extracts hour.
     # toDayOfWeek mode=0: 1=Monday..7=Sunday. Weekdays are 1-5.
     ts_local = (
-        f"toTimezone(toDateTime(intDiv(timestamp_ms, 1000)), '{tz}')"
+        f"toTimezone(toDateTime(intDiv(close_time_ms, 1000)), '{tz}')"
     )
     condition = (
         f"toHour({ts_local}) >= {start} "
@@ -112,7 +112,7 @@ def migrate_exchange_sessions(
     symbol: str | None = None,
     dry_run: bool = False,
 ) -> int:
-    """Populate exchange_session_* columns from timestamp_ms.
+    """Populate exchange_session_* columns from close_time_ms.
 
     Computes session flags using timezone-aware hour extraction matching
     the Python implementation in ouroboros.py. Handles DST automatically

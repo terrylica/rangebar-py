@@ -49,7 +49,7 @@ class QueryOperationsMixin:
     ) -> tuple[pd.DataFrame | None, int]:
         """Get N bars from cache, ordered chronologically (oldest first).
 
-        Uses ORDER BY timestamp_ms DESC LIMIT N for efficient retrieval,
+        Uses ORDER BY close_time_ms DESC LIMIT N for efficient retrieval,
         then reverses in Python for chronological order.
 
         Parameters
@@ -61,7 +61,7 @@ class QueryOperationsMixin:
         n_bars : int
             Maximum number of bars to retrieve
         before_ts : int | None
-            Only get bars with timestamp_ms < before_ts.
+            Only get bars with close_time_ms < before_ts.
             If None, gets most recent bars.
         include_microstructure : bool
             If True, includes vwap, buy_volume, sell_volume columns
@@ -89,7 +89,7 @@ class QueryOperationsMixin:
 
         # Select columns
         base_cols = """
-            timestamp_ms,
+            close_time_ms,
             open as Open,
             high as High,
             low as Low,
@@ -149,9 +149,9 @@ class QueryOperationsMixin:
                 WHERE symbol = {{symbol:String}}
                   AND threshold_decimal_bps = {{threshold:UInt32}}
                   AND ouroboros_mode = {{ouroboros_mode:String}}
-                  AND timestamp_ms < {{end_ts:Int64}}
+                  AND close_time_ms < {{end_ts:Int64}}
                   {version_filter}
-                ORDER BY timestamp_ms DESC
+                ORDER BY close_time_ms DESC
                 LIMIT {{n_bars:UInt64}}
             """
             params: dict[str, str | int] = {
@@ -175,7 +175,7 @@ class QueryOperationsMixin:
                   AND threshold_decimal_bps = {{threshold:UInt32}}
                   AND ouroboros_mode = {{ouroboros_mode:String}}
                   {version_filter}
-                ORDER BY timestamp_ms DESC
+                ORDER BY close_time_ms DESC
                 LIMIT {{n_bars:UInt64}}
             """
             params = {
@@ -198,9 +198,9 @@ class QueryOperationsMixin:
         df = df.iloc[::-1]
 
         # Convert to TZ-aware UTC DatetimeIndex (Issue #20: match get_range_bars output)
-        df["timestamp"] = pd.to_datetime(df["timestamp_ms"], unit="ms", utc=True)
+        df["timestamp"] = pd.to_datetime(df["close_time_ms"], unit="ms", utc=True)
         df = df.set_index("timestamp")
-        df = df.drop(columns=["timestamp_ms"])
+        df = df.drop(columns=["close_time_ms"])
 
         # Convert PyArrow dtypes to numpy for compatibility
         df = normalize_arrow_dtypes(df)
@@ -231,10 +231,10 @@ class QueryOperationsMixin:
         Returns
         -------
         int | None
-            Latest timestamp_ms value, or None if no bars exist.
+            Latest close_time_ms value, or None if no bars exist.
         """
         query = """
-            SELECT max(timestamp_ms) as latest_ts
+            SELECT max(close_time_ms) as latest_ts
             FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}
@@ -432,7 +432,7 @@ class QueryOperationsMixin:
         """
         # Build column list
         base_cols = """
-            timestamp_ms,
+            close_time_ms,
             open as Open,
             high as High,
             low as Low,
@@ -503,10 +503,10 @@ class QueryOperationsMixin:
             WHERE symbol = {{symbol:String}}
               AND threshold_decimal_bps = {{threshold:UInt32}}
               AND ouroboros_mode = {{ouroboros_mode:String}}
-              AND timestamp_ms >= {{start_ts:Int64}}
-              AND timestamp_ms <= {{end_ts:Int64}}
+              AND close_time_ms >= {{start_ts:Int64}}
+              AND close_time_ms <= {{end_ts:Int64}}
               {version_filter}
-            ORDER BY timestamp_ms
+            ORDER BY close_time_ms
         """
 
         # Build parameters
@@ -555,9 +555,9 @@ class QueryOperationsMixin:
         )
 
         # Convert to TZ-aware UTC DatetimeIndex (matches get_range_bars output)
-        df["timestamp"] = pd.to_datetime(df["timestamp_ms"], unit="ms", utc=True)
+        df["timestamp"] = pd.to_datetime(df["close_time_ms"], unit="ms", utc=True)
         df = df.set_index("timestamp")
-        df = df.drop(columns=["timestamp_ms"])
+        df = df.drop(columns=["close_time_ms"])
 
         # Convert PyArrow dtypes to numpy float64 for compatibility
         df = normalize_arrow_dtypes(df)

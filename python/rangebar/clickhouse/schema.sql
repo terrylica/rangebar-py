@@ -175,7 +175,10 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
     threshold_decimal_bps UInt32,
 
     -- OHLCV data
-    timestamp_ms Int64,
+    -- Bar close time in milliseconds (ORDER BY key, replaces legacy "timestamp_ms")
+    close_time_ms Int64,
+    -- Bar open time in milliseconds (computed from Rust open_time, us→ms)
+    open_time_ms Int64 DEFAULT 0,
     open Float64,
     high Float64,
     low Float64,
@@ -284,9 +287,9 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
 )
 ENGINE = ReplacingMergeTree(computed_at)
 -- Partition by symbol, threshold, and month
-PARTITION BY (symbol, threshold_decimal_bps, toYYYYMM(toDateTime(timestamp_ms / 1000)))
+PARTITION BY (symbol, threshold_decimal_bps, toYYYYMM(toDateTime(close_time_ms / 1000)))
 -- Order for efficient lookups
-ORDER BY (symbol, threshold_decimal_bps, timestamp_ms)
+ORDER BY (symbol, threshold_decimal_bps, close_time_ms)
 SETTINGS non_replicated_deduplication_window = 1000;
 
 -- ============================================================================
