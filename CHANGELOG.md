@@ -1,3 +1,10 @@
+## [12.32.2](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.32.1...v12.32.2) (2026-02-27)
+
+
+### Bug Fixes
+
+* **#121:** Universal gap prevention system for bigblack ([848985d](https://github.com-terrylica/terrylica/rangebar-py/commit/848985d1a1921fb28f84f70ca2f6fcf4ba6f618c)), closes [#121](https://github.com-terrylica/terrylica/rangebar-py/issues/121)
+
 ## [12.32.1](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.32.0...v12.32.1) (2026-02-27)
 
 
