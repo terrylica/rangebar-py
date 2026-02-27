@@ -126,6 +126,16 @@ def _get_all_columns(client, table: str) -> list[str]:
     return [row[0] for row in result.result_rows]
 
 
+def _get_column_types(client, table: str) -> dict[str, str]:
+    """Get column name → type mapping for a table."""
+    result = client.query(
+        "SELECT name, type FROM system.columns "
+        f"WHERE database='rangebar_cache' AND table='{table}' "
+        "ORDER BY position"
+    )
+    return {row[0]: row[1] for row in result.result_rows}
+
+
 def migrate(client, *, dry_run: bool = False) -> bool:
     """Perform the table migration."""
     print("\n=== Checking current schema ===")
@@ -183,6 +193,10 @@ def migrate(client, *, dry_run: bool = False) -> bool:
     v2_columns = _get_all_columns(client, "range_bars_v2")
     old_columns = _get_all_columns(client, "range_bars")
 
+    # Get type info for both tables to handle type mismatches
+    old_types = _get_column_types(client, "range_bars")
+    v2_types = _get_column_types(client, "range_bars_v2")
+
     # Build SELECT clause: map old columns to new names
     select_parts = []
     insert_cols = []
@@ -196,7 +210,20 @@ def migrate(client, *, dry_run: bool = False) -> bool:
             )
             insert_cols.append("open_time_ms")
         elif col in old_columns:
-            select_parts.append(col)
+            old_type = old_types.get(col, "")
+            new_type = v2_types.get(col, "")
+            # Handle Float64 → Nullable(UInt32/Int64): inf/nan → NULL
+            if "Float64" in old_type and ("UInt" in new_type or "Int" in new_type):
+                select_parts.append(
+                    f"if(isFinite({col}), CAST({col} AS {new_type}), NULL) AS {col}"
+                )
+            # Handle Nullable(UInt8) → UInt8: NULL → 0
+            elif "Nullable" in old_type and "Nullable" not in new_type:
+                select_parts.append(
+                    f"ifNull({col}, 0) AS {col}"
+                )
+            else:
+                select_parts.append(col)
             insert_cols.append(col)
         # else: column has DEFAULT in v2 schema, ClickHouse fills it
 
@@ -208,23 +235,38 @@ def migrate(client, *, dry_run: bool = False) -> bool:
     )
 
     start = time.monotonic()
+    # Raise partition limit: 27M rows across many (symbol, threshold, month) partitions
+    # exceeds default max_partitions_per_insert_block=100. This is a one-time migration.
+    _ch_command(
+        client,
+        "SET max_partitions_per_insert_block = 10000"
+    )
     _ch_command(client, insert_sql)
     elapsed = time.monotonic() - start
     print(f"  INSERT SELECT completed in {elapsed:.1f}s")
 
     # Step 4: Verify row counts
+    # Use FINAL for old table — ReplacingMergeTree may have unmerged duplicates
+    # that get deduplicated in the new table during INSERT
     print("\n=== Step 4: Verify row counts ===")
+    old_final_count = client.query(
+        "SELECT count() FROM rangebar_cache.range_bars FINAL"
+    ).result_rows[0][0]
     v2_count = client.query(
         "SELECT count() FROM rangebar_cache.range_bars_v2"
     ).result_rows[0][0]
-    print(f"  Old table: {old_count:,} rows")
+    print(f"  Old table (raw): {old_count:,} rows")
+    print(f"  Old table (FINAL): {old_final_count:,} rows")
     print(f"  New table: {v2_count:,} rows")
+    dedup_removed = old_count - old_final_count
+    if dedup_removed > 0:
+        print(f"  Duplicates removed by ReplacingMergeTree: {dedup_removed:,}")
 
-    if v2_count != old_count:
-        print(f"  ERROR: Row count mismatch! ({v2_count:,} != {old_count:,})")
+    if v2_count != old_final_count:
+        print(f"  ERROR: Row count mismatch! ({v2_count:,} != {old_final_count:,})")
         print("  Aborting migration. range_bars_v2 left for inspection.")
         return False
-    print("  PASS: Row counts match")
+    print("  PASS: Row counts match (FINAL)")
 
     # Step 5: Verify open_time_ms invariant
     print("\n=== Step 5: Verify open_time_ms invariant ===")
