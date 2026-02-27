@@ -104,8 +104,8 @@ def query_clickhouse_bar_count(
         FROM rangebar_cache.range_bars FINAL
         WHERE symbol = {symbol:String}
           AND threshold_decimal_bps = {threshold:UInt32}
-          AND timestamp_ms >= {start_ms:Int64}
-          AND timestamp_ms <= {end_ms:Int64}
+          AND close_time_ms >= {start_ms:Int64}
+          AND close_time_ms <= {end_ms:Int64}
     """
     result = client.command(
         query,
@@ -154,13 +154,13 @@ def query_clickhouse_per_day(
 
     query = """
         SELECT
-            toDate(toDateTime(timestamp_ms / 1000)) AS bar_date,
+            toDate(toDateTime(close_time_ms / 1000)) AS bar_date,
             count() AS bar_count
         FROM rangebar_cache.range_bars FINAL
         WHERE symbol = {symbol:String}
           AND threshold_decimal_bps = {threshold:UInt32}
-          AND timestamp_ms >= {start_ms:Int64}
-          AND timestamp_ms <= {end_ms:Int64}
+          AND close_time_ms >= {start_ms:Int64}
+          AND close_time_ms <= {end_ms:Int64}
         GROUP BY bar_date
         ORDER BY bar_date
     """

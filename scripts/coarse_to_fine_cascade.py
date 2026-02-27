@@ -80,11 +80,11 @@ def analyze_coarse_to_fine_cascade(
         -- Coarse bars with direction
         coarse_bars AS (
             SELECT
-                timestamp_ms AS coarse_close_ms,
+                close_time_ms AS coarse_close_ms,
                 close AS coarse_close,
                 CASE WHEN close > open THEN 'U' ELSE 'D' END AS coarse_direction,
-                toYear(toDateTime(timestamp_ms / 1000)) AS year,
-                toQuarter(toDateTime(timestamp_ms / 1000)) AS quarter
+                toYear(toDateTime(close_time_ms / 1000)) AS year,
+                toQuarter(toDateTime(close_time_ms / 1000)) AS quarter
             FROM rangebar_cache.range_bars
             WHERE symbol = '{symbol}'
               AND threshold_decimal_bps = {coarse_threshold}
@@ -93,10 +93,10 @@ def analyze_coarse_to_fine_cascade(
         -- Fine bars with close price
         fine_bars AS (
             SELECT
-                timestamp_ms AS fine_close_ms,
+                close_time_ms AS fine_close_ms,
                 close AS fine_close,
                 open AS fine_open,
-                row_number() OVER (ORDER BY timestamp_ms) AS bar_idx
+                row_number() OVER (ORDER BY close_time_ms) AS bar_idx
             FROM rangebar_cache.range_bars
             WHERE symbol = '{symbol}'
               AND threshold_decimal_bps = {fine_threshold}

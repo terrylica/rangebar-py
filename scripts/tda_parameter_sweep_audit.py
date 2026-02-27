@@ -129,13 +129,13 @@ def main() -> None:
         # Query returns and realized volatility
         query = f"""
         SELECT
-            timestamp_ms,
+            close_time_ms,
             (close - open) / open * 10000 AS return_dbps
         FROM range_bars
         WHERE symbol = '{symbol}'
           AND threshold_decimal_bps = {threshold}
           AND ouroboros_mode = 'year'
-        ORDER BY timestamp_ms
+        ORDER BY close_time_ms
         """
 
         log("INFO", "Querying range bar data", symbol=symbol, threshold=threshold)

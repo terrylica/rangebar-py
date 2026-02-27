@@ -288,8 +288,8 @@ def show_status() -> None:
         with RangeBarCache() as cache:
             result = cache.client.query("""
                 SELECT symbol, threshold_decimal_bps, count(*) as bars,
-                       formatDateTime(fromUnixTimestamp64Milli(min(timestamp_ms)), '%Y-%m-%d') as earliest,
-                       formatDateTime(fromUnixTimestamp64Milli(max(timestamp_ms)), '%Y-%m-%d') as latest
+                       formatDateTime(fromUnixTimestamp64Milli(min(close_time_ms)), '%Y-%m-%d') as earliest,
+                       formatDateTime(fromUnixTimestamp64Milli(max(close_time_ms)), '%Y-%m-%d') as latest
                 FROM rangebar_cache.range_bars FINAL
                 GROUP BY symbol, threshold_decimal_bps
                 ORDER BY symbol, threshold_decimal_bps

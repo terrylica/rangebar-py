@@ -163,7 +163,7 @@ def main():
 
         # Debug: check what was actually stored
         debug_result = cache.client.query(
-            "SELECT count(*), min(timestamp_ms), max(timestamp_ms), "
+            "SELECT count(*), min(close_time_ms), max(close_time_ms), "
             "min(source_start_ts), max(source_end_ts) "
             "FROM rangebar_cache.range_bars FINAL "
             "WHERE symbol = {symbol:String}",

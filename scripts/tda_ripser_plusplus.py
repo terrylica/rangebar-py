@@ -19,7 +19,7 @@ Usage:
     # Export data from bigblack first:
     ssh bigblack "clickhouse-client --query \"SELECT * FROM rangebar_cache.range_bars
         WHERE symbol = 'BTCUSDT' AND threshold_decimal_bps = 100
-        AND ouroboros_mode = 'year' ORDER BY timestamp_ms\"
+        AND ouroboros_mode = 'year' ORDER BY close_time_ms\"
         --format Parquet" > /tmp/btcusdt_100.parquet
 
     # Run on littleblack:

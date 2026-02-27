@@ -35,7 +35,7 @@ def get_last_cached_date(symbol: str, threshold: int) -> str | None:
     try:
         client = clickhouse_connect.get_client(host="localhost", port=8123)
         result = client.query(f"""
-            SELECT max(toDate(fromUnixTimestamp64Milli(timestamp_ms))) as last_date
+            SELECT max(toDate(fromUnixTimestamp64Milli(close_time_ms))) as last_date
             FROM rangebar_cache.range_bars
             WHERE symbol = '{symbol}'
               AND threshold_decimal_bps = {threshold}

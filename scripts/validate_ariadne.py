@@ -34,7 +34,7 @@ def main() -> int:
         limit_clause = f"LIMIT {args.limit}" if args.limit > 0 else ""
         query = f"""
             SELECT
-                timestamp_ms,
+                close_time_ms,
                 first_agg_trade_id,
                 last_agg_trade_id
             FROM rangebar_cache.range_bars FINAL
@@ -42,7 +42,7 @@ def main() -> int:
               AND threshold_decimal_bps = {{threshold:UInt32}}
               AND first_agg_trade_id > 0
               AND last_agg_trade_id > 0
-            ORDER BY timestamp_ms ASC
+            ORDER BY close_time_ms ASC
             {limit_clause}
         """
         result = cache.client.query(
@@ -66,7 +66,7 @@ def main() -> int:
         if curr_first != expected:
             gap = {
                 "index": i,
-                "timestamp_ms": rows[i][0],
+                "close_time_ms": rows[i][0],
                 "prev_last_agg_trade_id": prev_last,
                 "curr_first_agg_trade_id": curr_first,
                 "expected": expected,

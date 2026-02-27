@@ -48,7 +48,7 @@ def upload_to_clickhouse(
         pl.lit(symbol).alias("symbol"),
         pl.lit(threshold_decimal_bps).cast(pl.UInt32).alias("threshold_decimal_bps"),
         # Timestamp column (datetime to epoch ms)
-        (pl.col("timestamp").dt.epoch("ms")).alias("timestamp_ms"),
+        (pl.col("timestamp").dt.epoch("ms")).alias("close_time_ms"),
         pl.col("Open").alias("open"),
         pl.col("High").alias("high"),
         pl.col("Low").alias("low"),
@@ -68,7 +68,7 @@ def upload_to_clickhouse(
     ]).select([
         "symbol",
         "threshold_decimal_bps",
-        "timestamp_ms",
+        "close_time_ms",
         "open",
         "high",
         "low",

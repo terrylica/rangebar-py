@@ -41,7 +41,7 @@ def find_oversized_bars(
     SELECT
         symbol,
         threshold_decimal_bps,
-        timestamp_ms,
+        close_time_ms,
         open,
         high,
         low,
@@ -125,7 +125,7 @@ def main() -> None:
     for bar in bars[:20]:
         print(
             f"  {bar['symbol']} @ {bar['threshold_decimal_bps']}dbps | "
-            f"ts={bar['timestamp_ms']} | "
+            f"ts={bar['close_time_ms']} | "
             f"O={bar['open']:.2f} H={bar['high']:.2f} L={bar['low']:.2f} | "
             f"range={bar['range_ratio']:.6f} ({bar['range_multiplier']:.1f}x threshold)"
         )

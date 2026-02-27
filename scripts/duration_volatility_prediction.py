@@ -80,13 +80,13 @@ def analyze_duration_volatility_prediction(
         -- Bars with duration
         bars_with_duration AS (
             SELECT
-                timestamp_ms,
+                close_time_ms,
                 duration_us,
                 close,
-                toYear(toDateTime(timestamp_ms / 1000)) AS year,
-                toQuarter(toDateTime(timestamp_ms / 1000)) AS quarter,
+                toYear(toDateTime(close_time_ms / 1000)) AS year,
+                toQuarter(toDateTime(close_time_ms / 1000)) AS quarter,
                 -- Compute log return
-                log(close / lagInFrame(close, 1) OVER (ORDER BY timestamp_ms)) AS log_ret
+                log(close / lagInFrame(close, 1) OVER (ORDER BY close_time_ms)) AS log_ret
             FROM rangebar_cache.range_bars
             WHERE symbol = '{symbol}'
               AND threshold_decimal_bps = {threshold}
@@ -95,13 +95,13 @@ def analyze_duration_volatility_prediction(
         -- Compute rolling forward volatility (std of next N returns)
         with_forward_vol AS (
             SELECT
-                timestamp_ms,
+                close_time_ms,
                 duration_us,
                 year,
                 quarter,
                 -- Forward RV: std of next {forward_window} returns
                 stddevPopStable(log_ret) OVER (
-                    ORDER BY timestamp_ms
+                    ORDER BY close_time_ms
                     ROWS BETWEEN 1 FOLLOWING AND {forward_window} FOLLOWING
                 ) AS forward_rv
             FROM bars_with_duration

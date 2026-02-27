@@ -325,14 +325,14 @@ def detect_gaps_for_pair(
     where_clause = ""
     params: dict = {"symbol": symbol, "threshold": threshold, "ouroboros": ouroboros_mode}
     if recent_cutoff_ms is not None:
-        where_clause = "AND timestamp_ms >= {cutoff:Int64}"
+        where_clause = "AND close_time_ms >= {cutoff:Int64}"
         params["cutoff"] = recent_cutoff_ms
 
     summary_query = f"""
         SELECT
             count() AS total_bars,
-            min(timestamp_ms) AS earliest_ms,
-            max(timestamp_ms) AS latest_ms
+            min(close_time_ms) AS earliest_ms,
+            max(close_time_ms) AS latest_ms
         FROM rangebar_cache.range_bars FINAL
         WHERE symbol = {{symbol:String}}
           AND threshold_decimal_bps = {{threshold:UInt32}}
@@ -352,23 +352,23 @@ def detect_gaps_for_pair(
     # Detect temporal and price gaps using window functions (lagInFrame)
     gap_query = f"""
         SELECT
-            prev_timestamp_ms,
-            timestamp_ms,
+            prev_close_time_ms,
+            close_time_ms,
             delta_ms,
             prev_close,
             curr_open,
             price_gap_dbps
         FROM (
             SELECT
-                timestamp_ms,
+                close_time_ms,
                 open AS curr_open,
                 close,
-                lagInFrame(timestamp_ms, 1) OVER (ORDER BY timestamp_ms) AS prev_timestamp_ms,
-                lagInFrame(close, 1) OVER (ORDER BY timestamp_ms) AS prev_close,
-                timestamp_ms - lagInFrame(timestamp_ms, 1) OVER (ORDER BY timestamp_ms) AS delta_ms,
-                abs(open - lagInFrame(close, 1) OVER (ORDER BY timestamp_ms))
-                    / nullIf(lagInFrame(close, 1) OVER (ORDER BY timestamp_ms), 0) * 10000 AS price_gap_dbps,
-                row_number() OVER (ORDER BY timestamp_ms) AS rn
+                lagInFrame(close_time_ms, 1) OVER (ORDER BY close_time_ms) AS prev_close_time_ms,
+                lagInFrame(close, 1) OVER (ORDER BY close_time_ms) AS prev_close,
+                close_time_ms - lagInFrame(close_time_ms, 1) OVER (ORDER BY close_time_ms) AS delta_ms,
+                abs(open - lagInFrame(close, 1) OVER (ORDER BY close_time_ms))
+                    / nullIf(lagInFrame(close, 1) OVER (ORDER BY close_time_ms), 0) * 10000 AS price_gap_dbps,
+                row_number() OVER (ORDER BY close_time_ms) AS rn
             FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {{symbol:String}}
               AND threshold_decimal_bps = {{threshold:UInt32}}

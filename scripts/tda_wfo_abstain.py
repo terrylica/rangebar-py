@@ -299,14 +299,14 @@ def main() -> None:
 
     query = f"""
     SELECT
-        timestamp_ms,
+        close_time_ms,
         (close - open) / open * 10000 AS return_dbps
     FROM rangebar_cache.range_bars
     WHERE symbol = '{symbol}'
       AND threshold_decimal_bps = {threshold}
       AND ouroboros_mode = 'year'
-      AND timestamp_ms >= 1704067200000
-    ORDER BY timestamp_ms
+      AND close_time_ms >= 1704067200000
+    ORDER BY close_time_ms
     """
 
     log("INFO", "Querying data", symbol=symbol, threshold=threshold)

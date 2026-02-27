@@ -32,7 +32,7 @@ clickhouse-client --multiquery << 'EOF'
 CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
     symbol LowCardinality(String),
     threshold_decimal_bps UInt32,
-    timestamp_ms Int64,
+    close_time_ms Int64,
     open Float64,
     high Float64,
     low Float64,
@@ -83,8 +83,8 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
     computed_at DateTime64(3) DEFAULT now64(3)
 )
 ENGINE = ReplacingMergeTree(computed_at)
-PARTITION BY (symbol, threshold_decimal_bps, toYYYYMM(toDateTime(timestamp_ms / 1000)))
-ORDER BY (symbol, threshold_decimal_bps, timestamp_ms);
+PARTITION BY (symbol, threshold_decimal_bps, toYYYYMM(toDateTime(close_time_ms / 1000)))
+ORDER BY (symbol, threshold_decimal_bps, close_time_ms);
 EOF
 
 # Create population_checkpoints table

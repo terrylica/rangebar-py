@@ -102,7 +102,7 @@ run_integrity_check() {
     local dupes
     dupes=$(ssh bigblack "clickhouse-client --query=\"
         SELECT symbol, threshold_decimal_bps as thresh,
-               count(*) - uniqExact(timestamp_ms) as dupes
+               count(*) - uniqExact(close_time_ms) as dupes
         FROM rangebar_cache.range_bars FINAL
         GROUP BY symbol, threshold_decimal_bps
         HAVING dupes > 0

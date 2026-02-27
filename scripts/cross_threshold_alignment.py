@@ -71,7 +71,7 @@ def analyze_cross_threshold_alignment(
         -- Hour-bucketed bars with direction
         hourly_bars AS (
             SELECT
-                toStartOfHour(toDateTime(timestamp_ms / 1000)) AS hour_ts,
+                toStartOfHour(toDateTime(close_time_ms / 1000)) AS hour_ts,
                 threshold_decimal_bps AS thresh,
                 CASE WHEN close > open THEN 1 ELSE 0 END AS is_up,
                 close

@@ -63,9 +63,9 @@ def analyze_microstructure_feature(
             SELECT
                 {feature},
                 close,
-                timestamp_ms,
+                close_time_ms,
                 leadInFrame(close, 1) OVER (
-                    ORDER BY timestamp_ms
+                    ORDER BY close_time_ms
                     ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING
                 ) AS next_close
             FROM rangebar_cache.range_bars
@@ -88,9 +88,9 @@ def analyze_microstructure_feature(
             'HIGH'
         ) AS tercile,
         concat(
-            toString(toYear(toDateTime(b.timestamp_ms / 1000))),
+            toString(toYear(toDateTime(b.close_time_ms / 1000))),
             '-Q',
-            toString(toQuarter(toDateTime(b.timestamp_ms / 1000)))
+            toString(toQuarter(toDateTime(b.close_time_ms / 1000)))
         ) AS period,
         count() AS n,
         avg((b.next_close / b.close - 1)) * 10000 AS mean_bps,

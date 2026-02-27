@@ -11,7 +11,7 @@ Usage:
     # Export data from bigblack first:
     ssh bigblack "clickhouse-client --query 'SELECT * FROM rangebar_cache.range_bars
         WHERE symbol = \"BTCUSDT\" AND threshold_decimal_bps = 100
-        AND ouroboros_mode = \"year\" ORDER BY timestamp_ms'
+        AND ouroboros_mode = \"year\" ORDER BY close_time_ms'
         --format Parquet" > /tmp/btcusdt_100.parquet
 
     # Copy to littleblack and run:
@@ -249,7 +249,7 @@ def main():
         print("\nExport data from bigblack first:")
         print('  ssh bigblack "clickhouse-client --query \'SELECT * FROM rangebar_cache.range_bars')
         print('      WHERE symbol = "BTCUSDT" AND threshold_decimal_bps = 100')
-        print('      AND ouroboros_mode = "year" ORDER BY timestamp_ms\'')
+        print('      AND ouroboros_mode = "year" ORDER BY close_time_ms\'')
         print('      --format Parquet" > /tmp/btcusdt_100.parquet')
         sys.exit(1)
 

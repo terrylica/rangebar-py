@@ -176,7 +176,7 @@ def main() -> None:
         WHERE symbol = '{symbol}'
           AND threshold_decimal_bps = {threshold}
           AND ouroboros_mode = 'year'
-        ORDER BY timestamp_ms
+        ORDER BY close_time_ms
         """
 
         log("INFO", "Querying range bar returns", symbol=symbol, threshold=threshold)

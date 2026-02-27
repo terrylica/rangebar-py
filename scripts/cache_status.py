@@ -19,7 +19,7 @@ def main() -> None:
     # Count by symbol and threshold
     query = """
         SELECT symbol, threshold_decimal_bps, count() as bars,
-               min(timestamp_ms) as earliest_ms, max(timestamp_ms) as latest_ms
+               min(close_time_ms) as earliest_ms, max(close_time_ms) as latest_ms
         FROM rangebar_cache.range_bars
         GROUP BY symbol, threshold_decimal_bps
         ORDER BY bars DESC

@@ -64,7 +64,7 @@ def validate_layer2_insert_dedup_token(client) -> bool:
         cache_key = hashlib.md5(test_token.encode()).hexdigest()
         insert_sql = (
             "INSERT INTO rangebar_cache.range_bars "
-            "(symbol, threshold_decimal_bps, timestamp_ms, open, high, low, close, "
+            "(symbol, threshold_decimal_bps, close_time_ms, open, high, low, close, "
             "volume, cache_key, rangebar_version) "
             f"VALUES ('{test_symbol}', {test_threshold}, 1000000000000, "
             f"1.0, 2.0, 0.5, 1.5, 100.0, '{cache_key}', 'test')"

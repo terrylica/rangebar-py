@@ -71,13 +71,13 @@ def analyze_duration_autocorrelation(
         -- Bars with duration
         bars_with_duration AS (
             SELECT
-                timestamp_ms,
+                close_time_ms,
                 duration_us,
-                toYear(toDateTime(timestamp_ms / 1000)) AS year,
-                toQuarter(toDateTime(timestamp_ms / 1000)) AS quarter,
+                toYear(toDateTime(close_time_ms / 1000)) AS year,
+                toQuarter(toDateTime(close_time_ms / 1000)) AS quarter,
                 -- Get next bar's duration
                 leadInFrame(duration_us, 1) OVER (
-                    ORDER BY timestamp_ms
+                    ORDER BY close_time_ms
                     ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING
                 ) AS next_duration_us
             FROM rangebar_cache.range_bars

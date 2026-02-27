@@ -141,14 +141,14 @@ def main() -> int:
     ts_max = int(enriched.index[-1].timestamp() * 1000)
 
     verify_result = cache.client.query(
-        "SELECT timestamp_ms, test_plugin_col_a, test_plugin_col_b "
+        "SELECT close_time_ms, test_plugin_col_a, test_plugin_col_b "
         "FROM rangebar_cache.range_bars FINAL "
         "WHERE symbol = 'BTCUSDT' "
         "  AND threshold_decimal_bps = 500 "
-        "  AND timestamp_ms >= {ts_min:Int64} "
-        "  AND timestamp_ms <= {ts_max:Int64} "
+        "  AND close_time_ms >= {ts_min:Int64} "
+        "  AND close_time_ms <= {ts_max:Int64} "
         "  AND test_plugin_col_a IS NOT NULL "
-        "ORDER BY timestamp_ms DESC "
+        "ORDER BY close_time_ms DESC "
         "LIMIT 10",
         parameters={"ts_min": ts_min, "ts_max": ts_max},
     )
@@ -162,7 +162,7 @@ def main() -> int:
         return 1
 
     print("      Sample (latest 5):")
-    print(f"      {'timestamp_ms':>15s}  {'col_a':>8s}  {'col_b':>8s}")
+    print(f"      {'close_time_ms':>15s}  {'col_a':>8s}  {'col_b':>8s}")
     for row in rows[:5]:
         print(f"      {row[0]:>15d}  {row[1]:>8.4f}  {row[2]:>8.1f}")
 
@@ -198,8 +198,8 @@ def main() -> int:
         "ALTER TABLE rangebar_cache.range_bars "
         "UPDATE test_plugin_col_a = NULL, test_plugin_col_b = NULL "
         "WHERE symbol = 'BTCUSDT' "
-        f"  AND timestamp_ms >= {ts_min} "
-        f"  AND timestamp_ms <= {ts_max} "
+        f"  AND close_time_ms >= {ts_min} "
+        f"  AND close_time_ms <= {ts_max} "
         "  AND test_plugin_col_a IS NOT NULL"
     )
     print("      Plugin columns nulled out (columns remain in schema, harmless)")

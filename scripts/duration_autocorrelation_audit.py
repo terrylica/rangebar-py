@@ -53,10 +53,10 @@ def audit_temporal_overlap(symbol: str = "BTCUSDT", threshold: int = 100) -> dic
     WITH
         bars AS (
             SELECT
-                timestamp_ms AS close_ms,
-                timestamp_ms - duration_us / 1000 AS open_ms,
-                leadInFrame(timestamp_ms - duration_us / 1000, 1) OVER (
-                    ORDER BY timestamp_ms
+                close_time_ms AS close_ms,
+                close_time_ms - duration_us / 1000 AS open_ms,
+                leadInFrame(close_time_ms - duration_us / 1000, 1) OVER (
+                    ORDER BY close_time_ms
                 ) AS next_open_ms
             FROM rangebar_cache.range_bars
             WHERE symbol = '{symbol}'
@@ -92,9 +92,9 @@ def audit_gap_distribution(symbol: str = "BTCUSDT", threshold: int = 100) -> dic
     WITH
         bars AS (
             SELECT
-                timestamp_ms AS close_ms,
-                leadInFrame(timestamp_ms - duration_us / 1000, 1) OVER (
-                    ORDER BY timestamp_ms
+                close_time_ms AS close_ms,
+                leadInFrame(close_time_ms - duration_us / 1000, 1) OVER (
+                    ORDER BY close_time_ms
                 ) AS next_open_ms
             FROM rangebar_cache.range_bars
             WHERE symbol = '{symbol}'
@@ -146,10 +146,10 @@ def audit_quantile_sensitivity(symbol: str = "BTCUSDT", threshold: int = 100) ->
         WITH
             bars_with_duration AS (
                 SELECT
-                    timestamp_ms,
+                    close_time_ms,
                     duration_us,
                     leadInFrame(duration_us, 1) OVER (
-                        ORDER BY timestamp_ms
+                        ORDER BY close_time_ms
                     ) AS next_duration_us
                 FROM rangebar_cache.range_bars
                 WHERE symbol = '{symbol}'
@@ -213,10 +213,10 @@ def audit_skip_bar_persistence(symbol: str = "BTCUSDT", threshold: int = 100) ->
         WITH
             bars_with_duration AS (
                 SELECT
-                    timestamp_ms,
+                    close_time_ms,
                     duration_us,
                     leadInFrame(duration_us, {lag}) OVER (
-                        ORDER BY timestamp_ms
+                        ORDER BY close_time_ms
                         ROWS BETWEEN CURRENT ROW AND {lag} FOLLOWING
                     ) AS future_duration_us
                 FROM rangebar_cache.range_bars

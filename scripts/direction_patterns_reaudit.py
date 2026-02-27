@@ -88,19 +88,19 @@ def main() -> None:
             # Target: shift(-1) = next bar
             query = f"""
             SELECT
-                timestamp_ms,
+                close_time_ms,
                 CASE WHEN close > open THEN 'U' ELSE 'D' END AS direction,
                 lagInFrame(CASE WHEN close > open THEN 'U' ELSE 'D' END, 1)
-                    OVER (ORDER BY timestamp_ms) AS prev_direction,
+                    OVER (ORDER BY close_time_ms) AS prev_direction,
                 leadInFrame(CASE WHEN close > open THEN 'U' ELSE 'D' END, 1)
-                    OVER (ORDER BY timestamp_ms) AS next_direction,
+                    OVER (ORDER BY close_time_ms) AS next_direction,
                 (close - open) / open * 10000 AS return_dbps,
                 (high - low) / low * 10000 AS range_dbps
             FROM range_bars
             WHERE symbol = '{symbol}'
               AND threshold_decimal_bps = {threshold}
               AND ouroboros_mode = 'year'
-            ORDER BY timestamp_ms
+            ORDER BY close_time_ms
             """
 
             result = client.query(query)

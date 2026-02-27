@@ -86,8 +86,8 @@ def main() -> int:
     range_result = cache.client.query(
         "SELECT "
         "  count() AS n, "
-        "  min(timestamp_ms) AS ts_min, "
-        "  max(timestamp_ms) AS ts_max, "
+        "  min(close_time_ms) AS ts_min, "
+        "  max(close_time_ms) AS ts_max, "
         "  max(laguerre_bars_in_regime) AS bir_max, "
         "  max(laguerre_tail_risk_score) AS trs_max "
         "FROM rangebar_cache.range_bars FINAL "
