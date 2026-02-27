@@ -11,6 +11,7 @@ Wants=network-online.target
 Type=simple
 User=tca
 WorkingDirectory=/home/tca/rangebar-py
+EnvironmentFile=/home/tca/rangebar-py/deploy/rangebar.env
 ExecStart=/home/tca/rangebar-py/.venv/bin/python3 /home/tca/rangebar-py/scripts/recency_backfill.py --loop
 
 # Restart policy (less aggressive than sidecar — backfill is not latency-critical)

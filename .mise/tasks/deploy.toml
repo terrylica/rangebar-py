@@ -27,15 +27,51 @@ echo "Syncing to origin/main..."
 ssh "$REMOTE_HOST" "cd $REMOTE_DIR && git fetch origin main && git reset --hard origin/main && git clean -fd"
 echo "OK: Git sync complete"
 
-# Step 3: Recreate venv and install latest rangebar from PyPI using uv
+# Step 3: Atomic venv rebuild with PyPI CDN readiness poll (Issue #121)
 VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
 if [ -z "$VERSION" ]; then
     echo "FAIL: Could not extract version from Cargo.toml"
     exit 1
 fi
-echo "Recreating venv and installing rangebar==$VERSION from PyPI..."
-ssh "$REMOTE_HOST" "cd $REMOTE_DIR && rm -rf .venv && uv venv .venv && uv pip install --python $REMOTE_DIR/.venv/bin/python3 rangebar==$VERSION"
-echo "OK: rangebar $VERSION installed"
+
+# 3a: Wait for PyPI CDN to propagate (max 5 retries, 30s apart)
+echo "Waiting for rangebar==$VERSION on PyPI CDN..."
+PYPI_READY=false
+for i in 1 2 3 4 5; do
+    if ssh "$REMOTE_HOST" "curl -sf 'https://pypi.org/pypi/rangebar/$VERSION/json' | head -c 50 | grep -q version"; then
+        PYPI_READY=true
+        echo "OK: rangebar==$VERSION available on PyPI (attempt $i)"
+        break
+    fi
+    echo "  PyPI CDN not ready (attempt $i/5), waiting 30s..."
+    sleep 30
+done
+if [ "$PYPI_READY" != "true" ]; then
+    echo "FAIL: rangebar==$VERSION not available on PyPI after 5 retries"
+    exit 1
+fi
+
+# 3b: Build in staging venv (old .venv untouched)
+echo "Building venv in staging area..."
+ssh "$REMOTE_HOST" "cd $REMOTE_DIR && \
+  rm -rf .venv-staging && \
+  uv venv .venv-staging && \
+  uv pip install --python $REMOTE_DIR/.venv-staging/bin/python3 rangebar==$VERSION"
+
+# 3c: Verify staging venv works
+STAGING_VERSION=$(ssh "$REMOTE_HOST" "$REMOTE_DIR/.venv-staging/bin/python3 -c 'import rangebar; print(rangebar.__version__)'")
+if [ "$STAGING_VERSION" != "$VERSION" ]; then
+    echo "FAIL: Staging venv version mismatch ($STAGING_VERSION != $VERSION)"
+    ssh "$REMOTE_HOST" "rm -rf $REMOTE_DIR/.venv-staging"
+    exit 1
+fi
+
+# 3d: Atomic swap (rename is atomic on same filesystem)
+ssh "$REMOTE_HOST" "cd $REMOTE_DIR && \
+  mv .venv .venv-old 2>/dev/null || true && \
+  mv .venv-staging .venv && \
+  rm -rf .venv-old"
+echo "OK: rangebar $VERSION installed (atomic swap)"
 
 # Step 4: Verify version alignment
 REMOTE_VERSION=$(ssh "$REMOTE_HOST" "$REMOTE_VENV/python3 -c 'import rangebar; print(rangebar.__version__)'")
@@ -67,36 +103,45 @@ else
     echo "WARN: symbols.toml mismatch — local=$LOCAL_SYMBOLS lines, remote=$REMOTE_SYMBOLS lines"
 fi
 
-# Step 6b: Sync systemd service files + daemon-reload (Issue #120)
-echo "→ Step 6b: Syncing service files..."
+# Step 6b: Sync systemd service files + env files + daemon-reload (Issue #121)
+echo "→ Step 6b: Syncing service + env files..."
 ssh "$REMOTE_HOST" "mkdir -p ~/.config/systemd/user && \
   cp $REMOTE_DIR/scripts/systemd/rangebar-sidecar.service ~/.config/systemd/user/ && \
   cp $REMOTE_DIR/scripts/systemd/rangebar-kintsugi.service ~/.config/systemd/user/ && \
+  cp $REMOTE_DIR/scripts/systemd/rangebar-recency-backfill.service ~/.config/systemd/user/ && \
   systemctl --user daemon-reload && \
-  echo 'Service files synced + daemon-reload'"
+  echo 'All 3 service files synced + daemon-reload'"
+ssh "$REMOTE_HOST" "systemctl --user enable rangebar-recency-backfill 2>/dev/null || true"
 
-# Step 7: Restart sidecar to pick up new code (Issue #117, #120)
-echo "→ Step 7: Restarting sidecar..."
-ssh "$REMOTE_HOST" "systemctl --user restart rangebar-sidecar"
-sleep 3
-SIDECAR_STATUS=$(ssh "$REMOTE_HOST" "systemctl --user is-active rangebar-sidecar 2>/dev/null || echo 'failed'")
-if [ "$SIDECAR_STATUS" = "active" ]; then
-    echo "OK: Sidecar running"
-else
-    echo "WARN: Sidecar not active (status=$SIDECAR_STATUS)"
-    echo "Check: ssh bigblack 'journalctl --user -u rangebar-sidecar -n 20'"
-fi
+# Step 7: Restart all services (Issue #121)
+echo "→ Step 7: Restarting all services..."
+SERVICES="rangebar-sidecar rangebar-kintsugi rangebar-recency-backfill"
+ALL_HEALTHY=true
 
-# Step 8: Restart Kintsugi daemon (Issue #115, #120)
-echo "→ Step 8: Restarting Kintsugi..."
-ssh "$REMOTE_HOST" "systemctl --user restart rangebar-kintsugi"
-sleep 3
-KINTSUGI_STATUS=$(ssh "$REMOTE_HOST" "systemctl --user is-active rangebar-kintsugi 2>/dev/null || echo 'failed'")
-if [ "$KINTSUGI_STATUS" = "active" ]; then
-    echo "OK: Kintsugi running"
-else
-    echo "WARN: Kintsugi not active (status=$KINTSUGI_STATUS)"
-    echo "Check: ssh bigblack 'journalctl --user -u rangebar-kintsugi -n 20'"
+for SVC in $SERVICES; do
+    ssh "$REMOTE_HOST" "systemctl --user restart $SVC"
+done
+
+sleep 5  # Give all services time to initialize
+
+for SVC in $SERVICES; do
+    STATUS=$(ssh "$REMOTE_HOST" "systemctl --user is-active $SVC 2>/dev/null || echo 'failed'")
+    if [ "$STATUS" = "active" ]; then
+        echo "  OK: $SVC running"
+    else
+        echo "  WARN: $SVC not active (status=$STATUS)"
+        echo "  Check: ssh bigblack 'journalctl --user -u $SVC -n 20'"
+        ALL_HEALTHY=false
+    fi
+done
+
+# Sidecar health endpoint
+HEALTH=$(ssh "$REMOTE_HOST" "curl -sf http://localhost:8081/health 2>/dev/null | head -c 200 || echo 'unreachable'")
+echo "  Sidecar health: $HEALTH"
+
+if [ "$ALL_HEALTHY" != "true" ]; then
+    echo ""
+    echo "WARN: Some services failed to start — check logs above"
 fi
 
 echo ""
@@ -150,12 +195,12 @@ LOCAL_SYMBOLS=$(wc -l < python/rangebar/data/symbols.toml | tr -d ' ')
 REMOTE_SYMBOLS=$(ssh "$REMOTE_HOST" "wc -l < $REMOTE_DIR/python/rangebar/data/symbols.toml" | tr -d ' ')
 echo "symbols.toml: local=$LOCAL_SYMBOLS lines remote=$REMOTE_SYMBOLS lines"
 
-# Service status (Issue #117)
+# Service status (Issue #121)
 echo "→ Service status..."
-ssh "$REMOTE_HOST" "systemctl --user is-active rangebar-sidecar 2>/dev/null && echo '  Sidecar: running' || echo '  Sidecar: NOT RUNNING'"
-ssh "$REMOTE_HOST" "systemctl --user is-active rangebar-kintsugi 2>/dev/null && echo '  Kintsugi: running' || echo '  Kintsugi: NOT RUNNING'"
-
-# Sidecar health endpoint (Issue #120: healthdog-rs polls this)
+for SVC in rangebar-sidecar rangebar-kintsugi rangebar-recency-backfill; do
+    STATUS=$(ssh "$REMOTE_HOST" "systemctl --user is-active $SVC 2>/dev/null || echo 'not running'")
+    echo "  $SVC: $STATUS"
+done
 HEALTH=$(ssh "$REMOTE_HOST" "curl -sf http://localhost:8081/health 2>/dev/null | head -c 200 || echo 'unreachable'")
 echo "  Sidecar health: $HEALTH"
 

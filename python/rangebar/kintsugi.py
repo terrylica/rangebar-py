@@ -68,6 +68,7 @@ def _sd_notify(state: str) -> None:
     except OSError:
         logger.debug("sd_notify(%s) failed", state, exc_info=True)
 
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -130,11 +131,15 @@ def discover_shards(
     (Ariadne anchor) and computes Ouroboros boundaries within the gap.
     """
     cmd = [
-        sys.executable, "-W", "ignore",
+        sys.executable,
+        "-W",
+        "ignore",
         "scripts/detect_gaps.py",
         "--json",
-        "--min-gap-hours", str(min_gap_hours),
-        "--max-stale-hours", str(max_stale_hours),
+        "--min-gap-hours",
+        str(min_gap_hours),
+        "--max-stale-hours",
+        str(max_stale_hours),
     ]
     if symbol:
         cmd.extend(["--symbol", symbol])
@@ -143,7 +148,11 @@ def discover_shards(
 
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120, check=False,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         logger.exception("detect_gaps.py timed out after 120s")
@@ -151,7 +160,8 @@ def discover_shards(
 
     if result.returncode == _DETECT_GAPS_EXIT_ERROR:
         logger.error(
-            "detect_gaps.py connection error: %s", result.stderr.strip(),
+            "detect_gaps.py connection error: %s",
+            result.stderr.strip(),
         )
         return []
 
@@ -200,11 +210,14 @@ def discover_shards(
     if shards:
         try:
             from rangebar.hooks import HookEvent, emit_hook
+
             for shard in shards:
                 emit_hook(
-                    HookEvent.GAP_DETECTED, symbol=shard.symbol,
+                    HookEvent.GAP_DETECTED,
+                    symbol=shard.symbol,
                     threshold_dbps=shard.threshold_decimal_bps,
-                    gap_hours=shard.gap_hours, priority=shard.priority,
+                    gap_hours=shard.gap_hours,
+                    priority=shard.priority,
                 )
         except (ImportError, OSError, RuntimeError, ValueError):
             logger.debug("failed to emit GAP_DETECTED hooks", exc_info=True)
@@ -232,24 +245,27 @@ def _enrich_shards(shards: list[Shard]) -> None:
             for shard in shards:
                 # Ariadne anchor: last_agg_trade_id before the gap
                 hwm = cache.get_ariadne_high_water_mark(
-                    shard.symbol, shard.threshold_decimal_bps,
+                    shard.symbol,
+                    shard.threshold_decimal_bps,
                 )
                 shard.last_agg_trade_id_before = hwm
 
                 # Ouroboros boundaries within the gap
                 if shard.gap_start_ms > 0 and shard.gap_end_ms > 0:
                     start_date = datetime.fromtimestamp(
-                        shard.gap_start_ms / 1000, tz=UTC,
+                        shard.gap_start_ms / 1000,
+                        tz=UTC,
                     ).date()
                     end_date = datetime.fromtimestamp(
-                        shard.gap_end_ms / 1000, tz=UTC,
+                        shard.gap_end_ms / 1000,
+                        tz=UTC,
                     ).date()
                     boundaries = get_ouroboros_boundaries(
-                        start_date, end_date, "year",
+                        start_date,
+                        end_date,
+                        "year",
                     )
-                    shard.ouroboros_boundaries = [
-                        b.timestamp_ms for b in boundaries
-                    ]
+                    shard.ouroboros_boundaries = [b.timestamp_ms for b in boundaries]
     except (OSError, RuntimeError, ConnectionError) as e:
         logger.warning("failed to enrich shards: %s", e)
 
@@ -275,7 +291,8 @@ def repair_shard(
 
     try:
         resolve_and_validate_threshold(
-            shard.symbol, shard.threshold_decimal_bps,
+            shard.symbol,
+            shard.threshold_decimal_bps,
         )
     except ValueError:
         return KintsugiResult(
@@ -313,7 +330,9 @@ def repair_shard(
         elapsed = time.monotonic() - t0
         logger.exception(
             "repair failed for %s@%d (%s)",
-            shard.symbol, shard.threshold_decimal_bps, shard.priority,
+            shard.symbol,
+            shard.threshold_decimal_bps,
+            shard.priority,
         )
         return KintsugiResult(
             shard=shard,
@@ -331,8 +350,12 @@ def repair_shard(
     logger.info(
         "repair %s for %s@%d: %d bars in %.1fs (ariadne=%s, splits=%d)",
         "HEALED" if healed else "NO_BARS",
-        shard.symbol, shard.threshold_decimal_bps,
-        total_bars, elapsed, ariadne_used, n_splits,
+        shard.symbol,
+        shard.threshold_decimal_bps,
+        total_bars,
+        elapsed,
+        ariadne_used,
+        n_splits,
     )
 
     return KintsugiResult(
@@ -382,10 +405,12 @@ def _repair_p2(
 
     for seg_start, seg_end in segments:
         start_str = datetime.fromtimestamp(
-            seg_start / 1000, tz=UTC,
+            seg_start / 1000,
+            tz=UTC,
         ).strftime("%Y-%m-%d")
         end_str = datetime.fromtimestamp(
-            seg_end / 1000, tz=UTC,
+            seg_end / 1000,
+            tz=UTC,
         ).strftime("%Y-%m-%d")
 
         bars = populate_cache_resumable(
@@ -432,21 +457,33 @@ def _split_at_boundaries(
 def verify_repair(shard: Shard) -> bool:
     """Re-run gap detection for the specific pair to confirm gap is healed."""
     cmd = [
-        sys.executable, "-W", "ignore",
+        sys.executable,
+        "-W",
+        "ignore",
         "scripts/detect_gaps.py",
         "--json",
-        "--symbol", shard.symbol,
-        "--threshold", str(shard.threshold_decimal_bps),
-        "--min-gap-hours", str(max(shard.gap_hours * 0.5, 1.0)),
+        "--symbol",
+        shard.symbol,
+        "--threshold",
+        str(shard.threshold_decimal_bps),
+        "--min-gap-hours",
+        str(max(shard.gap_hours * 0.5, 1.0)),
     ]
 
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60, check=False,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
         )
     except subprocess.TimeoutExpired:
-        logger.warning("verify_repair timed out for %s@%d",
-                        shard.symbol, shard.threshold_decimal_bps)
+        logger.warning(
+            "verify_repair timed out for %s@%d",
+            shard.symbol,
+            shard.threshold_decimal_bps,
+        )
         return False
 
     if result.returncode == 0:
@@ -456,8 +493,10 @@ def verify_repair(shard: Shard) -> bool:
     try:
         data = json.loads(result.stdout)
         for g in data.get("gaps", []):
-            if (g.get("gap_start_ms") == shard.gap_start_ms
-                    and g.get("gap_end_ms") == shard.gap_end_ms):
+            if (
+                g.get("gap_start_ms") == shard.gap_start_ms
+                and g.get("gap_end_ms") == shard.gap_end_ms
+            ):
                 return False  # Same gap still present
     except (json.JSONDecodeError, ValueError):
         return False
@@ -501,9 +540,7 @@ def _log_repair(result: KintsugiResult) -> None:
                         else "populate_cache"
                     ),
                     "result": "healed" if result.healed else "failed",
-                    "ariadne": (
-                        result.shard.last_agg_trade_id_before or 0
-                    ),
+                    "ariadne": (result.shard.last_agg_trade_id_before or 0),
                     "splits": result.ouroboros_splits,
                     "bars": result.bars_written,
                     "duration": result.duration_seconds,
@@ -571,7 +608,9 @@ def kintsugi_pass(
         for s in shards:
             logger.info(
                 "  [DRY-RUN] %s %s@%d gap=%.1fh ariadne=%s ouro_splits=%d",
-                s.priority, s.symbol, s.threshold_decimal_bps,
+                s.priority,
+                s.symbol,
+                s.threshold_decimal_bps,
                 s.gap_hours,
                 s.last_agg_trade_id_before is not None,
                 len(s.ouroboros_boundaries),
@@ -587,7 +626,9 @@ def kintsugi_pass(
             if p2_count >= max_p2_jobs:
                 logger.info(
                     "skipping P2 shard %s@%d (max_p2_jobs=%d reached)",
-                    shard.symbol, shard.threshold_decimal_bps, max_p2_jobs,
+                    shard.symbol,
+                    shard.threshold_decimal_bps,
+                    max_p2_jobs,
                 )
                 continue
             p2_count += 1
@@ -596,7 +637,8 @@ def kintsugi_pass(
         if _is_rate_limited(shard):
             logger.info(
                 "skipping %s@%d — rate limited (%d attempts in 24h)",
-                shard.symbol, shard.threshold_decimal_bps,
+                shard.symbol,
+                shard.threshold_decimal_bps,
                 _MAX_ATTEMPTS_PER_SHARD,
             )
             continue
@@ -613,7 +655,8 @@ def kintsugi_pass(
             if not verified:
                 logger.warning(
                     "repair for %s@%d reported healed but gap persists",
-                    shard.symbol, shard.threshold_decimal_bps,
+                    shard.symbol,
+                    shard.threshold_decimal_bps,
                 )
                 result.healed = False
 
@@ -628,28 +671,36 @@ def kintsugi_pass(
     total_bars = sum(r.bars_written for r in results)
     logger.info(
         "kintsugi pass complete: %d healed, %d failed, %d bars written (%.1fs)",
-        healed, failed, total_bars, pass_duration,
+        healed,
+        failed,
+        total_bars,
+        pass_duration,
     )
 
     # Issue #117-119: Emit KINTSUGI_PASS_COMPLETE hook + quiet Telegram
     try:
         from rangebar.hooks import HookEvent, emit_hook
+
         emit_hook(
-            HookEvent.KINTSUGI_PASS_COMPLETE, symbol="*",
-            n_discovered=len(shards), n_healed=healed, n_failed=failed,
-            total_bars=total_bars, pass_duration=pass_duration,
+            HookEvent.KINTSUGI_PASS_COMPLETE,
+            symbol="*",
+            n_discovered=len(shards),
+            n_healed=healed,
+            n_failed=failed,
+            total_bars=total_bars,
+            pass_duration=pass_duration,
         )
     except (ImportError, OSError, RuntimeError, ValueError):
         logger.debug("failed to emit KINTSUGI_PASS_COMPLETE hook", exc_info=True)
     try:
         from rangebar.notify.telegram import _build_context_block, send_telegram
+
         pass_msg = (
             "<b>KINTSUGI PASS COMPLETE</b>\n"
             f"<b>Duration:</b> {pass_duration:.0f}s\n"
             f"<b>Shards discovered:</b> {len(shards)}\n"
             f"<b>Repaired:</b> {healed} | <b>Failed:</b> {failed}\n"
-            f"<b>Bars written:</b> {total_bars:,}"
-            + _build_context_block("kintsugi")
+            f"<b>Bars written:</b> {total_bars:,}" + _build_context_block("kintsugi")
         )
         send_telegram(pass_msg, disable_notification=True)
     except (ImportError, OSError, RuntimeError):
@@ -744,8 +795,25 @@ def kintsugi_daemon(
     """
     logger.info(
         "kintsugi daemon starting (clean=%ds, active=%ds, max_p2=%d)",
-        interval_clean_s, interval_active_s, max_p2_jobs,
+        interval_clean_s,
+        interval_active_s,
+        max_p2_jobs,
     )
+
+    # Issue #121: Notify on daemon startup (confirms EnvironmentFile worked)
+    _sd_notify("READY=1")
+    try:
+        from rangebar.notify.telegram import _build_context_block, send_telegram
+
+        send_telegram(
+            "<b>KINTSUGI STARTED</b>\n"
+            f"<b>Interval:</b> clean={interval_clean_s}s, active={interval_active_s}s\n"
+            f"<b>Max P2:</b> {max_p2_jobs}\n"
+            f"<b>PID:</b> {os.getpid()}" + _build_context_block("kintsugi"),
+            disable_notification=True,
+        )
+    except (ImportError, OSError, RuntimeError):
+        logger.debug("failed to send kintsugi startup Telegram", exc_info=True)
 
     iteration = 0
     try:
@@ -767,7 +835,8 @@ def kintsugi_daemon(
 
             logger.info(
                 "kintsugi sleeping %ds (%s)",
-                sleep_s, "active" if has_activity else "clean",
+                sleep_s,
+                "active" if has_activity else "clean",
             )
             time.sleep(sleep_s)
 
@@ -815,7 +884,9 @@ def replay_dead_letters() -> int:
             total_replayed += written
             path.unlink()
             logger.info(
-                "replayed dead-letter %s: %d bars", path.name, written,
+                "replayed dead-letter %s: %d bars",
+                path.name,
+                written,
             )
         except (OSError, RuntimeError, ConnectionError, ValueError) as e:
             logger.warning("failed to replay dead-letter %s: %s", path, e)

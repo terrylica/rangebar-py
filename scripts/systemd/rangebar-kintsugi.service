@@ -11,6 +11,7 @@ NotifyAccess=all
 WatchdogSec=3600
 User=tca
 WorkingDirectory=/home/tca/rangebar-py
+EnvironmentFile=/home/tca/rangebar-py/deploy/rangebar.env
 ExecStart=/home/tca/rangebar-py/.venv/bin/python3 /home/tca/rangebar-py/scripts/kintsugi.py --daemon
 
 # Restart policy

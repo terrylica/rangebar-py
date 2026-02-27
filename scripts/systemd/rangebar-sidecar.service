@@ -10,6 +10,7 @@ NotifyAccess=all
 WatchdogSec=300
 User=tca
 WorkingDirectory=/home/tca/rangebar-py
+EnvironmentFile=/home/tca/rangebar-py/deploy/rangebar.env
 EnvironmentFile=/home/tca/rangebar-py/deploy/sidecar.env
 ExecStart=/home/tca/.cargo/bin/healthdog \
   --healthcheck-url http://localhost:8081/health \
