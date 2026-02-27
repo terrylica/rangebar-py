@@ -67,15 +67,37 @@ else
     echo "WARN: symbols.toml mismatch — local=$LOCAL_SYMBOLS lines, remote=$REMOTE_SYMBOLS lines"
 fi
 
-# Step 7: Restart sidecar to pick up new code (Issue #117)
-echo "→ Step 7: Restarting sidecar..."
-ssh "$REMOTE_HOST" "systemctl --user restart rangebar-sidecar 2>/dev/null \
-  && echo 'Sidecar restarted' || echo 'Sidecar not running (skipped)'"
+# Step 6b: Sync systemd service files + daemon-reload (Issue #120)
+echo "→ Step 6b: Syncing service files..."
+ssh "$REMOTE_HOST" "mkdir -p ~/.config/systemd/user && \
+  cp $REMOTE_DIR/scripts/systemd/rangebar-sidecar.service ~/.config/systemd/user/ && \
+  cp $REMOTE_DIR/scripts/systemd/rangebar-kintsugi.service ~/.config/systemd/user/ && \
+  systemctl --user daemon-reload && \
+  echo 'Service files synced + daemon-reload'"
 
-# Step 8: Restart Kintsugi daemon (Issue #115)
+# Step 7: Restart sidecar to pick up new code (Issue #117, #120)
+echo "→ Step 7: Restarting sidecar..."
+ssh "$REMOTE_HOST" "systemctl --user restart rangebar-sidecar"
+sleep 3
+SIDECAR_STATUS=$(ssh "$REMOTE_HOST" "systemctl --user is-active rangebar-sidecar 2>/dev/null || echo 'failed'")
+if [ "$SIDECAR_STATUS" = "active" ]; then
+    echo "OK: Sidecar running"
+else
+    echo "WARN: Sidecar not active (status=$SIDECAR_STATUS)"
+    echo "Check: ssh bigblack 'journalctl --user -u rangebar-sidecar -n 20'"
+fi
+
+# Step 8: Restart Kintsugi daemon (Issue #115, #120)
 echo "→ Step 8: Restarting Kintsugi..."
-ssh "$REMOTE_HOST" "systemctl --user restart rangebar-kintsugi 2>/dev/null \
-  && echo 'Kintsugi restarted' || echo 'Kintsugi not running (skipped)'"
+ssh "$REMOTE_HOST" "systemctl --user restart rangebar-kintsugi"
+sleep 3
+KINTSUGI_STATUS=$(ssh "$REMOTE_HOST" "systemctl --user is-active rangebar-kintsugi 2>/dev/null || echo 'failed'")
+if [ "$KINTSUGI_STATUS" = "active" ]; then
+    echo "OK: Kintsugi running"
+else
+    echo "WARN: Kintsugi not active (status=$KINTSUGI_STATUS)"
+    echo "Check: ssh bigblack 'journalctl --user -u rangebar-kintsugi -n 20'"
+fi
 
 echo ""
 echo "OK: bigblack deployment complete (v$REMOTE_VERSION)"
@@ -132,6 +154,10 @@ echo "symbols.toml: local=$LOCAL_SYMBOLS lines remote=$REMOTE_SYMBOLS lines"
 echo "→ Service status..."
 ssh "$REMOTE_HOST" "systemctl --user is-active rangebar-sidecar 2>/dev/null && echo '  Sidecar: running' || echo '  Sidecar: NOT RUNNING'"
 ssh "$REMOTE_HOST" "systemctl --user is-active rangebar-kintsugi 2>/dev/null && echo '  Kintsugi: running' || echo '  Kintsugi: NOT RUNNING'"
+
+# Sidecar health endpoint (Issue #120: healthdog-rs polls this)
+HEALTH=$(ssh "$REMOTE_HOST" "curl -sf http://localhost:8081/health 2>/dev/null | head -c 200 || echo 'unreachable'")
+echo "  Sidecar health: $HEALTH"
 
 # Verdict
 if [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ] && [ "$REMOTE_BRANCH" = "$LOCAL_BRANCH" ]; then

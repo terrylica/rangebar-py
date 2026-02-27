@@ -234,11 +234,18 @@ def _write_bars_batch_to_clickhouse(
 # Gap-fill on startup
 # =============================================================================
 
-def _gap_fill(symbols: list[str], thresholds: list[int]) -> dict:
-    """Run Layer 2 recency backfill for all symbol x threshold pairs.
+def _gap_fill(
+    symbols: list[str],
+    thresholds: list[int],
+    valid_pairs: set[tuple[str, int]] | None = None,
+) -> dict:
+    """Run Layer 2 recency backfill for valid symbol x threshold pairs.
 
     Returns dict keyed by ``"{symbol}@{threshold}"`` → ``BackfillResult``.
     Used by ``_inject_checkpoints()`` to skip stale checkpoints (Issue #96).
+
+    Issue #120: When ``valid_pairs`` is provided, only those pairs are
+    backfilled (skips invalid combos like SHIBUSDT@250).
     """
     try:
         from rangebar.recency import backfill_recent
@@ -246,20 +253,23 @@ def _gap_fill(symbols: list[str], thresholds: list[int]) -> dict:
         logger.warning("recency module not available, skipping gap-fill")
         return {}
 
+    pairs = valid_pairs if valid_pairs is not None else {
+        (sym, thr) for sym in symbols for thr in thresholds
+    }
+
     results: dict = {}
-    for symbol in symbols:
-        for threshold in thresholds:
-            key = f"{symbol}@{threshold}"
-            try:
-                result = backfill_recent(symbol, threshold_decimal_bps=threshold)
-                results[key] = result
-                if result and result.bars_written > 0:
-                    logger.info(
-                        "gap-fill: %s@%d — %d bars, gap was %.0fs",
-                        symbol, threshold, result.bars_written, result.gap_seconds,
-                    )
-            except Exception:
-                logger.exception("gap-fill failed for %s@%d", symbol, threshold)
+    for symbol, threshold in sorted(pairs):
+        key = f"{symbol}@{threshold}"
+        try:
+            result = backfill_recent(symbol, threshold_decimal_bps=threshold)
+            results[key] = result
+            if result and result.bars_written > 0:
+                logger.info(
+                    "gap-fill: %s@%d — %d bars, gap was %.0fs",
+                    symbol, threshold, result.bars_written, result.gap_seconds,
+                )
+        except Exception:
+            logger.exception("gap-fill failed for %s@%d", symbol, threshold)
     return results
 
 
@@ -276,6 +286,7 @@ def _inject_checkpoints(
     thresholds: list[int],
     trace_id: str,
     gap_fill_results: dict | None = None,
+    valid_pairs: set[tuple[str, int]] | None = None,
 ) -> int:
     """Inject saved processor checkpoints into engine before start.
 
@@ -287,66 +298,72 @@ def _inject_checkpoints(
         checkpoint for that pair is skipped — the gap-fill data is
         authoritative and the checkpoint's incomplete bar is obsolete
         (Issue #96).
+    valid_pairs
+        Issue #120: When provided, only inject checkpoints for these pairs.
+        Eliminates useless checkpoint file lookups for invalid pairs.
     """
     from rangebar.hooks import HookEvent, emit_hook
     from rangebar.logging import log_checkpoint_event
 
-    loaded = 0
-    for symbol in symbols:
-        for threshold in thresholds:
-            # Issue #96: Skip checkpoint when gap-fill already wrote bars
-            key = f"{symbol}@{threshold}"
-            gf = (gap_fill_results or {}).get(key)
-            if gf is not None and getattr(gf, "bars_written", 0) > 0:
-                logger.info(
-                    "skipping checkpoint for %s@%d: gap-fill wrote %d bars",
-                    symbol, threshold, gf.bars_written,
-                )
-                continue
+    pairs = valid_pairs if valid_pairs is not None else {
+        (sym, thr) for sym in symbols for thr in thresholds
+    }
 
-            cp = _load_checkpoint(symbol, threshold)
-            if not (cp and cp.get("processor_checkpoint")):
-                continue
-            try:
-                engine.set_checkpoint(  # type: ignore[attr-defined]
-                    symbol, threshold, cp["processor_checkpoint"],
-                )
-                loaded += 1
-                cp_age = time.time() - cp.get("updated_at", time.time())
-                logger.info(
-                    "injected checkpoint for %s@%d (age=%.0fs)",
-                    symbol, threshold, cp_age,
-                )
-                log_checkpoint_event(
-                    "sidecar_checkpoint_inject",
-                    symbol,
-                    trace_id,
-                    threshold=threshold,
-                    checkpoint_age_sec=round(cp_age),
-                    has_incomplete_bar=bool(
-                        cp["processor_checkpoint"].get("has_incomplete_bar")
-                    ),
-                )
-                emit_hook(
-                    HookEvent.SIDECAR_CHECKPOINT_RESTORED,
-                    symbol=symbol,
-                    trace_id=trace_id,
-                    threshold_dbps=threshold,
-                    has_incomplete_bar=bool(
-                        cp["processor_checkpoint"].get("has_incomplete_bar")
-                    ),
-                    checkpoint_age_sec=round(cp_age),
-                )
-            except Exception:
-                logger.exception(
-                    "failed to inject checkpoint for %s@%d", symbol, threshold,
-                )
-                log_checkpoint_event(
-                    "sidecar_checkpoint_inject_failed",
-                    symbol,
-                    trace_id,
-                    threshold=threshold,
-                )
+    loaded = 0
+    for symbol, threshold in sorted(pairs):
+        # Issue #96: Skip checkpoint when gap-fill already wrote bars
+        key = f"{symbol}@{threshold}"
+        gf = (gap_fill_results or {}).get(key)
+        if gf is not None and getattr(gf, "bars_written", 0) > 0:
+            logger.info(
+                "skipping checkpoint for %s@%d: gap-fill wrote %d bars",
+                symbol, threshold, gf.bars_written,
+            )
+            continue
+
+        cp = _load_checkpoint(symbol, threshold)
+        if not (cp and cp.get("processor_checkpoint")):
+            continue
+        try:
+            engine.set_checkpoint(  # type: ignore[attr-defined]
+                symbol, threshold, cp["processor_checkpoint"],
+            )
+            loaded += 1
+            cp_age = time.time() - cp.get("updated_at", time.time())
+            logger.info(
+                "injected checkpoint for %s@%d (age=%.0fs)",
+                symbol, threshold, cp_age,
+            )
+            log_checkpoint_event(
+                "sidecar_checkpoint_inject",
+                symbol,
+                trace_id,
+                threshold=threshold,
+                checkpoint_age_sec=round(cp_age),
+                has_incomplete_bar=bool(
+                    cp["processor_checkpoint"].get("has_incomplete_bar")
+                ),
+            )
+            emit_hook(
+                HookEvent.SIDECAR_CHECKPOINT_RESTORED,
+                symbol=symbol,
+                trace_id=trace_id,
+                threshold_dbps=threshold,
+                has_incomplete_bar=bool(
+                    cp["processor_checkpoint"].get("has_incomplete_bar")
+                ),
+                checkpoint_age_sec=round(cp_age),
+            )
+        except Exception:
+            logger.exception(
+                "failed to inject checkpoint for %s@%d", symbol, threshold,
+            )
+            log_checkpoint_event(
+                "sidecar_checkpoint_inject_failed",
+                symbol,
+                trace_id,
+                threshold=threshold,
+            )
     return loaded
 
 
@@ -405,6 +422,7 @@ def _create_engine(
     config: SidecarConfig,
     trace_id: str,
     gap_fill_results: dict | None,
+    valid_pairs: set[tuple[str, int]] | None = None,
 ) -> tuple[object, int]:
     """Create and configure a LiveBarEngine, returning (engine, checkpoints_loaded)."""
     from rangebar._core import LiveBarEngine
@@ -417,6 +435,7 @@ def _create_engine(
     loaded = _inject_checkpoints(
         engine, config.symbols, config.thresholds, trace_id,
         gap_fill_results=gap_fill_results,
+        valid_pairs=valid_pairs,
     )
     engine.start()
     return engine, loaded
@@ -462,6 +481,7 @@ def _restart_engine_with_recovery(
     trace_id: str,
     bars_written: int,
     restart_attempt: int,
+    valid_pairs: set[tuple[str, int]] | None = None,
 ) -> tuple[object | None, bool]:
     """Restart engine with timeout guards and error recovery.
 
@@ -497,10 +517,14 @@ def _restart_engine_with_recovery(
             "running fresh gap-fill after watchdog restart #%d",
             restart_attempt,
         )
-        fresh_gap_fill = _gap_fill(config.symbols, config.thresholds)
+        fresh_gap_fill = _gap_fill(
+            config.symbols, config.thresholds, valid_pairs=valid_pairs,
+        )
 
         # Step 5: Create new engine with fresh gap-fill results
-        new_engine, _ = _create_engine(config, trace_id, fresh_gap_fill)
+        new_engine, _ = _create_engine(
+            config, trace_id, fresh_gap_fill, valid_pairs=valid_pairs,
+        )
         logger.info("engine restart #%d succeeded", restart_attempt)
     except Exception:
         logger.exception(
@@ -716,12 +740,35 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
         )
         raise ValueError(msg)
 
-    # Validate all (symbol, threshold) pairs against per-symbol minimums
-    from rangebar.threshold import resolve_and_validate_threshold
+    # Issue #120: Build valid (symbol, threshold) pairs, skip invalid with log
+    from rangebar.threshold import ThresholdError, resolve_and_validate_threshold
 
+    valid_pairs: set[tuple[str, int]] = set()
     for sym in config.symbols:
         for thr in config.thresholds:
-            resolve_and_validate_threshold(sym, thr)
+            try:
+                resolve_and_validate_threshold(sym, thr)
+                valid_pairs.add((sym, thr))
+            except ThresholdError:
+                logger.info("skipping %s@%d (below min_threshold)", sym, thr)
+
+    if not valid_pairs:
+        msg = "No valid (symbol, threshold) pairs after filtering"
+        raise ValueError(msg)
+
+    # Log per-symbol threshold map
+    sym_thresholds: dict[str, list[int]] = defaultdict(list)
+    for sym, thr in valid_pairs:
+        sym_thresholds[sym].append(thr)
+    for _sym, thrs in sym_thresholds.items():
+        thrs.sort()
+
+    logger.info(
+        "valid pairs: %d symbols, %d total (symbol, threshold) pairs",
+        len(sym_thresholds), len(valid_pairs),
+    )
+    for sym, thrs in sorted(sym_thresholds.items()):
+        logger.info("  %s: %s", sym, thrs)
 
     # Issue #119: Symbol coverage health check
     env_symbols_str = os.environ.get("RANGEBAR_STREAMING_SYMBOLS", "")
@@ -798,11 +845,15 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
         from rangebar.notify.telegram import _build_context_block, send_telegram
         preview = ", ".join(config.symbols[:_STARTUP_SYMBOL_PREVIEW])
         ellipsis = "..." if len(config.symbols) > _STARTUP_SYMBOL_PREVIEW else ""
+        # Issue #120: Show per-symbol threshold coverage in startup notification
+        thresholds_summary = "; ".join(
+            f"{sym}:{thrs}" for sym, thrs in sorted(sym_thresholds.items())
+        )
         startup_msg = (
             "<b>SIDECAR STARTED</b>\n"
             f"<b>Symbols:</b> {len(config.symbols)} "
             f"({preview}{ellipsis})\n"
-            f"<b>Thresholds:</b> {config.thresholds}\n"
+            f"<b>Coverage:</b> {thresholds_summary}\n"
             f"<b>Health:</b> :{config.health_port}/health\n"
             f"<b>PID:</b> {os.getpid()}"
             + _build_context_block("sidecar")
@@ -811,14 +862,18 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
     except (ImportError, OSError, RuntimeError):
         logger.debug("failed to send sidecar startup Telegram alert", exc_info=True)
 
-    # Gap-fill (Layer 2) for all symbol x threshold pairs
+    # Gap-fill (Layer 2) for valid symbol x threshold pairs only (Issue #120)
     gap_fill_results = None
     if config.gap_fill_on_startup:
         logger.info("running gap-fill before starting live stream")
-        gap_fill_results = _gap_fill(config.symbols, config.thresholds)
+        gap_fill_results = _gap_fill(
+            config.symbols, config.thresholds, valid_pairs=valid_pairs,
+        )
 
     # Start Rust engine (Issue #107: extracted to helper for watchdog restart)
-    engine, checkpoints_loaded = _create_engine(config, trace_id, gap_fill_results)
+    engine, checkpoints_loaded = _create_engine(
+        config, trace_id, gap_fill_results, valid_pairs=valid_pairs,
+    )
     logger.info(
         "live bar engine started (checkpoints_loaded=%d)", checkpoints_loaded,
     )
@@ -939,6 +994,7 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
                             new_engine, success = _restart_engine_with_recovery(
                                 engine, config, trace_id,
                                 bars_written, watchdog_restarts + 1,
+                                valid_pairs=valid_pairs,
                             )
 
                             if success:
@@ -970,6 +1026,10 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
 
             symbol = bar.pop("_symbol", "UNKNOWN")
             threshold = bar.pop("_threshold", 0)
+
+            # Issue #120: Skip bars for invalid (symbol, threshold) pairs
+            if (symbol, threshold) not in valid_pairs:
+                continue
 
             # Accumulate bar in batch buffer
             batch_key = (symbol, threshold)

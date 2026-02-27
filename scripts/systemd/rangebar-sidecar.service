@@ -10,6 +10,7 @@ NotifyAccess=all
 WatchdogSec=300
 User=tca
 WorkingDirectory=/home/tca/rangebar-py
+EnvironmentFile=/home/tca/rangebar-py/deploy/sidecar.env
 ExecStart=/home/tca/.cargo/bin/healthdog \
   --healthcheck-url http://localhost:8081/health \
   -- /home/tca/rangebar-py/.venv/bin/python3 /home/tca/rangebar-py/scripts/streaming_sidecar.py --from-env
