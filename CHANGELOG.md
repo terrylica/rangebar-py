@@ -1,3 +1,10 @@
+# [12.32.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.31.0...v12.32.0) (2026-02-27)
+
+
+### Features
+
+* **#117-119:** End-to-end sidecar reliability + monitoring ([697d993](https://github.com-terrylica/terrylica/rangebar-py/commit/697d9933e64d4fba9ad3346d70de7f3aa307d9ad)), closes [#117-119](https://github.com-terrylica/terrylica/rangebar-py/issues/117-119) [#117](https://github.com-terrylica/terrylica/rangebar-py/issues/117) [#118](https://github.com-terrylica/terrylica/rangebar-py/issues/118) [#119](https://github.com-terrylica/terrylica/rangebar-py/issues/119) [#117-119](https://github.com-terrylica/terrylica/rangebar-py/issues/117-119) [#117-119](https://github.com-terrylica/terrylica/rangebar-py/issues/117-119) [#117-119](https://github.com-terrylica/terrylica/rangebar-py/issues/117-119)
+
 # [12.31.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.30.0...v12.31.0) (2026-02-26)
 
 
