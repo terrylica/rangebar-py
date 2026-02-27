@@ -3,8 +3,6 @@ use super::*;
 
 /// Issue #96 Task #82: Pre-compute numeric scale constants to reduce instruction cache pollution
 const VOLUME_SCALE: f64 = 100_000_000.0;
-const TIMESTAMP_SCALE_US: f64 = 1_000_000.0;
-const TIMESTAMP_SCALE_NS: f64 = 1_000_000_000.0;
 
 /// Convert f64 to `FixedPoint` (8 decimal precision)
 pub(crate) fn f64_to_fixed_point(value: f64) -> FixedPoint {
@@ -98,21 +96,14 @@ fn batch_set_dict_items(
 pub(crate) fn rangebar_to_dict(py: Python, bar: &RangeBar) -> PyResult<PyObject> {
     let dict = PyDict::new_bound(py);
 
-    // Issue #105: Pre-compute timestamp once with efficient RFC3339 formatting
-    let timestamp_seconds = bar.close_time as f64 / TIMESTAMP_SCALE_US;
-    let datetime = chrono::DateTime::from_timestamp(
-        timestamp_seconds as i64,
-        (timestamp_seconds.fract() * TIMESTAMP_SCALE_NS) as u32,
-    )
-    .ok_or_else(|| PyValueError::new_err("Invalid timestamp"))?;
-    let timestamp_str = datetime.to_rfc3339();
-
     // Issue #105: Pre-compute volume scaling ratio (avoids repeated division)
     let volume_scale_inv = 1.0 / VOLUME_SCALE;
 
-    // Batch 1: Timestamp + OHLCV Core (6 items)
+    // Batch 1: Timestamps + OHLCV Core (7 items)
+    // Rust open_time/close_time are i64 microseconds; divide by 1000 → milliseconds
     let ohlcv_items = vec![
-        ("timestamp", timestamp_str.into_py(py)),
+        ("open_time_ms", (bar.open_time / 1000).into_py(py)),
+        ("close_time_ms", (bar.close_time / 1000).into_py(py)),
         ("open", bar.open.to_f64().into_py(py)),
         ("high", bar.high.to_f64().into_py(py)),
         ("low", bar.low.to_f64().into_py(py)),

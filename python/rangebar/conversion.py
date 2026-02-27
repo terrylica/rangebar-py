@@ -49,11 +49,11 @@ def _bars_list_to_polars(
 
     bars_df = pl.DataFrame(bars)
 
-    # Convert timestamp to datetime
-    if "timestamp" in bars_df.columns:
+    # Convert close_time_ms (Int64 milliseconds) to datetime
+    if "close_time_ms" in bars_df.columns:
         bars_df = bars_df.with_columns(
-            pl.col("timestamp")
-            .str.to_datetime(format="%Y-%m-%dT%H:%M:%S%.f%:z")
+            (pl.col("close_time_ms") * 1000)
+            .cast(pl.Datetime("us", "UTC"))
             .alias("timestamp")
         )
 

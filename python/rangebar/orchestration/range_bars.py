@@ -555,12 +555,13 @@ def get_range_bars(
                 orphaned_bar["ouroboros_boundary"] = boundary.timestamp
                 orphaned_bar["ouroboros_reason"] = boundary.reason
                 orphan_df = pd.DataFrame([orphaned_bar])
-                # Convert timestamp to datetime index
-                if "timestamp" in orphan_df.columns:
+                # Convert close_time_ms to datetime index
+                if "close_time_ms" in orphan_df.columns:
                     orphan_df["timestamp"] = pd.to_datetime(
-                        orphan_df["timestamp"], unit="us", utc=True
+                        orphan_df["close_time_ms"], unit="ms", utc=True
                     )
                     orphan_df = orphan_df.set_index("timestamp")
+                    orphan_df = orphan_df.drop(columns=["close_time_ms", "open_time_ms"], errors="ignore")
                 all_bars.append(orphan_df)
 
         # Load tick data scoped to this segment (not the full range)

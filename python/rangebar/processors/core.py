@@ -399,10 +399,12 @@ class RangeBarProcessor:
 
         result = pd.DataFrame(bars)
 
-        # Convert timestamp from RFC3339 string to DatetimeIndex
-        # Use format='ISO8601' to handle variable-precision fractional seconds
-        result["timestamp"] = pd.to_datetime(result["timestamp"], format="ISO8601")
+        # Convert close_time_ms (Int64 ms) to DatetimeIndex
+        result["timestamp"] = pd.to_datetime(
+            result["close_time_ms"], unit="ms", utc=True,
+        )
         result = result.set_index("timestamp")
+        result = result.drop(columns=["close_time_ms", "open_time_ms"], errors="ignore")
 
         # Rename columns to backtesting.py format (capitalized)
         result = result.rename(

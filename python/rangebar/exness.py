@@ -167,8 +167,12 @@ def process_exness_ticks_to_dataframe(
     # Convert to DataFrame
     df = pd.DataFrame(bars)
 
-    # Parse timestamps and set as index
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    # Parse close_time_ms and set as index
+    if "close_time_ms" in df.columns:
+        df["timestamp"] = pd.to_datetime(df["close_time_ms"], unit="ms", utc=True)
+        df = df.drop(columns=["close_time_ms", "open_time_ms"], errors="ignore")
+    else:
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
     df = df.set_index("timestamp")
 
     # Rename columns for backtesting.py compatibility
