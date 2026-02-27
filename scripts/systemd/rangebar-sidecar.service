@@ -6,16 +6,13 @@ StartLimitIntervalSec=600
 StartLimitBurst=5
 
 [Service]
-# Issue #117: healthdog-rs bridges HTTP health → systemd watchdog
-Type=notify
-NotifyAccess=all
-WatchdogSec=300
+# Type=simple: healthdog-rs requires libsystemd-dev to compile on bigblack.
+# TODO: Install libsystemd-dev + cargo install healthdog, then restore Type=notify.
+Type=simple
 WorkingDirectory=/home/tca/rangebar-py
 EnvironmentFile=/home/tca/rangebar-py/deploy/rangebar.env
 EnvironmentFile=/home/tca/rangebar-py/deploy/sidecar.env
-ExecStart=/home/tca/.cargo/bin/healthdog \
-  --healthcheck-url http://localhost:8081/health \
-  -- /home/tca/rangebar-py/.venv/bin/python3 /home/tca/rangebar-py/scripts/streaming_sidecar.py --from-env
+ExecStart=/home/tca/rangebar-py/.venv/bin/python3 /home/tca/rangebar-py/scripts/streaming_sidecar.py --from-env
 
 # Restart policy (Issue #107 P3)
 Restart=always
