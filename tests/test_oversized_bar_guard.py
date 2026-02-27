@@ -86,7 +86,7 @@ def test_run_write_guards_includes_bar_range():
             "Low": [50000.0],
             "Close": [50450.0],
             "Volume": [10.0],
-            "timestamp_ms": [1640995200000],
+            "close_time_ms": [1640995200000],
         }
     )
     with pytest.raises(ValueError, match="Issue #112"):

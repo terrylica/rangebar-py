@@ -267,7 +267,7 @@ class TestSidecarCheckpointTelemetry:
         from rangebar.sidecar import _save_checkpoint
 
         bar_dict = {
-            "timestamp_ms": 1700000000000,
+            "close_time_ms": 1700000000000,
             "last_agg_trade_id": 444555666,
             "open": 42000.0,
             "high": 42105.0,
@@ -302,7 +302,7 @@ class TestSidecarCheckpointTelemetry:
         from rangebar.sidecar import _save_checkpoint
 
         bar_dict = {
-            "timestamp_ms": 1700000000000,
+            "close_time_ms": 1700000000000,
             "open": 42000.0,
             "high": 42105.0,
             "low": 41980.0,
@@ -335,7 +335,7 @@ class TestSidecarCheckpointTelemetry:
         from rangebar.sidecar import _save_checkpoint
 
         bar_dict = {
-            "timestamp_ms": 1700000000000,
+            "close_time_ms": 1700000000000,
             "last_agg_trade_id": 0,
             "open": 42000.0,
         }

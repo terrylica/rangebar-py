@@ -64,7 +64,7 @@ class TestDuplicateResultFormat:
         expected_keys = {
             "symbol",
             "threshold_decimal_bps",
-            "timestamp_ms",
+            "close_time_ms",
             "duplicate_count",
             "opens",
             "closes",
@@ -74,7 +74,7 @@ class TestDuplicateResultFormat:
         sample_result = {
             "symbol": "BTCUSDT",
             "threshold_decimal_bps": 1000,
-            "timestamp_ms": 1672801643907,
+            "close_time_ms": 1672801643907,
             "duplicate_count": 2,
             "opens": [16675.65, 16675.65],
             "closes": [16842.42, 16842.42],

@@ -265,7 +265,7 @@ class TestRangeBarCache:
         key = CacheKey("BTCUSDT", 250, 1704067200000, 1704153600000)
         mock_client.query_df_arrow.return_value = pd.DataFrame(
             {
-                "timestamp_ms": [1704067200000],
+                "close_time_ms": [1704067200000],
                 "Open": [42000.0],
                 "High": [42100.0],
                 "Low": [41900.0],

@@ -255,7 +255,7 @@ class TestWatchdogTrigger:
             "_symbol": "BTCUSDT",
             "_threshold": 250,
             "close": 50000.0,
-            "timestamp_ms": 1700000000000,
+            "close_time_ms": 1700000000000,
         }
 
         clock = _MonotonicClock(0.0)

@@ -106,7 +106,7 @@ class TestStreamingRangeBarProcessor:
         assert "low" in bar
         assert "close" in bar
         assert "volume" in bar
-        assert "timestamp" in bar
+        assert "close_time_ms" in bar
         assert bar["open"] == base_price
         assert bar["volume"] == 2.0  # Both trades included in the bar
 

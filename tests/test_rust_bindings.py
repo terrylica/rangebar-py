@@ -59,7 +59,8 @@ def test_process_trades_with_breach():
     assert len(bars) == 1
 
     bar = bars[0]
-    assert "timestamp" in bar
+    assert "close_time_ms" in bar
+    assert "open_time_ms" in bar
     assert "open" in bar
     assert "high" in bar
     assert "low" in bar
@@ -206,10 +207,10 @@ def test_timestamp_conversion_milliseconds_to_microseconds():
     bars = processor.process_trades(trades)
     assert len(bars) == 1
 
-    # Timestamp should be converted to RFC3339 string
-    assert "timestamp" in bars[0]
-    assert isinstance(bars[0]["timestamp"], str)
-    assert "2024-01-01" in bars[0]["timestamp"]  # Should be January 1, 2024
+    # Timestamp should be Int64 milliseconds (no longer RFC3339 string)
+    assert "close_time_ms" in bars[0]
+    assert isinstance(bars[0]["close_time_ms"], int)
+    assert bars[0]["close_time_ms"] == 1704067210000  # Close time of the bar
 
 
 def test_precision_preservation():

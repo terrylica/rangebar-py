@@ -45,7 +45,7 @@ def test_threshold():
 def _make_bars_df(n: int, start_ts_ms: int = 1704067200000) -> pd.DataFrame:
     """Create a minimal OHLCV DataFrame for testing."""
     data = {
-        "timestamp_ms": [start_ts_ms + i * 60000 for i in range(n)],
+        "close_time_ms": [start_ts_ms + i * 60000 for i in range(n)],
         "Open": [100.0 + i * 0.1 for i in range(n)],
         "High": [100.5 + i * 0.1 for i in range(n)],
         "Low": [99.5 + i * 0.1 for i in range(n)],
@@ -53,9 +53,9 @@ def _make_bars_df(n: int, start_ts_ms: int = 1704067200000) -> pd.DataFrame:
         "Volume": [10.0] * n,
     }
     df = pd.DataFrame(data)
-    df["timestamp"] = pd.to_datetime(df["timestamp_ms"], unit="ms", utc=True)
+    df["timestamp"] = pd.to_datetime(df["close_time_ms"], unit="ms", utc=True)
     df = df.set_index("timestamp")
-    df = df.drop(columns=["timestamp_ms"])
+    df = df.drop(columns=["close_time_ms"])
     return df
 
 

@@ -174,6 +174,6 @@ class TestSQLGeneration:
             assert f"< {session['end']}" in sql
 
     def test_sql_uses_intdiv_for_timestamp(self):
-        """SQL should use intDiv(timestamp_ms, 1000) for epoch conversion."""
+        """SQL should use intDiv(close_time_ms, 1000) for epoch conversion."""
         sql = _build_session_update_sql(_SESSION_UPDATES[0])
-        assert "intDiv(timestamp_ms, 1000)" in sql
+        assert "intDiv(close_time_ms, 1000)" in sql

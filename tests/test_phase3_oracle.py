@@ -719,8 +719,8 @@ class TestTier5CacheWriteParity:
         except (ImportError, ConnectionError, OSError):
             pytest.skip("ClickHouse not available")
 
-    def test_batch_timestamp_ms_range(self, cache):
-        """Bars stored via store_bars_batch have valid timestamp_ms values.
+    def test_batch_close_time_ms_range(self, cache):
+        """Bars stored via store_bars_batch have valid close_time_ms values.
 
         Guards against Issue #85 class bugs in the Polars/Arrow path.
         """
@@ -728,7 +728,7 @@ class TestTier5CacheWriteParity:
         # Create test bars with known timestamps
         ts_ms = [1704067200000 + i * 60000 for i in range(10)]
         test_bars = pl.DataFrame({
-            "timestamp_ms": ts_ms,
+            "close_time_ms": ts_ms,
             "open": [50000.0 + i * 10 for i in range(10)],
             "high": [50010.0 + i * 10 for i in range(10)],
             "low": [49990.0 + i * 10 for i in range(10)],
@@ -747,17 +747,17 @@ class TestTier5CacheWriteParity:
 
             # Query back and verify timestamps
             result = cache.client.query(
-                "SELECT timestamp_ms FROM rangebar_cache.range_bars "
+                "SELECT close_time_ms FROM rangebar_cache.range_bars "
                 "WHERE symbol = %(symbol)s AND threshold_decimal_bps = %(threshold)s",
                 parameters={"symbol": test_symbol, "threshold": test_threshold},
             )
             for row in result.result_rows:
                 ts = row[0]
                 assert ts >= 1_000_000_000_000, (
-                    f"timestamp_ms={ts} in seconds, not ms (Issue #85)"
+                    f"close_time_ms={ts} in seconds, not ms (Issue #85)"
                 )
                 assert ts < 2_000_000_000_000, (
-                    f"timestamp_ms={ts} in microseconds, not ms"
+                    f"close_time_ms={ts} in microseconds, not ms"
                 )
         finally:
             # Cleanup test data
