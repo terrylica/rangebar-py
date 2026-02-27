@@ -218,11 +218,73 @@ class CoverageSummary:
 
 
 @dataclass
+class DurationAnomaly:
+    """A bar with anomalously long duration."""
+
+    symbol: str
+    threshold_dbps: int
+    close_time_ms: int
+    duration_hours: float
+    bar_open: float
+    bar_close: float
+    internal_range_dbps: float
+
+    @property
+    def close_dt(self) -> str:
+        return datetime.fromtimestamp(
+            self.close_time_ms / 1000, tz=UTC,
+        ).strftime("%Y-%m-%d %H:%M")
+
+
+@dataclass
+class TradeIdGap:
+    """A gap detected via trade ID continuity check."""
+
+    symbol: str
+    threshold_dbps: int
+    close_time_ms: int
+    prev_close_time_ms: int
+    first_agg_trade_id: int
+    prev_last_agg_trade_id: int
+    missing_trades: int
+    classification: str  # "registered", "unregistered", "pre_tracking"
+    known_gap_reason: str | None = None
+
+    @property
+    def close_dt(self) -> str:
+        return datetime.fromtimestamp(
+            self.close_time_ms / 1000, tz=UTC,
+        ).strftime("%Y-%m-%d %H:%M")
+
+    @property
+    def gap_date(self) -> str:
+        """Date of the gap (from prev bar close time)."""
+        return datetime.fromtimestamp(
+            self.prev_close_time_ms / 1000, tz=UTC,
+        ).strftime("%Y-%m-%d")
+
+
+@dataclass
+class BackfillQueueStatus:
+    """Status of the backfill_requests queue."""
+
+    by_status: dict[str, int] = field(default_factory=dict)
+    oldest_pending: str | None = None
+    max_running_hours: float = 0.0
+    is_healthy: bool = True
+
+
+@dataclass
 class DetectionResult:
     """Full detection result."""
     gaps: list[Gap] = field(default_factory=list)
     coverage: list[CoverageSummary] = field(default_factory=list)
     stale_pairs: list[CoverageSummary] = field(default_factory=list)
+    duration_anomalies: list[DurationAnomaly] = field(
+        default_factory=list,
+    )
+    trade_id_gaps: list[TradeIdGap] = field(default_factory=list)
+    backfill_queue: BackfillQueueStatus | None = None
     checked_pairs: int = 0
     skipped_pairs: int = 0  # pairs with 0 bars
 
@@ -427,6 +489,247 @@ def detect_gaps_for_pair(
 
 
 # =============================================================================
+# Duration Anomaly Detection (Phase 10e — Feb 27 incident fix)
+# =============================================================================
+
+def detect_duration_anomalies(
+    client: clickhouse_connect.driver.Client,
+    symbol: str,
+    threshold: int,
+    max_duration_hours: float,
+    recent_cutoff_ms: int | None = None,
+    ouroboros_mode: str = "year",
+) -> list[DurationAnomaly]:
+    """Detect bars with anomalously long duration.
+
+    A BTCUSDT@1000 bar normally takes minutes to hours. A 39h+ bar
+    indicates missed data during that period (Feb 27 incident).
+    """
+    max_dur_us = int(max_duration_hours * 3600 * 1e6)
+    params: dict = {
+        "symbol": symbol,
+        "threshold": threshold,
+        "ouroboros": ouroboros_mode,
+        "max_dur_us": max_dur_us,
+    }
+    where_clause = ""
+    if recent_cutoff_ms is not None:
+        where_clause = "AND close_time_ms >= {cutoff:Int64}"
+        params["cutoff"] = recent_cutoff_ms
+
+    query = f"""
+        SELECT
+            close_time_ms,
+            duration_us / 1e6 / 3600 AS duration_hours,
+            open AS bar_open,
+            close AS bar_close,
+            abs(open - close)
+                / nullIf(close, 0) * 10000 AS range_dbps
+        FROM rangebar_cache.range_bars FINAL
+        WHERE symbol = {{symbol:String}}
+          AND threshold_decimal_bps = {{threshold:UInt32}}
+          AND ouroboros_mode = {{ouroboros:String}}
+          AND duration_us > {{max_dur_us:Int64}}
+          {where_clause}
+        ORDER BY duration_us DESC
+        LIMIT 100
+    """
+    result = client.query(query, parameters=params)
+    anomalies: list[DurationAnomaly] = []
+    for row in result.result_rows:
+        ts, dur_h, o, c, rng = row
+        anomalies.append(DurationAnomaly(
+            symbol=symbol,
+            threshold_dbps=threshold,
+            close_time_ms=ts,
+            duration_hours=round(dur_h, 1),
+            bar_open=o,
+            bar_close=c,
+            internal_range_dbps=round(rng, 1) if rng else 0.0,
+        ))
+    return anomalies
+
+
+# =============================================================================
+# Backfill Queue Health (Phase 10d)
+# =============================================================================
+
+def check_backfill_queue(
+    client: clickhouse_connect.driver.Client,
+) -> BackfillQueueStatus:
+    """Check health of the backfill_requests queue."""
+    status = BackfillQueueStatus()
+    try:
+        result = client.query("""
+            SELECT
+                status,
+                count() AS n,
+                min(toString(requested_at)) AS oldest,
+                max(
+                    CASE WHEN status = 'running'
+                        THEN dateDiff(
+                            'hour', started_at, now()
+                        )
+                        ELSE 0
+                    END
+                ) AS max_running_h
+            FROM rangebar_cache.backfill_requests FINAL
+            GROUP BY status
+        """)
+        for row in result.result_rows:
+            s, n, oldest, max_h = row
+            status.by_status[s] = n
+            if s == "pending" and oldest:
+                status.oldest_pending = oldest
+            if s == "running" and max_h:
+                status.max_running_hours = float(max_h)
+        pending = status.by_status.get("pending", 0)
+        if pending > 50 or status.max_running_hours > 4:
+            status.is_healthy = False
+    except (OSError, RuntimeError):
+        # Table may not exist — that's OK
+        pass
+    return status
+
+
+# =============================================================================
+# Trade ID Continuity (Phase 10f — zero-tolerance, registry-gated)
+# =============================================================================
+
+def _load_known_gaps() -> dict[str, list[tuple]]:
+    """Load known_gaps from symbols.toml for gap classification.
+
+    Returns dict mapping symbol → list of (start_date, end_date, reason).
+    Standalone: reads TOML directly, no rangebar package dependency.
+    """
+    import tomllib as _tomllib
+    from pathlib import Path
+
+    # Try repo-root symlink first, then package data path
+    candidates = [
+        Path(__file__).parent.parent / "symbols.toml",
+        Path(__file__).parent.parent / "python" / "rangebar"
+        / "data" / "symbols.toml",
+    ]
+    for path in candidates:
+        if path.exists():
+            raw = _tomllib.loads(path.read_bytes().decode())
+            result: dict[str, list[tuple]] = {}
+            for sym, data in raw.get("symbols", {}).items():
+                gaps = data.get("known_gaps", [])
+                if gaps:
+                    result[sym] = [
+                        (g["start_date"], g["end_date"],
+                         g.get("reason", ""))
+                        for g in gaps
+                    ]
+            return result
+    return {}
+
+
+def classify_trade_id_gap(
+    symbol: str,
+    gap_date_str: str,
+    known_gaps: dict[str, list[tuple]],
+) -> tuple[str, str | None]:
+    """Classify a trade ID gap against the symbol registry.
+
+    Returns (classification, reason) where classification is
+    "registered" or "unregistered".
+    """
+    from datetime import date as _date
+
+    gap_d = _date.fromisoformat(gap_date_str)
+    sym_gaps = known_gaps.get(symbol, [])
+    for start_d, end_d, reason in sym_gaps:
+        if start_d <= gap_d <= end_d:
+            return "registered", reason
+    return "unregistered", None
+
+
+def detect_trade_id_gaps(
+    client: clickhouse_connect.driver.Client,
+    symbol: str,
+    threshold: int,
+    known_gaps: dict[str, list[tuple]],
+    recent_cutoff_ms: int | None = None,
+    ouroboros_mode: str = "year",
+) -> list[TradeIdGap]:
+    """Detect trade ID continuity breaks.
+
+    For consecutive bars, first_agg_trade_id[n+1] should equal
+    last_agg_trade_id[n] + 1. Any gap means dropped trades.
+    """
+    params: dict = {
+        "symbol": symbol,
+        "threshold": threshold,
+        "ouroboros": ouroboros_mode,
+    }
+    where_clause = ""
+    if recent_cutoff_ms is not None:
+        where_clause = "AND close_time_ms >= {cutoff:Int64}"
+        params["cutoff"] = recent_cutoff_ms
+
+    query = f"""
+        SELECT
+            close_time_ms,
+            first_agg_trade_id,
+            last_agg_trade_id,
+            prev_last_id,
+            prev_close_time_ms,
+            missing_trades
+        FROM (
+            SELECT
+                close_time_ms,
+                first_agg_trade_id,
+                last_agg_trade_id,
+                lagInFrame(last_agg_trade_id, 1)
+                    OVER w AS prev_last_id,
+                lagInFrame(close_time_ms, 1)
+                    OVER w AS prev_close_time_ms,
+                first_agg_trade_id
+                    - lagInFrame(last_agg_trade_id, 1)
+                    OVER w - 1 AS missing_trades,
+                row_number() OVER w AS rn
+            FROM rangebar_cache.range_bars FINAL
+            WHERE symbol = {{symbol:String}}
+              AND threshold_decimal_bps = {{threshold:UInt32}}
+              AND ouroboros_mode = {{ouroboros:String}}
+              AND first_agg_trade_id > 0
+              AND last_agg_trade_id > 0
+              {where_clause}
+            WINDOW w AS (ORDER BY close_time_ms)
+        )
+        WHERE rn > 1 AND missing_trades != 0
+        ORDER BY close_time_ms
+    """
+    result = client.query(query, parameters=params)
+
+    gaps: list[TradeIdGap] = []
+    for row in result.result_rows:
+        (ts, first_id, _last_id,
+         prev_last_id, prev_ts, missing) = row
+        gap_date_str = datetime.fromtimestamp(
+            prev_ts / 1000, tz=UTC,
+        ).strftime("%Y-%m-%d")
+        classification, reason = classify_trade_id_gap(
+            symbol, gap_date_str, known_gaps,
+        )
+        gaps.append(TradeIdGap(
+            symbol=symbol,
+            threshold_dbps=threshold,
+            close_time_ms=ts,
+            prev_close_time_ms=prev_ts,
+            first_agg_trade_id=first_id,
+            prev_last_agg_trade_id=prev_last_id,
+            missing_trades=missing,
+            classification=classification,
+            known_gap_reason=reason,
+        ))
+    return gaps
+
+
+# =============================================================================
 # Main Detection Loop
 # =============================================================================
 
@@ -438,28 +741,44 @@ def run_detection(
     price_gap_dbps: float = DEFAULT_PRICE_GAP_DBPS,
     recent_days: int | None = None,
     max_stale_hours: float | None = None,
+    max_bar_duration_hours: float | None = None,
+    check_backfill: bool = False,
+    trade_id_continuity: bool = False,
     ouroboros_mode: str = "year",
 ) -> DetectionResult:
     """Run gap detection across all specified (symbol, threshold) pairs."""
     min_gap_ms = int(min_gap_hours * 3600 * 1000)
     recent_cutoff_ms = None
     if recent_days is not None:
-        recent_cutoff_ms = int((time.time() - recent_days * 86400) * 1000)
+        recent_cutoff_ms = int(
+            (time.time() - recent_days * 86400) * 1000,
+        )
 
     now_ms = int(time.time() * 1000)
 
     # Determine which pairs to check
     if symbols is None and thresholds is None:
-        # Discover from ClickHouse what's actually there
         existing_pairs = discover_pairs(client)
         pairs = existing_pairs
     else:
-        # Build requested pairs
-        syms = symbols if symbols is not None else [f"{b}USDT" for b in ALL_BASES]
-        thds = thresholds if thresholds is not None else list(THRESHOLDS)
+        syms = (
+            symbols
+            if symbols is not None
+            else [f"{b}USDT" for b in ALL_BASES]
+        )
+        thds = (
+            thresholds
+            if thresholds is not None
+            else list(THRESHOLDS)
+        )
         pairs = [(s, t) for s in syms for t in thds]
 
     result = DetectionResult()
+
+    # Load known gaps once for trade ID classification
+    known_gaps_registry: dict[str, list[tuple]] = {}
+    if trade_id_continuity:
+        known_gaps_registry = _load_known_gaps()
 
     for symbol, threshold in pairs:
         gaps, coverage = detect_gaps_for_pair(
@@ -475,18 +794,54 @@ def run_detection(
         result.checked_pairs += 1
         result.gaps.extend(gaps)
 
-        # Freshness check: compute hours since last bar
-        coverage.hours_since_last_bar = (now_ms - coverage.latest_ms) / 3600000.0
-        if max_stale_hours is not None and coverage.hours_since_last_bar > max_stale_hours:
+        # Freshness check
+        coverage.hours_since_last_bar = (
+            (now_ms - coverage.latest_ms) / 3600000.0
+        )
+        if (
+            max_stale_hours is not None
+            and coverage.hours_since_last_bar > max_stale_hours
+        ):
             coverage.is_stale = True
             result.stale_pairs.append(coverage)
 
         result.coverage.append(coverage)
 
+        # Duration anomaly detection (Phase 10e)
+        if max_bar_duration_hours is not None:
+            anomalies = detect_duration_anomalies(
+                client, symbol, threshold,
+                max_duration_hours=max_bar_duration_hours,
+                recent_cutoff_ms=recent_cutoff_ms,
+                ouroboros_mode=ouroboros_mode,
+            )
+            result.duration_anomalies.extend(anomalies)
+
+        # Trade ID continuity (Phase 10f)
+        if trade_id_continuity:
+            tid_gaps = detect_trade_id_gaps(
+                client, symbol, threshold,
+                known_gaps=known_gaps_registry,
+                recent_cutoff_ms=recent_cutoff_ms,
+                ouroboros_mode=ouroboros_mode,
+            )
+            result.trade_id_gaps.extend(tid_gaps)
+
     # Sort gaps by severity (largest first)
     result.gaps.sort(key=lambda g: g.gap_hours, reverse=True)
-    # Sort stale pairs by staleness (most stale first)
-    result.stale_pairs.sort(key=lambda c: c.hours_since_last_bar, reverse=True)
+    result.stale_pairs.sort(
+        key=lambda c: c.hours_since_last_bar, reverse=True,
+    )
+    result.duration_anomalies.sort(
+        key=lambda a: a.duration_hours, reverse=True,
+    )
+    result.trade_id_gaps.sort(
+        key=lambda g: abs(g.missing_trades), reverse=True,
+    )
+
+    # Backfill queue health (Phase 10d)
+    if check_backfill:
+        result.backfill_queue = check_backfill_queue(client)
 
     return result
 
@@ -510,6 +865,20 @@ def print_text_report(result: DetectionResult, summary_only: bool = False) -> No
     print(f"  Temporal gaps found: {len(temporal_gaps)}")
     print(f"  Price gaps found: {len(price_gaps)}")
     print(f"  Stale pairs: {len(result.stale_pairs)}")
+    print(
+        f"  Duration anomalies: "
+        f"{len(result.duration_anomalies)}"
+    )
+    if result.trade_id_gaps:
+        unreg = [
+            g for g in result.trade_id_gaps
+            if g.classification == "unregistered"
+        ]
+        reg = len(result.trade_id_gaps) - len(unreg)
+        print(
+            f"  Trade ID gaps: {len(unreg)} unregistered, "
+            f"{reg} registered"
+        )
     print()
 
     if not summary_only and temporal_gaps:
@@ -581,6 +950,106 @@ def print_text_report(result: DetectionResult, summary_only: bool = False) -> No
             )
         print()
 
+    # Duration anomalies (Phase 10e)
+    if result.duration_anomalies:
+        print("-" * 90)
+        print("  DURATION ANOMALIES (bars exceeding threshold)")
+        print("-" * 90)
+        print(
+            f"  {'Symbol':<12} {'Threshold':>9} "
+            f"{'Close Time':<20} {'Duration(h)':>12} "
+            f"{'Open':>12} {'Close':>12}"
+        )
+        print(
+            f"  {'------':<12} {'---------':>9} "
+            f"{'----------':<20} {'-----------':>12} "
+            f"{'----':>12} {'-----':>12}"
+        )
+        for a in result.duration_anomalies[:50]:
+            print(
+                f"  {a.symbol:<12} {a.threshold_dbps:>6} dbps "
+                f"{a.close_dt:<20} {a.duration_hours:>12.1f} "
+                f"{a.bar_open:>12.2f} {a.bar_close:>12.2f}"
+            )
+        if len(result.duration_anomalies) > 50:
+            n_more = len(result.duration_anomalies) - 50
+            print(f"  ... and {n_more} more")
+        print()
+
+    # Trade ID continuity (Phase 10f)
+    if result.trade_id_gaps:
+        unreg = [
+            g for g in result.trade_id_gaps
+            if g.classification == "unregistered"
+        ]
+        reg = [
+            g for g in result.trade_id_gaps
+            if g.classification == "registered"
+        ]
+        if not summary_only and unreg:
+            print("-" * 90)
+            print(
+                "  TRADE ID CONTINUITY — UNREGISTERED "
+                "(zero tolerance)"
+            )
+            print("-" * 90)
+            print(
+                f"  {'Symbol':<12} {'Threshold':>9} "
+                f"{'Time':<20} {'Missing':>14} "
+                f"{'Status':<14}"
+            )
+            print(
+                f"  {'------':<12} {'---------':>9} "
+                f"{'----':<20} {'-------':>14} "
+                f"{'------':<14}"
+            )
+            for g in unreg[:100]:
+                print(
+                    f"  {g.symbol:<12} "
+                    f"{g.threshold_dbps:>6} dbps "
+                    f"{g.close_dt:<20} "
+                    f"{g.missing_trades:>14,} "
+                    f"UNREGISTERED"
+                )
+            if len(unreg) > 100:
+                print(f"  ... and {len(unreg) - 100} more")
+            print()
+        if not summary_only and reg:
+            print("-" * 90)
+            print(
+                "  TRADE ID CONTINUITY — REGISTERED "
+                "(informational)"
+            )
+            print("-" * 90)
+            for g in reg[:20]:
+                print(
+                    f"  {g.symbol:<12} "
+                    f"{g.threshold_dbps:>6} dbps "
+                    f"{g.gap_date} "
+                    f"{g.missing_trades:>14,} trades "
+                    f"({g.known_gap_reason})"
+                )
+            if len(reg) > 20:
+                print(f"  ... and {len(reg) - 20} more")
+            print()
+
+    # Backfill queue health (Phase 10d)
+    if result.backfill_queue is not None:
+        bq = result.backfill_queue
+        print("-" * 90)
+        print("  BACKFILL QUEUE STATUS")
+        print("-" * 90)
+        for status_name, count in sorted(bq.by_status.items()):
+            print(f"  {status_name:<12}: {count}")
+        if bq.max_running_hours > 0:
+            print(
+                f"  Max running time: {bq.max_running_hours:.1f}h"
+            )
+        if not bq.is_healthy:
+            print("  WARNING: Queue unhealthy (>50 pending or "
+                  "running >4h)")
+        print()
+
     # Final verdict
     print("=" * 90)
     issues = []
@@ -588,7 +1057,8 @@ def print_text_report(result: DetectionResult, summary_only: bool = False) -> No
         issues.append(
             f"{len(temporal_gaps)} temporal gap(s), "
             f"worst: {temporal_gaps[0].gap_hours:.1f}h "
-            f"({temporal_gaps[0].symbol}@{temporal_gaps[0].threshold_dbps})"
+            f"({temporal_gaps[0].symbol}"
+            f"@{temporal_gaps[0].threshold_dbps})"
         )
     if result.stale_pairs:
         worst = result.stale_pairs[0]
@@ -597,22 +1067,51 @@ def print_text_report(result: DetectionResult, summary_only: bool = False) -> No
             f"worst: {worst.hours_since_last_bar:.1f}h "
             f"({worst.symbol}@{worst.threshold_dbps})"
         )
+    if result.duration_anomalies:
+        worst_d = result.duration_anomalies[0]
+        issues.append(
+            f"{len(result.duration_anomalies)} duration "
+            f"anomaly(s), worst: {worst_d.duration_hours:.1f}h "
+            f"({worst_d.symbol}@{worst_d.threshold_dbps})"
+        )
+    unreg_tid = [
+        g for g in result.trade_id_gaps
+        if g.classification == "unregistered"
+    ]
+    if unreg_tid:
+        issues.append(
+            f"{len(unreg_tid)} unregistered trade ID "
+            f"gap(s)"
+        )
+    bq = result.backfill_queue
+    if bq is not None and not bq.is_healthy:
+        issues.append("backfill queue unhealthy")
     if issues:
         print(f"  ISSUES DETECTED -- {'; '.join(issues)}")
     else:
-        print("  CLEAN -- no temporal gaps or stale data detected")
+        print(
+            "  CLEAN -- no gaps, stale data, "
+            "or duration anomalies detected"
+        )
     print("=" * 90)
 
 
 def print_json_report(result: DetectionResult) -> None:
     """Print JSON report for programmatic consumption."""
-    output = {
+    output: dict = {
         "generated_at": datetime.now(UTC).isoformat(),
         "checked_pairs": result.checked_pairs,
         "skipped_pairs": result.skipped_pairs,
-        "temporal_gap_count": len([g for g in result.gaps if g.gap_type in ("temporal", "both")]),
-        "price_gap_count": len([g for g in result.gaps if g.gap_type in ("price", "both")]),
+        "temporal_gap_count": len(
+            [g for g in result.gaps
+             if g.gap_type in ("temporal", "both")]
+        ),
+        "price_gap_count": len(
+            [g for g in result.gaps
+             if g.gap_type in ("price", "both")]
+        ),
         "stale_pair_count": len(result.stale_pairs),
+        "duration_anomaly_count": len(result.duration_anomalies),
         "gaps": [
             {
                 **dict(asdict(g).items()),
@@ -626,13 +1125,27 @@ def print_json_report(result: DetectionResult) -> None:
                 "symbol": c.symbol,
                 "threshold_dbps": c.threshold_dbps,
                 "latest_bar": c.latest_dt,
-                "hours_since_last_bar": round(c.hours_since_last_bar, 1),
+                "hours_since_last_bar": round(
+                    c.hours_since_last_bar, 1,
+                ),
                 "bars_per_day": c.bars_per_day,
             }
             for c in result.stale_pairs
         ],
+        "duration_anomalies": [
+            asdict(a) for a in result.duration_anomalies
+        ],
+        "trade_id_gaps": [
+            asdict(g) for g in result.trade_id_gaps
+        ],
+        "trade_id_unregistered_count": len([
+            g for g in result.trade_id_gaps
+            if g.classification == "unregistered"
+        ]),
         "coverage": [asdict(c) for c in result.coverage],
     }
+    if result.backfill_queue is not None:
+        output["backfill_queue"] = asdict(result.backfill_queue)
     print(json.dumps(output, indent=2))
 
 
@@ -696,7 +1209,32 @@ Examples:
     parser.add_argument(
         "--ouroboros-mode", type=str, default="year",
         choices=["year", "month", "week"],
-        help="Ouroboros mode filter: only check bars of this mode (default: year).",
+        help="Ouroboros mode filter (default: year).",
+    )
+    # Phase 10b (#122): Exhaustive scan
+    parser.add_argument(
+        "--exhaustive", action="store_true",
+        help="Scan ALL data (no --recent-days window). "
+             "Slower but catches aged-out gaps.",
+    )
+    # Phase 10e: Duration anomaly detection (Feb 27 fix)
+    parser.add_argument(
+        "--max-bar-duration-hours", type=float,
+        default=None,
+        help="Flag bars exceeding N hours duration. "
+             "Recommended: 24 for TIER1.",
+    )
+    # Phase 10d: Backfill queue health
+    parser.add_argument(
+        "--check-backfill-queue", action="store_true",
+        help="Check backfill_requests queue health.",
+    )
+    # Phase 10f (#123): Trade ID continuity
+    parser.add_argument(
+        "--trade-id-continuity", action="store_true",
+        help="Check trade ID continuity (zero-tolerance, "
+             "registry-gated). On by default with "
+             "--exhaustive.",
     )
     return parser.parse_args()
 
@@ -724,6 +1262,16 @@ def main() -> int:
             symbols = [args.symbol] if args.symbol else None
             thresholds = [args.threshold] if args.threshold else None
 
+        # --exhaustive overrides --recent-days (Phase 10b)
+        recent_days = args.recent_days
+        if args.exhaustive:
+            recent_days = None
+
+        # --exhaustive implies --trade-id-continuity
+        trade_id = (
+            args.trade_id_continuity or args.exhaustive
+        )
+
         print("Running gap detection...", file=sys.stderr)
         result = run_detection(
             client,
@@ -731,8 +1279,11 @@ def main() -> int:
             thresholds=thresholds,
             min_gap_hours=args.min_gap_hours,
             price_gap_dbps=args.price_gap_dbps,
-            recent_days=args.recent_days,
+            recent_days=recent_days,
             max_stale_hours=args.max_stale_hours,
+            max_bar_duration_hours=args.max_bar_duration_hours,
+            check_backfill=args.check_backfill_queue,
+            trade_id_continuity=trade_id,
             ouroboros_mode=args.ouroboros_mode,
         )
 
@@ -742,9 +1293,24 @@ def main() -> int:
         else:
             print_text_report(result, summary_only=args.summary)
 
-        # Exit code: 1 if temporal gaps or stale data found, 0 if clean
-        temporal_gaps = [g for g in result.gaps if g.gap_type in ("temporal", "both")]
-        return 1 if (temporal_gaps or result.stale_pairs) else 0
+        # Exit code: 1 if any actionable issues found
+        temporal_gaps = [
+            g for g in result.gaps
+            if g.gap_type in ("temporal", "both")
+        ]
+        unreg_trade_id = [
+            g for g in result.trade_id_gaps
+            if g.classification == "unregistered"
+        ]
+        has_issues = bool(
+            temporal_gaps
+            or result.stale_pairs
+            or result.duration_anomalies
+            or unreg_trade_id
+            or (result.backfill_queue
+                and not result.backfill_queue.is_healthy)
+        )
+        return 1 if has_issues else 0
 
     except (OSError, RuntimeError, ValueError) as e:
         print(f"ERROR: Detection failed: {e}", file=sys.stderr)

@@ -1,3 +1,4 @@
+# FILE-SIZE-OK: registry + gate + telemetry are tightly coupled
 """Unified Symbol Registry with mandatory gating (Issue #79).
 
 SSoT: python/rangebar/data/symbols.toml
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     pass
 
 __all__ = [
+    "KnownGap",
     "SymbolEntry",
     "SymbolTransition",
     "clear_symbol_registry_cache",
@@ -50,6 +52,20 @@ __all__ = [
 # =============================================================================
 # Data Classes
 # =============================================================================
+
+
+@dataclass(frozen=True)
+class KnownGap:
+    """A registered gap where missing trade data is expected.
+
+    Used by trade ID continuity checks to suppress alerts for
+    known data source gaps (e.g., Binance Vision 404s).
+    """
+
+    start_date: date
+    end_date: date
+    reason: str
+    source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -107,6 +123,7 @@ class SymbolEntry:
     data_anomalies: tuple[str, ...] = ()
     processing_notes: str | None = None
     min_threshold: int | None = None
+    known_gaps: tuple[KnownGap, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -153,6 +170,22 @@ def _parse_keywords(data: dict) -> tuple[str, ...]:
     return tuple(raw) if raw else ()
 
 
+def _parse_known_gaps(data: dict) -> tuple[KnownGap, ...]:
+    """Parse known_gaps list from TOML data into frozen tuple."""
+    raw = data.get("known_gaps", [])
+    if not raw:
+        return ()
+    return tuple(
+        KnownGap(
+            start_date=g["start_date"],
+            end_date=g["end_date"],
+            reason=g["reason"],
+            source=g.get("source"),
+        )
+        for g in raw
+    )
+
+
 @lru_cache(maxsize=1)
 def get_symbol_entries() -> types.MappingProxyType[str, SymbolEntry]:
     """All registered symbols as frozen dataclasses (cached).
@@ -189,6 +222,7 @@ def get_symbol_entries() -> types.MappingProxyType[str, SymbolEntry]:
             data_anomalies=tuple(data.get("data_anomalies", [])),
             processing_notes=data.get("processing_notes"),
             min_threshold=data.get("min_threshold"),
+            known_gaps=_parse_known_gaps(data),
         )
 
     return types.MappingProxyType(entries)

@@ -38,6 +38,12 @@ data_anomalies = [
 processing_notes = "Oracle-verified 2026-02-08 against Binance Vision source. Ghost trades are Binance matching engine sentinel records (not CSV corruption). The -1 sentinel in first_trade_id breaks Rust u64 deserialization. Zero-price trades also cause out-of-order timestamps and would produce invalid OHLCV bars. effective_start=2018-01-16 is the intentional defense — it gates the pipeline so ghost trades never reach the Rust processor or ML features. Data from listing_date (2017-08-17) through 2018-01-13 is clean but also skipped because the Rust CSV parser cannot selectively skip individual rows within a daily archive."
 keywords = ["bitcoin", "btc", "ghost trades", "binance vision"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
+# Machine-readable gap registry for trade ID continuity checks
+[[symbols.BTCUSDT.known_gaps]]
+start_date = 2018-01-14
+end_date = 2018-01-15
+reason = "Ghost trades (price=0, qty=0, first_trade_id=-1) — Binance matching engine maintenance"
+source = "oracle-verified-2026-02-08"
 
 [symbols.ETHUSDT]
 enabled = true
@@ -277,6 +283,11 @@ data_anomalies = [
 processing_notes = "Provisional min 500 dbps (Issue #89). Nearly 2 years of missing data between listing and first available archive. Largest gap in registry."
 keywords = ["bitcoin cash", "bch", "missing data"]
 reference = "https://github.com/terrylica/rangebar-py/issues/79"
+[[symbols.BCHUSDT.known_gaps]]
+start_date = 2017-12-20
+end_date = 2019-11-27
+reason = "Binance Vision HTTP 404 (~2 years of missing aggTrade archives)"
+source = "binance-vision-404"
 
 [symbols.FILUSDT]
 enabled = true
