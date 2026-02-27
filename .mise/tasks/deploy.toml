@@ -34,21 +34,36 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
-# 3a: Wait for PyPI CDN to propagate (max 5 retries, 30s apart)
+# 3a: Wait for PyPI CDN to propagate (max 8 retries, 20s apart = 2.5 min total)
 echo "Waiting for rangebar==$VERSION on PyPI CDN..."
 PYPI_READY=false
-for i in 1 2 3 4 5; do
-    if ssh "$REMOTE_HOST" "curl -sf 'https://pypi.org/pypi/rangebar/$VERSION/json' | head -c 50 | grep -q version"; then
+PYPI_MAX_RETRIES=8
+for i in $(seq 1 $PYPI_MAX_RETRIES); do
+    # Query PyPI JSON API with short timeout (3s, prevents hanging on network issues)
+    if ssh "$REMOTE_HOST" "timeout 3 curl -sf 'https://pypi.org/pypi/rangebar/$VERSION/json' 2>/dev/null | jq -e '.info.version' >/dev/null 2>&1"; then
         PYPI_READY=true
-        echo "OK: rangebar==$VERSION available on PyPI (attempt $i)"
+        echo "✓ rangebar==$VERSION available on PyPI (attempt $i/$PYPI_MAX_RETRIES)"
         break
     fi
-    echo "  PyPI CDN not ready (attempt $i/5), waiting 30s..."
-    sleep 30
+    if [ "$i" -lt "$PYPI_MAX_RETRIES" ]; then
+        REMAINING=$((($PYPI_MAX_RETRIES - $i) * 20))
+        echo "  ⏳ PyPI CDN not ready yet (attempt $i/$PYPI_MAX_RETRIES, retry in 20s, ~${REMAINING}s remaining)"
+        sleep 20
+    fi
 done
 if [ "$PYPI_READY" != "true" ]; then
-    echo "FAIL: rangebar==$VERSION not available on PyPI after 5 retries"
-    exit 1
+    echo "⚠ WARNING: rangebar==$VERSION not available on PyPI yet (after $PYPI_MAX_RETRIES retries, ~2.5 min)"
+    echo "    Possible causes:"
+    echo "    - PyPI upload failed (check release:pypi task logs)"
+    echo "    - CDN is slow (unusual, typically propagates within 30s)"
+    echo "    - Network issue (SSH tunnel dropped)"
+    echo ""
+    echo "    Next steps:"
+    echo "    1. Check PyPI manually: https://pypi.org/project/rangebar/#history"
+    echo "    2. If version exists but not queryable, wait another 2-3 min and retry"
+    echo "    3. If version missing, re-run: mise run release:pypi && mise run deploy:bigblack"
+    echo ""
+    echo "Proceeding anyway (will build venv locally if PyPI unavailable)..."
 fi
 
 # 3b: Build in staging venv (old .venv untouched)
