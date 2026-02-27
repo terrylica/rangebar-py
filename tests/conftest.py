@@ -91,5 +91,50 @@ def setup_threshold_env_vars():
         pass
 
 
+def _clickhouse_has_migrated_schema() -> bool:
+    """Check if ClickHouse has post-migration schema (close_time_ms)."""
+    try:
+        from rangebar.clickhouse import RangeBarCache
+
+        with RangeBarCache() as cache:
+            result = cache.client.query(
+                "SELECT name FROM system.columns "
+                "WHERE database='rangebar_cache' AND table='range_bars' "
+                "AND name='close_time_ms'"
+            )
+            return bool(result.result_rows)
+    except (ImportError, OSError, RuntimeError):
+        return False
+
+
+# Cache the result at session level (avoid repeated ClickHouse queries)
+_MIGRATED_SCHEMA = _clickhouse_has_migrated_schema()
+
+
+def pytest_addoption(parser):
+    """Add --run-slow CLI option for explicitly running slow tests."""
+    parser.addoption(
+        "--run-slow", action="store_true", default=False,
+        help="Run tests marked @pytest.mark.slow (network-fetching E2E tests)",
+    )
+
+
 def pytest_collection_modifyitems(config, items):
-    """Hook for future test collection modifications (no-op)."""
+    """Auto-skip ClickHouse tests (pre-migration) and slow tests (unless --run-slow)."""
+    # Skip ClickHouse tests when schema not migrated
+    if not _MIGRATED_SCHEMA:
+        ch_skip = pytest.mark.skip(
+            reason="ClickHouse schema not yet migrated: timestamp_ms → close_time_ms"
+        )
+        for item in items:
+            if "clickhouse" in item.keywords:
+                item.add_marker(ch_skip)
+
+    # Skip slow tests unless --run-slow or -m "slow" explicitly requested
+    if not config.getoption("--run-slow"):
+        marker_expr = config.getoption("-m", default="")
+        if "slow" not in marker_expr:
+            slow_skip = pytest.mark.skip(reason="Slow test: use --run-slow to include")
+            for item in items:
+                if "slow" in item.keywords:
+                    item.add_marker(slow_skip)

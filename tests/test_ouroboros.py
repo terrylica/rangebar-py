@@ -676,6 +676,7 @@ class TestIterForexOuroborosSegments:
         assert len(segments) == 0
 
 
+@pytest.mark.clickhouse
 class TestOuroborosIntegrationWithRealData:
     """Integration tests for ouroboros with real cryptocurrency data.
 

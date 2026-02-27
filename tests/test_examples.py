@@ -12,6 +12,22 @@ from pathlib import Path
 import pytest
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
+
+
+def _has_migrated_schema() -> bool:
+    """Check if ClickHouse has the post-migration schema."""
+    try:
+        from rangebar.clickhouse import RangeBarCache
+
+        with RangeBarCache() as cache:
+            result = cache.client.query(
+                "SELECT name FROM system.columns "
+                "WHERE database='rangebar_cache' AND table='range_bars' "
+                "AND name='close_time_ms'"
+            )
+            return bool(result.result_rows)
+    except (ImportError, OSError, RuntimeError):
+        return False
 EXAMPLES = [
     "basic_usage.py",
     "validate_output.py",
@@ -45,6 +61,10 @@ def test_example_runs(example):
     ).returncode
     != 0,
     reason="backtesting.py not installed",
+)
+@pytest.mark.skipif(
+    not _has_migrated_schema(),
+    reason="ClickHouse schema not yet migrated to close_time_ms",
 )
 def test_backtesting_integration_example():
     """Test backtesting integration example (requires backtesting.py)."""

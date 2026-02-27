@@ -39,6 +39,7 @@ def _is_clickhouse_available() -> bool:
 # ============================================================================
 
 
+@pytest.mark.clickhouse
 class TestIssue7FetchIfMissing:
     """Tests for fetch_if_missing parameter in get_range_bars()."""
 
@@ -98,6 +99,7 @@ class TestIssue7FetchIfMissing:
 # ============================================================================
 
 
+@pytest.mark.clickhouse
 class TestIssue8PrecomputeFunction:
     """Tests for precompute_range_bars() function."""
 

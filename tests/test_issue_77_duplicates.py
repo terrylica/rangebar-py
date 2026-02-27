@@ -10,11 +10,19 @@ import pytest
 
 
 def _is_clickhouse_available() -> bool:
-    """Check if ClickHouse server is running and accessible."""
+    """Check if ClickHouse server is running with migrated schema."""
     try:
         from rangebar.clickhouse import RangeBarCache
 
         with RangeBarCache() as cache:
+            # Verify schema has close_time_ms (post-migration)
+            result = cache.client.query(
+                "SELECT name FROM system.columns "
+                "WHERE database='rangebar_cache' AND table='range_bars' "
+                "AND name='close_time_ms'"
+            )
+            if not result.result_rows:
+                return False  # Legacy schema, not yet migrated
             cache.count_bars("BTCUSDT", 250)
     except (ImportError, OSError, ConnectionError, RuntimeError):
         return False

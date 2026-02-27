@@ -15,11 +15,31 @@ from __future__ import annotations
 import contextlib
 from unittest.mock import MagicMock, patch
 
+import pytest
 from rangebar.sidecar import (
     SidecarConfig,
     _notify_watchdog_trigger,
     run_sidecar,
 )
+
+
+@pytest.fixture(autouse=True)
+def _suppress_sidecar_side_effects(monkeypatch):
+    """Prevent sidecar tests from sending real Telegram messages or reading env vars.
+
+    The .mise.toml sets RANGEBAR_STREAMING_SYMBOLS with 18 production symbols.
+    When tests create SidecarConfig(symbols=["BTCUSDT"]), run_sidecar() compares
+    against the env var, detects a mismatch, and sends a real "SIDECAR PARTIAL
+    COVERAGE" Telegram notification. It also sends "SIDECAR STARTED" notifications.
+    This fixture suppresses all of that.
+    """
+    monkeypatch.delenv("RANGEBAR_STREAMING_SYMBOLS", raising=False)
+    monkeypatch.delenv("RANGEBAR_STREAMING_THRESHOLDS", raising=False)
+    with (
+        patch("rangebar.notify.telegram.send_telegram", new=MagicMock()),
+        patch("rangebar.notify.telegram.set_start_time", new=MagicMock()),
+    ):
+        yield
 
 # =============================================================================
 # Helpers

@@ -109,6 +109,8 @@ def get_cache_coverage(
 
     # Try connecting to ClickHouse
     try:
+        from clickhouse_connect.driver.exceptions import DatabaseError
+
         from rangebar.clickhouse.cache import RangeBarCache
 
         cache = RangeBarCache()
@@ -139,7 +141,7 @@ def get_cache_coverage(
                                 _ts_to_date(oldest),
                                 _ts_to_date(newest),
                             )
-            except (OSError, RuntimeError):
+            except (OSError, RuntimeError, DatabaseError):
                 logger.debug("Failed to query %s@%d", sym, threshold)
 
         result[sym] = avail

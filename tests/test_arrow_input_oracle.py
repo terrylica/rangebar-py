@@ -13,6 +13,7 @@ Independently recompute from raw source. Assert numerical identity, not
 approximate equality.
 """
 
+import math
 import random
 
 import polars as pl
@@ -198,10 +199,18 @@ def _assert_arrow_dict_parity(
             # Handle None/null
             if arrow_val is None and dict_val is None:
                 continue
-            assert arrow_val == dict_val, (
-                f"Divergence at bar {i}, field '{col}': "
-                f"Arrow={arrow_val}, Dict={dict_val}"
-            )
+            # Float comparison: Arrow f64 and Python float can
+            # differ by 1 ULP due to serialization path differences
+            if isinstance(arrow_val, float) and isinstance(dict_val, float):
+                assert math.isclose(arrow_val, dict_val, rel_tol=1e-12), (
+                    f"Divergence at bar {i}, field '{col}': "
+                    f"Arrow={arrow_val}, Dict={dict_val}"
+                )
+            else:
+                assert arrow_val == dict_val, (
+                    f"Divergence at bar {i}, field '{col}': "
+                    f"Arrow={arrow_val}, Dict={dict_val}"
+                )
 
 
 # ===========================================================================

@@ -37,6 +37,18 @@ from rangebar import (
 )
 from rangebar.exceptions import RangeBarError, SymbolNotRegisteredError
 
+
+@pytest.fixture(autouse=True)
+def _suppress_gate_telemetry(monkeypatch):
+    """Prevent gate violation tests from sending real Pushover/NDJSON alerts."""
+    monkeypatch.setattr(
+        "rangebar.symbol_registry._send_gate_pushover_alert", lambda *_a, **_kw: None,
+    )
+    monkeypatch.setattr(
+        "rangebar.symbol_registry._log_gate_violation_ndjson", lambda *_a, **_kw: None,
+    )
+
+
 # =============================================================================
 # Helpers
 # =============================================================================

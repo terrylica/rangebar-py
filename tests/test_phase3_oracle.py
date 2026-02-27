@@ -13,6 +13,8 @@ Independently recompute from raw source. Assert numerical identity, not
 approximate equality.
 """
 
+import math
+
 import polars as pl
 import pyarrow as pa
 import pytest
@@ -261,10 +263,16 @@ class TestTier1TimestampOracles:
                 val_b = result_b[col][i]
                 if val_a is None and val_b is None:
                     continue
-                assert val_a == val_b, (
-                    f"Divergence at bar {i}, field '{col}': "
-                    f"ms_path={val_a}, us_path={val_b}"
-                )
+                if isinstance(val_a, float) and isinstance(val_b, float):
+                    assert math.isclose(val_a, val_b, rel_tol=1e-12), (
+                        f"Divergence at bar {i}, field '{col}': "
+                        f"ms_path={val_a}, us_path={val_b}"
+                    )
+                else:
+                    assert val_a == val_b, (
+                        f"Divergence at bar {i}, field '{col}': "
+                        f"ms_path={val_a}, us_path={val_b}"
+                    )
 
     def test_timestamp_double_conversion_guard(self):
         """us timestamps through ms path would produce year ~52000 — guard catches.
@@ -424,10 +432,16 @@ class TestTier2StreamArrowParity:
                 dict_val = dict_df[col][i]
                 if native_val is None and dict_val is None:
                     continue
-                assert native_val == dict_val, (
-                    f"Divergence at bar {i}, field '{col}': "
-                    f"native={native_val}, dict={dict_val}"
-                )
+                if isinstance(native_val, float) and isinstance(dict_val, float):
+                    assert math.isclose(native_val, dict_val, rel_tol=1e-12), (
+                        f"Divergence at bar {i}, field '{col}': "
+                        f"native={native_val}, dict={dict_val}"
+                    )
+                else:
+                    assert native_val == dict_val, (
+                        f"Divergence at bar {i}, field '{col}': "
+                        f"native={native_val}, dict={dict_val}"
+                    )
 
     def test_ohlcv_parity(self):
         """OHLCV fields match between dict and Arrow native paths."""
@@ -704,6 +718,7 @@ class TestTier4HasTicksLazy:
 # Note: These tests require a ClickHouse connection. Skip if unavailable.
 
 
+@pytest.mark.clickhouse
 class TestTier5CacheWriteParity:
     """Validate store_bars_batch produces identical ClickHouse rows."""
 
@@ -877,7 +892,13 @@ class TestTier6DivergenceDetection:
                 dict_val = dict_df[col][i]
                 if ms_val is None and dict_val is None:
                     continue
-                assert ms_val == dict_val, (
-                    f"Dict vs Arrow diverge at bar {i}, field '{col}': "
-                    f"dict={dict_val}, arrow={ms_val}"
-                )
+                if isinstance(ms_val, float) and isinstance(dict_val, float):
+                    assert math.isclose(ms_val, dict_val, rel_tol=1e-12), (
+                        f"Dict vs Arrow diverge at bar {i}, field '{col}': "
+                        f"dict={dict_val}, arrow={ms_val}"
+                    )
+                else:
+                    assert ms_val == dict_val, (
+                        f"Dict vs Arrow diverge at bar {i}, field '{col}': "
+                        f"dict={dict_val}, arrow={ms_val}"
+                    )

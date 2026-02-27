@@ -9,6 +9,8 @@ from __future__ import annotations
 import pytest
 from rangebar import LONG_RANGE_DAYS, get_range_bars
 
+pytestmark = pytest.mark.clickhouse
+
 
 class TestMEM013LongRangeGuard:
     """Test MEM-013 guard behaviors."""

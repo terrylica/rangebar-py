@@ -224,18 +224,7 @@ class RangeBarCache(
             # Graceful degradation: older ClickHouse may not support this setting.
             logger.debug("Could not set non_replicated_deduplication_window: %s", e)
 
-        # Timestamp revamp: Add open_time_ms column if missing (idempotent)
-        try:
-            self.client.command(
-                "ALTER TABLE rangebar_cache.range_bars "
-                "ADD COLUMN IF NOT EXISTS open_time_ms Int64 "
-                "DEFAULT close_time_ms - intDiv(duration_us, 1000) "
-                "AFTER close_time_ms"
-            )
-        except (OSError, RuntimeError) as e:
-            logger.debug("Could not add open_time_ms column: %s", e)
-
-        # Detect legacy schema and warn
+        # Detect legacy schema and conditionally add open_time_ms
         try:
             result = self.client.query(
                 "SELECT name FROM system.columns "
@@ -248,6 +237,17 @@ class RangeBarCache(
                     "Run migration script to rename to 'close_time_ms'. "
                     "See scripts/migrate_timestamp_column.py"
                 )
+            else:
+                # Table already migrated — safe to add open_time_ms
+                try:
+                    self.client.command(
+                        "ALTER TABLE rangebar_cache.range_bars "
+                        "ADD COLUMN IF NOT EXISTS open_time_ms Int64 "
+                        "DEFAULT close_time_ms - intDiv(duration_us, 1000) "
+                        "AFTER close_time_ms"
+                    )
+                except (OSError, RuntimeError) as e:
+                    logger.debug("Could not add open_time_ms column: %s", e)
         except (OSError, RuntimeError):
             pass
 

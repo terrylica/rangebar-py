@@ -21,11 +21,19 @@ pytestmark = pytest.mark.clickhouse
 
 @pytest.fixture
 def ch_client():
-    """Get a ClickHouse client, skip if unavailable."""
+    """Get a ClickHouse client, skip if unavailable or legacy schema."""
     try:
         from detect_gaps import connect
 
         client, tunnel = connect()
+        # Verify schema has close_time_ms (post-migration)
+        result = client.query(
+            "SELECT name FROM system.columns "
+            "WHERE database='rangebar_cache' AND table='range_bars' "
+            "AND name='close_time_ms'"
+        )
+        if not result.result_rows:
+            pytest.skip("Legacy schema: timestamp_ms not yet migrated to close_time_ms")
         yield client
         with contextlib.suppress(OSError):
             client.close()
@@ -94,7 +102,7 @@ class TestMonthlyBoundariesNotFalsePositive:
         from detect_gaps import detect_gaps_for_pair
 
         # Detect gaps for year mode with a very low threshold
-        gaps, coverage = detect_gaps_for_pair(
+        _gaps, coverage = detect_gaps_for_pair(
             ch_client,
             symbol="BTCUSDT",
             threshold=250,

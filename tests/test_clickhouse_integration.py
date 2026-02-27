@@ -26,8 +26,19 @@ try:
     )
 
     _HOST = get_available_clickhouse_host()
-    _CH_AVAILABLE = True
-    _skip_reason = ""
+    # Verify schema has close_time_ms (post-migration)
+    with RangeBarCache() as _cache:
+        _result = _cache.client.query(
+            "SELECT name FROM system.columns "
+            "WHERE database='rangebar_cache' AND table='range_bars' "
+            "AND name='close_time_ms'"
+        )
+        if not _result.result_rows:
+            _CH_AVAILABLE = False
+            _skip_reason = "Legacy schema: timestamp_ms not yet migrated to close_time_ms"
+        else:
+            _CH_AVAILABLE = True
+            _skip_reason = ""
 except (ImportError, OSError, ConnectionError, RuntimeError) as e:
     _CH_AVAILABLE = False
     _HOST = None

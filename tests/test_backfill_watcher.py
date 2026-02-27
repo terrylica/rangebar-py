@@ -120,26 +120,25 @@ class TestFetchPendingRequestsDedup:
     """_fetch_pending_requests uses GROUP BY to collapse duplicates."""
 
     def test_returns_grouped_structure(self):
-        """Each result has symbol, threshold, oldest_id, and all_ids."""
+        """Each result has symbol, thresholds, and all_ids."""
         rid1, rid2 = uuid.uuid4(), uuid.uuid4()
         cache = _make_mock_cache(
             query_rows=[
-                ("BTCUSDT", 250, rid1, [rid1, rid2], "2026-01-01 00:00:00"),
+                ("BTCUSDT", [250, 500], [rid1, rid2], "2026-01-01 00:00:00"),
             ]
         )
         result = _fetch_pending_requests(cache)
         assert len(result) == 1
         assert result[0]["symbol"] == "BTCUSDT"
-        assert result[0]["threshold_decimal_bps"] == 250
-        assert result[0]["oldest_id"] == str(rid1)
+        assert result[0]["thresholds"] == [250, 500]
         assert len(result[0]["all_ids"]) == 2
 
     def test_preserves_different_symbols(self):
         rid_btc, rid_eth = uuid.uuid4(), uuid.uuid4()
         cache = _make_mock_cache(
             query_rows=[
-                ("BTCUSDT", 0, rid_btc, [rid_btc], "2026-01-01 00:00:00"),
-                ("ETHUSDT", 0, rid_eth, [rid_eth], "2026-01-01 00:00:01"),
+                ("BTCUSDT", [250], [rid_btc], "2026-01-01 00:00:00"),
+                ("ETHUSDT", [250], [rid_eth], "2026-01-01 00:00:01"),
             ]
         )
         result = _fetch_pending_requests(cache)
@@ -158,11 +157,11 @@ class TestFetchPendingRequestsDedup:
         assert "GROUP BY" in sql
 
     def test_five_duplicates_collapse_to_one(self):
-        """5 pending requests for same (symbol, threshold=0) -> 1 group."""
+        """5 pending requests for same symbol -> 1 group."""
         rids = [uuid.uuid4() for _ in range(5)]
         cache = _make_mock_cache(
             query_rows=[
-                ("BTCUSDT", 0, rids[0], rids, "2026-01-01 00:00:00"),
+                ("BTCUSDT", [250], rids, "2026-01-01 00:00:00"),
             ]
         )
         result = _fetch_pending_requests(cache)

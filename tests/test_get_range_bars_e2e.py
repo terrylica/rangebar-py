@@ -25,6 +25,8 @@ from rangebar import (
     get_range_bars,
 )
 
+pytestmark = pytest.mark.clickhouse
+
 # =============================================================================
 # Test Constants - Real Data Parameters
 # =============================================================================
