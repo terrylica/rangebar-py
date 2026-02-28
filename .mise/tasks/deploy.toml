@@ -67,8 +67,16 @@ if [ "$PYPI_READY" != "true" ]; then
 fi
 
 # 3b: Build in staging venv (old .venv untouched)
-echo "Building venv in staging area..."
-ssh "$REMOTE_HOST" "cd $REMOTE_DIR && rm -rf .venv-staging && uv venv .venv-staging"
+# Use mise-managed Python 3.13 (system python may be older)
+REMOTE_PYTHON_DIR=$(ssh "$REMOTE_HOST" "mise where python 2>/dev/null || echo ''")
+if [ -n "$REMOTE_PYTHON_DIR" ]; then
+    REMOTE_PYTHON="$REMOTE_PYTHON_DIR/bin/python3"
+else
+    # Fallback: find mise-managed Python 3.13 directly
+    REMOTE_PYTHON=$(ssh "$REMOTE_HOST" "ls -d ~/.local/share/mise/installs/python/3.13*/bin/python3 2>/dev/null | tail -1 || echo python3")
+fi
+echo "Building venv in staging area (python=$REMOTE_PYTHON)..."
+ssh "$REMOTE_HOST" "cd $REMOTE_DIR && rm -rf .venv-staging && uv venv --python $REMOTE_PYTHON .venv-staging"
 
 if [ "$PYPI_READY" = "true" ]; then
     # Install from PyPI (preferred — includes all dependencies)
