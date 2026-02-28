@@ -1,3 +1,23 @@
+# [12.33.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.32.2...v12.33.0) (2026-02-28)
+
+
+### Bug Fixes
+
+* **#121:** Harden migration script with 3 production fixes from bigblack deploy ([925fc62](https://github.com-terrylica/terrylica/rangebar-py/commit/925fc62d3166544f5c377fa46cb5c90ab7bf0993))
+* **#121:** Idempotent PyPI uploads + local wheel fallback for deploy ([d5db71b](https://github.com-terrylica/terrylica/rangebar-py/commit/d5db71b1527b28ea8bc0cdb7429fbd76bfa72907)), closes [#121](https://github.com-terrylica/terrylica/rangebar-py/issues/121)
+* **#121:** Remove User=tca from systemd user services ([c79ba87](https://github.com-terrylica/terrylica/rangebar-py/commit/c79ba87027ca1b07123db8bf73b7dca36a050d9a)), closes [#121](https://github.com-terrylica/terrylica/rangebar-py/issues/121)
+* **#121:** Run sidecar directly without healthdog (not installed on bigblack) ([78a5296](https://github.com-terrylica/terrylica/rangebar-py/commit/78a529619288ce9a9e8eb8fc1c282615f8b51aa5)), closes [#121](https://github.com-terrylica/terrylica/rangebar-py/issues/121)
+* harden test suite against side effects (sidecar Telegram, Pushover, slow tests) ([ce90522](https://github.com-terrylica/terrylica/rangebar-py/commit/ce905221f330c2fa4ea85387d7f479fa682e4d80))
+* migration script uses uv instead of pip on bigblack ([8eec428](https://github.com-terrylica/terrylica/rangebar-py/commit/8eec4285339031befc6d10bac806ddc5de3ceefc)), closes [#121](https://github.com-terrylica/terrylica/rangebar-py/issues/121) [#122](https://github.com-terrylica/terrylica/rangebar-py/issues/122) [#123](https://github.com-terrylica/terrylica/rangebar-py/issues/123)
+* update ClickHouse roundtrip tests for timestamp revamp column names ([4cf2b3a](https://github.com-terrylica/terrylica/rangebar-py/commit/4cf2b3a971e3b499a79783726d1acb5382ad186e))
+
+
+### Features
+
+* **#122:** Add daily exhaustive gap detection systemd timer for bigblack ([7151317](https://github.com-terrylica/terrylica/rangebar-py/commit/715131783f5b27cc8aed3b6f98965456ed577e3e)), closes [#122](https://github.com-terrylica/terrylica/rangebar-py/issues/122)
+* add ClickHouse table migration script (timestamp_ms → close_time_ms) ([a0353d3](https://github.com-terrylica/terrylica/rangebar-py/commit/a0353d3a9df396ded4cb0c23abc252d9e16f4519))
+* enhance gap detection with duration anomalies, trade ID continuity, and backfill queue health ([2eebbc5](https://github.com-terrylica/terrylica/rangebar-py/commit/2eebbc533234356dd23b5dd6702d9a45decffe60)), closes [#122](https://github.com-terrylica/terrylica/rangebar-py/issues/122) [#123](https://github.com-terrylica/terrylica/rangebar-py/issues/123)
+
 ## [12.32.2](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.32.1...v12.32.2) (2026-02-27)
 
 
