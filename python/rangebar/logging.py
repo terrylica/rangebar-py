@@ -22,8 +22,17 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from loguru import Logger
 
-# Logs in repository tree (not platformdirs)
-PROJECT_ROOT = Path(__file__).parent.parent.parent  # rangebar-py/
+# Logs in repository tree (not platformdirs).
+# When installed as a package, __file__ resolves inside site-packages,
+# so fall back to RANGEBAR_PROJECT_ROOT env var or cwd.
+_file_based_root = Path(__file__).parent.parent.parent
+_env_root = os.environ.get("RANGEBAR_PROJECT_ROOT")
+if _env_root:
+    PROJECT_ROOT = Path(_env_root)
+elif (_file_based_root / "pyproject.toml").exists():
+    PROJECT_ROOT = _file_based_root  # Editable install / dev checkout
+else:
+    PROJECT_ROOT = Path.cwd()  # Fallback: systemd WorkingDirectory
 LOG_DIR = PROJECT_ROOT / "logs"
 NDJSON_FILE = LOG_DIR / "events.jsonl"
 CHECKSUM_REGISTRY_FILE = LOG_DIR / "checksum_registry.jsonl"
