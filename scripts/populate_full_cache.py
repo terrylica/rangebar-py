@@ -145,7 +145,7 @@ def populate_job(
     end_date: str | None = None,
     force_refresh: bool = False,
     include_microstructure: bool = True,
-    ouroboros: str = "year",
+    ouroboros_mode: str | None = None,
 ) -> int:
     """Run a single population job. Returns bar count."""
     from rangebar import populate_cache_resumable
@@ -165,7 +165,7 @@ def populate_job(
             threshold_decimal_bps=threshold,
             include_microstructure=include_microstructure,
             force_refresh=force_refresh,
-            ouroboros=ouroboros,
+            ouroboros_mode=ouroboros_mode,
             notify=True,
         )
         elapsed = (datetime.now(tz=UTC) - start_time).total_seconds() / 60
@@ -185,7 +185,7 @@ def run_phase(
     *,
     force_refresh: bool = False,
     include_microstructure: bool = True,
-    ouroboros: str = "year",
+    ouroboros_mode: str | None = None,
 ) -> None:
     """Run a specific phase with optional parallelization."""
     if phase_num not in PHASES:
@@ -227,7 +227,7 @@ def run_phase(
                 symbol, threshold, start_date,
                 force_refresh=force_refresh,
                 include_microstructure=include_microstructure,
-                ouroboros=ouroboros,
+                ouroboros_mode=ouroboros_mode,
             )
     else:
         # Bounded parallel execution using subprocess isolation
@@ -251,8 +251,8 @@ def run_phase(
                 cmd.append("--force-refresh")
             if not include_microstructure:
                 cmd.append("--no-microstructure")
-            if ouroboros != "year":
-                cmd.extend(["--ouroboros", ouroboros])
+            if ouroboros_mode is not None:
+                cmd.extend(["--ouroboros", ouroboros_mode])
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             return (sym, thresh, result.returncode, result.stderr)
 
@@ -431,14 +431,14 @@ Examples:
             end_date=args.end_date,
             force_refresh=args.force_refresh,
             include_microstructure=include_micro,
-            ouroboros=args.ouroboros,
+            ouroboros_mode=args.ouroboros,
         )
     elif args.phase:
         run_phase(
             args.phase, args.parallel,
             force_refresh=args.force_refresh,
             include_microstructure=include_micro,
-            ouroboros=args.ouroboros,
+            ouroboros_mode=args.ouroboros,
         )
     else:
         parser.print_help()
