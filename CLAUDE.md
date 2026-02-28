@@ -283,25 +283,64 @@ This file is the **hub**. Each spoke CLAUDE.md is loaded automatically when work
 | **Shard**             | A gap in the data timeline. Classified P0 (staleness), P1 (recent <48h), P2 (historical >=48h). Repaired by Kintsugi. |
 
 <!-- gitnexus:start -->
+# GitNexus MCP
 
-## GitNexus Knowledge Graph (CLI)
+This project is indexed by GitNexus as **rangebar-py** (7731 symbols, 20102 relationships, 300 execution flows).
 
-Indexed: 7,730 nodes | 20,090 edges | 493 clusters | 300 execution flows.
+GitNexus provides a knowledge graph over this codebase — call chains, blast radius, execution flows, and semantic search.
 
-Re-index after significant changes: `npx gitnexus@latest analyze --force`
+## Always Start Here
 
-### CLI Commands (via Bash tool)
+For any task involving code understanding, debugging, impact analysis, or refactoring, you must:
 
-| Command                                  | Use when                                  | Example                                                                        |
-| ---------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------ |
-| `npx gitnexus@latest query "<concept>"`  | Find execution flows related to a concept | `query "kintsugi gap repair" --limit 5`                                        |
-| `npx gitnexus@latest context "<symbol>"` | 360° view: callers, callees, processes    | `context "RangeBar" --uid "Struct:crates/rangebar-core/src/types.rs:RangeBar"` |
-| `npx gitnexus@latest impact "<symbol>"`  | Blast radius before changing code         | `impact "RangeBar" --direction upstream --depth 3`                             |
-| `npx gitnexus@latest cypher "<query>"`   | Raw graph query                           | `cypher "MATCH (n:Function) RETURN n.name LIMIT 10"`                           |
-| `npx gitnexus@latest status`             | Check if index is stale                   | —                                                                              |
+1. **Read `gitnexus://repo/{name}/context`** — codebase overview + check index freshness
+2. **Match your task to a skill below** and **read that skill file**
+3. **Follow the skill's workflow and checklist**
 
-All commands output JSON. Use `--content` flag on `context` to include source snippets.
+> If step 1 warns the index is stale, run `npx gitnexus analyze` in the terminal first.
 
-Disambiguate symbols with `--uid` (from candidates list) or `--file` flags.
+## Skills
+
+| Task | Read this skill file |
+|------|---------------------|
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus/refactoring/SKILL.md` |
+
+## Tools Reference
+
+| Tool | What it gives you |
+|------|-------------------|
+| `query` | Process-grouped code intelligence — execution flows related to a concept |
+| `context` | 360-degree symbol view — categorized refs, processes it participates in |
+| `impact` | Symbol blast radius — what breaks at depth 1/2/3 with confidence |
+| `detect_changes` | Git-diff impact — what do your current changes affect |
+| `rename` | Multi-file coordinated rename with confidence-tagged edits |
+| `cypher` | Raw graph queries (read `gitnexus://repo/{name}/schema` first) |
+| `list_repos` | Discover indexed repos |
+
+## Resources Reference
+
+Lightweight reads (~100-500 tokens) for navigation:
+
+| Resource | Content |
+|----------|---------|
+| `gitnexus://repo/{name}/context` | Stats, staleness check |
+| `gitnexus://repo/{name}/clusters` | All functional areas with cohesion scores |
+| `gitnexus://repo/{name}/cluster/{clusterName}` | Area members |
+| `gitnexus://repo/{name}/processes` | All execution flows |
+| `gitnexus://repo/{name}/process/{processName}` | Step-by-step trace |
+| `gitnexus://repo/{name}/schema` | Graph schema for Cypher |
+
+## Graph Schema
+
+**Nodes:** File, Function, Class, Interface, Method, Community, Process
+**Edges (via CodeRelation.type):** CALLS, IMPORTS, EXTENDS, IMPLEMENTS, DEFINES, MEMBER_OF, STEP_IN_PROCESS
+
+```cypher
+MATCH (caller)-[:CodeRelation {type: 'CALLS'}]->(f:Function {name: "myFunc"})
+RETURN caller.name, caller.filePath
+```
 
 <!-- gitnexus:end -->
