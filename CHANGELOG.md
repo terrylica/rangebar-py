@@ -1,3 +1,15 @@
+# [12.34.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.33.0...v12.34.0) (2026-02-28)
+
+
+### Bug Fixes
+
+* resolve LOG_DIR correctly when installed as package ([c5c99b5](https://github.com-terrylica/terrylica/rangebar-py/commit/c5c99b5dddfb80a1c3147e584c17e0df618640c7))
+
+
+### Features
+
+* add per-service NDJSON telemetry logging with auto-rotation ([8eff5ab](https://github.com-terrylica/terrylica/rangebar-py/commit/8eff5ab4c4636799f1ba35defa839af9ecb40d61))
+
 # [12.33.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.32.2...v12.33.0) (2026-02-28)
 
 
