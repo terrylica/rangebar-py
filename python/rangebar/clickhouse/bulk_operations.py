@@ -161,15 +161,22 @@ class BulkStoreMixin:
     ) -> None:
         """Guard against mixing ouroboros modes for the same (symbol, threshold) pair.
 
-        Issue #97: Since ouroboros_mode is NOT in the range_bars ORDER BY,
-        monthly and yearly bars would coexist without dedup. This guard
-        enforces single-mode-per-pair at application level.
+        Issue #126: ouroboros_mode is now in ORDER BY (Phase 5A migration),
+        so cross-mode rows won't merge. This guard adds application-level
+        safety to prevent accidental mode mixing during migration.
 
-        Raises
-        ------
-        CacheWriteError
-            If existing data uses a different ouroboros mode.
+        Behavior controlled by RANGEBAR_OUROBOROS_GUARD:
+        - "strict": raise CacheWriteError on mismatch or connection failure
+        - "warn": log warning, allow write
+        - "off": skip check entirely (used during migration)
         """
+        from rangebar.config import Settings
+
+        guard = Settings.get().population.ouroboros_guard
+        if guard == "off":
+            logger.debug("Mode consistency check skipped (guard=off)")
+            return
+
         try:
             result = self.client.query(
                 """
@@ -190,6 +197,9 @@ class BulkStoreMixin:
                         f"existing data uses {existing_mode}. "
                         f"Use force_refresh=True to clear existing data first."
                     )
+                    if guard == "warn":
+                        logger.warning(msg)
+                        return
                     raise CacheWriteError(  # noqa: TRY301
                         msg,
                         symbol=symbol,
@@ -198,10 +208,6 @@ class BulkStoreMixin:
         except CacheWriteError:
             raise
         except (OSError, RuntimeError) as e:
-            # Issue #126: Respect RANGEBAR_OUROBOROS_GUARD for connection failures
-            from rangebar.config import Settings
-
-            guard = Settings.get().population.ouroboros_guard
             if guard == "strict":
                 msg = f"Cannot verify mode consistency (ClickHouse unreachable): {e}"
                 raise CacheWriteError(
@@ -209,10 +215,8 @@ class BulkStoreMixin:
                     symbol=symbol,
                     operation="mode_guard",
                 ) from e
-            if guard == "warn":
-                logger.warning("Mode consistency check failed: %s", e)
-            else:  # "off"
-                logger.debug("Mode consistency check skipped (guard=off): %s", e)
+            # guard == "warn" (only remaining option since "off" returned early)
+            logger.warning("Mode consistency check failed: %s", e)
 
     def store_bars_bulk(  # noqa: PLR0915
         self,
