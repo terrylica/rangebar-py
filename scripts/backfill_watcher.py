@@ -39,11 +39,6 @@ import os
 import sys
 import time
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 30
@@ -432,8 +427,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+    from rangebar.logging import setup_service_logging
+
+    setup_service_logging("backfill-watcher", verbose=args.verbose)
 
     if args.once:
         try:

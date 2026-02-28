@@ -18,19 +18,12 @@ Or run as a module:
 
 from __future__ import annotations
 
-import logging
 import sys
 from datetime import UTC, datetime
 
 import click
 
-# Configure logging for CLI
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+from rangebar.logging import setup_service_logging
 
 
 @click.group()
@@ -41,8 +34,7 @@ def cli(verbose: bool) -> None:
 
     Manage ClickHouse cache for computed range bars.
     """
-    if verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+    setup_service_logging("rangebar-cli", verbose=verbose)
 
 
 @cli.command()

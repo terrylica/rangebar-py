@@ -51,11 +51,6 @@ from datetime import UTC, datetime
 
 from rangebar.binance_vision import probe_latest_available_date
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -367,6 +362,10 @@ Phase {phase_num}: {phase['name']}
 
 def main() -> None:
     """Main entry point."""
+    from rangebar.logging import setup_service_logging
+
+    setup_service_logging("populate-cache")
+
     parser = argparse.ArgumentParser(
         description="Populate rangebar cache (resource-aware)",
         formatter_class=argparse.RawDescriptionHelpFormatter,

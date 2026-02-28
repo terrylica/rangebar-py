@@ -812,9 +812,6 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
                 "failed to send coverage mismatch alert", exc_info=True,
             )
 
-    if config.verbose:
-        logging.basicConfig(level=logging.DEBUG)
-
     logger.info(
         "starting sidecar: symbols=%s, thresholds=%s, microstructure=%s, "
         "watchdog_timeout_s=%d, max_watchdog_restarts=%d",

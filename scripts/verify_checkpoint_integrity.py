@@ -364,10 +364,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.WARNING,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    from rangebar.logging import setup_service_logging
+
+    setup_service_logging("checkpoint-verify", verbose=args.verbose)
 
     discrepancies = verify_checkpoints(
         args.checkpoint_dir,

@@ -34,11 +34,6 @@ from pathlib import Path
 import polars as pl
 from tqdm import tqdm
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
 logger = logging.getLogger(__name__)
 
 
@@ -130,6 +125,10 @@ def main() -> int:
     )
 
     args = parser.parse_args()
+
+    from rangebar.logging import setup_service_logging
+
+    setup_service_logging("dedup-parquet", verbose=args.verbose)
 
     cache_dir = args.cache_dir or get_default_cache_dir()
 
