@@ -121,3 +121,4 @@ format_schemas/
 access/
 test_data/
 .claude/
+.gitnexus

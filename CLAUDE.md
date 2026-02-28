@@ -273,11 +273,35 @@ This file is the **hub**. Each spoke CLAUDE.md is loaded automatically when work
 
 ## Terminology
 
-| Term                  | Acronym | Definition                                                                                                            |
-| --------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
-| **dbps**              | dbps    | 1 dbps = 0.001% = 0.00001. Example: 250 dbps = 0.25%. **All threshold values use dbps.**                              |
-| **Ouroboros**         | —       | Cyclical reset boundary (year/month/week). Resets processor state for reproducibility and cache-friendly processing.  |
-| **Orphaned Bar**      | —       | Incomplete bar at an ouroboros boundary. Marked `is_orphan=True` with metadata.                                       |
-| **Dynamic Ouroboros** | —       | Forex-specific: reset at first tick after weekend gap, auto-handling DST shifts.                                      |
-| **Kintsugi**          | —       | Self-healing gap reconciliation (Issue #115). Discovers gaps ("shards") and repairs using Ariadne+Ouroboros.          |
-| **Shard**             | —       | A gap in the data timeline. Classified P0 (staleness), P1 (recent <48h), P2 (historical >=48h). Repaired by Kintsugi. |
+| Term                  | Definition                                                                                                            |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **dbps**              | 1 dbps = 0.00001 = 0.001%. Example: 250 dbps = 0.25%. **All threshold values use dbps.**                              |
+| **Ouroboros**         | Cyclical reset boundary (year/month/week). Resets processor state for reproducibility and cache-friendly processing.  |
+| **Orphaned Bar**      | Incomplete bar at an ouroboros boundary. Marked `is_orphan=True` with metadata.                                       |
+| **Dynamic Ouroboros** | Forex-specific: reset at first tick after weekend gap, auto-handling DST shifts.                                      |
+| **Kintsugi**          | Self-healing gap reconciliation (Issue #115). Discovers gaps ("shards") and repairs using Ariadne+Ouroboros.          |
+| **Shard**             | A gap in the data timeline. Classified P0 (staleness), P1 (recent <48h), P2 (historical >=48h). Repaired by Kintsugi. |
+
+<!-- gitnexus:start -->
+
+## GitNexus Knowledge Graph (CLI)
+
+Indexed: 7,730 nodes | 20,090 edges | 493 clusters | 300 execution flows.
+
+Re-index after significant changes: `npx gitnexus@latest analyze --force`
+
+### CLI Commands (via Bash tool)
+
+| Command                                  | Use when                                  | Example                                                                        |
+| ---------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------ |
+| `npx gitnexus@latest query "<concept>"`  | Find execution flows related to a concept | `query "kintsugi gap repair" --limit 5`                                        |
+| `npx gitnexus@latest context "<symbol>"` | 360° view: callers, callees, processes    | `context "RangeBar" --uid "Struct:crates/rangebar-core/src/types.rs:RangeBar"` |
+| `npx gitnexus@latest impact "<symbol>"`  | Blast radius before changing code         | `impact "RangeBar" --direction upstream --depth 3`                             |
+| `npx gitnexus@latest cypher "<query>"`   | Raw graph query                           | `cypher "MATCH (n:Function) RETURN n.name LIMIT 10"`                           |
+| `npx gitnexus@latest status`             | Check if index is stale                   | —                                                                              |
+
+All commands output JSON. Use `--content` flag on `context` to include source snippets.
+
+Disambiguate symbols with `--uid` (from candidates list) or `--file` flags.
+
+<!-- gitnexus:end -->
