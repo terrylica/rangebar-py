@@ -1,3 +1,10 @@
+## [12.35.2](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.35.1...v12.35.2) (2026-02-28)
+
+
+### Bug Fixes
+
+* **deploy:** add --refresh-package to bypass uv index cache + wheel fallback ([27d647e](https://github.com-terrylica/terrylica/rangebar-py/commit/27d647ed7b5709138f02e3332fa30b24c6bddbd9))
+
 ## [12.35.1](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.35.0...v12.35.1) (2026-02-28)
 
 
