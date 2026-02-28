@@ -791,8 +791,9 @@ def _compute_bars_with_all_features(trades: list[dict]) -> pd.DataFrame | None:
         return None
 
     df = pd.DataFrame(bars)
-    df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601")
-    df = df.set_index("timestamp")
+    df["close_time_ms"] = pd.to_datetime(df["close_time_ms"], unit="ms", utc=True)
+    df = df.set_index("close_time_ms")
+    df.index.name = "timestamp"
     df = df.rename(columns={
         "open": "Open", "high": "High", "low": "Low",
         "close": "Close", "volume": "Volume",
@@ -918,9 +919,9 @@ class TestMicrostructureRoundtrip:
             )
 
         # Intra-bar features should be non-null for all bars (no warmup needed).
-        # Exception: hurst and permutation_entropy need many trades per bar;
-        # synthetic data (~14 trades/bar) is insufficient for these complexity features.
-        complexity_cols = {"intra_hurst", "intra_permutation_entropy"}
+        # Exception: hurst, permutation_entropy, and burstiness need many trades
+        # per bar; synthetic data (~14 trades/bar) is insufficient for these.
+        complexity_cols = {"intra_hurst", "intra_permutation_entropy", "intra_burstiness"}
         for col in INTRA_BAR_FEATURE_COLUMNS:
             if col in complexity_cols:
                 continue
