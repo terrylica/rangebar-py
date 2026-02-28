@@ -1,3 +1,12 @@
+## [12.35.1](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.35.0...v12.35.1) (2026-02-28)
+
+
+### Bug Fixes
+
+* **#126:** rename ouroboros → ouroboros_mode in populate_full_cache.py ([c5f84c5](https://github.com-terrylica/terrylica/rangebar-py/commit/c5f84c58f359e73cb1e7d38a3f0dfe6d32046142)), closes [#126](https://github.com-terrylica/terrylica/rangebar-py/issues/126)
+* **#126:** respect RANGEBAR_OUROBOROS_GUARD for mode mismatch, not just connection failures ([dbf7078](https://github.com-terrylica/terrylica/rangebar-py/commit/dbf7078cac81001968dcda390bad583e63a9f6a5)), closes [#126](https://github.com-terrylica/terrylica/rangebar-py/issues/126)
+* **deploy:** use mise-managed Python 3.13 for bigblack venv creation ([14b8744](https://github.com-terrylica/terrylica/rangebar-py/commit/14b87440251000db33df1c0b411d2ccac9c6fed6))
+
 # [12.35.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.34.0...v12.35.0) (2026-02-28)
 
 
