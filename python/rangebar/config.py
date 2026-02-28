@@ -55,6 +55,13 @@ class PopulationConfig:
     ouroboros_mode: str = field(
         default_factory=lambda: _env("RANGEBAR_OUROBOROS_MODE", "year"),
     )
+    # Issue #126: Guard behavior for ouroboros mode consistency checks.
+    # "strict": raise CacheWriteError on mode mismatch or connection failure
+    # "warn" (default): log warning, allow write (safe during migration)
+    # "off": skip check entirely
+    ouroboros_guard: str = field(
+        default_factory=lambda: _env("RANGEBAR_OUROBOROS_GUARD", "warn"),
+    )
     inter_bar_lookback_count: int = field(
         default_factory=lambda: _env_int("RANGEBAR_INTER_BAR_LOOKBACK_COUNT", 200),
     )
@@ -67,6 +74,18 @@ class PopulationConfig:
     continuity_tolerance: float = field(
         default_factory=lambda: _env_float("RANGEBAR_CONTINUITY_TOLERANCE", 0.001),
     )
+
+    def __post_init__(self) -> None:  # Issue #126: Fail-fast on invalid config
+        from rangebar.ouroboros import validate_ouroboros_mode
+
+        validate_ouroboros_mode(self.ouroboros_mode)
+        valid_guards = {"strict", "warn", "off"}
+        if self.ouroboros_guard not in valid_guards:
+            msg = (
+                f"Invalid RANGEBAR_OUROBOROS_GUARD: {self.ouroboros_guard!r}. "
+                f"Must be one of: {valid_guards}"
+            )
+            raise ValueError(msg)
 
 
 @dataclass(frozen=True)
@@ -165,6 +184,25 @@ class Settings:
         with _lock:
             _instance = cls()
             return _instance
+
+    @classmethod
+    def reload_and_clear(cls) -> Settings:
+        """Reload settings and clear cached threshold data.  # Issue #126
+
+        Combines ``reload()`` with threshold cache clearing. Designed for
+        SIGHUP handlers in daemons to enable runtime config switching
+        without service restart.
+
+        Returns
+        -------
+        Settings
+            A freshly loaded settings instance.
+        """
+        from rangebar.threshold import clear_threshold_cache
+
+        settings = cls.reload()
+        clear_threshold_cache()
+        return settings
 
     @property
     def clickhouse(self) -> ClickHouseConfig:

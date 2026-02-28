@@ -712,8 +712,8 @@ class TestOuroborosIntegrationWithRealData:
         from rangebar import get_range_bars
 
         sig = inspect.signature(get_range_bars)
-        ouroboros_param = sig.parameters["ouroboros"]
-        assert ouroboros_param.default == "year"
+        ouroboros_param = sig.parameters["ouroboros_mode"]
+        assert ouroboros_param.default is None
 
     def test_reproducibility_same_ouroboros(self, real_data_available):
         """Test that same ouroboros mode produces identical results."""
@@ -728,7 +728,7 @@ class TestOuroborosIntegrationWithRealData:
             "2024-01-01",
             "2024-01-07",
             threshold_decimal_bps=250,
-            ouroboros="year",
+            ouroboros_mode="year",
             use_cache=True,
         )
         df2 = get_range_bars(
@@ -736,7 +736,7 @@ class TestOuroborosIntegrationWithRealData:
             "2024-01-01",
             "2024-01-07",
             threshold_decimal_bps=250,
-            ouroboros="year",
+            ouroboros_mode="year",
             use_cache=True,
         )
 
@@ -762,7 +762,7 @@ class TestOuroborosIntegrationWithRealData:
             "2024-01-01",
             "2024-01-31",
             threshold_decimal_bps=250,
-            ouroboros="year",
+            ouroboros_mode="year",
             use_cache=True,
         )
         df_month = get_range_bars(
@@ -770,7 +770,7 @@ class TestOuroborosIntegrationWithRealData:
             "2024-01-01",
             "2024-01-31",
             threshold_decimal_bps=250,
-            ouroboros="month",
+            ouroboros_mode="month",
             use_cache=True,
         )
         df_week = get_range_bars(
@@ -778,7 +778,7 @@ class TestOuroborosIntegrationWithRealData:
             "2024-01-01",
             "2024-01-31",
             threshold_decimal_bps=250,
-            ouroboros="week",
+            ouroboros_mode="week",
             use_cache=True,
         )
 
@@ -811,7 +811,7 @@ class TestOuroborosIntegrationWithRealData:
             "2023-12-30",
             "2024-01-03",
             threshold_decimal_bps=250,
-            ouroboros="year",
+            ouroboros_mode="year",
             include_orphaned_bars=True,
             use_cache=True,
         )
@@ -836,7 +836,7 @@ class TestOuroborosIntegrationWithRealData:
                 "2024-01-01",
                 "2024-01-07",
                 threshold_decimal_bps=250,
-                ouroboros="none",
+                ouroboros_mode="none",
             )
 
     def test_ouroboros_invalid_value_rejected(self):
@@ -849,7 +849,7 @@ class TestOuroborosIntegrationWithRealData:
                 "2024-01-01",
                 "2024-01-07",
                 threshold_decimal_bps=250,
-                ouroboros="daily",
+                ouroboros_mode="daily",
             )
 
 

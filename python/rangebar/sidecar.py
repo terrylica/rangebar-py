@@ -731,6 +731,16 @@ def run_sidecar(config: SidecarConfig) -> None:  # noqa: PLR0912, PLR0915
     - Accumulates bars by (symbol, threshold) pair
     - Flushes on timeout or batch size threshold
     """
+    # Issue #126: SIGHUP reloads config (enables runtime ouroboros_mode switching)
+
+    def _sighup_handler(*_args: object) -> None:
+        from rangebar.config import Settings
+
+        Settings.reload_and_clear()
+        logger.info("SIGHUP: config reloaded")
+
+    signal.signal(signal.SIGHUP, _sighup_handler)
+
     from rangebar.logging import generate_trace_id
 
     trace_id = generate_trace_id("sdc")

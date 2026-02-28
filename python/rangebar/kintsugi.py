@@ -260,10 +260,13 @@ def _enrich_shards(shards: list[Shard]) -> None:
                         shard.gap_end_ms / 1000,
                         tz=UTC,
                     ).date()
+                    # Issue #126: resolve mode from config instead of hardcoding
+                    from rangebar.ouroboros import get_operational_ouroboros_mode
+
                     boundaries = get_ouroboros_boundaries(
                         start_date,
                         end_date,
-                        "year",
+                        get_operational_ouroboros_mode(),
                     )
                     shard.ouroboros_boundaries = [b.timestamp_ms for b in boundaries]
     except (OSError, RuntimeError, ConnectionError) as e:
@@ -799,6 +802,16 @@ def kintsugi_daemon(
         interval_active_s,
         max_p2_jobs,
     )
+
+    # Issue #126: SIGHUP reloads config (enables runtime ouroboros_mode switching)
+    import signal
+
+    def _sighup_handler(*_args: object) -> None:
+        from rangebar.config import Settings
+        Settings.reload_and_clear()
+        logger.info("SIGHUP: config reloaded")
+
+    signal.signal(signal.SIGHUP, _sighup_handler)
 
     # Issue #121: Notify on daemon startup (confirms EnvironmentFile worked)
     _sd_notify("READY=1")

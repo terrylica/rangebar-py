@@ -198,8 +198,21 @@ class BulkStoreMixin:
         except CacheWriteError:
             raise
         except (OSError, RuntimeError) as e:
-            # If we can't check, log and proceed (table might not exist yet)
-            logger.debug("Mode consistency check skipped: %s", e)
+            # Issue #126: Respect RANGEBAR_OUROBOROS_GUARD for connection failures
+            from rangebar.config import Settings
+
+            guard = Settings.get().population.ouroboros_guard
+            if guard == "strict":
+                msg = f"Cannot verify mode consistency (ClickHouse unreachable): {e}"
+                raise CacheWriteError(
+                    msg,
+                    symbol=symbol,
+                    operation="mode_guard",
+                ) from e
+            if guard == "warn":
+                logger.warning("Mode consistency check failed: %s", e)
+            else:  # "off"
+                logger.debug("Mode consistency check skipped (guard=off): %s", e)
 
     def store_bars_bulk(  # noqa: PLR0915
         self,
@@ -207,7 +220,7 @@ class BulkStoreMixin:
         threshold_decimal_bps: int,
         bars: pd.DataFrame,
         version: str | None = None,
-        ouroboros_mode: str = "year",
+        ouroboros_mode: str | None = None,
         *,
         skip_dedup: bool = False,
     ) -> int:
@@ -245,6 +258,16 @@ class BulkStoreMixin:
         """
         if bars.empty:
             return 0
+
+        # Issue #126: Resolve ouroboros_mode from config if not specified
+        if ouroboros_mode is None:
+            from rangebar.ouroboros import get_operational_ouroboros_mode
+
+            ouroboros_mode = get_operational_ouroboros_mode()
+        logger.info(
+            "cache_write: ouroboros_mode=%s symbol=%s threshold=%d bars=%d",
+            ouroboros_mode, symbol, threshold_decimal_bps, len(bars),
+        )
 
         # Issue #97: Guard against mixed ouroboros modes
         self._guard_ouroboros_mode_consistency(
@@ -406,7 +429,7 @@ class BulkStoreMixin:
         threshold_decimal_bps: int,
         bars: pl.DataFrame,
         version: str | None = None,
-        ouroboros_mode: str = "year",
+        ouroboros_mode: str | None = None,
         *,
         skip_dedup: bool = False,
     ) -> int:
@@ -452,6 +475,16 @@ class BulkStoreMixin:
 
         if bars.is_empty():
             return 0
+
+        # Issue #126: Resolve ouroboros_mode from config if not specified
+        if ouroboros_mode is None:
+            from rangebar.ouroboros import get_operational_ouroboros_mode
+
+            ouroboros_mode = get_operational_ouroboros_mode()
+        logger.info(
+            "cache_write: ouroboros_mode=%s symbol=%s threshold=%d bars=%d",
+            ouroboros_mode, symbol, threshold_decimal_bps, len(bars),
+        )
 
         # Issue #97: Guard against mixed ouroboros modes
         self._guard_ouroboros_mode_consistency(

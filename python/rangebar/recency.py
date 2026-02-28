@@ -118,18 +118,25 @@ class LoopState:
 def _get_cached_symbol_threshold_pairs() -> list[tuple[str, int]]:
     """Query ClickHouse for all distinct (symbol, threshold) pairs in cache.
 
+    Issue #126: Filters by operational ouroboros_mode to avoid returning
+    pairs that only exist in a different mode.
+
     Returns
     -------
     list[tuple[str, int]]
         List of (symbol, threshold_decimal_bps) pairs.
     """
     from rangebar.clickhouse import RangeBarCache
+    from rangebar.ouroboros import get_operational_ouroboros_mode
 
+    mode = get_operational_ouroboros_mode()
     with RangeBarCache() as cache:
         result = cache.client.query(
             "SELECT DISTINCT symbol, threshold_decimal_bps "
             "FROM rangebar_cache.range_bars FINAL "
-            "ORDER BY symbol, threshold_decimal_bps"
+            "WHERE ouroboros_mode = {mode:String} "
+            "ORDER BY symbol, threshold_decimal_bps",
+            parameters={"mode": mode},
         )
         return [(row[0], row[1]) for row in result.result_rows]
 
@@ -586,6 +593,17 @@ def run_adaptive_loop(
 
     Stop with Ctrl+C (SIGINT).
     """
+    # Issue #126: SIGHUP reloads config (enables runtime ouroboros_mode switching)
+    import signal
+
+    def _sighup_handler(*_args: object) -> None:
+        from rangebar.config import Settings
+
+        Settings.reload_and_clear()
+        logger.info("SIGHUP: config reloaded")
+
+    signal.signal(signal.SIGHUP, _sighup_handler)
+
     state = LoopState()
     logger.info("Starting adaptive recency backfill loop")
 

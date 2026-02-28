@@ -407,9 +407,9 @@ Examples:
         help="Disable microstructure features",
     )
     parser.add_argument(
-        "--ouroboros", type=str, default="year",
+        "--ouroboros", type=str, default=None,
         choices=["year", "month", "week"],
-        help="Ouroboros reset period (default: year). Use 'month' for finer-grained parallelism.",
+        help="Ouroboros reset period (default: from RANGEBAR_OUROBOROS_MODE).",  # Issue #126
     )
 
     args = parser.parse_args()

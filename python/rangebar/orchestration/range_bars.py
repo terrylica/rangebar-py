@@ -41,7 +41,7 @@ def get_range_bars(
     threshold_decimal_bps: int | str = 250,
     *,
     # Ouroboros: Cyclical reset boundaries (v11.0+)
-    ouroboros: Literal["year", "month", "week"] = "year",
+    ouroboros_mode: Literal["year", "month", "week"] | None = None,
     include_orphaned_bars: bool = False,
     # Streaming options (v8.0+)
     materialize: bool = True,
@@ -92,7 +92,7 @@ def get_range_bars(
         - String preset: "micro" (10 dbps), "tight" (50 dbps), "standard" (100 dbps),
           "medium" (250 dbps), "wide" (500 dbps), "macro" (1000 dbps)
         Valid range: 1-100,000 dbps (0.001% to 100%)
-    ouroboros : {"year", "month", "week"}, default="year"
+    ouroboros_mode : {"year", "month", "week"}, default=None (resolved from config)
         Cyclical reset boundary for reproducible bar construction (v11.0+).
         Processor state resets at each boundary for deterministic results.
         - "year" (default): Reset at January 1st 00:00:00 UTC (cryptocurrency)
@@ -314,10 +314,16 @@ def get_range_bars(
 
     # -------------------------------------------------------------------------
     # Validate ouroboros mode (v11.0+)
+    # Issue #126: Resolve from config if not specified
     # -------------------------------------------------------------------------
-    from rangebar.ouroboros import validate_ouroboros_mode
+    if ouroboros_mode is None:
+        from rangebar.ouroboros import get_operational_ouroboros_mode
 
-    ouroboros = validate_ouroboros_mode(ouroboros)
+        ouroboros_mode = get_operational_ouroboros_mode()
+    else:
+        from rangebar.ouroboros import validate_ouroboros_mode
+
+        ouroboros_mode = validate_ouroboros_mode(ouroboros_mode)
 
     # -------------------------------------------------------------------------
     # Validate source and market
@@ -370,7 +376,7 @@ def get_range_bars(
                     start_ts=start_ts,
                     end_ts=end_ts,
                     include_microstructure=include_microstructure,
-                    ouroboros_mode=ouroboros,
+                    ouroboros_mode=ouroboros_mode,
                 )
                 if cached is not None and len(cached) > 0:
                     # Success: return cached data
@@ -440,7 +446,7 @@ def get_range_bars(
             start_ts=start_ts,
             end_ts=end_ts,
             include_microstructure=include_microstructure,
-            ouroboros=ouroboros,
+            ouroboros_mode=ouroboros_mode,
             trace_id=trace_id,
         )
         if cached_bars is not None:
@@ -497,7 +503,7 @@ def get_range_bars(
 
         # Find the largest segment by time span
         segments = list(
-            iter_ouroboros_segments(start_dt.date(), end_dt.date(), ouroboros)
+            iter_ouroboros_segments(start_dt.date(), end_dt.date(), ouroboros_mode)
         )
         if segments:
             largest = max(
@@ -544,7 +550,7 @@ def get_range_bars(
     any_data_found = False
 
     for segment_start, segment_end, boundary in iter_ouroboros_segments(
-        start_dt.date(), end_dt.date(), ouroboros
+        start_dt.date(), end_dt.date(), ouroboros_mode
     ):
         # Reset processor at ouroboros boundary
         if boundary is not None and processor is not None:
@@ -679,7 +685,7 @@ def get_range_bars(
     if use_cache:
         from .range_bars_cache import try_cache_write
 
-        try_cache_write(bars_df, symbol, threshold_decimal_bps, ouroboros)
+        try_cache_write(bars_df, symbol, threshold_decimal_bps, ouroboros_mode)
 
     # -------------------------------------------------------------------------
     # Filter output columns based on include_microstructure (Issue #75)

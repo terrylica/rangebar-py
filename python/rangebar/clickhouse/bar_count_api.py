@@ -92,6 +92,7 @@ class BarCountMixin:
         self,
         symbol: str,
         threshold_decimal_bps: int,
+        ouroboros_mode: str | None = None,
     ) -> int | None:
         """Get timestamp of oldest bar in cache.
 
@@ -103,23 +104,32 @@ class BarCountMixin:
             Trading symbol (e.g., "BTCUSDT")
         threshold_decimal_bps : int
             Threshold in decimal basis points
+        ouroboros_mode : str | None
+            Ouroboros mode filter. If None, resolved from config.  # Issue #126
 
         Returns
         -------
         int | None
             Oldest bar timestamp in milliseconds, or None if no bars
         """
+        if ouroboros_mode is None:
+            from rangebar.ouroboros import get_operational_ouroboros_mode
+
+            ouroboros_mode = get_operational_ouroboros_mode()
+
         query = """
             SELECT min(close_time_ms)
             FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}
+              AND ouroboros_mode = {ouroboros:String}
         """
         result = self.client.command(
             query,
             parameters={
                 "symbol": symbol,
                 "threshold": threshold_decimal_bps,
+                "ouroboros": ouroboros_mode,
             },
             settings=FINAL_READ_SETTINGS,
         )
@@ -130,6 +140,7 @@ class BarCountMixin:
         self,
         symbol: str,
         threshold_decimal_bps: int,
+        ouroboros_mode: str | None = None,
     ) -> int | None:
         """Get timestamp of newest bar in cache.
 
@@ -141,23 +152,32 @@ class BarCountMixin:
             Trading symbol (e.g., "BTCUSDT")
         threshold_decimal_bps : int
             Threshold in decimal basis points
+        ouroboros_mode : str | None
+            Ouroboros mode filter. If None, resolved from config.  # Issue #126
 
         Returns
         -------
         int | None
             Newest bar timestamp in milliseconds, or None if no bars
         """
+        if ouroboros_mode is None:
+            from rangebar.ouroboros import get_operational_ouroboros_mode
+
+            ouroboros_mode = get_operational_ouroboros_mode()
+
         query = """
             SELECT max(close_time_ms)
             FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}
+              AND ouroboros_mode = {ouroboros:String}
         """
         result = self.client.command(
             query,
             parameters={
                 "symbol": symbol,
                 "threshold": threshold_decimal_bps,
+                "ouroboros": ouroboros_mode,
             },
             settings=FINAL_READ_SETTINGS,
         )

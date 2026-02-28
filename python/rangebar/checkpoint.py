@@ -192,6 +192,7 @@ def _get_checkpoint_path(
     start_date: str,
     end_date: str,
     checkpoint_dir: Path | None = None,
+    ouroboros_mode: str = "year",
 ) -> Path:
     """Get the checkpoint file path for a population job.
 
@@ -208,6 +209,9 @@ def _get_checkpoint_path(
         End date (YYYY-MM-DD).
     checkpoint_dir : Path | None
         Custom checkpoint directory. Uses default if None.
+    ouroboros_mode : str
+        Ouroboros mode included in filename to prevent cross-mode
+        checkpoint pollution (Issue #126).
 
     Returns
     -------
@@ -217,8 +221,11 @@ def _get_checkpoint_path(
     if checkpoint_dir is None:
         checkpoint_dir = _CHECKPOINT_DIR
 
-    # Threshold in filename prevents concurrent job collisions
-    filename = f"{symbol}_{threshold_decimal_bps}_{start_date}_{end_date}.json"
+    # Issue #126: Mode in filename prevents cross-mode resume contamination
+    filename = (
+        f"{symbol}_{threshold_decimal_bps}_{start_date}_{end_date}"
+        f"_{ouroboros_mode}.json"
+    )
     return checkpoint_dir / filename
 
 
@@ -340,19 +347,19 @@ def _checkpoint_provenance(trace_id: str | None = None) -> dict:
     }
 
 
-def _is_ouroboros_boundary(date_str: str, ouroboros: str) -> bool:
+def _is_ouroboros_boundary(date_str: str, ouroboros_mode: str) -> bool:
     """Check if a date falls on an ouroboros reset boundary.
 
     Issue #97: Used by populate_cache_resumable() to reset the threaded
     processor at year/month/week boundaries.
     """
     d = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
-    if ouroboros == "year":
+    if ouroboros_mode == "year":
         return d.month == 1 and d.day == 1
-    if ouroboros == "month":
+    if ouroboros_mode == "month":
         return d.day == 1
     _sunday = 6
-    if ouroboros == "week":
+    if ouroboros_mode == "week":
         return d.weekday() == _sunday  # Sunday (matches ouroboros.py SSoT)
     return False
 
@@ -401,7 +408,7 @@ def _ariadne_resume(
     processor: object,
     *,
     include_microstructure: bool = False,  # noqa: ARG001
-    ouroboros: str = "year",
+    ouroboros_mode: str | None = None,
     notify: bool = True,  # noqa: ARG001
     trace_id: str | None = None,  # noqa: ARG001
 ) -> int:
@@ -425,7 +432,7 @@ def _ariadne_resume(
         Active processor with restored state.
     include_microstructure : bool
         Whether microstructure features are enabled.
-    ouroboros : str
+    ouroboros_mode : str
         Ouroboros reset mode.
     notify : bool
         Whether to emit hook events.
@@ -437,6 +444,12 @@ def _ariadne_resume(
     int
         Total bars written via Ariadne resume.
     """
+    # Issue #126: Resolve ouroboros mode from config if not specified
+    if ouroboros_mode is None:
+        from rangebar.ouroboros import get_operational_ouroboros_mode
+
+        ouroboros_mode = get_operational_ouroboros_mode()
+
     from rangebar._core import fetch_aggtrades_by_id
     from rangebar.orchestration.range_bars_cache import fatal_cache_write
 
@@ -493,7 +506,7 @@ def _ariadne_resume(
                 bars_df = pd.DataFrame(bars_df)
             if not bars_df.empty:
                 written = fatal_cache_write(
-                    bars_df, symbol, threshold_decimal_bps, ouroboros,
+                    bars_df, symbol, threshold_decimal_bps, ouroboros_mode,
                 )
                 total_bars += written
 
@@ -522,7 +535,7 @@ def populate_cache_resumable(
     threshold_decimal_bps: int = 250,
     force_refresh: bool = False,
     include_microstructure: bool = False,
-    ouroboros: str = "year",
+    ouroboros_mode: str | None = None,
     checkpoint_dir: Path | None = None,
     notify: bool = True,
     verbose: bool = True,
@@ -540,6 +553,8 @@ def populate_cache_resumable(
     - Hybrid storage: Checkpoints saved to both local and ClickHouse
     - force_refresh: Wipe cache and checkpoint to start fresh
 
+    Issue #126: ouroboros defaults to None → resolved from RANGEBAR_OUROBOROS_MODE.
+
     Parameters
     ----------
     symbol : str
@@ -555,7 +570,7 @@ def populate_cache_resumable(
         If False (default), resume from last checkpoint.
     include_microstructure : bool
         Include microstructure features (default: False).
-    ouroboros : str
+    ouroboros_mode : str
         Ouroboros reset mode: "year", "month", or "week" (default: "year").
     checkpoint_dir : Path | None
         Custom checkpoint directory. Uses default if None.
@@ -611,6 +626,13 @@ def populate_cache_resumable(
         symbol, threshold_decimal_bps,
     )
 
+    # Issue #126: Resolve ouroboros mode from config if not specified
+    if ouroboros_mode is None:
+        from rangebar.ouroboros import get_operational_ouroboros_mode
+
+        ouroboros_mode = get_operational_ouroboros_mode()
+    logger.info("populate_cache_resumable: ouroboros_mode=%s", ouroboros_mode)
+
     # T-1 guard: Binance Vision publishes with ~1-day lag.
     # Attempting to fetch today's data causes RuntimeError: "No data available"
     # which crashes the job after checkpoint is written but before ClickHouse
@@ -628,7 +650,8 @@ def populate_cache_resumable(
         end_date = t1_cutoff.strftime("%Y-%m-%d")
 
     checkpoint_path = _get_checkpoint_path(
-        symbol, threshold_decimal_bps, start_date, end_date, checkpoint_dir
+        symbol, threshold_decimal_bps, start_date, end_date, checkpoint_dir,
+        ouroboros_mode=ouroboros_mode,  # Issue #126: mode in filename
     )
 
     # Issue #69: Handle force_refresh - wipe cache and checkpoint
@@ -654,10 +677,13 @@ def populate_cache_resumable(
             end_ts = _datetime_to_end_ms(end_dt)
 
             with RangeBarCache() as cache:
-                cache.delete_bars(symbol, threshold_decimal_bps, start_ts, end_ts)
+                cache.delete_bars(
+                    symbol, threshold_decimal_bps, start_ts, end_ts,
+                    ouroboros_mode=ouroboros_mode,  # Issue #126
+                )
                 cache.delete_checkpoint(
                     symbol, threshold_decimal_bps, start_date, end_date,
-                    ouroboros_mode=ouroboros,
+                    ouroboros_mode=ouroboros_mode,
                 )
                 logger.debug("Deleted cached bars and ClickHouse checkpoint")
         except (ImportError, ConnectionError) as e:
@@ -672,7 +698,7 @@ def populate_cache_resumable(
         if checkpoint is None:
             checkpoint = _load_checkpoint_from_clickhouse(
                 symbol, threshold_decimal_bps, start_date, end_date,
-                ouroboros_mode=ouroboros,
+                ouroboros_mode=ouroboros_mode,
             )
 
     resume_date = start_date
@@ -686,6 +712,19 @@ def populate_cache_resumable(
             and checkpoint.start_date == start_date
             and checkpoint.end_date == end_date
         ):
+            # Issue #126: Verify ouroboros_mode consistency
+            if (
+                hasattr(checkpoint, "ouroboros_mode")
+                and checkpoint.ouroboros_mode
+                and checkpoint.ouroboros_mode != ouroboros_mode
+            ):
+                msg = (
+                    f"Checkpoint ouroboros_mode mismatch: checkpoint has "
+                    f"{checkpoint.ouroboros_mode!r} but current mode is "
+                    f"{ouroboros_mode!r}. Delete the checkpoint or use matching mode."
+                )
+                raise ValueError(msg)
+
             # Resume from day after last completed
             last_completed = datetime.strptime(
                 checkpoint.last_completed_date, "%Y-%m-%d"
@@ -853,7 +892,7 @@ def populate_cache_resumable(
             threshold_decimal_bps,
             active_processor,
             include_microstructure=include_microstructure,
-            ouroboros=ouroboros,
+            ouroboros_mode=ouroboros_mode,
             notify=notify,
             trace_id=trace_id,
         )
@@ -899,18 +938,18 @@ def populate_cache_resumable(
         try:
             # Issue #97: Handle ouroboros boundary — reset processor state
             if active_processor is not None and _is_ouroboros_boundary(
-                date, ouroboros
+                date, ouroboros_mode
             ):
                 logger.info(
                     "Ouroboros %s boundary at %s — resetting processor",
-                    ouroboros, date,
+                    ouroboros_mode, date,
                 )
                 log_checkpoint_event(
                     "ouroboros_reset",
                     symbol,
                     trace_id,
                     date=date,
-                    boundary_type=ouroboros,
+                    boundary_type=ouroboros_mode,
                     had_incomplete_bar=active_processor.get_incomplete_bar()
                     is not None,
                 )
@@ -988,12 +1027,12 @@ def populate_cache_resumable(
                             bars_df,
                             symbol,
                             threshold_decimal_bps,
-                            ouroboros,
+                            ouroboros_mode,
                         )
                         bars_today = len(bars_df)
                     else:
                         bars_today = fatal_cache_write(
-                            bars_df, symbol, threshold_decimal_bps, ouroboros,
+                            bars_df, symbol, threshold_decimal_bps, ouroboros_mode,
                         )
                 else:
                     bars_today = 0
@@ -1035,7 +1074,7 @@ def populate_cache_resumable(
                 bars_written=total_bars,
                 created_at=created_at,
                 include_microstructure=include_microstructure,
-                ouroboros_mode=ouroboros,
+                ouroboros_mode=ouroboros_mode,
                 processor_checkpoint=proc_cp,
                 last_trade_timestamp_ms=(
                     proc_cp.get("last_timestamp_ms") if proc_cp else None
@@ -1220,6 +1259,7 @@ def clear_checkpoint(
     start_date: str,
     end_date: str,
     checkpoint_dir: Path | None = None,
+    ouroboros_mode: str = "year",
 ) -> bool:
     """Clear a specific checkpoint.
 
@@ -1235,6 +1275,8 @@ def clear_checkpoint(
         End date (YYYY-MM-DD).
     checkpoint_dir : Path | None
         Custom checkpoint directory. Uses default if None.
+    ouroboros_mode : str
+        Ouroboros mode for checkpoint filename (Issue #126).
 
     Returns
     -------
@@ -1242,7 +1284,8 @@ def clear_checkpoint(
         True if checkpoint was found and removed.
     """
     checkpoint_path = _get_checkpoint_path(
-        symbol, threshold_decimal_bps, start_date, end_date, checkpoint_dir
+        symbol, threshold_decimal_bps, start_date, end_date, checkpoint_dir,
+        ouroboros_mode=ouroboros_mode,
     )
 
     if checkpoint_path.exists():

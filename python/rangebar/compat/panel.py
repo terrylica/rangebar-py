@@ -101,7 +101,7 @@ def get_range_bars_panel(
     threshold_decimal_bps: int | str = 250,
     *,
     include_microstructure: bool = False,
-    ouroboros: str = "year",
+    ouroboros_mode: str | None = None,
     use_cache: bool = True,
     feature_prefix: str = "feature",
 ) -> pd.DataFrame:
@@ -117,8 +117,8 @@ def get_range_bars_panel(
         Threshold in decimal basis points or preset name.
     include_microstructure : bool
         Include microstructure feature columns.
-    ouroboros : str
-        Ouroboros reset mode.
+    ouroboros_mode : str | None
+        Ouroboros reset mode. If None, resolved from config.  # Issue #126
     use_cache : bool
         Use ClickHouse cache if available.
     feature_prefix : str
@@ -144,7 +144,7 @@ def get_range_bars_panel(
             end_date,
             threshold_decimal_bps=threshold_decimal_bps,
             include_microstructure=include_microstructure,
-            ouroboros=ouroboros,
+            ouroboros_mode=ouroboros_mode,
             use_cache=use_cache,
         )
         panel = to_panel_format(bars, sym, feature_prefix=feature_prefix)

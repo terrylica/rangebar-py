@@ -452,3 +452,25 @@ def validate_ouroboros_mode(mode: str) -> Literal["year", "month", "week"]:
         msg = f"Invalid ouroboros mode: {mode!r}. Must be one of: {valid_modes}"
         raise ValueError(msg)
     return mode  # type: ignore[return-value]
+
+
+def get_operational_ouroboros_mode() -> Literal["year", "month", "week"]:
+    """Resolve the operational ouroboros mode from Settings.  # Issue #126
+
+    Reads ``RANGEBAR_OUROBOROS_MODE`` via the unified Settings singleton
+    and validates it. This is the single source of truth for resolving
+    the default ouroboros mode at runtime.
+
+    Returns
+    -------
+    Literal["year", "month", "week"]
+        Validated operational mode.
+
+    Raises
+    ------
+    ValueError
+        If the configured mode is invalid.
+    """
+    from rangebar.config import Settings
+
+    return validate_ouroboros_mode(Settings.get().population.ouroboros_mode)

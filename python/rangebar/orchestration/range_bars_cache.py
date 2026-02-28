@@ -79,7 +79,7 @@ def try_cache_read(
     start_ts: int,
     end_ts: int,
     include_microstructure: bool,
-    ouroboros: str,
+    ouroboros_mode: str,
     trace_id: str,
 ) -> pd.DataFrame | None:
     """Attempt to read bars from ClickHouse cache.
@@ -100,7 +100,7 @@ def try_cache_read(
         End timestamp in milliseconds.
     include_microstructure : bool
         Whether microstructure columns were requested.
-    ouroboros : str
+    ouroboros_mode : str
         Ouroboros mode ("year", "month", "week").
     trace_id : str
         Trace ID for pipeline correlation logging.
@@ -124,7 +124,7 @@ def try_cache_read(
                 start_ts=start_ts,
                 end_ts=end_ts,
                 include_microstructure=include_microstructure,
-                ouroboros_mode=ouroboros,
+                ouroboros_mode=ouroboros_mode,
             )
             _query_ms = (time.perf_counter() - _t0) * 1000
             _hit = cached_bars is not None and len(cached_bars) > 0
@@ -175,7 +175,7 @@ def try_cache_write(
     bars_df: pd.DataFrame,
     symbol: str,
     threshold_decimal_bps: int,
-    ouroboros: str,
+    ouroboros_mode: str,
 ) -> None:
     """Write bars to ClickHouse cache. Non-fatal on error.
 
@@ -190,7 +190,7 @@ def try_cache_write(
         Trading symbol (e.g., "BTCUSDT").
     threshold_decimal_bps : int
         Threshold in decimal basis points.
-    ouroboros : str
+    ouroboros_mode : str
         Ouroboros mode ("year", "month", "week").
     """
     if bars_df is None or bars_df.empty:
@@ -212,7 +212,7 @@ def try_cache_write(
                 threshold_decimal_bps=threshold_decimal_bps,
                 bars=bars_pl,
                 version="",  # Version tracked elsewhere
-                ouroboros_mode=ouroboros,
+                ouroboros_mode=ouroboros_mode,
             )
             logger.info(
                 "Cached %d bars for %s @ %d dbps",
@@ -238,7 +238,7 @@ def _do_fatal_cache_write(
     bars: pd.DataFrame | pl.DataFrame,
     symbol: str,
     threshold_decimal_bps: int,
-    ouroboros: str,
+    ouroboros_mode: str,
 ) -> int:
     """Inner write logic for fatal_cache_write (called through circuit breaker)."""
     try:
@@ -258,7 +258,7 @@ def _do_fatal_cache_write(
                 threshold_decimal_bps=threshold_decimal_bps,
                 bars=bars_pl,
                 version="",
-                ouroboros_mode=ouroboros,
+                ouroboros_mode=ouroboros_mode,
             )
             logger.info(
                 "Persisted %d bars for %s @ %d dbps",
@@ -294,7 +294,7 @@ def fatal_cache_write(
     bars: pd.DataFrame | pl.DataFrame,  # Issue #96 Task #13: Accept both formats
     symbol: str,
     threshold_decimal_bps: int,
-    ouroboros: str,
+    ouroboros_mode: str,
 ) -> int:
     """Write bars to ClickHouse cache. Raises on failure.
 
@@ -314,7 +314,7 @@ def fatal_cache_write(
         Trading symbol (e.g., "BTCUSDT").
     threshold_decimal_bps : int
         Threshold in decimal basis points.
-    ouroboros : str
+    ouroboros_mode : str
         Ouroboros mode ("year", "month", "week").
 
     Returns
@@ -333,5 +333,5 @@ def fatal_cache_write(
         return 0
 
     return _fatal_write_breaker.call(
-        _do_fatal_cache_write, bars, symbol, threshold_decimal_bps, ouroboros,
+        _do_fatal_cache_write, bars, symbol, threshold_decimal_bps, ouroboros_mode,
     )

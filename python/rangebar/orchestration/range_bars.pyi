@@ -68,7 +68,7 @@ def get_range_bars(
         int | Literal["micro", "tight", "standard", "medium", "wide", "macro"]
     ) = 250,
     *,
-    ouroboros: Literal["year", "month", "week"] = "year",
+    ouroboros_mode: Literal["year", "month", "week"] | None = None,
     include_orphaned_bars: bool = False,
     materialize: bool = True,
     batch_size: int = 10_000,

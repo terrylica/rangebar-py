@@ -8,7 +8,7 @@ def populate_cache_resumable(
     threshold_decimal_bps: int = 250,
     force_refresh: bool = False,
     include_microstructure: bool = False,
-    ouroboros: Literal["year", "month", "week"] = "year",
+    ouroboros_mode: Literal["year", "month", "week"] | None = None,
     checkpoint_dir: str | None = None,
     notify: bool = True,
     verbose: bool = True,

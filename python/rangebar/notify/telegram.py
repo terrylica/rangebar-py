@@ -72,9 +72,16 @@ def _build_context_block(service: str) -> str:
     hours, rem = divmod(rem, 3600)
     mins = rem // 60
     uptime = f"{days}d {hours}h {mins}m"
+    # Issue #126: Include ouroboros mode for operational awareness
+    try:
+        from rangebar.ouroboros import get_operational_ouroboros_mode
+        mode = get_operational_ouroboros_mode()
+    except (ImportError, ValueError, OSError):
+        mode = "?"
     return (
         f"\n\n<b>Host:</b> {host} | <b>v</b>{version}"
         f"\n<b>Uptime:</b> {uptime} | <b>Service:</b> {service}"
+        f"\n<b>Ouroboros:</b> {mode}"
     )
 
 

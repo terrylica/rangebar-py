@@ -66,7 +66,7 @@ def get_n_range_bars(
     cache_dir: str | None = None,
     # Bar-relative lookback (Issue #81)
     inter_bar_lookback_bars: int | None = None,
-    ouroboros_mode: str = "year",
+    ouroboros_mode: str | None = None,
 ) -> pd.DataFrame:
     """Get exactly N range bars ending at or before a given date.
 
@@ -261,6 +261,12 @@ def get_n_range_bars(
     from rangebar.threshold import resolve_and_validate_threshold
 
     threshold = resolve_and_validate_threshold(symbol, threshold_decimal_bps)
+
+    # Issue #126: Resolve ouroboros_mode from config if not specified
+    if ouroboros_mode is None:
+        from rangebar.ouroboros import get_operational_ouroboros_mode
+
+        ouroboros_mode = get_operational_ouroboros_mode()
 
     # Normalize source and market
     source, market_normalized = _validate_and_normalize_source_market(source, market)

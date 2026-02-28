@@ -26,6 +26,9 @@
 # =============================================================================
 # Fallback when no per-symbol min_threshold in symbols.toml.
 # Values are in decimal basis points (dbps): 1000 dbps = 1%
+# Issue #126: Monthly ouroboros mode enables 12x parallelism for cache population
+RANGEBAR_OUROBOROS_MODE = "month"
+
 RANGEBAR_CRYPTO_MIN_THRESHOLD = "250"
 RANGEBAR_FOREX_MIN_THRESHOLD = "50"
 RANGEBAR_EQUITIES_MIN_THRESHOLD = "100"

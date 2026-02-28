@@ -24,11 +24,15 @@ class CheckpointOperationsMixin:
         threshold_decimal_bps: int,
         start_ts: int,
         end_ts: int,
+        *,
+        ouroboros_mode: str,  # Issue #126: MANDATORY
     ) -> int:
         """Delete bars in timestamp range (for force_refresh).
 
         This is an alias for invalidate_range_bars_by_range() with clearer
         naming for the force_refresh use case.
+
+        Issue #126: ouroboros_mode is mandatory to prevent cross-mode deletion.
 
         Parameters
         ----------
@@ -40,6 +44,8 @@ class CheckpointOperationsMixin:
             Start timestamp in milliseconds (inclusive)
         end_ts : int
             End timestamp in milliseconds (inclusive)
+        ouroboros_mode : str
+            Ouroboros mode filter — only delete bars with this mode.
 
         Returns
         -------
@@ -47,7 +53,8 @@ class CheckpointOperationsMixin:
             Always returns 0 (ClickHouse DELETE is async)
         """
         return self.invalidate_range_bars_by_range(
-            symbol, threshold_decimal_bps, start_ts, end_ts
+            symbol, threshold_decimal_bps, start_ts, end_ts,
+            ouroboros_mode=ouroboros_mode,
         )
 
     def save_checkpoint(

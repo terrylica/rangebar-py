@@ -14,7 +14,7 @@ def get_range_bars_panel(
     threshold_decimal_bps: int | str = 250,
     *,
     include_microstructure: bool = False,
-    ouroboros: str = "year",
+    ouroboros_mode: str | None = None,
     use_cache: bool = True,
     feature_prefix: str = "feature",
 ) -> pd.DataFrame: ...

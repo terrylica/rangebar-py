@@ -80,6 +80,16 @@ DEFAULT_PRICE_GAP_DBPS = 5000  # 5x threshold = suspicious price jump
 
 
 # =============================================================================
+# Issue #126: Resolve ouroboros mode from Settings when not specified via CLI
+def _resolve_ouroboros_mode() -> str:
+    """Resolve ouroboros mode from RANGEBAR_OUROBOROS_MODE env var."""
+    try:
+        from rangebar.ouroboros import get_operational_ouroboros_mode
+        return get_operational_ouroboros_mode()
+    except (ImportError, ValueError, OSError):
+        return "month"  # Issue #126: new system-wide default
+
+
 # SSH Tunnel (minimal standalone implementation)
 # =============================================================================
 
@@ -1207,9 +1217,9 @@ Examples:
              "Ignores non-TIER1 data in ClickHouse.",
     )
     parser.add_argument(
-        "--ouroboros-mode", type=str, default="year",
+        "--ouroboros-mode", type=str, default=None,
         choices=["year", "month", "week"],
-        help="Ouroboros mode filter (default: year).",
+        help="Ouroboros mode filter (default: from RANGEBAR_OUROBOROS_MODE).",  # Issue #126
     )
     # Phase 10b (#122): Exhaustive scan
     parser.add_argument(
@@ -1284,7 +1294,7 @@ def main() -> int:
             max_bar_duration_hours=args.max_bar_duration_hours,
             check_backfill=args.check_backfill_queue,
             trade_id_continuity=trade_id,
-            ouroboros_mode=args.ouroboros_mode,
+            ouroboros_mode=args.ouroboros_mode or _resolve_ouroboros_mode(),
         )
 
         # Output

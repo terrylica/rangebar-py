@@ -273,25 +273,22 @@ This file is the **hub**. Each spoke CLAUDE.md is loaded automatically when work
 
 ## Terminology
 
-| Term                  | Definition                                                                                                            |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **dbps**              | 1 dbps = 0.00001 = 0.001%. Example: 250 dbps = 0.25%. **All threshold values use dbps.**                              |
-| **Ouroboros**         | Cyclical reset boundary (year/month/week). Resets processor state for reproducibility and cache-friendly processing.  |
-| **Orphaned Bar**      | Incomplete bar at an ouroboros boundary. Marked `is_orphan=True` with metadata.                                       |
-| **Dynamic Ouroboros** | Forex-specific: reset at first tick after weekend gap, auto-handling DST shifts.                                      |
-| **Kintsugi**          | Self-healing gap reconciliation (Issue #115). Discovers gaps ("shards") and repairs using Ariadne+Ouroboros.          |
-| **Shard**             | A gap in the data timeline. Classified P0 (staleness), P1 (recent <48h), P2 (historical >=48h). Repaired by Kintsugi. |
+| Term                  | Definition                                                                                                                                                                                                                         |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **dbps**              | 1 dbps = 0.00001 = 0.001%. Example: 250 dbps = 0.25%. **All threshold values use dbps.**                                                                                                                                           |
+| **Ouroboros**         | Cyclical reset boundary (year/month/week). Resets processor state for reproducibility and cache-friendly processing.                                                                                                               |
+| **Orphan Bar**        | Incomplete bar emitted when processor resets at an ouroboros boundary. Marked `is_orphan=True`. Monthly mode: 12/year; yearly: 1/year. Filter for ML: `df[~df.get("is_orphan", False)]`. Synonyms: "orphaned bar", "boundary bar". |
+| **Dynamic Ouroboros** | Forex-specific: reset at first tick after weekend gap, auto-handling DST shifts.                                                                                                                                                   |
+| **Kintsugi**          | Self-healing gap reconciliation (Issue #115). Discovers gaps ("shards") and repairs using Ariadne+Ouroboros.                                                                                                                       |
+| **Shard**             | A gap in the data timeline. Classified P0 (staleness), P1 (recent <48h), P2 (historical >=48h). Repaired by Kintsugi.                                                                                                              |
 
 <!-- gitnexus:start -->
+
 # GitNexus MCP
 
-This project is indexed by GitNexus as **rangebar-py** (7731 symbols, 20102 relationships, 300 execution flows).
-
-GitNexus provides a knowledge graph over this codebase — call chains, blast radius, execution flows, and semantic search.
+This project is indexed by GitNexus as **rangebar-py** (7737 symbols, 20106 relationships, 300 execution flows).
 
 ## Always Start Here
-
-For any task involving code understanding, debugging, impact analysis, or refactoring, you must:
 
 1. **Read `gitnexus://repo/{name}/context`** — codebase overview + check index freshness
 2. **Match your task to a skill below** and **read that skill file**
@@ -301,46 +298,13 @@ For any task involving code understanding, debugging, impact analysis, or refact
 
 ## Skills
 
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/refactoring/SKILL.md` |
-
-## Tools Reference
-
-| Tool | What it gives you |
-|------|-------------------|
-| `query` | Process-grouped code intelligence — execution flows related to a concept |
-| `context` | 360-degree symbol view — categorized refs, processes it participates in |
-| `impact` | Symbol blast radius — what breaks at depth 1/2/3 with confidence |
-| `detect_changes` | Git-diff impact — what do your current changes affect |
-| `rename` | Multi-file coordinated rename with confidence-tagged edits |
-| `cypher` | Raw graph queries (read `gitnexus://repo/{name}/schema` first) |
-| `list_repos` | Discover indexed repos |
-
-## Resources Reference
-
-Lightweight reads (~100-500 tokens) for navigation:
-
-| Resource | Content |
-|----------|---------|
-| `gitnexus://repo/{name}/context` | Stats, staleness check |
-| `gitnexus://repo/{name}/clusters` | All functional areas with cohesion scores |
-| `gitnexus://repo/{name}/cluster/{clusterName}` | Area members |
-| `gitnexus://repo/{name}/processes` | All execution flows |
-| `gitnexus://repo/{name}/process/{processName}` | Step-by-step trace |
-| `gitnexus://repo/{name}/schema` | Graph schema for Cypher |
-
-## Graph Schema
-
-**Nodes:** File, Function, Class, Interface, Method, Community, Process
-**Edges (via CodeRelation.type):** CALLS, IMPORTS, EXTENDS, IMPLEMENTS, DEFINES, MEMBER_OF, STEP_IN_PROCESS
-
-```cypher
-MATCH (caller)-[:CodeRelation {type: 'CALLS'}]->(f:Function {name: "myFunc"})
-RETURN caller.name, caller.filePath
-```
+| Task                                         | Read this skill file                                        |
+| -------------------------------------------- | ----------------------------------------------------------- |
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md`       |
+| Blast radius / "What breaks if I change X?"  | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?"             | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md`       |
+| Rename / extract / split / refactor          | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md`     |
+| Tools, resources, schema reference           | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md`           |
+| Index, status, clean, wiki CLI commands      | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md`             |
 
 <!-- gitnexus:end -->

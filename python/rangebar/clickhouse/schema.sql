@@ -205,7 +205,8 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.range_bars (
     turnover_imbalance Float64 DEFAULT 0,
 
     -- Ouroboros (cyclical reset boundaries, v10.x)
-    ouroboros_mode LowCardinality(String) DEFAULT 'week',
+    -- Issue #126: DEFAULT changed from 'week' to 'month' (system-wide monthly ouroboros)
+    ouroboros_mode LowCardinality(String) DEFAULT 'month',
 
     -- Exchange session flags (Issue #8: indicates active traditional market sessions)
     exchange_session_sydney UInt8 DEFAULT 0,
@@ -289,7 +290,9 @@ ENGINE = ReplacingMergeTree(computed_at)
 -- Partition by symbol, threshold, and month
 PARTITION BY (symbol, threshold_decimal_bps, toYYYYMM(toDateTime(close_time_ms / 1000)))
 -- Order for efficient lookups
-ORDER BY (symbol, threshold_decimal_bps, close_time_ms)
+-- Issue #126: ouroboros_mode in ORDER BY prevents ReplacingMergeTree from
+-- silently merging cross-mode rows with the same close_time_ms
+ORDER BY (symbol, threshold_decimal_bps, ouroboros_mode, close_time_ms)
 SETTINGS non_replicated_deduplication_window = 1000;
 
 -- ============================================================================
@@ -355,6 +358,29 @@ ENGINE = ReplacingMergeTree(updated_at)
 ORDER BY (symbol, threshold_decimal_bps, start_date, end_date, ouroboros_mode);
 
 -- ============================================================================
+-- Migration for Issue #126: Monthly Ouroboros (system-wide year→month)
+-- ============================================================================
+-- Run ONCE on existing installations (bigblack and any other cached hosts):
+--
+-- Step 1: Add ouroboros_mode to range_bars ORDER BY (metadata-only, instant)
+-- ALTER TABLE rangebar_cache.range_bars
+--     MODIFY ORDER BY (symbol, threshold_decimal_bps, ouroboros_mode, close_time_ms);
+--
+-- Step 2: Fix DEFAULT from 'week' to 'month'
+-- ALTER TABLE rangebar_cache.range_bars
+--     MODIFY COLUMN ouroboros_mode LowCardinality(String) DEFAULT 'month';
+--
+-- Step 3: Add ouroboros_mode to backfill_requests
+-- ALTER TABLE rangebar_cache.backfill_requests
+--     ADD COLUMN IF NOT EXISTS ouroboros_mode LowCardinality(String) DEFAULT 'month';
+--
+-- Step 4: Add ouroboros_mode to kintsugi_log
+-- ALTER TABLE rangebar_cache.kintsugi_log
+--     ADD COLUMN IF NOT EXISTS ouroboros_mode LowCardinality(String) DEFAULT 'month';
+--
+-- Note: New installations do not need this migration.
+
+-- ============================================================================
 -- Migration for monthly Ouroboros (ouroboros_mode in checkpoint ORDER BY)
 -- ============================================================================
 -- Run this ONCE if upgrading from existing installation with checkpoints:
@@ -387,7 +413,9 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.backfill_requests (
     bars_written UInt32 DEFAULT 0,
     gap_seconds Float64 DEFAULT 0,
     error Nullable(String) DEFAULT NULL,
-    source LowCardinality(String) DEFAULT 'flowsurface'
+    source LowCardinality(String) DEFAULT 'flowsurface',
+    -- Issue #126: ouroboros_mode for mode-aware backfill tracking
+    ouroboros_mode LowCardinality(String) DEFAULT 'month'
 )
 ENGINE = ReplacingMergeTree(requested_at)
 ORDER BY (request_id)
@@ -414,7 +442,9 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.kintsugi_log (
     ouroboros_splits UInt8 DEFAULT 0,          -- Number of Ouroboros boundary splits
     bars_written UInt32 DEFAULT 0,
     duration_seconds Float64 DEFAULT 0,
-    error_message String DEFAULT ''
+    error_message String DEFAULT '',
+    -- Issue #126: ouroboros_mode for mode-aware repair logging
+    ouroboros_mode LowCardinality(String) DEFAULT 'month'
 )
 ENGINE = MergeTree()
 ORDER BY (timestamp, symbol, threshold_decimal_bps)

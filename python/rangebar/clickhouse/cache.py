@@ -84,7 +84,7 @@ class CacheKey:
     threshold_decimal_bps: int
     start_ts: int
     end_ts: int
-    ouroboros_mode: str = "year"
+    ouroboros_mode: str = "month"  # Issue #126: align with schema DEFAULT
 
     @property
     def hash_key(self) -> str:
@@ -550,12 +550,17 @@ class RangeBarCache(
         threshold_decimal_bps: int,
         start_timestamp_ms: int,
         end_timestamp_ms: int,
+        *,
+        ouroboros_mode: str,  # Issue #126: MANDATORY — prevent cross-mode deletion
     ) -> int:
         """Invalidate (delete) cached bars within a timestamp range.
 
         Unlike `invalidate_range_bars()` which requires an exact CacheKey match,
         this method deletes all bars for a symbol/threshold within a time range.
         Useful for overlap detection during precomputation.
+
+        Issue #126: ouroboros_mode is mandatory to prevent cross-mode data
+        destruction during force_refresh operations.
 
         Parameters
         ----------
@@ -567,6 +572,8 @@ class RangeBarCache(
             Start timestamp in milliseconds (inclusive)
         end_timestamp_ms : int
             End timestamp in milliseconds (inclusive)
+        ouroboros_mode : str
+            Ouroboros mode filter — only delete bars with this mode.
 
         Returns
         -------
@@ -579,12 +586,14 @@ class RangeBarCache(
         ...     "BTCUSDT", 250,
         ...     start_timestamp_ms=1704067200000,  # 2024-01-01
         ...     end_timestamp_ms=1706745600000,    # 2024-01-31
+        ...     ouroboros_mode="month",
         ... )
         """
         query = """
             ALTER TABLE rangebar_cache.range_bars
             DELETE WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}
+              AND ouroboros_mode = {ouroboros:String}
               AND close_time_ms >= {start_ts:Int64}
               AND close_time_ms <= {end_ts:Int64}
         """
@@ -593,6 +602,7 @@ class RangeBarCache(
             parameters={
                 "symbol": symbol,
                 "threshold": threshold_decimal_bps,
+                "ouroboros": ouroboros_mode,
                 "start_ts": start_timestamp_ms,
                 "end_ts": end_timestamp_ms,
             },
@@ -604,6 +614,7 @@ class RangeBarCache(
         symbol: str,
         threshold_decimal_bps: int,
         before_timestamp_ms: int,
+        ouroboros_mode: str | None = None,
     ) -> dict | None:
         """Get the last bar before a given timestamp.
 
@@ -618,6 +629,8 @@ class RangeBarCache(
             Threshold in decimal basis points
         before_timestamp_ms : int
             Timestamp boundary in milliseconds
+        ouroboros_mode : str | None
+            Ouroboros mode filter. If None, resolved from config.  # Issue #126
 
         Returns
         -------
@@ -630,11 +643,17 @@ class RangeBarCache(
         >>> if bar:
         ...     print(f"Last close: {bar['Close']}")
         """
+        if ouroboros_mode is None:
+            from rangebar.ouroboros import get_operational_ouroboros_mode
+
+            ouroboros_mode = get_operational_ouroboros_mode()
+
         query = """
             SELECT close_time_ms, open, high, low, close, volume
             FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}
+              AND ouroboros_mode = {ouroboros:String}
               AND close_time_ms < {before_ts:Int64}
             ORDER BY close_time_ms DESC
             LIMIT 1
@@ -644,6 +663,7 @@ class RangeBarCache(
             parameters={
                 "symbol": symbol,
                 "threshold": threshold_decimal_bps,
+                "ouroboros": ouroboros_mode,
                 "before_ts": before_timestamp_ms,
             },
             settings=FINAL_READ_SETTINGS,

@@ -192,11 +192,15 @@ def clear(symbol: str, threshold: int | None, confirm: bool) -> None:
                     return
 
                 # Delete using timestamp range (all time)
+                # Issue #126: resolve ouroboros_mode from config
+                from rangebar.ouroboros import get_operational_ouroboros_mode
+
                 cache.invalidate_range_bars_by_range(
                     symbol=symbol,
                     threshold_decimal_bps=threshold,
                     start_timestamp_ms=0,
                     end_timestamp_ms=int(datetime.now(tz=UTC).timestamp() * 1000),
+                    ouroboros_mode=get_operational_ouroboros_mode(),
                 )
                 click.echo(f"Cleared {count:,} bars (deletion is async)")
             else:

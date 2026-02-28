@@ -215,6 +215,7 @@ class QueryOperationsMixin:
         self,
         symbol: str,
         threshold_decimal_bps: int,
+        ouroboros_mode: str | None = None,
     ) -> int | None:
         """Get the most recent bar timestamp for a symbol x threshold pair.
 
@@ -227,21 +228,30 @@ class QueryOperationsMixin:
             Trading symbol (e.g., "BTCUSDT")
         threshold_decimal_bps : int
             Threshold in decimal basis points
+        ouroboros_mode : str | None
+            Ouroboros mode filter. If None, resolved from config.  # Issue #126
 
         Returns
         -------
         int | None
             Latest close_time_ms value, or None if no bars exist.
         """
+        if ouroboros_mode is None:
+            from rangebar.ouroboros import get_operational_ouroboros_mode
+
+            ouroboros_mode = get_operational_ouroboros_mode()
+
         query = """
             SELECT max(close_time_ms) as latest_ts
             FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}
+              AND ouroboros_mode = {ouroboros:String}
         """
         params: dict[str, str | int] = {
             "symbol": symbol,
             "threshold": threshold_decimal_bps,
+            "ouroboros": ouroboros_mode,
         }
 
         try:
@@ -265,6 +275,7 @@ class QueryOperationsMixin:
         self,
         symbol: str,
         threshold_decimal_bps: int,
+        ouroboros_mode: str | None = None,
     ) -> int | None:
         """Get the highest last_agg_trade_id written for a symbol x threshold.
 
@@ -278,22 +289,31 @@ class QueryOperationsMixin:
             Trading symbol (e.g., "BTCUSDT")
         threshold_decimal_bps : int
             Threshold in decimal basis points
+        ouroboros_mode : str | None
+            Ouroboros mode filter. If None, resolved from config.  # Issue #126
 
         Returns
         -------
         int | None
             Highest last_agg_trade_id, or None if no bars have trade IDs.
         """
+        if ouroboros_mode is None:
+            from rangebar.ouroboros import get_operational_ouroboros_mode
+
+            ouroboros_mode = get_operational_ouroboros_mode()
+
         query = """
             SELECT max(last_agg_trade_id) as hwm
             FROM rangebar_cache.range_bars FINAL
             WHERE symbol = {symbol:String}
               AND threshold_decimal_bps = {threshold:UInt32}
+              AND ouroboros_mode = {ouroboros:String}
               AND last_agg_trade_id > 0
         """
         params: dict[str, str | int] = {
             "symbol": symbol,
             "threshold": threshold_decimal_bps,
+            "ouroboros": ouroboros_mode,
         }
 
         try:
