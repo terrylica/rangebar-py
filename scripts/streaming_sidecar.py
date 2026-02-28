@@ -25,15 +25,7 @@ uv run python scripts/streaming_sidecar.py --symbol BTCUSDT --no-gap-fill
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
 
 
 def main() -> int:
@@ -79,8 +71,9 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+    from rangebar.logging import setup_service_logging
+
+    logger = setup_service_logging("sidecar", verbose=args.verbose)
 
     from rangebar.sidecar import SidecarConfig, run_sidecar
 
@@ -99,12 +92,11 @@ def main() -> int:
         logger.error("No symbols configured. Use --symbol or RANGEBAR_STREAMING_SYMBOLS.")
         return 1
 
-    logger.info(
-        "Starting sidecar: symbols=%s, thresholds=%s, microstructure=%s",
-        config.symbols,
-        config.thresholds,
-        config.include_microstructure,
-    )
+    logger.bind(
+        symbols=config.symbols,
+        thresholds=config.thresholds,
+        microstructure=config.include_microstructure,
+    ).info("Starting sidecar")
 
     run_sidecar(config)
     return 0

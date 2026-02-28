@@ -4,10 +4,16 @@ Implements GitHub Issue #43: Structured logging for checksum verification
 and other observability events.
 
 Logs are stored in the repository tree under `logs/` directory.
+
+Service logging (sidecar, kintsugi, recency-backfill):
+    Call ``setup_service_logging("sidecar")`` once at CLI entry point.
+    This creates per-service NDJSON files with auto-rotation, intercepts
+    stdlib logging, and keeps human-readable stderr for systemd journal.
 """
 
 from __future__ import annotations
 
+import logging as _stdlib_logging
 import os
 import sys
 from pathlib import Path
@@ -25,14 +31,15 @@ CHECKSUM_REGISTRY_FILE = LOG_DIR / "checksum_registry.jsonl"
 # Lazy initialization flag
 _logger_initialized = False
 _logger: Logger | None = None
+_service_logging_initialized = False
 
 
-def _get_context_extra() -> dict:
+def _get_context_extra(service_name: str = "rangebar-py") -> dict:
     """Get context fields added to every log entry."""
     import socket
 
     return {
-        "service": "rangebar-py",
+        "service": service_name,
         "environment": os.environ.get("RANGEBAR_ENV", "development"),
         "git_sha": os.environ.get("RANGEBAR_GIT_SHA", "unknown"),
         "pid": os.getpid(),
@@ -40,10 +47,134 @@ def _get_context_extra() -> dict:
     }
 
 
+class _InterceptHandler(_stdlib_logging.Handler):
+    """Route stdlib logging messages to loguru.
+
+    This ensures library code using ``logging.getLogger(__name__)``
+    emits structured NDJSON alongside direct loguru calls.
+    """
+
+    def emit(self, record: _stdlib_logging.LogRecord) -> None:
+        # Use the bound logger (with service context) if available
+        target = _logger
+        if target is None:
+            from loguru import logger as target  # type: ignore[assignment]
+
+        # Map stdlib level to loguru level
+        try:
+            level = target.level(record.levelname).name  # type: ignore[union-attr]
+        except ValueError:
+            level = str(record.levelno)
+
+        # Find the caller frame (skip intercept handler frames)
+        frame, depth = _stdlib_logging.currentframe(), 2
+        while frame and frame.f_code.co_filename == _stdlib_logging.__file__:
+            frame = frame.f_back
+            depth += 1
+
+        # Bind stdlib logger name as component for traceability
+        target.bind(stdlib_logger=record.name).opt(  # type: ignore[union-attr]
+            depth=depth, exception=record.exc_info
+        ).log(level, record.getMessage())
+
+
+def setup_service_logging(
+    service_name: str,
+    *,
+    verbose: bool = False,
+) -> Logger:
+    """Configure structured NDJSON logging for a long-running service.
+
+    Creates per-service NDJSON log file with auto-rotation, intercepts
+    stdlib logging, and keeps human-readable stderr for systemd journal.
+
+    Args:
+        service_name: Service identifier (e.g., "sidecar", "kintsugi",
+            "recency-backfill"). Used in log filenames and structured fields.
+        verbose: Enable DEBUG level (default: INFO).
+
+    Returns:
+        Configured loguru Logger instance.
+    """
+    global _service_logging_initialized, _logger_initialized, _logger
+
+    from loguru import logger
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Remove default loguru handler
+    logger.remove()
+
+    # Bind service context to every entry
+    context = _get_context_extra(service_name)
+    logger = logger.bind(**context)
+
+    level = "DEBUG" if verbose else "INFO"
+
+    # 1. Per-service NDJSON file sink (auto-rotating)
+    service_log = LOG_DIR / f"{service_name}.jsonl"
+    logger.add(
+        service_log,
+        format="{message}",
+        serialize=True,
+        rotation="10 MB",
+        retention="7 days",
+        compression="gz",
+        enqueue=True,
+        level="DEBUG",  # Always capture DEBUG in file
+    )
+
+    # 2. Shared events.jsonl sink (cross-service correlation)
+    logger.add(
+        NDJSON_FILE,
+        format="{message}",
+        serialize=True,
+        rotation="10 MB",
+        retention="7 days",
+        compression="gz",
+        enqueue=True,
+        level="INFO",  # Only INFO+ in shared log
+    )
+
+    # 3. Console stderr (human-readable for systemd journal)
+    def _console_format(record: dict) -> str:
+        svc = record["extra"].get("service", service_name)
+        stdlib = record["extra"].get("stdlib_logger")
+        source = f"{svc}:{stdlib}" if stdlib else svc
+        return (
+            "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | "
+            + source
+            + " | {message}\n"
+        )
+
+    logger.add(
+        sys.stderr,
+        format=_console_format,
+        level=level,
+        colorize=False,  # No ANSI in journal
+    )
+
+    # 4. Intercept stdlib logging → loguru
+    _stdlib_logging.basicConfig(handlers=[_InterceptHandler()], level=0, force=True)
+
+    _logger = logger
+    _logger_initialized = True
+    _service_logging_initialized = True
+
+    logger.info(
+        "Service logging initialized",
+        service=service_name,
+        log_file=str(service_log),
+        level=level,
+    )
+    return logger
+
+
 def get_logger() -> Logger:
     """Get the configured logger instance.
 
     Lazy initialization to avoid import-time side effects.
+    If ``setup_service_logging()`` was already called, returns that logger.
     """
     global _logger_initialized, _logger
 

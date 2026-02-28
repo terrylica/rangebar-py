@@ -18,7 +18,6 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 
 
@@ -65,12 +64,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
-    level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    from rangebar.logging import setup_service_logging
+
+    setup_service_logging("kintsugi", verbose=args.verbose)
 
     from rangebar.kintsugi import (
         kintsugi_daemon,
@@ -82,9 +78,9 @@ def main() -> int:
     if args.replay_dead_letters or args.daemon:
         replayed = replay_dead_letters()
         if replayed > 0:
-            logging.getLogger(__name__).info(
-                "replayed %d dead-letter bars", replayed,
-            )
+            from loguru import logger
+
+            logger.info("replayed {} dead-letter bars", replayed)
 
     if args.daemon:
         kintsugi_daemon(

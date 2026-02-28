@@ -21,15 +21,7 @@ uv run python scripts/recency_backfill.py --loop --verbose
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
 
 
 def main() -> int:
@@ -72,8 +64,9 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+    from rangebar.logging import setup_service_logging
+
+    logger = setup_service_logging("recency-backfill", verbose=args.verbose)
 
     include_micro = not args.no_microstructure
 
@@ -91,13 +84,12 @@ def main() -> int:
             verbose=args.verbose,
         )
         if result.error:
-            logger.error("Backfill error: %s", result.error)
+            logger.bind(error=str(result.error)).error("Backfill error")
             return 1
-        logger.info(
-            "Done: %d bars written, gap was %.1f min",
-            result.bars_written,
-            result.gap_seconds / 60,
-        )
+        logger.bind(
+            bars_written=result.bars_written,
+            gap_minutes=round(result.gap_seconds / 60, 1),
+        ).info("Backfill complete")
         return 0
 
     if args.all:
@@ -107,12 +99,9 @@ def main() -> int:
         )
         total = sum(r.bars_written for r in results)
         errors = sum(1 for r in results if r.error)
-        logger.info(
-            "Done: %d pairs, %d bars written, %d errors",
-            len(results),
-            total,
-            errors,
-        )
+        logger.bind(
+            pairs=len(results), bars_written=total, errors=errors,
+        ).info("Backfill all complete")
         return 1 if errors > 0 else 0
 
     if args.loop:
