@@ -78,12 +78,24 @@ fi
 echo "Building venv in staging area (python=$REMOTE_PYTHON)..."
 ssh "$REMOTE_HOST" "cd $REMOTE_DIR && rm -rf .venv-staging && uv venv --python $REMOTE_PYTHON .venv-staging"
 
+INSTALL_OK=false
+
 if [ "$PYPI_READY" = "true" ]; then
     # Install from PyPI (preferred — includes all dependencies)
-    ssh "$REMOTE_HOST" "uv pip install --python $REMOTE_DIR/.venv-staging/bin/python3 rangebar==$VERSION"
-else
+    # --refresh-package rangebar: force uv to bypass index cache for rangebar
+    # Without this, uv's cached index may not include the just-published version
+    # even though PyPI JSON API already returns it (uv uses a separate resolver cache)
+    if ssh "$REMOTE_HOST" "uv pip install --python $REMOTE_DIR/.venv-staging/bin/python3 --refresh-package rangebar rangebar==$VERSION" 2>&1; then
+        INSTALL_OK=true
+    else
+        echo "⚠ PyPI install failed despite JSON API confirming availability"
+        echo "  Falling back to local wheel..."
+    fi
+fi
+
+if [ "$INSTALL_OK" != "true" ]; then
     # Fallback: SCP local wheel + install from file (Issue #121)
-    echo "  PyPI unavailable — installing from local wheel..."
+    echo "  Installing from local wheel..."
     LINUX_WHEEL=$(ls dist/rangebar-${VERSION}-*manylinux*.whl 2>/dev/null | head -1)
     if [ -z "$LINUX_WHEEL" ]; then
         echo "FAIL: No local Linux wheel found in dist/ for v$VERSION"
