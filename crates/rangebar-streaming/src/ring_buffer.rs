@@ -228,10 +228,11 @@ mod tests {
         buf.push(3);  // Drops 1
         assert_eq!(buf.metrics().total_dropped.load(Ordering::Relaxed), 1);
 
-        buf.pop();
-        buf.pop();
-        buf.pop();
-        assert_eq!(buf.metrics().total_popped.load(Ordering::Relaxed), 3);
+        buf.pop();  // Returns item 2
+        buf.pop();  // Returns item 3
+        buf.pop();  // Returns None (buffer empty)
+        // Only 2 items were actually popped (3rd pop was empty)
+        assert_eq!(buf.metrics().total_popped.load(Ordering::Relaxed), 2);
     }
 
     #[test]

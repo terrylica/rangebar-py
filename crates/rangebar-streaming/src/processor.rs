@@ -312,7 +312,7 @@ impl CircuitBreaker {
             CircuitBreakerState::Closed => true,
             CircuitBreakerState::Open => {
                 if let Some(last_failure) = self.last_failure_time {
-                    if last_failure.elapsed() > self.timeout {
+                    if last_failure.elapsed() >= self.timeout {
                         self.state = CircuitBreakerState::HalfOpen;
                         true
                     } else {

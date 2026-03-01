@@ -315,10 +315,11 @@ mod tier3_features_tests {
     }
 
     fn compute_garman_klass(trades: &[AggTrade]) -> f64 {
+        // Issue #128: GK promoted to Tier 2, must enable tier2
         let config = InterBarConfig {
             lookback_mode: LookbackMode::FixedCount(64),
-            compute_tier2: false,
-            compute_tier3: true,
+            compute_tier2: true,
+            compute_tier3: false,
             ..Default::default()
         };
         let mut history = TradeHistory::new(config);
