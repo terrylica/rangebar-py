@@ -1,3 +1,16 @@
+# [12.38.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.37.0...v12.38.0) (2026-03-01)
+
+
+### Bug Fixes
+
+* add checkpoint resume mismatch warning + update feature manifest (Issue [#128](https://github.com-terrylica/terrylica/rangebar-py/issues/128)) ([48700d6](https://github.com-terrylica/terrylica/rangebar-py/commit/48700d6bfd8fa4ddfcdcd2c9081c9e371997d576))
+* resolve 3 test failures + improve LiveEngineConfig test ([eb965d3](https://github.com-terrylica/terrylica/rangebar-py/commit/eb965d347759ca9dfe7ff8b0a2f6d6911c476428))
+
+
+### Features
+
+* **#128:** wire per-feature computation toggles through streaming sidecar ([0eff5a9](https://github.com-terrylica/terrylica/rangebar-py/commit/0eff5a9989d14b9eb06fa4be71c3e839cda4c96c)), closes [#128](https://github.com-terrylica/terrylica/rangebar-py/issues/128) [#1](https://github.com-terrylica/terrylica/rangebar-py/issues/1) [#2](https://github.com-terrylica/terrylica/rangebar-py/issues/2)
+
 # [12.37.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.36.0...v12.37.0) (2026-03-01)
 
 
