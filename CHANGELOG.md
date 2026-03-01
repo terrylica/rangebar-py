@@ -1,3 +1,10 @@
+# [12.36.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.35.2...v12.36.0) (2026-03-01)
+
+
+### Features
+
+* add LaguerreFeatureProvider plugin integration tests + optimize test suite ([094a239](https://github.com-terrylica/terrylica/rangebar-py/commit/094a239ef8c5bdd66d50fe6d3fef5a13f65f2a40))
+
 ## [12.35.2](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.35.1...v12.35.2) (2026-02-28)
 
 
