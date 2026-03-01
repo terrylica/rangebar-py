@@ -36,7 +36,8 @@ class PopulateBase(BaseSettings):
     # Core
     threshold: int = Field(250, description="Threshold in dbps")
     ouroboros: Literal["year", "month", "week"] = Field(
-        "month", description="Reset boundary",
+        "month",
+        description="Reset boundary",
     )
     microstructure: bool = Field(True, description="Include microstructure features")
 

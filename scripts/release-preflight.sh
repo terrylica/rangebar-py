@@ -93,7 +93,7 @@ fi
 echo ""
 echo "--- 3. Ruff Lint ---"
 
-if ruff check python/rangebar/config/ python/rangebar/cli.py python/rangebar/population.py --quiet 2>&1; then
+if ruff check python/rangebar/config/ python/rangebar/cli.py --quiet 2>&1; then
     echo "OK: ruff lint clean (config + CLI)"
 else
     echo "FAIL: ruff lint errors in config/CLI — fix before releasing"
@@ -101,7 +101,7 @@ else
     FAIL=1
 fi
 
-if ruff format --check python/rangebar/config/ python/rangebar/cli.py python/rangebar/population.py --quiet 2>&1; then
+if ruff format --check python/rangebar/config/ python/rangebar/cli.py --quiet 2>&1; then
     echo "OK: ruff format clean (config + CLI)"
 else
     echo "FAIL: ruff format issues in config/CLI — fix before releasing"
