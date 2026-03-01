@@ -151,7 +151,7 @@ def main() -> None:
             start_date=start_date,
             end_date=end_date,
             threshold_decimal_bps=100,
-            ouroboros="year",
+            ouroboros="month",
             use_cache=True,
             fetch_if_missing=False,
             include_microstructure=True,

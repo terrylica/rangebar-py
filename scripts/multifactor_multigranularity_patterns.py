@@ -55,7 +55,7 @@ def load_range_bars_polars(
         start_date=start_date,
         end_date=end_date,
         threshold_decimal_bps=threshold,
-        ouroboros="year",
+        ouroboros="month",
         use_cache=True,
         fetch_if_missing=False,
     )

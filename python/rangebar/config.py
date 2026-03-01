@@ -53,7 +53,7 @@ class PopulationConfig:
         default_factory=lambda: _env_int("RANGEBAR_CRYPTO_MIN_THRESHOLD", 250),
     )
     ouroboros_mode: str = field(
-        default_factory=lambda: _env("RANGEBAR_OUROBOROS_MODE", "year"),
+        default_factory=lambda: _env("RANGEBAR_OUROBOROS_MODE", "month"),
     )
     # Issue #126: Guard behavior for ouroboros mode consistency checks.
     # "strict": raise CacheWriteError on mode mismatch or connection failure

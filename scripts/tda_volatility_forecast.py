@@ -163,7 +163,7 @@ def analyze_tda_volatility_forecast(
         start_date=start_dates[symbol],
         end_date="2026-01-31",
         threshold_decimal_bps=threshold,
-        ouroboros="year",
+        ouroboros="month",
         use_cache=True,
         fetch_if_missing=False,
     )

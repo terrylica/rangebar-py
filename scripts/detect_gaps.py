@@ -386,7 +386,7 @@ def detect_gaps_for_pair(
     min_gap_ms: int,
     price_gap_dbps: float,
     recent_cutoff_ms: int | None = None,
-    ouroboros_mode: str = "year",
+    ouroboros_mode: str = "month",
 ) -> tuple[list[Gap], CoverageSummary | None]:
     """Detect gaps for a single (symbol, threshold) pair.
 
@@ -508,7 +508,7 @@ def detect_duration_anomalies(
     threshold: int,
     max_duration_hours: float,
     recent_cutoff_ms: int | None = None,
-    ouroboros_mode: str = "year",
+    ouroboros_mode: str = "month",
 ) -> list[DurationAnomaly]:
     """Detect bars with anomalously long duration.
 
@@ -663,7 +663,7 @@ def detect_trade_id_gaps(
     threshold: int,
     known_gaps: dict[str, list[tuple]],
     recent_cutoff_ms: int | None = None,
-    ouroboros_mode: str = "year",
+    ouroboros_mode: str = "month",
 ) -> list[TradeIdGap]:
     """Detect trade ID continuity breaks.
 
@@ -754,7 +754,7 @@ def run_detection(
     max_bar_duration_hours: float | None = None,
     check_backfill: bool = False,
     trade_id_continuity: bool = False,
-    ouroboros_mode: str = "year",
+    ouroboros_mode: str = "month",
 ) -> DetectionResult:
     """Run gap detection across all specified (symbol, threshold) pairs."""
     min_gap_ms = int(min_gap_hours * 3600 * 1000)

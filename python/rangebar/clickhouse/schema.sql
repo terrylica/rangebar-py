@@ -350,7 +350,8 @@ CREATE TABLE IF NOT EXISTS rangebar_cache.population_checkpoints (
 
     -- Metadata
     include_microstructure UInt8 DEFAULT 0,
-    ouroboros_mode LowCardinality(String) DEFAULT 'year',
+    -- Issue #126: DEFAULT changed from 'year' to 'month' (system-wide monthly ouroboros)
+    ouroboros_mode LowCardinality(String) DEFAULT 'month',
     created_at DateTime64(3) DEFAULT now64(3),
     updated_at DateTime64(3) DEFAULT now64(3)
 )

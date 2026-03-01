@@ -71,6 +71,7 @@ def precompute_range_bars(
     cache_dir: str | None = None,
     max_memory_gb: float | None = None,
     inter_bar_lookback_bars: int | None = None,
+    ouroboros_mode: str | None = None,
 ) -> PrecomputeResult:
     """Precompute continuous range bars for a date range (single-pass, guaranteed continuity).
 
@@ -157,6 +158,12 @@ def precompute_range_bars(
     from rangebar.clickhouse import CacheKey, RangeBarCache
     from rangebar.storage.parquet import TickStorage
 
+    # Resolve ouroboros_mode from config if not explicitly provided
+    if ouroboros_mode is None:
+        from rangebar.ouroboros import get_operational_ouroboros_mode
+
+        ouroboros_mode = get_operational_ouroboros_mode()
+
     # MEM-009: Set process-level memory cap if requested (Issue #49)
     if max_memory_gb is not None:
         from rangebar.resource_guard import set_memory_limit
@@ -218,6 +225,7 @@ def precompute_range_bars(
         threshold_decimal_bps=threshold_decimal_bps,
         start_ts=start_ts,
         end_ts=end_ts,
+        ouroboros_mode=ouroboros_mode,
     )
 
     if invalidate_existing == "full":
@@ -228,7 +236,7 @@ def precompute_range_bars(
         cache.invalidate_range_bars(cache_key)
     elif invalidate_existing == "none":
         # Check if any bars exist in range by counting
-        bar_count = cache.count_bars(symbol, threshold_decimal_bps)
+        bar_count = cache.count_bars(symbol, threshold_decimal_bps, ouroboros_mode=ouroboros_mode)
         if bar_count > 0:
             # Return early - some cached data exists
             # Note: This is approximate; full implementation would check time range
@@ -442,7 +450,8 @@ def precompute_range_bars(
             rows_sent = len(month_df)
             month_pl = pl.from_pandas(month_df.reset_index())
             rows_inserted = cache.store_bars_batch(
-                symbol, threshold_decimal_bps, month_pl
+                symbol, threshold_decimal_bps, month_pl,
+                ouroboros_mode=ouroboros_mode,
             )
 
             # Post-cache validation: FAIL LOUDLY if ClickHouse didn't receive all bars

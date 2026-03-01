@@ -100,7 +100,7 @@ class PopulationCheckpoint:
     processor_checkpoint: dict | None = None
     last_trade_timestamp_ms: int | None = None
     include_microstructure: bool = False
-    ouroboros_mode: str = "year"
+    ouroboros_mode: str = "month"
     # Issue #72: Full Audit Trail - agg_trade_id range in incomplete bar
     first_agg_trade_id_in_bar: int | None = None
     last_agg_trade_id_in_bar: int | None = None
@@ -192,7 +192,7 @@ def _get_checkpoint_path(
     start_date: str,
     end_date: str,
     checkpoint_dir: Path | None = None,
-    ouroboros_mode: str = "year",
+    ouroboros_mode: str = "month",
 ) -> Path:
     """Get the checkpoint file path for a population job.
 
@@ -234,7 +234,7 @@ def _load_checkpoint_from_clickhouse(
     threshold_decimal_bps: int,
     start_date: str,
     end_date: str,
-    ouroboros_mode: str = "year",
+    ouroboros_mode: str = "month",
 ) -> PopulationCheckpoint | None:
     """Load checkpoint from ClickHouse for cross-machine resume.
 
@@ -251,7 +251,7 @@ def _load_checkpoint_from_clickhouse(
     end_date : str
         End date (YYYY-MM-DD).
     ouroboros_mode : str
-        Ouroboros reset mode filter (default: "year").
+        Ouroboros reset mode filter (default: "month").
         Prevents cross-mode checkpoint pollution.
 
     Returns
@@ -283,7 +283,7 @@ def _load_checkpoint_from_clickhouse(
                 else None,
                 last_trade_timestamp_ms=data.get("last_trade_timestamp_ms"),
                 include_microstructure=data.get("include_microstructure", False),
-                ouroboros_mode=data.get("ouroboros_mode", "year"),
+                ouroboros_mode=data.get("ouroboros_mode", "month"),
                 # Issue #72: Full Audit Trail
                 first_agg_trade_id_in_bar=data.get("first_agg_trade_id_in_bar"),
                 last_agg_trade_id_in_bar=data.get("last_agg_trade_id_in_bar"),
@@ -571,7 +571,7 @@ def populate_cache_resumable(
     include_microstructure : bool
         Include microstructure features (default: False).
     ouroboros_mode : str
-        Ouroboros reset mode: "year", "month", or "week" (default: "year").
+        Ouroboros reset mode: "year", "month", or "week" (default: "month").
     checkpoint_dir : Path | None
         Custom checkpoint directory. Uses default if None.
     notify : bool
@@ -1259,7 +1259,7 @@ def clear_checkpoint(
     start_date: str,
     end_date: str,
     checkpoint_dir: Path | None = None,
-    ouroboros_mode: str = "year",
+    ouroboros_mode: str = "month",
 ) -> bool:
     """Clear a specific checkpoint.
 

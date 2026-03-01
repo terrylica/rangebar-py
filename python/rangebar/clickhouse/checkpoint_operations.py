@@ -68,7 +68,7 @@ class CheckpointOperationsMixin:
         processor_checkpoint: str,
         bars_written: int,
         include_microstructure: bool = False,
-        ouroboros_mode: str = "year",
+        ouroboros_mode: str = "month",
         # Issue #72: Full Audit Trail - agg_trade_id range in incomplete bar
         first_agg_trade_id_in_bar: int | None = None,
         last_agg_trade_id_in_bar: int | None = None,
@@ -154,7 +154,7 @@ class CheckpointOperationsMixin:
         threshold_decimal_bps: int,
         start_date: str,
         end_date: str,
-        ouroboros_mode: str = "year",
+        ouroboros_mode: str = "month",
     ) -> dict | None:
         """Load population checkpoint from ClickHouse.
 
@@ -171,7 +171,7 @@ class CheckpointOperationsMixin:
         end_date : str
             Population end date (YYYY-MM-DD)
         ouroboros_mode : str
-            Ouroboros reset mode filter (default: "year").
+            Ouroboros reset mode filter (default: "month").
             Prevents cross-mode checkpoint pollution.
 
         Returns
@@ -241,7 +241,7 @@ class CheckpointOperationsMixin:
         threshold_decimal_bps: int,
         start_date: str,
         end_date: str,
-        ouroboros_mode: str = "year",
+        ouroboros_mode: str = "month",
     ) -> None:
         """Delete population checkpoint from ClickHouse.
 
@@ -258,7 +258,7 @@ class CheckpointOperationsMixin:
         end_date : str
             Population end date (YYYY-MM-DD)
         ouroboros_mode : str
-            Ouroboros reset mode filter (default: "year").
+            Ouroboros reset mode filter (default: "month").
         """
         query = """
             ALTER TABLE rangebar_cache.population_checkpoints

@@ -245,7 +245,7 @@ class BulkStoreMixin:
             rangebar-core version for cache invalidation. If None (default),
             uses current package version for schema evolution tracking.
         ouroboros_mode : str
-            Ouroboros reset mode: "year", "month", or "week" (default: "year")
+            Ouroboros reset mode: "year", "month", or "week" (default: "month")
         skip_dedup : bool
             If True, skip INSERT deduplication token (for force_refresh).
             Default False enables idempotent INSERTs (Issue #90).
@@ -454,7 +454,7 @@ class BulkStoreMixin:
             rangebar-core version for cache invalidation. If None (default),
             uses current package version for schema evolution tracking.
         ouroboros_mode : str
-            Ouroboros reset mode: "year", "month", or "week" (default: "year")
+            Ouroboros reset mode: "year", "month", or "week" (default: "month")
         skip_dedup : bool
             If True, skip INSERT deduplication token (for force_refresh).
             Default False enables idempotent INSERTs (Issue #90).

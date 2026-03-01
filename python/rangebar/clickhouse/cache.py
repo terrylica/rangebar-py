@@ -77,7 +77,7 @@ class CacheKey:
     end_ts : int
         End timestamp in milliseconds
     ouroboros_mode : str
-        Ouroboros reset mode: "year", "month", or "week" (default: "year")
+        Ouroboros reset mode: "year", "month", or "week" (default: "month")
     """
 
     symbol: str

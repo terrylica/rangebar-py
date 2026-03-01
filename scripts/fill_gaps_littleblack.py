@@ -123,7 +123,7 @@ def main() -> None:
                 start_date=start,
                 end_date=end,
                 threshold_decimal_bps=threshold,
-                ouroboros="year",  # Memory-safe year boundaries
+                ouroboros="month",  # Memory-safe year boundaries
                 use_cache=True,
                 fetch_if_missing=True,
                 include_microstructure=True,

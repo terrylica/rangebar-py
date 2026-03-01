@@ -145,7 +145,7 @@ def main():
             symbol=test_symbol,
             threshold_decimal_bps=threshold,
             bars=bars_df,
-            ouroboros_mode="year",
+            ouroboros_mode="month",
         )
         print(f"  Written: {written} rows")
         assert written == len(bars_df), f"Expected {len(bars_df)}, wrote {written}"
@@ -180,7 +180,7 @@ def main():
             start_ts=start_ts,
             end_ts=end_ts,
             include_microstructure=True,
-            ouroboros_mode="year",
+            ouroboros_mode="month",
         )
 
         if retrieved is None or retrieved.empty:

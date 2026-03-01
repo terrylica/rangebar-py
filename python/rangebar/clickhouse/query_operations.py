@@ -45,7 +45,7 @@ class QueryOperationsMixin:
         include_microstructure: bool = False,
         min_schema_version: str | None = None,
         include_plugin_features: bool = False,
-        ouroboros_mode: str = "year",
+        ouroboros_mode: str = "month",
     ) -> tuple[pd.DataFrame | None, int]:
         """Get N bars from cache, ordered chronologically (oldest first).
 
@@ -406,7 +406,7 @@ class QueryOperationsMixin:
         end_ts: int,
         include_microstructure: bool = False,
         include_exchange_sessions: bool = False,
-        ouroboros_mode: str = "year",
+        ouroboros_mode: str = "month",
         min_schema_version: str | None = None,
         include_plugin_features: bool = False,
     ) -> pd.DataFrame | None:
@@ -431,7 +431,7 @@ class QueryOperationsMixin:
         include_exchange_sessions : bool
             If True, includes exchange_session_* columns (Issue #8)
         ouroboros_mode : str
-            Ouroboros reset mode: "year", "month", or "week" (default: "year")
+            Ouroboros reset mode: "year", "month", or "week" (default: "month")
             Plan: sparkling-coalescing-dijkstra.md
         min_schema_version : str | None
             Minimum schema version required for cache hit. If specified,

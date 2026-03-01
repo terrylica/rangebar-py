@@ -25,7 +25,7 @@ class BarCountMixin:
         symbol: str,
         threshold_decimal_bps: int,
         before_ts: int | None = None,
-        ouroboros_mode: str = "year",
+        ouroboros_mode: str | None = None,
     ) -> int:
         """Count available bars in cache.
 
@@ -40,14 +40,19 @@ class BarCountMixin:
         before_ts : int | None
             Only count bars with close_time_ms < before_ts.
             If None, counts all bars for symbol/threshold.
-        ouroboros_mode : str
-            Ouroboros reset mode filter (default: "year").
+        ouroboros_mode : str | None
+            Ouroboros reset mode filter. None resolves from config.
 
         Returns
         -------
         int
             Number of bars in cache
         """
+        if ouroboros_mode is None:
+            from rangebar.ouroboros import get_operational_ouroboros_mode
+
+            ouroboros_mode = get_operational_ouroboros_mode()
+
         if before_ts is not None:
             # Split path: with end_ts filter
             query = """
