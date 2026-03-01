@@ -1,3 +1,16 @@
+# [12.39.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.38.1...v12.39.0) (2026-03-01)
+
+
+### Bug Fixes
+
+* format cli_models.py + remove population.py from preflight scope ([30fdd3a](https://github.com-terrylica/terrylica/rangebar-py/commit/30fdd3ac29ab2b63a960e2f8c319af2e8fec755c))
+* scope release preflight ruff checks to config + CLI files ([99c747b](https://github.com-terrylica/terrylica/rangebar-py/commit/99c747b5bcc3d0b914a29fad9f01b730beb42fe0))
+
+
+### Features
+
+* **#110:** add config show, remote CLI + robust release preflight ([b7d85c9](https://github.com-terrylica/terrylica/rangebar-py/commit/b7d85c9f8286ab33d84dc36e95956ffe1decd728)), closes [#110](https://github.com-terrylica/terrylica/rangebar-py/issues/110)
+
 ## [12.38.1](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.38.0...v12.38.1) (2026-03-01)
 
 
