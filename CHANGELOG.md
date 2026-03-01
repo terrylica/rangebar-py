@@ -1,3 +1,10 @@
+# [12.37.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.36.0...v12.37.0) (2026-03-01)
+
+
+### Features
+
+* implement per-feature computation toggles (Issue [#128](https://github.com-terrylica/terrylica/rangebar-py/issues/128) Phase 1-4) ([73943cb](https://github.com-terrylica/terrylica/rangebar-py/commit/73943cb240a1a51f0f60bcc6b1b55c1c1c29a24a))
+
 # [12.36.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.35.2...v12.36.0) (2026-03-01)
 
 
