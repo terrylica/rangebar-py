@@ -167,64 +167,8 @@ echo "OK: Linux wheels built via remote Docker"
 # =============================================================================
 
 ["release:preflight"]
-description = "Validate release prerequisites (Phase 1)"
-run = """
-#!/usr/bin/env bash
-set -euo pipefail
-
-echo "=== PREFLIGHT ==="
-FAIL=0
-
-# --- Git state ---
-git update-index --refresh -q || true
-
-if [ -n "$(git status --porcelain)" ]; then
-    echo "FAIL: Working directory not clean"
-    git status --short
-    FAIL=1
-fi
-
-BRANCH=$(git branch --show-current)
-if [ "$BRANCH" != "main" ]; then
-    echo "FAIL: Not on main branch (on: $BRANCH)"
-    FAIL=1
-fi
-
-# --- Crates.io dry-run (native workspace publish, Rust 1.90+) ---
-echo "Verifying crates.io packaging..."
-if ! cargo publish --workspace --dry-run 2>&1; then
-    echo "FAIL: cargo publish --workspace --dry-run failed"
-    FAIL=1
-fi
-echo "OK: All publishable crates package successfully"
-
-# --- ClickHouse port consistency across scripts ---
-echo "Checking ClickHouse port consistency..."
-EXPECTED_PORT=8123
-for script in scripts/*.py; do
-    PORT=$(grep -oE 'default=[0-9]+' "$script" 2>/dev/null | grep -oE '[0-9]+' | grep -E '^[0-9]*123$' || true)
-    if [ -n "$PORT" ] && [ "$PORT" != "$EXPECTED_PORT" ]; then
-        echo "FAIL: $script defaults to port $PORT, expected $EXPECTED_PORT"
-        FAIL=1
-    fi
-done
-echo "OK: ClickHouse port consistent"
-
-# --- Clean dist ---
-if [ -d dist ]; then
-    echo "Cleaning dist/ directory..."
-    rm -rf dist
-fi
-mkdir -p dist
-
-if [ $FAIL -ne 0 ]; then
-    echo ""
-    echo "FAIL: Preflight failed — fix issues above before releasing"
-    exit 1
-fi
-
-echo "OK: Preflight passed"
-"""
+description = "Validate release prerequisites (Phase 1) — tool health, lint, credentials, packaging"
+run = "./scripts/release-preflight.sh"
 
 ["release:sync"]
 description = "Synchronize with remote (Phase 2) - SSH with port fallback"

@@ -285,6 +285,160 @@ def test_telegram() -> None:
         sys.exit(1)
 
 
+# ---------------------------------------------------------------------------
+# config show — Issue #110 Phase 5
+# ---------------------------------------------------------------------------
+
+
+@cli.group()
+def config() -> None:
+    """View resolved configuration."""
+
+
+@config.command()
+@click.option(
+    "--section",
+    type=click.Choice(
+        ["population", "monitoring", "clickhouse", "sidecar", "algorithm", "streaming"],
+    ),
+    default=None,
+    help="Show only one config section",
+)
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable JSON output")
+def show(section: str | None, as_json: bool) -> None:
+    """Print resolved configuration (all sources merged).
+
+    \b
+    Examples:
+        rangebar config show
+        rangebar config show --section population
+        rangebar config show --json
+    """
+    import json as json_mod
+
+    from rangebar.config import Settings
+
+    s = Settings.get()
+
+    sections: dict[str, dict] = {}
+    if section is None or section == "population":
+        sections["population"] = s.population.model_dump()
+    if section is None or section == "monitoring":
+        sections["monitoring"] = s.monitoring.model_dump()
+    if section is None or section == "clickhouse":
+        sections["clickhouse"] = s.clickhouse.model_dump()
+    if section is None or section == "sidecar":
+        sections["sidecar"] = s.sidecar.model_dump()
+    if section is None or section == "algorithm":
+        sections["algorithm"] = s.algorithm.model_dump()
+    if section is None or section == "streaming":
+        sections["streaming"] = s.streaming.model_dump()
+
+    if as_json:
+        click.echo(json_mod.dumps(sections, indent=2, default=str))
+        return
+
+    for sec_name, fields in sections.items():
+        click.echo(f"\n[{sec_name}]")
+        for key, value in fields.items():
+            click.echo(f"  {key} = {value!r}")
+
+
+# ---------------------------------------------------------------------------
+# remote execution — Issue #110 Phase 6
+# ---------------------------------------------------------------------------
+
+
+@cli.group()
+@click.option(
+    "--host",
+    default="bigblack",
+    envvar="RANGEBAR_REMOTE_HOST",
+    help="Remote host (default: bigblack)",
+)
+@click.pass_context
+def remote(ctx: click.Context, host: str) -> None:
+    """Execute commands on remote host via SSH."""
+    ctx.ensure_object(dict)
+    ctx.obj["host"] = host
+
+
+@remote.command(name="populate")
+@click.option("--no-pueue", is_flag=True, help="Run directly instead of via pueue")
+@click.option("--group", "-g", type=str, default=None, help="Pueue group name")
+@click.option("--label", "-l", type=str, default=None, help="Pueue job label")
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+@click.pass_context
+def remote_populate(
+    ctx: click.Context,
+    no_pueue: bool,
+    group: str | None,
+    label: str | None,
+    args: tuple[str, ...],
+) -> None:
+    """Queue populate on remote host via pueue (default).
+
+    \b
+    Examples:
+        rangebar remote populate -- range --symbol BTCUSDT \\
+            --start 2024-01-01 --end 2024-12-31
+        rangebar remote populate --no-pueue -- year \\
+            --symbol ETHUSDT --year 2024
+    """
+    import subprocess
+
+    host = ctx.obj["host"]
+    remote_dir = "/home/tca/rangebar-py"
+    populate_cmd = f"cd {remote_dir} && uv run rangebar populate {' '.join(args)}"
+
+    if no_pueue:
+        ssh_cmd = populate_cmd
+    else:
+        pueue_args = ""
+        if group:
+            pueue_args += f" --group {group}"
+        if label:
+            pueue_args += f" --label {label}"
+        ssh_cmd = f"cd {remote_dir} && pueue add{pueue_args} -- {populate_cmd}"
+
+    click.echo(f"Remote ({host}): {ssh_cmd}")
+    result = subprocess.run(
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host, ssh_cmd],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if result.stdout:
+        click.echo(result.stdout.rstrip())
+    if result.returncode != 0:
+        if result.stderr:
+            click.echo(result.stderr.rstrip(), err=True)
+        sys.exit(result.returncode)
+
+
+@remote.command(name="status")
+@click.pass_context
+def remote_status(ctx: click.Context) -> None:
+    """Check pueue status on remote host."""
+    import subprocess
+
+    host = ctx.obj["host"]
+    result = subprocess.run(
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host, "pueue status"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if result.stdout:
+        click.echo(result.stdout.rstrip())
+    if result.returncode != 0:
+        if result.stderr:
+            click.echo(result.stderr.rstrip(), err=True)
+        sys.exit(result.returncode)
+
+
 def main() -> None:
     """Entry point for the CLI."""
     cli()
