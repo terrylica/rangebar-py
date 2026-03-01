@@ -1,3 +1,10 @@
+## [12.38.1](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.38.0...v12.38.1) (2026-03-01)
+
+
+### Bug Fixes
+
+* resolve remaining ruff linting issues ([133034e](https://github.com-terrylica/terrylica/rangebar-py/commit/133034e9ae05fcb44a6add9a4f9e8663586e45f6))
+
 # [12.38.0](https://github.com-terrylica/terrylica/rangebar-py/compare/v12.37.0...v12.38.0) (2026-03-01)
 
 
