@@ -42,6 +42,7 @@ fn bench_hurst_computation(window_size: usize, iterations: usize) {
         lookback_mode: LookbackMode::FixedCount(window_size),
         compute_tier2: false,
         compute_tier3: true, // Enable Hurst (Tier 3)
+        ..Default::default()
     };
 
     let mut history = rangebar_core::interbar::TradeHistory::new(config);

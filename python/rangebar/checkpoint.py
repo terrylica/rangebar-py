@@ -46,6 +46,12 @@ logger = logging.getLogger(__name__)
 _CHECKPOINT_DIR = Path(user_cache_dir("rangebar", "terrylica")) / "checkpoints"
 
 
+def _get_population_config():  # noqa: ANN202
+    """Lazy access to PopulationConfig (avoids circular import)."""
+    from rangebar.config import Settings
+    return Settings.get().population
+
+
 @dataclass
 class PopulationCheckpoint:
     """Checkpoint for resumable cache population.
@@ -106,6 +112,11 @@ class PopulationCheckpoint:
     last_agg_trade_id_in_bar: int | None = None
     # Issue #111 (Ariadne): High-water mark for deterministic resume via fromId
     last_processed_agg_trade_id: int | None = None
+    # Issue #128: Feature computation config at checkpoint time
+    compute_tier2: bool = True
+    compute_tier3: bool = False
+    compute_hurst: bool = False
+    compute_permutation_entropy: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -806,10 +817,17 @@ def populate_cache_resumable(
             )
             # Re-enable microstructure features after checkpoint restore
             if include_microstructure:
+                # Issue #128: Wire per-feature flags from Settings
+                from rangebar.config import Settings
+                pop = Settings.get().population
                 active_processor.enable_microstructure(
                     inter_bar_lookback_count=eff_count,
                     inter_bar_lookback_bars=eff_bars,
                     include_intra_bar_features=enable_intra,
+                    compute_tier2=pop.compute_tier2,
+                    compute_tier3=pop.compute_tier3,
+                    compute_hurst=pop.compute_hurst or None,
+                    compute_permutation_entropy=pop.compute_permutation_entropy or None,
                 )
             logger.info(
                 "Restored processor from checkpoint "
@@ -1097,6 +1115,11 @@ def populate_cache_resumable(
                 last_processed_agg_trade_id=(
                     proc_cp.get("last_trade_id") if proc_cp else None
                 ),
+                # Issue #128: Record feature computation config
+                compute_tier2=_get_population_config().compute_tier2,
+                compute_tier3=_get_population_config().compute_tier3,
+                compute_hurst=_get_population_config().compute_hurst,
+                compute_permutation_entropy=_get_population_config().compute_permutation_entropy,
             )
             # Save to local filesystem (fast)
             checkpoint.save(checkpoint_path)

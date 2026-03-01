@@ -43,6 +43,7 @@ fn bench_burstiness_detail(lookback_size: usize) {
         lookback_mode: LookbackMode::FixedCount(lookback_size),
         compute_tier2: true,
         compute_tier3: false,
+        ..Default::default()
     };
     let mut history = TradeHistory::new(config);
     for trade in &trades {

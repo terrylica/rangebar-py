@@ -107,6 +107,11 @@ class RangeBarProcessor:
         inter_bar_lookback_count: int | None = None,
         include_intra_bar_features: bool = False,
         inter_bar_lookback_bars: int | None = None,
+        # Issue #128: Per-feature computation toggles
+        compute_tier2: bool = True,
+        compute_tier3: bool = False,
+        compute_hurst: bool | None = None,
+        compute_permutation_entropy: bool | None = None,
     ) -> None:
         """Initialize processor with given threshold.
 
@@ -150,6 +155,11 @@ class RangeBarProcessor:
             inter_bar_lookback_count,
             include_intra_bar_features,
             inter_bar_lookback_bars,
+            # Issue #128: Per-feature computation toggles
+            compute_tier2=compute_tier2,
+            compute_tier3=compute_tier3,
+            compute_hurst=compute_hurst,
+            compute_permutation_entropy=compute_permutation_entropy,
         )
         self.threshold_decimal_bps = threshold_decimal_bps
         self.symbol = symbol
@@ -606,6 +616,10 @@ class RangeBarProcessor:
         inter_bar_lookback_count: int | None = None,
         inter_bar_lookback_bars: int | None = None,
         include_intra_bar_features: bool = False,
+        compute_tier2: bool = True,
+        compute_tier3: bool = False,
+        compute_hurst: bool | None = None,
+        compute_permutation_entropy: bool | None = None,
     ) -> None:
         """Re-enable microstructure features after checkpoint restore (Issue #97).
 
@@ -621,11 +635,23 @@ class RangeBarProcessor:
             Bar-relative lookback (takes precedence over count).
         include_intra_bar_features : bool, default=False
             Enable intra-bar features.
+        compute_tier2 : bool, default=True
+            Enable Tier 2 inter-bar features.
+        compute_tier3 : bool, default=False
+            Enable Tier 3 inter-bar features (Issue #128).
+        compute_hurst : bool | None, default=None
+            Per-feature override for Hurst. None = follow compute_tier3.
+        compute_permutation_entropy : bool | None, default=None
+            Per-feature override for PE. None = follow compute_tier3.
         """
         self._processor.enable_microstructure(
             inter_bar_lookback_count,
             inter_bar_lookback_bars,
             include_intra_bar_features,
+            compute_tier2=compute_tier2,
+            compute_tier3=compute_tier3,
+            compute_hurst=compute_hurst,
+            compute_permutation_entropy=compute_permutation_entropy,
         )
         self.inter_bar_lookback_count = inter_bar_lookback_count
         self.inter_bar_lookback_bars = inter_bar_lookback_bars

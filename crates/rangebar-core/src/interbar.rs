@@ -826,6 +826,13 @@ impl TradeHistory {
             });
         }
 
+        // Issue #128: Garman-Klass volatility promoted from Tier 3 → Tier 2
+        if n >= 1 {
+            features.lookback_garman_klass_vol = Some(compute_garman_klass_with_ohlc(
+                cache.open, cache.high, cache.low, cache.close,
+            ));
+        }
+
         features
     }
 
@@ -862,8 +869,8 @@ impl TradeHistory {
             }
         };
         // Issue #110: Avoid cloning prices - all Tier 3 functions accept &[f64]
+        // Issue #128: OHLC destructure removed (Garman-Klass moved to Tier 2)
         let prices = &cache.prices;
-        let (open, high, low, close) = (cache.open, cache.high, cache.low, cache.close);
 
         // Issue #96 Task #206: Early validity checks on price data
         // Skip Tier 3 computation if price data is invalid (NaN or degenerate)
@@ -877,18 +884,20 @@ impl TradeHistory {
             features.lookback_kaufman_er = Some(compute_kaufman_er(prices));
         }
 
-        // Garman-Klass volatility (min 1 trade) - use batch OHLC data
-        if n >= 1 {
-            features.lookback_garman_klass_vol = Some(compute_garman_klass_with_ohlc(open, high, low, close));
-        }
+        // Issue #128: Garman-Klass moved to compute_tier2_features()
+
+        // Issue #128: Per-feature flag resolution for Hurst and PE
+        let should_compute_hurst = self.config.should_compute_hurst();
+        let should_compute_pe = self.config.should_compute_permutation_entropy();
 
         // Entropy: adaptive switching with caching (Issue #96 Task #7 + Task #117)
         // - Small windows (n < 500): Permutation Entropy with caching (Issue #96 Task #117)
         // - Large windows (n >= 500): Approximate Entropy (5-10x faster on large n)
         // Minimum 60 trades for permutation entropy (m=3, need 10 * m! = 60)
         // MUST compute entropy before Hurst for early-exit gating (Issue #96 Task #160)
+        // Issue #128: Compute entropy if PE enabled OR if Hurst enabled (for early-exit gating)
         let mut entropy_value: Option<f64> = None;
-        if n >= 60 {
+        if n >= 60 && (should_compute_pe || should_compute_hurst) {
             // Issue #96 Task #156: Try-lock fast-path for entropy cache
             // Attempt read-lock first to check cache without exclusive access.
             // Fall back to write-lock only if miss to reduce lock contention overhead.
@@ -915,14 +924,18 @@ impl TradeHistory {
             };
 
             entropy_value = Some(entropy);
-            features.lookback_permutation_entropy = Some(entropy);
+            // Issue #128: Only write PE feature if PE is enabled
+            if should_compute_pe {
+                features.lookback_permutation_entropy = Some(entropy);
+            }
         }
 
         // Issue #96 Task #160: Hurst early-exit via entropy threshold
         // High-entropy sequences (random walks) inherently have Hurst ≈ 0.5
         // Early-exit logic: if entropy > 0.75 (high randomness), skip expensive computation
         // Performance: 30-40% bars skipped in ranging markets (2-4% speedup)
-        if n >= 64 {
+        // Issue #128: Only compute Hurst if enabled via per-feature flag
+        if n >= 64 && should_compute_hurst {
             // Check if entropy is available and indicates high randomness (near random walk)
             let should_skip_hurst = entropy_value.is_some_and(|e| e > 0.75);
 
@@ -1470,6 +1483,7 @@ mod tests {
             lookback_mode: LookbackMode::BarRelative(3),
             compute_tier2: false,
             compute_tier3: false,
+            ..Default::default()
         };
         let mut history = TradeHistory::new(config);
 
@@ -1487,6 +1501,7 @@ mod tests {
             lookback_mode: LookbackMode::BarRelative(2),
             compute_tier2: false,
             compute_tier3: false,
+            ..Default::default()
         };
         let mut history = TradeHistory::new(config);
 
@@ -1540,6 +1555,7 @@ mod tests {
             lookback_mode: LookbackMode::BarRelative(2),
             compute_tier2: false,
             compute_tier3: false,
+            ..Default::default()
         };
         let mut history = TradeHistory::new(config);
 
@@ -1581,6 +1597,7 @@ mod tests {
             lookback_mode: LookbackMode::BarRelative(3),
             compute_tier2: false,
             compute_tier3: false,
+            ..Default::default()
         };
         let mut history = TradeHistory::new(config);
 
@@ -1620,6 +1637,7 @@ mod tests {
             lookback_mode: LookbackMode::BarRelative(2),
             compute_tier2: false,
             compute_tier3: false,
+            ..Default::default()
         };
         let mut history = TradeHistory::new(config);
 
@@ -1652,6 +1670,7 @@ mod tests {
             lookback_mode: LookbackMode::BarRelative(2),
             compute_tier2: false,
             compute_tier3: false,
+            ..Default::default()
         };
         let mut history = TradeHistory::new(config);
 
@@ -1678,6 +1697,7 @@ mod tests {
             lookback_mode: LookbackMode::FixedCount(10),
             compute_tier2: false,
             compute_tier3: false,
+            ..Default::default()
         };
         let mut history = TradeHistory::new(config);
 
@@ -1939,6 +1959,7 @@ mod tests {
             lookback_mode: LookbackMode::FixedCount(50),
             compute_tier2: false,
             compute_tier3: false,
+            ..Default::default()
         });
 
         // Create test trades
@@ -1987,6 +2008,7 @@ mod tests {
             lookback_mode: LookbackMode::FixedCount(50),
             compute_tier2: false,
             compute_tier3: false,
+            ..Default::default()
         });
 
         // Create trades with specific timestamps
@@ -2042,6 +2064,7 @@ mod tests {
             lookback_mode: LookbackMode::FixedCount(100),
             compute_tier2: false,
             compute_tier3: false,
+            ..Default::default()
         });
 
         // Add 10 trades with sequential timestamps
@@ -2100,6 +2123,7 @@ mod tests {
             lookback_mode: LookbackMode::FixedCount(100),
             compute_tier2: false,
             compute_tier3: false,
+            ..Default::default()
         });
 
         let initial_batch = history.adaptive_prune_batch;
@@ -2143,6 +2167,7 @@ mod tests {
             lookback_mode: LookbackMode::FixedCount(50),
             compute_tier2: false,
             compute_tier3: false,
+            ..Default::default()
         });
 
         let max_capacity = history.max_safe_capacity;
@@ -2186,6 +2211,7 @@ mod tests {
             lookback_mode: LookbackMode::FixedCount(100),
             compute_tier2: false,
             compute_tier3: false,
+            ..Default::default()
         });
 
         // Initial stats should be empty
@@ -2350,6 +2376,7 @@ mod tests {
             lookback_mode: LookbackMode::FixedCount(500),
             compute_tier2: true,
             compute_tier3: false,
+            ..Default::default()
         };
         let mut history = TradeHistory::new(config);
 
@@ -2382,6 +2409,8 @@ mod tests {
         assert!(features.lookback_volume_skew.is_some(), "volume_skew should be Some with tier2 enabled");
         assert!(features.lookback_volume_kurt.is_some(), "volume_kurt should be Some with tier2 enabled");
         assert!(features.lookback_price_range.is_some(), "price_range should be Some with tier2 enabled");
+        // Issue #128: GK promoted from Tier 3 → Tier 2
+        assert!(features.lookback_garman_klass_vol.is_some(), "garman_klass should be Some with tier2 enabled");
 
         // Tier 3 features should remain None
         assert!(features.lookback_kaufman_er.is_none(), "kaufman_er should be None with tier3 disabled");
@@ -2394,6 +2423,7 @@ mod tests {
             lookback_mode: LookbackMode::FixedCount(500),
             compute_tier2: false,
             compute_tier3: true,
+            ..Default::default()
         };
         let mut history = TradeHistory::new(config);
 
@@ -2418,13 +2448,13 @@ mod tests {
         // Tier 1 should be present
         assert!(features.lookback_trade_count.is_some(), "trade_count should be Some");
 
-        // Tier 2 should remain None
+        // Tier 2 should remain None (Issue #128: GK promoted to Tier 2)
         assert!(features.lookback_kyle_lambda.is_none(), "kyle_lambda should be None with tier2 disabled");
         assert!(features.lookback_burstiness.is_none(), "burstiness should be None with tier2 disabled");
+        assert!(features.lookback_garman_klass_vol.is_none(), "garman_klass should be None with tier2 disabled (promoted from tier3)");
 
         // Tier 3 features should be computed (120 trades > 64 for Hurst, > 60 for PE)
         assert!(features.lookback_kaufman_er.is_some(), "kaufman_er should be Some with tier3 enabled");
-        assert!(features.lookback_garman_klass_vol.is_some(), "garman_klass should be Some with tier3 enabled");
     }
 
     #[test]
@@ -2433,6 +2463,7 @@ mod tests {
             lookback_mode: LookbackMode::FixedCount(500),
             compute_tier2: true,
             compute_tier3: true,
+            ..Default::default()
         };
         let mut history = TradeHistory::new(config);
 
@@ -2461,16 +2492,16 @@ mod tests {
         assert!(features.lookback_intensity.is_some(), "intensity");
         assert!(features.lookback_vwap.is_some(), "vwap");
 
-        // Tier 2
+        // Tier 2 (Issue #128: GK promoted from Tier 3)
         assert!(features.lookback_kyle_lambda.is_some(), "kyle_lambda");
         assert!(features.lookback_burstiness.is_some(), "burstiness");
         assert!(features.lookback_volume_skew.is_some(), "volume_skew");
         assert!(features.lookback_volume_kurt.is_some(), "volume_kurt");
         assert!(features.lookback_price_range.is_some(), "price_range");
+        assert!(features.lookback_garman_klass_vol.is_some(), "garman_klass_vol");
 
         // Tier 3
         assert!(features.lookback_kaufman_er.is_some(), "kaufman_er");
-        assert!(features.lookback_garman_klass_vol.is_some(), "garman_klass_vol");
 
         // Verify feature values are finite
         assert!(features.lookback_ofi.unwrap().is_finite(), "ofi should be finite");

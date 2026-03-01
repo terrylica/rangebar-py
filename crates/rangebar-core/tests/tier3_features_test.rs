@@ -281,6 +281,7 @@ mod tier3_features_tests {
             lookback_mode: LookbackMode::FixedCount(lookback),
             compute_tier2: false,
             compute_tier3: true,
+            ..Default::default()
         };
         let mut history = TradeHistory::new(config);
         for trade in trades {
@@ -299,6 +300,7 @@ mod tier3_features_tests {
             lookback_mode: LookbackMode::FixedCount(lookback),
             compute_tier2: false,
             compute_tier3: true,
+            ..Default::default()
         };
         let mut history = TradeHistory::new(config);
         for trade in trades {
@@ -317,6 +319,7 @@ mod tier3_features_tests {
             lookback_mode: LookbackMode::FixedCount(64),
             compute_tier2: false,
             compute_tier3: true,
+            ..Default::default()
         };
         let mut history = TradeHistory::new(config);
         for trade in trades {

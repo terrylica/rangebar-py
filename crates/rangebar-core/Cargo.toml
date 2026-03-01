@@ -122,10 +122,6 @@ name = "conversion_caching_benchmark"
 harness = false  # Disable test harness for conversion caching benchmark (Issue #96 Task #188)
 
 [[bench]]
-name = "dynamic_parallelization_benchmark"
-harness = false  # Disable test harness for dynamic parallelization dispatch (Issue #96 Task #189)
-
-[[bench]]
 name = "kyle_lambda_branchless_benchmark"
 harness = false  # Disable test harness for Kyle Lambda branchless optimization (Issue #96 Task #184)
 

@@ -21,6 +21,27 @@ use super::normalize::{
 };
 use super::normalization_lut::soft_clamp_hurst_lut;
 
+/// Issue #128: Configuration for intra-bar feature computation.
+///
+/// Controls which expensive complexity features (Hurst, Permutation Entropy)
+/// are computed within each bar. ITH and statistical features are always computed.
+#[derive(Debug, Clone)]
+pub struct IntraBarConfig {
+    /// Whether to compute intra-bar Hurst exponent (requires >= 64 trades)
+    pub compute_hurst: bool,
+    /// Whether to compute intra-bar Permutation Entropy (requires >= 60 trades)
+    pub compute_permutation_entropy: bool,
+}
+
+impl Default for IntraBarConfig {
+    fn default() -> Self {
+        Self {
+            compute_hurst: true,
+            compute_permutation_entropy: true,
+        }
+    }
+}
+
 /// Pre-computed ln(3!) = ln(6) for permutation entropy normalization (m=3, Bandt-Pompe).
 /// Avoids per-bar ln() call. Task #9.
 const MAX_ENTROPY_M3: f64 = 1.791_759_469_228_327;
@@ -140,11 +161,24 @@ pub fn compute_intra_bar_features(trades: &[AggTrade]) -> IntraBarFeatures {
 /// Optimized version accepting reusable scratch buffers
 /// Issue #96 Task #173: Avoids per-bar heap allocation by reusing buffers across bars
 /// Issue #96 Task #88: #[inline] — per-bar dispatcher called from processor hot path
+/// Issue #128: Delegates to config-aware version with default config (all features on)
 #[inline]
 pub fn compute_intra_bar_features_with_scratch(
     trades: &[AggTrade],
     scratch_prices: &mut SmallVec<[f64; 64]>,
     scratch_volumes: &mut SmallVec<[f64; 64]>,
+) -> IntraBarFeatures {
+    compute_intra_bar_features_with_config(trades, scratch_prices, scratch_volumes, &IntraBarConfig::default())
+}
+
+/// Issue #128: Config-aware version that gates expensive complexity features.
+/// Issue #96 Task #88: #[inline] — per-bar dispatcher called from processor hot path
+#[inline]
+pub fn compute_intra_bar_features_with_config(
+    trades: &[AggTrade],
+    scratch_prices: &mut SmallVec<[f64; 64]>,
+    scratch_volumes: &mut SmallVec<[f64; 64]>,
+    config: &IntraBarConfig,
 ) -> IntraBarFeatures {
     let n = trades.len();
 
@@ -196,13 +230,14 @@ pub fn compute_intra_bar_features_with_scratch(
     // Compute statistical features
     let stats = compute_statistical_features(trades, scratch_prices);
 
-    // Compute complexity features (only if enough trades)
-    let hurst = if n >= 64 {
+    // Compute complexity features (only if enough trades AND enabled via config)
+    // Issue #128: Per-feature gating for Hurst and PE
+    let hurst = if n >= 64 && config.compute_hurst {
         Some(compute_hurst_dfa(normalized))
     } else {
         None
     };
-    let pe = if n >= 60 {
+    let pe = if n >= 60 && config.compute_permutation_entropy {
         Some(compute_permutation_entropy(scratch_prices, 3))
     } else {
         None

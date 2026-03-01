@@ -77,6 +77,7 @@ fn bench_with_real_data(trades: &[rangebar_core::types::AggTrade], lookback_size
         lookback_mode: LookbackMode::FixedCount(lookback_size),
         compute_tier2: true,
         compute_tier3: true,
+        ..Default::default()
     };
     let mut history = TradeHistory::new(config);
 

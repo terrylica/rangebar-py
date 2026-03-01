@@ -150,6 +150,10 @@ def _create_processor(
     # Honour explicit include_intra_bar_features=True even when env says false
     enable_intra = enable_intra or include_intra_bar_features
 
+    # Issue #128: Per-feature computation toggles from Settings
+    from rangebar.config import Settings
+    pop = Settings.get().population
+
     return RangeBarProcessor(
         threshold_decimal_bps,
         symbol=symbol,
@@ -157,6 +161,10 @@ def _create_processor(
         inter_bar_lookback_count=effective_count,
         include_intra_bar_features=enable_intra,
         inter_bar_lookback_bars=effective_bars,
+        compute_tier2=pop.compute_tier2,
+        compute_tier3=pop.compute_tier3,
+        compute_hurst=pop.compute_hurst if pop.compute_hurst else None,
+        compute_permutation_entropy=pop.compute_permutation_entropy if pop.compute_permutation_entropy else None,
     )
 
 

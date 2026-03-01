@@ -9,7 +9,7 @@ use crate::checkpoint::{
 };
 use crate::fixed_point::FixedPoint;
 use crate::interbar::{InterBarConfig, TradeHistory}; // Issue #59
-// Issue #59: Intra-bar features - using compute_intra_bar_features_with_scratch (Task #173)
+// Issue #59: Intra-bar features - using compute_intra_bar_features_with_config (Issue #128)
 use crate::types::{AggTrade, RangeBar};
 use smallvec::SmallVec; // Issue #119: Trade accumulation with inline buffer (512 slots ≈ 29KB)
 #[cfg(feature = "python")]
@@ -93,6 +93,10 @@ pub struct RangeBarProcessor {
     /// Features include ITH (Investment Time Horizon), statistical, and
     /// complexity metrics. When false, all intra_* fields are None.
     include_intra_bar_features: bool,
+
+    /// Issue #128: Configuration for intra-bar feature computation.
+    /// Controls which complexity features (Hurst, PE) are computed.
+    intra_bar_config: crate::intrabar::IntraBarConfig,
 
     /// Issue #112: Maximum timestamp gap in microseconds before discarding a forming bar
     ///
@@ -218,6 +222,7 @@ impl RangeBarProcessor {
             trade_history: None,               // Issue #59: disabled by default
             inter_bar_config: None,            // Issue #59: disabled by default
             include_intra_bar_features: false, // Issue #59: disabled by default
+            intra_bar_config: crate::intrabar::IntraBarConfig::default(), // Issue #128
             max_gap_us: 3_600_000_000,         // Issue #112: 1 hour default
         })
     }
@@ -252,6 +257,7 @@ impl RangeBarProcessor {
     ///         lookback_mode: LookbackMode::FixedCount(500),
     ///         compute_tier2: true,
     ///         compute_tier3: true,
+    ///         ..Default::default()
     ///     });
     /// ```
     pub fn with_inter_bar_config(self, config: InterBarConfig) -> Self {
@@ -374,6 +380,18 @@ impl RangeBarProcessor {
         self.include_intra_bar_features = enabled;
     }
 
+    /// Issue #128: Set intra-bar feature configuration.
+    /// Controls which complexity features (Hurst, PE) are computed.
+    pub fn with_intra_bar_config(mut self, config: crate::intrabar::IntraBarConfig) -> Self {
+        self.intra_bar_config = config;
+        self
+    }
+
+    /// Issue #128: Set intra-bar feature configuration on existing processor.
+    pub fn set_intra_bar_config(&mut self, config: crate::intrabar::IntraBarConfig) {
+        self.intra_bar_config = config;
+    }
+
     /// Process a single trade and return completed bar if any
     ///
     /// Maintains internal state for streaming use case. State persists across calls
@@ -487,10 +505,11 @@ impl RangeBarProcessor {
                     // Issue #59: Compute intra-bar features from accumulated trades
                     if self.include_intra_bar_features {
                         // Issue #96 Task #173: Use reusable scratch buffers from bar_state
-                        let intra_bar_features = crate::intrabar::compute_intra_bar_features_with_scratch(
+                        let intra_bar_features = crate::intrabar::compute_intra_bar_features_with_config(
                             &bar_state.accumulated_trades,
                             &mut bar_state.scratch_prices,
                             &mut bar_state.scratch_volumes,
+                            &self.intra_bar_config, // Issue #128
                         );
                         bar_state.bar.set_intra_bar_features(&intra_bar_features);
                     }
@@ -716,10 +735,11 @@ impl RangeBarProcessor {
                         // Issue #59: Compute intra-bar features from accumulated trades
                         if self.include_intra_bar_features {
                             // Issue #96 Task #173: Use reusable scratch buffers from bar_state
-                            let intra_bar_features = crate::intrabar::compute_intra_bar_features_with_scratch(
+                            let intra_bar_features = crate::intrabar::compute_intra_bar_features_with_config(
                                 &bar_state.accumulated_trades,
                                 &mut bar_state.scratch_prices,
                                 &mut bar_state.scratch_volumes,
+                                &self.intra_bar_config, // Issue #128
                             );
                             bar_state.bar.set_intra_bar_features(&intra_bar_features);
                         }
@@ -765,10 +785,11 @@ impl RangeBarProcessor {
                 // Issue #59: Compute intra-bar features from accumulated trades
                 if self.include_intra_bar_features {
                     // Issue #96 Task #173: Use reusable scratch buffers from bar_state
-                    let intra_bar_features = crate::intrabar::compute_intra_bar_features_with_scratch(
+                    let intra_bar_features = crate::intrabar::compute_intra_bar_features_with_config(
                         &bar_state.accumulated_trades,
                         &mut bar_state.scratch_prices,
                         &mut bar_state.scratch_volumes,
+                        &self.intra_bar_config, // Issue #128
                     );
                     bar_state.bar.set_intra_bar_features(&intra_bar_features);
                 }
@@ -901,6 +922,7 @@ impl RangeBarProcessor {
             trade_history: None,               // Issue #59: Must be re-enabled after restore
             inter_bar_config: None,            // Issue #59: Must be re-enabled after restore
             include_intra_bar_features: false, // Issue #59: Must be re-enabled after restore
+            intra_bar_config: crate::intrabar::IntraBarConfig::default(), // Issue #128
             max_gap_us: 3_600_000_000,         // Issue #112: 1 hour default
         })
     }
@@ -2531,6 +2553,7 @@ mod tests {
             lookback_mode: LookbackMode::FixedCount(100),
             compute_tier2: false,
             compute_tier3: false,
+            ..Default::default()
         });
         assert!(processor.inter_bar_enabled(), "After config: inter-bar enabled");
     }
@@ -2554,6 +2577,7 @@ mod tests {
             lookback_mode: LookbackMode::FixedCount(200),
             compute_tier2: true,
             compute_tier3: false,
+            ..Default::default()
         });
         assert!(processor.inter_bar_enabled(), "set_inter_bar_config should enable");
     }
@@ -2639,6 +2663,7 @@ mod tests {
             lookback_mode: LookbackMode::FixedCount(100),
             compute_tier2: true,
             compute_tier3: true,
+            ..Default::default()
         };
 
         // Two processors sharing the same global cache
@@ -2672,6 +2697,7 @@ mod tests {
                 lookback_mode: LookbackMode::FixedCount(100),
                 compute_tier2: false,
                 compute_tier3: false,
+                ..Default::default()
             },
             Some(global_cache),
         );

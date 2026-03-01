@@ -78,10 +78,22 @@ def _build_context_block(service: str) -> str:
         mode = get_operational_ouroboros_mode()
     except (ImportError, ValueError, OSError):
         mode = "?"
+    # Issue #128: Feature toggle state for operational visibility
+    try:
+        from rangebar.config import Settings
+        pop = Settings.get().population
+        t2 = "ON" if pop.compute_tier2 else "OFF"
+        t3 = "ON" if pop.compute_tier3 else "OFF"
+        hurst = "ON" if pop.compute_hurst else "OFF"
+        pe = "ON" if pop.compute_permutation_entropy else "OFF"
+        tiers = f"T1+T2 {t2} | T3 {t3} | Hurst {hurst} | PE {pe}"
+    except (ImportError, ValueError, OSError):
+        tiers = "?"
     return (
         f"\n\n<b>Host:</b> {host} | <b>v</b>{version}"
         f"\n<b>Uptime:</b> {uptime} | <b>Service:</b> {service}"
         f"\n<b>Ouroboros:</b> {mode}"
+        f"\n<b>Tiers:</b> {tiers}"
     )
 
 

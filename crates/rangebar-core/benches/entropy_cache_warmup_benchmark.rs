@@ -49,6 +49,7 @@ fn bench_entropy_cache_access(pattern: &str, trade_count: usize, iterations: usi
         lookback_mode: LookbackMode::FixedCount(trade_count),
         compute_tier2: true,
         compute_tier3: true,
+        ..Default::default()
     };
 
     let mut history = rangebar_core::interbar::TradeHistory::new(config);

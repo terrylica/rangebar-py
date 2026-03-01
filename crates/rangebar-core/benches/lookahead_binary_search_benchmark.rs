@@ -61,6 +61,7 @@ fn bench_lookback_retrieval(pattern: &str, trade_count: usize, window_size: usiz
         lookback_mode: LookbackMode::FixedCount(window_size),
         compute_tier2: true,
         compute_tier3: true,
+        ..Default::default()
     };
 
     let mut history = rangebar_core::interbar::TradeHistory::new(config);

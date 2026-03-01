@@ -84,8 +84,9 @@ MICROSTRUCTURE_COLUMNS: tuple[str, ...] = (
 # - crates/rangebar-core/src/types.rs (RangeBar struct fields)
 # - python/rangebar/clickhouse/schema.sql (ClickHouse columns)
 
-INTER_BAR_FEATURE_COLUMNS: tuple[str, ...] = (
-    # Tier 1: Core features (7 features, min 1 trade)
+# Issue #128: Split into tier sub-tuples for per-feature toggle support.
+# Backward compat: INTER_BAR_FEATURE_COLUMNS remains the combined tuple.
+INTER_BAR_TIER1_COLUMNS: tuple[str, ...] = (
     "lookback_trade_count",
     "lookback_ofi",
     "lookback_duration_us",
@@ -93,17 +94,29 @@ INTER_BAR_FEATURE_COLUMNS: tuple[str, ...] = (
     "lookback_vwap_raw",
     "lookback_vwap_position",
     "lookback_count_imbalance",
-    # Tier 2: Statistical features (5 features)
+)
+
+INTER_BAR_TIER2_COLUMNS: tuple[str, ...] = (
+    # Issue #128: Garman-Klass promoted from Tier 3 → Tier 2
     "lookback_kyle_lambda",
     "lookback_burstiness",
     "lookback_volume_skew",
     "lookback_volume_kurt",
     "lookback_price_range",
-    # Tier 3: Advanced features (4 features, min 60+ trades)
-    "lookback_kaufman_er",
     "lookback_garman_klass_vol",
+)
+
+INTER_BAR_TIER3_COLUMNS: tuple[str, ...] = (
+    # Issue #128: Hurst + PE have ZERO presence in Gen600 top 100 configs
+    "lookback_kaufman_er",
     "lookback_hurst",
     "lookback_permutation_entropy",
+)
+
+INTER_BAR_FEATURE_COLUMNS: tuple[str, ...] = (
+    *INTER_BAR_TIER1_COLUMNS,
+    *INTER_BAR_TIER2_COLUMNS,
+    *INTER_BAR_TIER3_COLUMNS,
 )
 
 # =============================================================================
@@ -145,6 +158,13 @@ INTRA_BAR_FEATURE_COLUMNS: tuple[str, ...] = (
     "intra_kaufman_er",
     "intra_garman_klass_vol",
     # Complexity features (2 features, require 60+ trades)
+    # Issue #128: These can be toggled off via RANGEBAR_COMPUTE_HURST/PE
+    "intra_hurst",
+    "intra_permutation_entropy",
+)
+
+# Issue #128: Intra-bar complexity columns (gated by per-feature toggles)
+INTRA_BAR_COMPLEXITY_COLUMNS: tuple[str, ...] = (
     "intra_hurst",
     "intra_permutation_entropy",
 )

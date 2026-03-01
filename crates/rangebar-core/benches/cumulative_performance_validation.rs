@@ -81,6 +81,7 @@ fn bench_lookback(lookback_size: usize) -> (f64, usize) {
         lookback_mode: LookbackMode::FixedCount(lookback_size),
         compute_tier2: true,
         compute_tier3: true,
+        ..Default::default()
     };
     let mut history = TradeHistory::new(config);
 

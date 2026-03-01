@@ -61,6 +61,7 @@ fn bench_interbar_full_stack(trade_count: usize, iterations: usize) {
         lookback_mode: LookbackMode::FixedCount(250),
         compute_tier2: true,
         compute_tier3: true,
+        ..Default::default()
     };
 
     let mut history = rangebar_core::interbar::TradeHistory::new(config);

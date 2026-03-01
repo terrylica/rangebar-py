@@ -86,6 +86,7 @@ fn measure_tier_config(
         lookback_mode: LookbackMode::FixedCount(lookback_size),
         compute_tier2: tier2,
         compute_tier3: tier3,
+        ..Default::default()
     };
     let mut history = TradeHistory::new(config);
 

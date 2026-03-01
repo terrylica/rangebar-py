@@ -100,7 +100,7 @@ impl PyRangeBarProcessor {
     /// Raises:
     ///     `ValueError`: If threshold is out of range [1, `100_000`]
     #[new]
-    #[pyo3(signature = (threshold_decimal_bps, symbol = None, prevent_same_timestamp_close = true, inter_bar_lookback_count = None, include_intra_bar_features = false, inter_bar_lookback_bars = None))]
+    #[pyo3(signature = (threshold_decimal_bps, symbol = None, prevent_same_timestamp_close = true, inter_bar_lookback_count = None, include_intra_bar_features = false, inter_bar_lookback_bars = None, compute_tier2 = true, compute_tier3 = false, compute_hurst = None, compute_permutation_entropy = None))]
     pub(crate) fn new(
         threshold_decimal_bps: u32,
         symbol: Option<String>,
@@ -108,6 +108,11 @@ impl PyRangeBarProcessor {
         inter_bar_lookback_count: Option<usize>,
         include_intra_bar_features: bool,
         inter_bar_lookback_bars: Option<usize>,
+        // Issue #128: Per-feature computation toggles
+        compute_tier2: bool,
+        compute_tier3: bool,
+        compute_hurst: Option<bool>,
+        compute_permutation_entropy: Option<bool>,
     ) -> PyResult<Self> {
         // Issue #59: Build processor with optional inter-bar feature config
         let mut processor =
@@ -115,16 +120,23 @@ impl PyRangeBarProcessor {
                 .map_err(|e| PyValueError::new_err(format!("Failed to create processor: {e}")))?;
 
         // Issue #81: inter_bar_lookback_bars takes precedence over inter_bar_lookback_count
+        // Issue #128: Wire per-feature flags through InterBarConfig
         if let Some(n_bars) = inter_bar_lookback_bars {
             let config = InterBarConfig {
                 lookback_mode: LookbackMode::BarRelative(n_bars),
-                ..Default::default()
+                compute_tier2,
+                compute_tier3,
+                compute_hurst,
+                compute_permutation_entropy,
             };
             processor = processor.with_inter_bar_config(config);
         } else if let Some(count) = inter_bar_lookback_count {
             let config = InterBarConfig {
                 lookback_mode: LookbackMode::FixedCount(count),
-                ..Default::default()
+                compute_tier2,
+                compute_tier3,
+                compute_hurst,
+                compute_permutation_entropy,
             };
             processor = processor.with_inter_bar_config(config);
         }
@@ -133,6 +145,15 @@ impl PyRangeBarProcessor {
         if include_intra_bar_features {
             processor = processor.with_intra_bar_features();
         }
+
+        // Issue #128: Wire per-feature flags through IntraBarConfig
+        // Resolve: None = follow tier3 flag, Some(val) = override
+        let intra_hurst = compute_hurst.unwrap_or(compute_tier3);
+        let intra_pe = compute_permutation_entropy.unwrap_or(compute_tier3);
+        processor = processor.with_intra_bar_config(IntraBarConfig {
+            compute_hurst: intra_hurst,
+            compute_permutation_entropy: intra_pe,
+        });
 
         Ok(Self {
             processor,
@@ -177,23 +198,35 @@ impl PyRangeBarProcessor {
     ///     inter_bar_lookback_count: Fixed trade count for lookback window
     ///     inter_bar_lookback_bars: Bar-relative lookback (takes precedence)
     ///     include_intra_bar_features: Enable intra-bar features
-    #[pyo3(signature = (inter_bar_lookback_count = None, inter_bar_lookback_bars = None, include_intra_bar_features = false))]
+    #[pyo3(signature = (inter_bar_lookback_count = None, inter_bar_lookback_bars = None, include_intra_bar_features = false, compute_tier2 = true, compute_tier3 = false, compute_hurst = None, compute_permutation_entropy = None))]
     fn enable_microstructure(
         &mut self,
         inter_bar_lookback_count: Option<usize>,
         inter_bar_lookback_bars: Option<usize>,
         include_intra_bar_features: bool,
+        // Issue #128: Per-feature computation toggles
+        compute_tier2: bool,
+        compute_tier3: bool,
+        compute_hurst: Option<bool>,
+        compute_permutation_entropy: Option<bool>,
     ) {
+        // Issue #128: Wire per-feature flags through InterBarConfig
         if let Some(n_bars) = inter_bar_lookback_bars {
             let config = InterBarConfig {
                 lookback_mode: LookbackMode::BarRelative(n_bars),
-                ..Default::default()
+                compute_tier2,
+                compute_tier3,
+                compute_hurst,
+                compute_permutation_entropy,
             };
             self.processor.set_inter_bar_config(config);
         } else if let Some(count) = inter_bar_lookback_count {
             let config = InterBarConfig {
                 lookback_mode: LookbackMode::FixedCount(count),
-                ..Default::default()
+                compute_tier2,
+                compute_tier3,
+                compute_hurst,
+                compute_permutation_entropy,
             };
             self.processor.set_inter_bar_config(config);
         }
@@ -201,6 +234,14 @@ impl PyRangeBarProcessor {
         if include_intra_bar_features {
             self.processor.set_intra_bar_features(true);
         }
+
+        // Issue #128: Wire per-feature flags through IntraBarConfig
+        let intra_hurst = compute_hurst.unwrap_or(compute_tier3);
+        let intra_pe = compute_permutation_entropy.unwrap_or(compute_tier3);
+        self.processor.set_intra_bar_config(IntraBarConfig {
+            compute_hurst: intra_hurst,
+            compute_permutation_entropy: intra_pe,
+        });
     }
 
     /// Process aggregated trades into range bars (batch mode - resets state)

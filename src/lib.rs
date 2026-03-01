@@ -9,8 +9,8 @@ use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use rangebar_core::{
-    AggTrade, AnomalySummary, Checkpoint, CheckpointError, FixedPoint, InterBarConfig, LookbackMode,
-    PositionVerification, RangeBar, RangeBarProcessor,
+    AggTrade, AnomalySummary, Checkpoint, CheckpointError, FixedPoint, InterBarConfig, IntraBarConfig,
+    LookbackMode, PositionVerification, RangeBar, RangeBarProcessor,
 };
 
 // Arrow export support (feature-gated)

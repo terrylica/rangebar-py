@@ -59,7 +59,7 @@ pub use interbar_cache::{
     InterBarCacheKey, InterBarFeatureCache, INTERBAR_FEATURE_CACHE_CAPACITY,
 }; // Issue #96 Task #144 Phase 4: Inter-bar feature result cache API
 pub use interbar_math::EntropyCache; // Issue #145 Phase 2: Export for external cache parameters
-pub use intrabar::{IntraBarFeatures, compute_intra_bar_features};
+pub use intrabar::{IntraBarConfig, IntraBarFeatures, compute_intra_bar_features};
 pub use processor::{ExportRangeBarProcessor, ProcessingError, RangeBarProcessor};
 pub use timestamp::{
     create_aggtrade_with_normalized_timestamp, normalize_timestamp, validate_timestamp,

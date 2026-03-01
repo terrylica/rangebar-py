@@ -15,6 +15,30 @@ pub struct InterBarConfig {
     pub compute_tier2: bool,
     /// Whether to compute Tier 3 features (requires 60+ trades for some)
     pub compute_tier3: bool,
+    /// Issue #128: Per-feature override for Hurst exponent computation.
+    /// None = follow compute_tier3 flag. Some(false) = skip even if tier enabled.
+    /// Some(true) = compute even if tier disabled.
+    pub compute_hurst: Option<bool>,
+    /// Issue #128: Per-feature override for Permutation Entropy computation.
+    /// None = follow compute_tier3 flag. Some(false) = skip even if tier enabled.
+    /// Some(true) = compute even if tier disabled.
+    pub compute_permutation_entropy: Option<bool>,
+}
+
+impl InterBarConfig {
+    /// Issue #128: Resolve whether Hurst should be computed, considering
+    /// per-feature override and tier flag.
+    #[inline]
+    pub fn should_compute_hurst(&self) -> bool {
+        self.compute_hurst.unwrap_or(self.compute_tier3)
+    }
+
+    /// Issue #128: Resolve whether Permutation Entropy should be computed,
+    /// considering per-feature override and tier flag.
+    #[inline]
+    pub fn should_compute_permutation_entropy(&self) -> bool {
+        self.compute_permutation_entropy.unwrap_or(self.compute_tier3)
+    }
 }
 
 impl Default for InterBarConfig {
@@ -23,6 +47,8 @@ impl Default for InterBarConfig {
             lookback_mode: LookbackMode::FixedCount(500),
             compute_tier2: true,
             compute_tier3: true,
+            compute_hurst: None,
+            compute_permutation_entropy: None,
         }
     }
 }
@@ -103,7 +129,8 @@ pub struct InterBarFeatures {
     /// Count imbalance: (buy_count - sell_count) / total_count, range [-1, 1]
     pub lookback_count_imbalance: Option<f64>,
 
-    // === Tier 2: Statistical Features (5) ===
+    // === Tier 2: Statistical Features (6) ===
+    // Issue #128: Garman-Klass moved from Tier 3 → Tier 2 (Gen600 top feature)
     /// Kyle's Lambda proxy (normalized): ((last-first)/first) / ((buy-sell)/total)
     pub lookback_kyle_lambda: Option<f64>,
     /// Burstiness (Goh-Barabasi): (sigma_tau - mu_tau) / (sigma_tau + mu_tau), range [-1, 1]
@@ -114,12 +141,13 @@ pub struct InterBarFeatures {
     pub lookback_volume_kurt: Option<f64>,
     /// Price range normalized: (high - low) / first_price
     pub lookback_price_range: Option<f64>,
+    /// Garman-Klass volatility estimator (Issue #128: promoted from Tier 3)
+    pub lookback_garman_klass_vol: Option<f64>,
 
-    // === Tier 3: Advanced Features (4) ===
+    // === Tier 3: Advanced Features (3) ===
+    // Issue #128: Hurst + PE have ZERO presence in Gen600 top 100 configs
     /// Kaufman Efficiency Ratio: |net movement| / sum(|individual movements|), range [0, 1]
     pub lookback_kaufman_er: Option<f64>,
-    /// Garman-Klass volatility estimator
-    pub lookback_garman_klass_vol: Option<f64>,
     /// Hurst exponent via DFA, soft-clamped to [0, 1]
     pub lookback_hurst: Option<f64>,
     /// Permutation entropy (normalized), range [0, 1]
@@ -136,14 +164,16 @@ impl InterBarFeatures {
         self.lookback_volume_skew = other.lookback_volume_skew;
         self.lookback_volume_kurt = other.lookback_volume_kurt;
         self.lookback_price_range = other.lookback_price_range;
+        // Issue #128: Garman-Klass promoted from Tier 3 → Tier 2
+        self.lookback_garman_klass_vol = other.lookback_garman_klass_vol;
     }
 
     /// Merge Tier 3 features from another InterBarFeatures struct
     /// Issue #96 Task #90: #[inline] — per-bar field merge at finalization
+    /// Issue #128: Garman-Klass moved to Tier 2, Tier 3 now 3 features
     #[inline]
     pub fn merge_tier3(&mut self, other: &InterBarFeatures) {
         self.lookback_kaufman_er = other.lookback_kaufman_er;
-        self.lookback_garman_klass_vol = other.lookback_garman_klass_vol;
         self.lookback_hurst = other.lookback_hurst;
         self.lookback_permutation_entropy = other.lookback_permutation_entropy;
     }
@@ -161,6 +191,12 @@ mod tests {
         assert!(matches!(config.lookback_mode, LookbackMode::FixedCount(500)));
         assert!(config.compute_tier2);
         assert!(config.compute_tier3);
+        // Issue #128: Per-feature flags default to None (follow tier flag)
+        assert!(config.compute_hurst.is_none());
+        assert!(config.compute_permutation_entropy.is_none());
+        // Resolved: both follow compute_tier3 (true) by default
+        assert!(config.should_compute_hurst());
+        assert!(config.should_compute_permutation_entropy());
     }
 
     // === InterBarFeatures::default tests ===
@@ -202,15 +238,17 @@ mod tests {
         source.lookback_volume_skew = Some(1.2);
         source.lookback_volume_kurt = Some(3.5);
         source.lookback_price_range = Some(0.02);
+        source.lookback_garman_klass_vol = Some(0.001); // Issue #128: now Tier 2
 
         base.merge_tier2(&source);
 
-        // Tier 2 fields merged
+        // Tier 2 fields merged (Issue #128: now includes garman_klass_vol)
         assert_eq!(base.lookback_kyle_lambda, Some(0.5));
         assert_eq!(base.lookback_burstiness, Some(-0.3));
         assert_eq!(base.lookback_volume_skew, Some(1.2));
         assert_eq!(base.lookback_volume_kurt, Some(3.5));
         assert_eq!(base.lookback_price_range, Some(0.02));
+        assert_eq!(base.lookback_garman_klass_vol, Some(0.001));
         // Tier 1 untouched
         assert_eq!(base.lookback_trade_count, Some(100));
         // Tier 3 untouched
@@ -242,15 +280,13 @@ mod tests {
 
         let mut source = InterBarFeatures::default();
         source.lookback_kaufman_er = Some(0.75);
-        source.lookback_garman_klass_vol = Some(0.001);
         source.lookback_hurst = Some(0.55);
         source.lookback_permutation_entropy = Some(0.92);
 
         base.merge_tier3(&source);
 
-        // Tier 3 fields merged
+        // Tier 3 fields merged (Issue #128: garman_klass_vol moved to Tier 2)
         assert_eq!(base.lookback_kaufman_er, Some(0.75));
-        assert_eq!(base.lookback_garman_klass_vol, Some(0.001));
         assert_eq!(base.lookback_hurst, Some(0.55));
         assert_eq!(base.lookback_permutation_entropy, Some(0.92));
         // Tier 1 untouched

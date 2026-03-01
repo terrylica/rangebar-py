@@ -93,6 +93,17 @@ RANGEBAR_INTER_BAR_LOOKBACK_COUNT = "200"
 RANGEBAR_INCLUDE_INTRA_BAR_FEATURES = "true"
 
 # =============================================================================
+# SSoT: Per-Feature Computation Toggles (Issue #128)
+# =============================================================================
+# Gen600 sweep: Hurst+PE have ZERO presence in top 100 configs.
+# Garman-Klass is #1 most useful → promoted to Tier 2.
+# Disabling Tier 3 saves ~15-25% inter-bar compute, ~10% intra-bar compute.
+RANGEBAR_COMPUTE_TIER2 = "true"
+RANGEBAR_COMPUTE_TIER3 = "false"
+RANGEBAR_COMPUTE_HURST = "false"
+RANGEBAR_COMPUTE_PERMUTATION_ENTROPY = "false"
+
+# =============================================================================
 # SSoT: Recency Backfill Adaptive Thresholds (Issue #92)
 # =============================================================================
 # Layer 2 adaptive polling loop self-tunes frequency based on gap size.

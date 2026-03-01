@@ -74,6 +74,20 @@ class PopulationConfig:
     continuity_tolerance: float = field(
         default_factory=lambda: _env_float("RANGEBAR_CONTINUITY_TOLERANCE", 0.001),
     )
+    # Issue #128: Per-feature computation toggles
+    compute_tier2: bool = field(
+        default_factory=lambda: _env_bool("RANGEBAR_COMPUTE_TIER2", True),
+    )
+    compute_tier3: bool = field(
+        default_factory=lambda: _env_bool("RANGEBAR_COMPUTE_TIER3", False),
+    )
+    compute_hurst: bool = field(
+        default_factory=lambda: _env_bool("RANGEBAR_COMPUTE_HURST", False),
+    )
+    compute_permutation_entropy: bool = field(
+        default_factory=lambda: _env_bool("RANGEBAR_COMPUTE_PERMUTATION_ENTROPY",
+                                          False),
+    )
 
     def __post_init__(self) -> None:  # Issue #126: Fail-fast on invalid config
         from rangebar.ouroboros import validate_ouroboros_mode

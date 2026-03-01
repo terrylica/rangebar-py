@@ -52,6 +52,7 @@ fn profile_tier3_features(lookback_size: usize) {
         lookback_mode: LookbackMode::FixedCount(lookback_size),
         compute_tier2: false,
         compute_tier3: true,
+        ..Default::default()
     };
     let mut history = TradeHistory::new(config);
     for trade in &trades {

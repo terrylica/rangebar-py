@@ -57,6 +57,7 @@ fn profile_tier2_contribution(lookback_size: usize) {
         lookback_mode: LookbackMode::FixedCount(lookback_size),
         compute_tier2: false,
         compute_tier3: false,
+        ..Default::default()
     };
     let mut history_tier1 = TradeHistory::new(config_tier1);
     for trade in &trades {
@@ -82,6 +83,7 @@ fn profile_tier2_contribution(lookback_size: usize) {
         lookback_mode: LookbackMode::FixedCount(lookback_size),
         compute_tier2: true,
         compute_tier3: false,
+        ..Default::default()
     };
     let mut history_tier12 = TradeHistory::new(config_tier12);
     for trade in &trades {
@@ -106,6 +108,7 @@ fn profile_tier2_contribution(lookback_size: usize) {
         lookback_mode: LookbackMode::FixedCount(lookback_size),
         compute_tier2: true,
         compute_tier3: true,
+        ..Default::default()
     };
     let mut history_all = TradeHistory::new(config_all);
     for trade in &trades {
