@@ -590,11 +590,16 @@ impl PyLiveBarEngine {
     ///     thresholds: List of thresholds in decimal basis points (e.g., [250, 500])
     ///     include_microstructure: Whether to compute all 58 columns (default: True)
     #[new]
-    #[pyo3(signature = (symbols, thresholds, include_microstructure=true))]
+    #[pyo3(signature = (symbols, thresholds, include_microstructure=true, compute_tier2=true, compute_tier3=false, compute_hurst=None, compute_permutation_entropy=None))]
     pub fn new(
         symbols: Vec<String>,
         thresholds: Vec<u32>,
         include_microstructure: bool,
+        // Issue #128: Per-feature computation toggles
+        compute_tier2: bool,
+        compute_tier3: bool,
+        compute_hurst: Option<bool>,
+        compute_permutation_entropy: Option<bool>,
     ) -> PyResult<Self> {
         if symbols.is_empty() {
             return Err(PyValueError::new_err("symbols must not be empty"));
@@ -612,6 +617,11 @@ impl PyLiveBarEngine {
 
         let mut config = rangebar_streaming::LiveEngineConfig::new(symbols, thresholds);
         config.include_microstructure = include_microstructure;
+        // Issue #128: Wire per-feature computation toggles
+        config.compute_tier2 = compute_tier2;
+        config.compute_tier3 = compute_tier3;
+        config.compute_hurst = compute_hurst;
+        config.compute_permutation_entropy = compute_permutation_entropy;
 
         let engine = rangebar_streaming::LiveBarEngine::new(config);
 

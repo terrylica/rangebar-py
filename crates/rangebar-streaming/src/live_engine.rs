@@ -13,6 +13,7 @@
 use rangebar_core::checkpoint::Checkpoint;
 use rangebar_core::processor::{ProcessingError, RangeBarProcessor};
 use rangebar_core::interbar::InterBarConfig;
+use rangebar_core::IntraBarConfig;
 use rangebar_core::{AggTrade, RangeBar};
 use rangebar_providers::binance::{BinanceWebSocketStream, ReconnectionPolicy};
 use std::collections::HashMap;
@@ -76,6 +77,11 @@ pub struct LiveEngineConfig {
     pub reconnection_policy: ReconnectionPolicy,
     /// Initial checkpoints keyed by (symbol, threshold) for resuming incomplete bars
     pub initial_checkpoints: HashMap<(String, u32), Checkpoint>,
+    /// Issue #128: Per-feature computation toggles
+    pub compute_tier2: bool,
+    pub compute_tier3: bool,
+    pub compute_hurst: Option<bool>,
+    pub compute_permutation_entropy: Option<bool>,
 }
 
 impl LiveEngineConfig {
@@ -97,6 +103,10 @@ impl LiveEngineConfig {
             bar_channel_capacity: Self::get_bar_channel_capacity(),
             reconnection_policy: ReconnectionPolicy::default(),
             initial_checkpoints: HashMap::new(),
+            compute_tier2: true,
+            compute_tier3: false,
+            compute_hurst: None,
+            compute_permutation_entropy: None,
         }
     }
 
@@ -175,6 +185,20 @@ impl LiveBarEngine {
             let symbol = symbol.to_uppercase();
             let thresholds = self.config.thresholds.clone();
             let include_microstructure = self.config.include_microstructure;
+            // Issue #128: Build tier-aware InterBarConfig + IntraBarConfig
+            let inter_bar_config = InterBarConfig {
+                compute_tier2: self.config.compute_tier2,
+                compute_tier3: self.config.compute_tier3,
+                compute_hurst: self.config.compute_hurst,
+                compute_permutation_entropy: self.config.compute_permutation_entropy,
+                ..Default::default()
+            };
+            let intra_hurst = self.config.compute_hurst.unwrap_or(self.config.compute_tier3);
+            let intra_pe = self.config.compute_permutation_entropy.unwrap_or(self.config.compute_tier3);
+            let intra_bar_config = IntraBarConfig {
+                compute_hurst: intra_hurst,
+                compute_permutation_entropy: intra_pe,
+            };
             // Issue #96 Task #9: Clone ring buffer reference for symbol task
             let bar_buffer = self.bar_buffer.clone_ref();
             let shutdown = self.shutdown.clone();
@@ -193,8 +217,9 @@ impl LiveBarEngine {
                             // Re-enable microstructure features after checkpoint restore
                             if include_microstructure {
                                 restored = restored
-                                    .with_inter_bar_config(InterBarConfig::default())
-                                    .with_intra_bar_features();
+                                    .with_inter_bar_config(inter_bar_config.clone())
+                                    .with_intra_bar_features()
+                                    .with_intra_bar_config(intra_bar_config.clone());
                             }
                             tracing::info!(
                                 %symbol, threshold,
@@ -211,8 +236,9 @@ impl LiveBarEngine {
                             let mut fresh = RangeBarProcessor::new(threshold)?;
                             if include_microstructure {
                                 fresh = fresh
-                                    .with_inter_bar_config(InterBarConfig::default())
-                                    .with_intra_bar_features();
+                                    .with_inter_bar_config(inter_bar_config.clone())
+                                    .with_intra_bar_features()
+                                    .with_intra_bar_config(intra_bar_config.clone());
                             }
                             fresh
                         }
@@ -221,8 +247,9 @@ impl LiveBarEngine {
                     let mut fresh = RangeBarProcessor::new(threshold)?;
                     if include_microstructure {
                         fresh = fresh
-                            .with_inter_bar_config(InterBarConfig::default())
-                            .with_intra_bar_features();
+                            .with_inter_bar_config(inter_bar_config.clone())
+                            .with_intra_bar_features()
+                            .with_intra_bar_config(intra_bar_config.clone());
                     }
                     fresh
                 };
@@ -507,7 +534,13 @@ mod tests {
         assert_eq!(config.symbols.len(), 2);
         assert_eq!(config.thresholds.len(), 3);
         assert!(config.include_microstructure);
-        assert_eq!(config.bar_channel_capacity, 500);
+        // Default from get_bar_channel_capacity() when RANGEBAR_MAX_PENDING_BARS is unset
+        assert_eq!(config.bar_channel_capacity, 10_000);
+        // Issue #128: Verify tier config defaults
+        assert!(config.compute_tier2);
+        assert!(!config.compute_tier3);
+        assert_eq!(config.compute_hurst, None);
+        assert_eq!(config.compute_permutation_entropy, None);
     }
 
     #[test]

@@ -430,10 +430,18 @@ def _create_engine(
     """Create and configure a LiveBarEngine, returning (engine, checkpoints_loaded)."""
     from rangebar._core import LiveBarEngine
 
+    # Issue #128: Wire per-feature computation toggles from Settings
+    from rangebar.config import Settings
+
+    pop = Settings.get().population
     engine = LiveBarEngine(
         config.symbols,
         config.thresholds,
         config.include_microstructure,
+        compute_tier2=pop.compute_tier2,
+        compute_tier3=pop.compute_tier3,
+        compute_hurst=pop.compute_hurst or None,
+        compute_permutation_entropy=pop.compute_permutation_entropy or None,
     )
     loaded = _inject_checkpoints(
         engine, config.symbols, config.thresholds, trace_id,

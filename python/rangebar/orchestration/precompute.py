@@ -254,9 +254,19 @@ def precompute_range_bars(
 
     # Initialize processor (single instance for continuity)
     # Issue #81: Bar-relative lookback mode
+    # Issue #128: Wire per-feature computation toggles from Settings
+    from rangebar.config import Settings
+
+    pop = Settings.get().population
     processor = RangeBarProcessor(
-        threshold_decimal_bps, symbol=symbol,
+        threshold_decimal_bps,
+        symbol=symbol,
         inter_bar_lookback_bars=inter_bar_lookback_bars,
+        include_intra_bar_features=include_microstructure,
+        compute_tier2=pop.compute_tier2,
+        compute_tier3=pop.compute_tier3,
+        compute_hurst=pop.compute_hurst or None,
+        compute_permutation_entropy=pop.compute_permutation_entropy or None,
     )
 
     all_bars: list[pd.DataFrame] = []
