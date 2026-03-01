@@ -361,8 +361,8 @@ formula = "0.5 * ln(H/L)^2 - (2*ln(2) - 1) * ln(C/O)^2"
 range = [0.0, "inf"]
 units = "variance"
 nullable = true
-category = "volatility"
-tier = 3
+category = "statistical"
+tier = 2  # Issue #128: promoted from Tier 3 → Tier 2 (Gen600: #1 most useful feature)
 min_trades = 1
 reference = "Garman & Klass (1980) Journal of Business 53(1)"
 

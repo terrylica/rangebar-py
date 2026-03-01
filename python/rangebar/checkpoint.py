@@ -815,11 +815,33 @@ def populate_cache_resumable(
             active_processor = RangeBarProcessor.from_checkpoint(
                 checkpoint.processor_checkpoint,
             )
+            # Issue #128: Warn if feature config changed since checkpoint
+            pop = _get_population_config()
+            if (
+                checkpoint.compute_tier2 != pop.compute_tier2
+                or checkpoint.compute_tier3 != pop.compute_tier3
+                or checkpoint.compute_hurst != pop.compute_hurst
+                or checkpoint.compute_permutation_entropy
+                != pop.compute_permutation_entropy
+            ):
+                logger.warning(
+                    "Feature config changed since checkpoint "
+                    "(ckpt: T2=%s T3=%s H=%s PE=%s → "
+                    "now: T2=%s T3=%s H=%s PE=%s). "
+                    "New bars use current config; "
+                    "backfill old bars if needed.",
+                    checkpoint.compute_tier2,
+                    checkpoint.compute_tier3,
+                    checkpoint.compute_hurst,
+                    checkpoint.compute_permutation_entropy,
+                    pop.compute_tier2,
+                    pop.compute_tier3,
+                    pop.compute_hurst,
+                    pop.compute_permutation_entropy,
+                )
             # Re-enable microstructure features after checkpoint restore
             if include_microstructure:
                 # Issue #128: Wire per-feature flags from Settings
-                from rangebar.config import Settings
-                pop = Settings.get().population
                 active_processor.enable_microstructure(
                     inter_bar_lookback_count=eff_count,
                     inter_bar_lookback_bars=eff_bars,
