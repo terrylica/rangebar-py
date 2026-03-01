@@ -109,22 +109,22 @@ Each `RangeBar` tracks aggregate trade ID range for data integrity verification:
 | `lookback_vwap_position`   | (vwap - low) / (high - low)      | [0, 1]     |
 | `lookback_count_imbalance` | (buy_count - sell_count) / total | [-1, 1]    |
 
-### Tier 2: Statistical (5 features)
+### Tier 2: Statistical (6 features)
 
-| Feature                | Formula                    | Range   |
-| ---------------------- | -------------------------- | ------- |
-| `lookback_kyle_lambda` | (Δp/p) / (imbalance/vol)   | (-∞, ∞) |
-| `lookback_burstiness`  | (σ*τ - μ*τ) / (σ*τ + μ*τ)  | [-1, 1] |
-| `lookback_volume_skew` | E[(V-μ)³] / σ³             | (-∞, ∞) |
-| `lookback_volume_kurt` | E[(V-μ)⁴] / σ⁴ - 3         | [-2, ∞) |
-| `lookback_price_range` | (high - low) / first_price | [0, ∞)  |
+| Feature                     | Formula                    | Range   |
+| --------------------------- | -------------------------- | ------- |
+| `lookback_kyle_lambda`      | (Δp/p) / (imbalance/vol)   | (-∞, ∞) |
+| `lookback_burstiness`       | (σ*τ - μ*τ) / (σ*τ + μ*τ)  | [-1, 1] |
+| `lookback_volume_skew`      | E[(V-μ)³] / σ³             | (-∞, ∞) |
+| `lookback_volume_kurt`      | E[(V-μ)⁴] / σ⁴ - 3         | [-2, ∞) |
+| `lookback_price_range`      | (high - low) / first_price | [0, ∞)  |
+| `lookback_garman_klass_vol` | OHLC volatility            | [0, ∞)  |
 
-### Tier 3: Advanced (4 features)
+### Tier 3: Advanced (3 features)
 
 | Feature                        | Formula                      | Range  | Min Trades |
 | ------------------------------ | ---------------------------- | ------ | ---------- |
 | `lookback_kaufman_er`          | \|net\| / Σ\|changes\|       | [0, 1] | 2          |
-| `lookback_garman_klass_vol`    | OHLC volatility              | [0, ∞) | 1          |
 | `lookback_hurst`               | DFA estimator (soft-clamped) | [0, 1] | 64         |
 | `lookback_permutation_entropy` | Bandt-Pompe m=3              | [0, 1] | 60         |
 

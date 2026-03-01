@@ -71,9 +71,9 @@ include = [{ path = "python/rangebar/data/**", format = "wheel" }]
 # This is now default in Cargo.toml, but explicit here for documentation
 features = ["pyo3/extension-module", "data-providers"]
 # Force optimized wheel profile (see Cargo.toml [profile.wheel])
+# Strip is handled by [profile.wheel] strip="symbols" in Cargo.toml
+# and .cargo/config.toml rustflags — NOT here (conflicts with maturin 1.12+ --include-debuginfo)
 profile = "wheel"
-# Strip symbols to minimize wheel size
-strip = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
