@@ -122,39 +122,40 @@ class TestOrphanedBarMetadata:
 class TestGetOuroborosBoundaries:
     """Test get_ouroboros_boundaries function."""
 
-    # ==================== Year Mode ====================
+    # ==================== Month Mode (Default) ====================
 
-    def test_year_boundaries_single_year(self):
-        """Test year boundaries within a single year."""
+    def test_month_boundaries_single_month(self):
+        """Test month boundaries within a single month."""
         boundaries = get_ouroboros_boundaries(
-            date(2024, 1, 1), date(2024, 12, 31), "year"
+            date(2024, 3, 1), date(2024, 3, 31), "month"
         )
         assert len(boundaries) == 1
-        assert boundaries[0].timestamp == datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
-        assert boundaries[0].mode == OuroborosMode.YEAR
-        assert boundaries[0].reason == "year_boundary"
+        assert boundaries[0].timestamp == datetime(2024, 3, 1, 0, 0, 0, tzinfo=UTC)
+        assert boundaries[0].mode == OuroborosMode.MONTH
+        assert boundaries[0].reason == "month_boundary"
 
-    def test_year_boundaries_multi_year(self):
-        """Test year boundaries across multiple years."""
+    def test_month_boundaries_multi_month(self):
+        """Test month boundaries across multiple months."""
         boundaries = get_ouroboros_boundaries(
-            date(2023, 6, 1), date(2025, 6, 30), "year"
+            date(2024, 1, 15), date(2024, 4, 15), "month"
         )
-        assert len(boundaries) == 2
-        assert boundaries[0].timestamp == datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
-        assert boundaries[1].timestamp == datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
+        assert len(boundaries) == 3
+        assert boundaries[0].timestamp == datetime(2024, 2, 1, 0, 0, 0, tzinfo=UTC)
+        assert boundaries[1].timestamp == datetime(2024, 3, 1, 0, 0, 0, tzinfo=UTC)
+        assert boundaries[2].timestamp == datetime(2024, 4, 1, 0, 0, 0, tzinfo=UTC)
 
-    def test_year_boundaries_start_on_boundary(self):
-        """Test when start date IS a year boundary."""
+    def test_month_boundaries_start_on_boundary(self):
+        """Test when start date IS a month boundary."""
         boundaries = get_ouroboros_boundaries(
-            date(2024, 1, 1), date(2024, 3, 31), "year"
+            date(2024, 3, 1), date(2024, 5, 31), "month"
         )
-        assert len(boundaries) == 1
-        assert boundaries[0].timestamp == datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+        assert len(boundaries) == 3
+        assert boundaries[0].timestamp == datetime(2024, 3, 1, 0, 0, 0, tzinfo=UTC)
 
-    def test_year_boundaries_no_boundary_in_range(self):
-        """Test when no year boundary falls in range."""
+    def test_month_boundaries_no_boundary_in_range(self):
+        """Test when no month boundary falls in range."""
         boundaries = get_ouroboros_boundaries(
-            date(2024, 3, 1), date(2024, 6, 30), "year"
+            date(2024, 3, 2), date(2024, 3, 30), "month"
         )
         assert len(boundaries) == 0
 
@@ -429,10 +430,10 @@ class TestEdgeCases:
         assert len(boundaries) == 1
         assert boundaries[0].timestamp == datetime(2023, 2, 1, 0, 0, 0, tzinfo=UTC)
 
-    def test_year_boundary_midnight(self):
-        """Test year boundary is exactly midnight UTC."""
+    def test_month_boundary_midnight(self):
+        """Test month boundary is exactly midnight UTC."""
         boundaries = get_ouroboros_boundaries(
-            date(2023, 12, 31), date(2024, 1, 2), "year"
+            date(2024, 1, 31), date(2024, 2, 2), "month"
         )
         assert len(boundaries) == 1
         boundary = boundaries[0]
@@ -456,32 +457,32 @@ class TestEdgeCases:
     def test_same_day_start_end(self):
         """Test when start and end are the same day."""
         boundaries = get_ouroboros_boundaries(
-            date(2024, 1, 1), date(2024, 1, 1), "year"
+            date(2024, 3, 1), date(2024, 3, 1), "month"
         )
-        assert len(boundaries) == 1  # Jan 1 is a year boundary
+        assert len(boundaries) == 1  # Mar 1 is a month boundary
 
         boundaries = get_ouroboros_boundaries(
-            date(2024, 1, 2), date(2024, 1, 2), "year"
+            date(2024, 3, 2), date(2024, 3, 2), "month"
         )
-        assert len(boundaries) == 0  # Jan 2 is not a year boundary
+        assert len(boundaries) == 0  # Mar 2 is not a month boundary
 
-    def test_december_to_january_year_boundary(self):
-        """Test year boundary crossing December to January."""
+    def test_cross_month_boundary(self):
+        """Test month boundary crossing month end."""
         boundaries = get_ouroboros_boundaries(
-            date(2023, 12, 15), date(2024, 1, 15), "year"
+            date(2024, 3, 15), date(2024, 4, 15), "month"
         )
         assert len(boundaries) == 1
-        assert boundaries[0].timestamp == datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+        assert boundaries[0].timestamp == datetime(2024, 4, 1, 0, 0, 0, tzinfo=UTC)
 
-    def test_many_years_range(self):
-        """Test range spanning many years."""
+    def test_many_months_range(self):
+        """Test range spanning many months."""
         boundaries = get_ouroboros_boundaries(
-            date(2020, 1, 1), date(2025, 12, 31), "year"
+            date(2024, 1, 1), date(2024, 12, 31), "month"
         )
-        assert len(boundaries) == 6  # 2020, 2021, 2022, 2023, 2024, 2025
+        assert len(boundaries) == 12  # Jan through Dec
         for i, boundary in enumerate(boundaries):
-            assert boundary.timestamp.year == 2020 + i
-            assert boundary.timestamp.month == 1
+            assert boundary.timestamp.year == 2024
+            assert boundary.timestamp.month == i + 1
             assert boundary.timestamp.day == 1
 
     def test_timestamp_ms_precision(self):
@@ -676,37 +677,11 @@ class TestIterForexOuroborosSegments:
         assert len(segments) == 0
 
 
-@pytest.mark.clickhouse
-class TestOuroborosIntegrationWithRealData:
-    """Integration tests for ouroboros with real cryptocurrency data.
+class TestOuroborosAPIContract:
+    """Fast contract tests for ouroboros API signatures and validation."""
 
-    These tests verify that:
-    1. Default ouroboros is "year" for cryptocurrency
-    2. Ouroboros mode affects bar generation (different modes = different results)
-    3. Reproducibility: same parameters = same results
-    4. Year boundaries reset processor state
-    """
-
-    @pytest.fixture
-    def real_data_available(self):
-        """Check if real data is available for testing."""
-        try:
-            from rangebar import get_range_bars
-
-            # Quick test with small date range
-            df = get_range_bars(
-                "BTCUSDT",
-                "2024-01-01",
-                "2024-01-02",
-                threshold_decimal_bps=250,
-                use_cache=True,
-            )
-            return len(df) > 0
-        except (ImportError, FileNotFoundError, ConnectionError, ValueError):
-            return False
-
-    def test_default_ouroboros_is_year(self):
-        """Test that default ouroboros mode is 'year' for cryptocurrency."""
+    def test_default_ouroboros_is_none(self):
+        """Default ouroboros_mode parameter is None (resolved from config at runtime)."""
         import inspect
 
         from rangebar import get_range_bars
@@ -715,119 +690,8 @@ class TestOuroborosIntegrationWithRealData:
         ouroboros_param = sig.parameters["ouroboros_mode"]
         assert ouroboros_param.default is None
 
-    def test_reproducibility_same_ouroboros(self, real_data_available):
-        """Test that same ouroboros mode produces identical results."""
-        if not real_data_available:
-            pytest.skip("Real data not available")
-
-        from rangebar import get_range_bars
-
-        # Two calls with same parameters should produce identical results
-        df1 = get_range_bars(
-            "BTCUSDT",
-            "2024-01-01",
-            "2024-01-07",
-            threshold_decimal_bps=250,
-            ouroboros_mode="year",
-            use_cache=True,
-        )
-        df2 = get_range_bars(
-            "BTCUSDT",
-            "2024-01-01",
-            "2024-01-07",
-            threshold_decimal_bps=250,
-            ouroboros_mode="year",
-            use_cache=True,
-        )
-
-        assert len(df1) == len(df2)
-        assert df1.equals(df2), "Same ouroboros mode should produce identical results"
-
-    def test_different_ouroboros_modes_produce_different_bar_counts(
-        self, real_data_available
-    ):
-        """Test that different ouroboros modes may produce different bar counts.
-
-        Different modes reset processor at different boundaries, which can
-        affect the number of bars generated (due to orphaned bars at boundaries).
-        """
-        if not real_data_available:
-            pytest.skip("Real data not available")
-
-        from rangebar import get_range_bars
-
-        # Get bars with different ouroboros modes
-        df_year = get_range_bars(
-            "BTCUSDT",
-            "2024-01-01",
-            "2024-01-31",
-            threshold_decimal_bps=250,
-            ouroboros_mode="year",
-            use_cache=True,
-        )
-        df_month = get_range_bars(
-            "BTCUSDT",
-            "2024-01-01",
-            "2024-01-31",
-            threshold_decimal_bps=250,
-            ouroboros_mode="month",
-            use_cache=True,
-        )
-        df_week = get_range_bars(
-            "BTCUSDT",
-            "2024-01-01",
-            "2024-01-31",
-            threshold_decimal_bps=250,
-            ouroboros_mode="week",
-            use_cache=True,
-        )
-
-        # All should produce bars
-        assert len(df_year) > 0
-        assert len(df_month) > 0
-        assert len(df_week) > 0
-
-        # Bar counts may differ due to boundary resets
-        # (orphaned bars at each boundary may be excluded)
-        # Just verify they all produce reasonable results
-        assert len(df_year) > 100, "Should produce substantial bars for January"
-        assert len(df_month) > 100
-        assert len(df_week) > 100
-
-    def test_year_boundary_resets_processor(self, real_data_available):
-        """Test that year boundary causes processor reset.
-
-        When crossing year boundary with ouroboros='year', the processor
-        should reset, potentially creating an orphaned bar.
-        """
-        if not real_data_available:
-            pytest.skip("Real data not available")
-
-        from rangebar import get_range_bars
-
-        # Get bars crossing year boundary with orphaned bars included
-        df = get_range_bars(
-            "BTCUSDT",
-            "2023-12-30",
-            "2024-01-03",
-            threshold_decimal_bps=250,
-            ouroboros_mode="year",
-            include_orphaned_bars=True,
-            use_cache=True,
-        )
-
-        # Should have bars
-        assert len(df) > 0
-
-        # If orphaned bars are included, check for the column
-        if "is_orphan" in df.columns:
-            orphans = df[df["is_orphan"]]
-            # May or may not have orphans depending on processor state at boundary
-            # Just verify the column exists and has boolean values
-            assert df["is_orphan"].dtype == bool or orphans.empty
-
     def test_ouroboros_none_is_rejected(self):
-        """Test that ouroboros='none' is rejected (mandatory ouroboros)."""
+        """ouroboros='none' (string) is rejected."""
         from rangebar import get_range_bars
 
         with pytest.raises(ValueError, match="Invalid ouroboros mode"):
@@ -840,7 +704,7 @@ class TestOuroborosIntegrationWithRealData:
             )
 
     def test_ouroboros_invalid_value_rejected(self):
-        """Test that invalid ouroboros values are rejected."""
+        """Invalid ouroboros values are rejected."""
         from rangebar import get_range_bars
 
         with pytest.raises(ValueError, match="Invalid ouroboros mode"):

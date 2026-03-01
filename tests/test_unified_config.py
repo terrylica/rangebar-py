@@ -45,7 +45,7 @@ def test_population_defaults():
         with patch.dict(os.environ, env, clear=True):
             cfg = PopulationConfig()
             assert cfg.default_threshold == 250
-            assert cfg.ouroboros_mode == "year"
+            assert cfg.ouroboros_mode == "month"
             assert cfg.inter_bar_lookback_count == 200
             assert cfg.include_intra_bar_features is True
             assert cfg.symbol_gate == "strict"

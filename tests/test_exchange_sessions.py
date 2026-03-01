@@ -11,12 +11,15 @@ Run with: pytest tests/test_exchange_sessions.py -v
 
 from __future__ import annotations
 
+import warnings
 from datetime import UTC, datetime
 
-from rangebar.clickhouse.migrations import (
-    _SESSION_UPDATES,
-    _build_session_update_sql,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", UserWarning)
+    from rangebar.clickhouse.migrations import (
+        _SESSION_UPDATES,
+        _build_session_update_sql,
+    )
 from rangebar.ouroboros import (
     EXCHANGE_SESSION_HOURS,
     ExchangeSessionFlags,

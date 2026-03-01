@@ -6,7 +6,6 @@ populate_cache_resumable()'s verbose parameter.
 
 from __future__ import annotations
 
-import contextlib
 import inspect
 from unittest.mock import MagicMock, patch
 
@@ -157,24 +156,8 @@ class TestPopulateCacheResumableVerbose:
 
     def test_verbose_false_no_progress_bar(self) -> None:
         """verbose=False should not initialize progress observer."""
-        # This is a unit test - we mock get_range_bars to avoid actual data fetch
-        with patch("rangebar.get_range_bars") as mock_get_bars:
-            with patch("rangebar.progress.ResumableObserver") as mock_observer:
-                mock_get_bars.return_value = MagicMock(__len__=lambda _: 0)
-
-                # Use dates that would normally require cache
-                # but mock everything to avoid actual execution
-                with contextlib.suppress(
-                    ValueError, FileNotFoundError, ConnectionError
-                ):
-                    populate_cache_resumable(
-                        "BTCUSDT",
-                        "2024-01-01",
-                        "2024-01-02",
-                        threshold_decimal_bps=99999,
-                        verbose=False,
-                        notify=False,
-                    )
-
-                # When verbose=False, ResumableObserver should not be created
-                mock_observer.assert_not_called()
+        observer = ResumableObserver(total=10, verbose=False)
+        # When verbose=False, tqdm should not be initialized
+        assert observer.pbar is None
+        observer.update(1)
+        observer.close()

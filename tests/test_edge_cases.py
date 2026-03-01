@@ -127,9 +127,8 @@ class TestLargeDatasets:
         # Verify OHLCV structure
         assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
 
-    @pytest.mark.slow
     def test_100k_trades(self):
-        """Test processing 100,000 trades (marked as slow)."""
+        """Test processing 100,000 trades."""
         trades = [
             {
                 "timestamp": 1704067200000 + i * 100,

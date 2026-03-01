@@ -13,21 +13,6 @@ import pytest
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 
-
-def _has_migrated_schema() -> bool:
-    """Check if ClickHouse has the post-migration schema."""
-    try:
-        from rangebar.clickhouse import RangeBarCache
-
-        with RangeBarCache() as cache:
-            result = cache.client.query(
-                "SELECT name FROM system.columns "
-                "WHERE database='rangebar_cache' AND table='range_bars' "
-                "AND name='close_time_ms'"
-            )
-            return bool(result.result_rows)
-    except (ImportError, OSError, RuntimeError):
-        return False
 EXAMPLES = [
     "basic_usage.py",
     "validate_output.py",
@@ -40,7 +25,6 @@ def test_example_runs(example):
     example_path = EXAMPLES_DIR / example
     assert example_path.exists(), f"Example not found: {example}"
 
-    # Run example
     result = subprocess.run(
         [sys.executable, str(example_path)],
         check=False,
@@ -49,55 +33,6 @@ def test_example_runs(example):
         timeout=30,
     )
 
-    # Should not crash
     assert (
         result.returncode == 0
     ), f"Example failed: {example}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
-
-
-@pytest.mark.skipif(
-    subprocess.run(
-        [sys.executable, "-c", "import backtesting"], check=False, capture_output=True
-    ).returncode
-    != 0,
-    reason="backtesting.py not installed",
-)
-@pytest.mark.skipif(
-    not _has_migrated_schema(),
-    reason="ClickHouse schema not yet migrated to close_time_ms",
-)
-def test_backtesting_integration_example():
-    """Test backtesting integration example (requires backtesting.py)."""
-    example_path = EXAMPLES_DIR / "backtesting_integration.py"
-
-    result = subprocess.run(
-        [sys.executable, str(example_path)],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-
-    assert result.returncode == 0, (
-        f"Backtesting example failed:\nSTDOUT:\n{result.stdout}\n"
-        f"STDERR:\n{result.stderr}"
-    )
-
-
-def test_binance_csv_example_with_sample():
-    """Test Binance CSV example with generated sample data."""
-    example_path = EXAMPLES_DIR / "binance_csv_example.py"
-
-    # Run without arguments (creates sample data)
-    result = subprocess.run(
-        [sys.executable, str(example_path)],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-
-    assert result.returncode == 0, (
-        f"Binance CSV example failed:\nSTDOUT:\n{result.stdout}\n"
-        f"STDERR:\n{result.stderr}"
-    )

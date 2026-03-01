@@ -127,13 +127,13 @@ def test_fatal_cache_write_uses_circuit_breaker():
         # 3 failures should open the circuit
         for _ in range(3):
             with pytest.raises(CacheWriteError):
-                fatal_cache_write(dummy_df, "TEST", 250, "year")
+                fatal_cache_write(dummy_df, "TEST", 250, "month")
 
         assert _fatal_write_breaker.state == CircuitState.OPEN
 
         # Next call should raise CircuitOpenError, not CacheWriteError
         with pytest.raises(CircuitOpenError):
-            fatal_cache_write(dummy_df, "TEST", 250, "year")
+            fatal_cache_write(dummy_df, "TEST", 250, "month")
 
     # Clean up
     _fatal_write_breaker.state = CircuitState.CLOSED

@@ -94,7 +94,7 @@ def test_panel_drops_internal_columns():
             "Low": [41900.0],
             "Close": [42050.0],
             "Volume": [10.0],
-            "ouroboros_mode": ["year"],
+            "ouroboros_mode": ["month"],
             "is_orphan": [False],
             "first_agg_trade_id": [100],
             "last_agg_trade_id": [200],

@@ -336,7 +336,7 @@ def test_reset_at_ouroboros_new_bar_starts_fresh():
     bars_dec = processor.process_trades(dec_trades)
     assert len(bars_dec) == 0  # No completed bars yet
 
-    # Reset at year boundary (Jan 1 00:00:00 UTC)
+    # Reset at ouroboros boundary
     orphaned = processor.reset_at_ouroboros()
     assert orphaned is not None
     assert orphaned["open"] == 42000.0

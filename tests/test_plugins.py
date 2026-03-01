@@ -309,3 +309,104 @@ class TestEnrichBarsOrchestration:
             # Should not raise
             result = enrich_bars(sample_bars, "BTCUSDT", 500)
             assert result is sample_bars
+
+
+# ---------------------------------------------------------------------------
+# Real plugin integration (atr-adaptive-laguerre)
+# ---------------------------------------------------------------------------
+
+
+class TestLaguerrePluginIntegration:
+    """Integration tests for the real LaguerreFeatureProvider plugin.
+
+    Validates the installed atr-adaptive-laguerre package works end-to-end
+    with the rangebar plugin system. Uses synthetic data (no network I/O).
+    """
+
+    @pytest.fixture
+    def laguerre_provider(self):
+        from atr_adaptive_laguerre.rangebar_plugin import LaguerreFeatureProvider
+
+        return LaguerreFeatureProvider()
+
+    @pytest.fixture
+    def synthetic_bars(self) -> pd.DataFrame:
+        """100 synthetic range bars with realistic OHLCV data."""
+        n = 100
+        np.random.seed(42)
+        base = 42000.0
+        prices = base * np.cumprod(1 + np.random.randn(n) * 0.001)
+        return pd.DataFrame(
+            {
+                "open": prices * 0.999,
+                "high": prices * 1.001,
+                "low": prices * 0.998,
+                "close": prices,
+                "volume": np.random.exponential(5.0, n),
+            },
+            index=pd.RangeIndex(n),
+        )
+
+    def test_discovery_finds_laguerre(self) -> None:
+        """Plugin system discovers the installed laguerre provider."""
+        from rangebar.plugins.loader import discover_providers
+
+        providers = discover_providers()
+        names = [p.name for p in providers]
+        assert "laguerre" in names
+
+    def test_protocol_compliance(self, laguerre_provider) -> None:
+        """Real provider satisfies the FeatureProvider protocol."""
+        assert isinstance(laguerre_provider, FeatureProvider)
+        assert laguerre_provider.name == "laguerre"
+        assert laguerre_provider.version == "2.4.1"
+        assert len(laguerre_provider.columns) == 6
+        assert all(c.startswith("laguerre_") for c in laguerre_provider.columns)
+
+    def test_enrich_adds_all_columns(
+        self, laguerre_provider, synthetic_bars,
+    ) -> None:
+        """enrich() adds all 6 laguerre_* columns to the DataFrame."""
+        result = laguerre_provider.enrich(synthetic_bars, "BTCUSDT", 250)
+        for col in laguerre_provider.columns:
+            assert col in result.columns, f"Missing column: {col}"
+        assert result is synthetic_bars  # in-place mutation
+
+    def test_rsi_bounded_zero_one(
+        self, laguerre_provider, synthetic_bars,
+    ) -> None:
+        """laguerre_rsi must be in [0, 1]."""
+        result = laguerre_provider.enrich(synthetic_bars, "BTCUSDT", 250)
+        rsi = result["laguerre_rsi"].dropna()
+        assert (rsi >= 0.0).all()
+        assert (rsi <= 1.0).all()
+
+    def test_regime_values(
+        self, laguerre_provider, synthetic_bars,
+    ) -> None:
+        """laguerre_regime must be in {0, 1, 2} (bear/neutral/bull)."""
+        result = laguerre_provider.enrich(synthetic_bars, "BTCUSDT", 250)
+        regime = result["laguerre_regime"].dropna()
+        assert set(regime.unique()).issubset({0, 1, 2})
+
+    def test_idempotent(
+        self, laguerre_provider, synthetic_bars,
+    ) -> None:
+        """Calling enrich() twice produces the same result."""
+        result1 = laguerre_provider.enrich(synthetic_bars, "BTCUSDT", 250)
+        rsi_after_first = result1["laguerre_rsi"].copy()
+        result2 = laguerre_provider.enrich(result1, "BTCUSDT", 250)
+        assert result2["laguerre_rsi"].equals(rsi_after_first)
+
+    def test_enrich_bars_orchestration(self, synthetic_bars) -> None:
+        """enrich_bars() orchestrator discovers and runs real plugin."""
+        result = enrich_bars(synthetic_bars, "BTCUSDT", 250)
+        assert "laguerre_rsi" in result.columns
+        assert "laguerre_regime" in result.columns
+
+    def test_column_registration(self) -> None:
+        """Discovery registers plugin columns in constants."""
+        from rangebar.plugins.loader import discover_providers
+
+        discover_providers()
+        assert "laguerre_rsi" in _rc._PLUGIN_FEATURE_COLUMNS

@@ -14,26 +14,26 @@ from datetime import date, datetime
 class TestMEM010PerSegmentEstimation:
     """Test that MEM-010 estimates per-segment, not full range."""
 
-    def test_iter_ouroboros_segments_year_mode(self):
-        """Year mode should produce ~N segments for N-year range."""
+    def test_iter_ouroboros_segments_month_mode(self):
+        """Month mode should produce ~N segments for N-month range."""
         from rangebar.ouroboros import iter_ouroboros_segments
 
-        start = date(2020, 1, 1)
-        end = date(2023, 12, 31)
-        segments = list(iter_ouroboros_segments(start, end, "year"))
+        start = date(2024, 1, 1)
+        end = date(2024, 4, 30)
+        segments = list(iter_ouroboros_segments(start, end, "month"))
 
-        # 4 years should produce 4 segments
+        # 4 months should produce 4 segments
         assert len(segments) == 4
 
     def test_largest_segment_selection(self):
         """MEM-010 should find the largest segment by time span."""
         from rangebar.ouroboros import iter_ouroboros_segments
 
-        start = date(2023, 6, 15)
+        start = date(2024, 1, 15)
         end = date(2024, 3, 15)
-        segments = list(iter_ouroboros_segments(start, end, "year"))
+        segments = list(iter_ouroboros_segments(start, end, "month"))
 
-        # Should have 2 segments: partial 2023 and partial 2024
+        # Should have 3 segments: partial Jan, Feb, partial Mar
         assert len(segments) >= 1
 
         # Find largest by time span (same logic as range_bars.py)
@@ -54,9 +54,9 @@ class TestMEM010PerSegmentEstimation:
         """Largest segment should cover less time than the full date range."""
         from rangebar.ouroboros import iter_ouroboros_segments
 
-        start = date(2020, 1, 1)
-        end = date(2025, 12, 31)
-        segments = list(iter_ouroboros_segments(start, end, "year"))
+        start = date(2024, 1, 1)
+        end = date(2024, 12, 31)
+        segments = list(iter_ouroboros_segments(start, end, "month"))
 
         full_span = (
             datetime.combine(end, datetime.min.time())
@@ -66,10 +66,10 @@ class TestMEM010PerSegmentEstimation:
         largest = max(segments, key=lambda s: (s[1] - s[0]).total_seconds())
         largest_span = (largest[1] - largest[0]).total_seconds()
 
-        # Largest segment should be much smaller than full 6-year range
+        # Largest segment should be much smaller than full 12-month range
         assert largest_span < full_span
-        # Each year segment is roughly 1/6 of the total
-        assert largest_span < full_span * 0.25  # Each segment < 25% of total
+        # Each month segment is roughly 1/12 of the total
+        assert largest_span < full_span * 0.15  # Each segment < 15% of total
 
     def test_range_bars_mem010_comment_present(self):
         """Verify MEM-010 comment is present in range_bars.py."""

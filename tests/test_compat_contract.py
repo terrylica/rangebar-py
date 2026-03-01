@@ -148,9 +148,16 @@ def test_manifest_group_enum_values():
 
 def test_availability_returns_dict():
     """D9: get_cache_coverage() returns dict[str, SymbolAvailability] (even if empty)."""
+    import warnings
+    from unittest.mock import patch
+
     from rangebar.compat.availability import get_cache_coverage
 
-    result = get_cache_coverage()
+    # Mock ClickHouse to avoid 6s connection timeout
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        with patch("rangebar.clickhouse.cache.RangeBarCache", side_effect=OSError("mocked")):
+            result = get_cache_coverage()
     assert isinstance(result, dict)
 
 
