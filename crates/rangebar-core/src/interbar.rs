@@ -144,7 +144,7 @@ impl TradeHistory {
     ) -> Self {
         // Issue #96 Task #191: Trigger entropy cache warm-up on first TradeHistory creation
         // Uses lazy static to ensure it runs exactly once per process
-        let _ = &*ENTROPY_CACHE_WARMUP;
+        let () = &*ENTROPY_CACHE_WARMUP;
 
         // Issue #118: Optimized capacity sizing based on lookback config
         // Reduces memory overhead by 20-30% while maintaining safety margins
@@ -475,6 +475,11 @@ impl TradeHistory {
         // Issue #96 Task #167 Phase 2: Trend-guided binary search with lookahead hint
         // Uses hint for O(1) boundary probe; falls back to O(log n) VecDeque binary search.
         // Issue #96 Task #48: partition_point replaces binary_search_by + Ok/Err collapse
+        #[allow(
+            clippy::inline_always,
+            reason = "Deliberate: a two-line binary-search helper on the per-trade hot \
+                      path; a real call here would cost more than the function body."
+        )]
         #[inline(always)]
         fn ts_partition_point(trades: &std::collections::VecDeque<TradeSnapshot>, bar_open_time: i64) -> usize {
             trades.partition_point(|trade| trade.timestamp < bar_open_time)
@@ -695,7 +700,7 @@ impl TradeHistory {
         let mut low = i64::MAX;
         let mut high = i64::MIN;
 
-        for t in lookback.iter() {
+        for t in lookback {
             total_turnover += t.turnover;
             total_volume_fp += t.volume.0 as i128;
             low = low.min(t.price.0);

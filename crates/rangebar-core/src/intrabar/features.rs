@@ -339,7 +339,7 @@ fn compute_statistical_features(trades: &[AggTrade], prices: &[f64]) -> Statisti
     let mut m3_vol = 0.0_f64; // sum of (v - mean)^3
     let mut m4_vol = 0.0_f64; // sum of (v - mean)^4
 
-    for &vol in cached_volumes.iter() {
+    for &vol in &cached_volumes {
         // Issue #96 Task #196: Maximize ILP by pre-computing all powers
         // Compute all powers first (d2, d3, d4) before accumulating
         // This allows CPU to execute 3 independent additions in parallel
@@ -548,7 +548,7 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
     let mean: f64 = prices.iter().sum::<f64>() / n as f64;
     let mut y = SmallVec::<[f64; 256]>::new();
     let mut cumsum = 0.0;
-    for &p in prices.iter() {
+    for &p in prices {
         cumsum += p - mean;
         y.push(cumsum);
     }
@@ -663,6 +663,11 @@ fn compute_hurst_dfa(prices: &[f64]) -> f64 {
 /// Requires at least `m! + (m-1)` observations where m is the embedding dimension.
 /// Issue #96 Task #53: Optimized to use bounded array instead of HashMap<String>
 /// Issue #96 Task #54: Hoisted SmallVec allocation and added early-exit for sorted sequences
+#[allow(
+    clippy::many_single_char_names,
+    reason = "m (embedding dimension), n (series length) and the a/b/c ordinal triple \
+              are the notation used in the Bandt-Pompe permutation-entropy literature."
+)]
 fn compute_permutation_entropy(prices: &[f64], m: usize) -> f64 {
     let n = prices.len();
     let required = factorial(m) + m - 1;

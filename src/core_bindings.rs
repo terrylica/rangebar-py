@@ -101,6 +101,13 @@ impl PyRangeBarProcessor {
     ///     `ValueError`: If threshold is out of range [1, `100_000`]
     #[new]
     #[pyo3(signature = (threshold_decimal_bps, symbol = None, prevent_same_timestamp_close = true, inter_bar_lookback_count = None, include_intra_bar_features = false, inter_bar_lookback_bars = None, compute_tier2 = true, compute_tier3 = false, compute_hurst = None, compute_permutation_entropy = None))]
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::fn_params_excessive_bools,
+        reason = "This is a PyO3 #[new] constructor: the parameter list IS the Python \
+                  keyword-argument API declared in #[pyo3(signature = ...)] above. \
+                  Collapsing it into a struct would be a breaking change to callers."
+    )]
     pub(crate) fn new(
         threshold_decimal_bps: u32,
         symbol: Option<String>,
@@ -199,6 +206,11 @@ impl PyRangeBarProcessor {
     ///     inter_bar_lookback_bars: Bar-relative lookback (takes precedence)
     ///     include_intra_bar_features: Enable intra-bar features
     #[pyo3(signature = (inter_bar_lookback_count = None, inter_bar_lookback_bars = None, include_intra_bar_features = false, compute_tier2 = true, compute_tier3 = false, compute_hurst = None, compute_permutation_entropy = None))]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "PyO3 method: the parameter list IS the Python keyword-argument API \
+                  declared in #[pyo3(signature = ...)] above."
+    )]
     fn enable_microstructure(
         &mut self,
         inter_bar_lookback_count: Option<usize>,
@@ -353,7 +365,7 @@ impl PyRangeBarProcessor {
 
         // Issue #96 Task #84: Process each trade individually to maintain state (Issue #16 fix)
         // Pre-allocate Vec with capacity estimate: typical bar completion is 2-10 trades per bar
-        let mut bars = Vec::with_capacity((agg_trades.len() + 9) / 10);
+        let mut bars = Vec::with_capacity(agg_trades.len().div_ceil(10));
         for trade in agg_trades {
             match self.processor.process_single_trade(&trade) {
                 Ok(Some(bar)) => bars.push(rangebar_to_dict(py, &bar)?),
@@ -414,7 +426,7 @@ impl PyRangeBarProcessor {
 
         // Issue #96 Task #84: Process each trade individually to maintain state
         // Pre-allocate Vec with capacity estimate: typical bar completion is 2-10 trades per bar
-        let mut bars = Vec::with_capacity((agg_trades.len() + 9) / 10);
+        let mut bars = Vec::with_capacity(agg_trades.len().div_ceil(10));
         for trade in agg_trades {
             match self.processor.process_single_trade(&trade) {
                 Ok(Some(bar)) => bars.push(bar),

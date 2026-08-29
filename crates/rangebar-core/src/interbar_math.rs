@@ -344,7 +344,7 @@ impl EntropyCache {
             // is valid for both interpretations since we're just reading the bit patterns.
             let price_bits: &[u64] = unsafe {
                 std::slice::from_raw_parts(
-                    prices.as_ptr() as *const u64,
+                    prices.as_ptr().cast::<u64>(),
                     prices.len(),
                 )
             };
@@ -1201,7 +1201,7 @@ pub fn compute_kaufman_er(prices: &[f64]) -> f64 {
 /// Garman-Klass volatility coefficient: 2*ln(2) - 1
 /// Precomputed to avoid repeated calculation in every call
 /// Exact value: 0.3862943611198906
-const GARMAN_KLASS_COEFFICIENT: f64 = 0.3862943611198906;
+const GARMAN_KLASS_COEFFICIENT: f64 = 0.386_294_361_119_890_6;
 
 /// Precomputed ln(2!) for M=2 permutation entropy normalization
 /// Exact value: ln(2)
@@ -1209,7 +1209,7 @@ const LN_2_FACTORIAL: f64 = std::f64::consts::LN_2;
 
 /// Precomputed ln(3!) for M=3 permutation entropy normalization
 /// Exact value: ln(6) ≈ 1.791759469228055
-const LN_3_FACTORIAL: f64 = 1.791759469228055;
+const LN_3_FACTORIAL: f64 = 1.791_759_469_228_055;
 
 /// Compute Garman-Klass volatility estimator
 ///
@@ -1220,6 +1220,11 @@ const LN_3_FACTORIAL: f64 = 1.791759469228055;
 /// Coefficient precomputed: (2*ln(2) - 1) = 0.386294...
 /// Issue #96 Task #52: #[inline] for per-bar computation function
 #[inline]
+#[allow(
+    clippy::many_single_char_names,
+    reason = "o/h/l/c/n are the standard OHLC symbols used in the Garman-Klass \
+              formula; longer names would obscure the correspondence to the paper."
+)]
 pub fn compute_garman_klass(lookback: &[&TradeSnapshot]) -> f64 {
     if lookback.is_empty() {
         return 0.0;
@@ -1352,6 +1357,11 @@ pub(crate) fn soft_clamp_hurst(h: f64) -> f64 {
 /// - Large windows (>100 samples): 3-8x with batch caching on >20 trades
 ///
 /// Issue #96 Task #93: Dispatch between scalar and batch-optimized implementations
+#[allow(
+    clippy::inline_always,
+    reason = "Deliberate: this is a per-bar hot-path dispatcher whose whole purpose is \
+              to be inlined so the branch on `n` folds away at the call site."
+)]
 #[inline(always)]
 pub fn compute_permutation_entropy(prices: &[f64]) -> f64 {
     let n = prices.len();

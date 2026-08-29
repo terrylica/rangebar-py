@@ -24,6 +24,11 @@
 /// Pre-computed sigmoid LUT for density [0.0, 1.0] with 0.01 step
 /// sigmoid(x, center=0.5, scale=10) values precomputed for density inputs
 /// Size: 101 entries (0.00, 0.01, 0.02, ..., 1.00)
+#[allow(
+    clippy::unreadable_literal,
+    reason = "Digit separators inside a dense numeric lookup table hurt readability \
+              rather than help; these are tabulated function values, not magic numbers."
+)]
 const SIGMOID_LUT: [f64; 101] = [
     0.00669285, 0.00726909, 0.00787748, 0.00852097, 0.00920163,  // 0.00-0.04
     0.00992070, 0.01068062, 0.01148386, 0.01233315, 0.01323157,  // 0.05-0.09
@@ -50,6 +55,11 @@ const SIGMOID_LUT: [f64; 101] = [
 
 /// Pre-computed tanh LUT for [0.0, 5.0] with 0.1 step (normalize_excess input * 5)
 /// Size: 51 entries (0.0, 0.1, 0.2, ..., 5.0)
+#[allow(
+    clippy::unreadable_literal,
+    reason = "Digit separators inside a dense numeric lookup table hurt readability \
+              rather than help; these are tabulated function values, not magic numbers."
+)]
 const TANH_LUT: [f64; 51] = [
     0.00000000, 0.09966799, 0.19737532, 0.29131261, 0.38065307,  // 0.0-0.4
     0.46211716, 0.53704957, 0.60436778, 0.66403677, 0.71629787,  // 0.5-0.9
@@ -121,6 +131,11 @@ pub fn soft_clamp_hurst_lut(h: f64) -> f64 {
 /// sigmoid(x, center=0.5, scale=4.0) = 1 / (1 + exp(-(x - 0.5) * 4))
 /// Size: 51 entries (0.0, 0.1, 0.2, ..., 5.0)
 /// CV values > 5.0 saturate at ~1.0 (0.99999998)
+#[allow(
+    clippy::unreadable_literal,
+    reason = "Digit separators inside a dense numeric lookup table hurt readability \
+              rather than help; these are tabulated function values, not magic numbers."
+)]
 const CV_SIGMOID_LUT: [f64; 51] = [
     0.11920292, 0.16798161, 0.23147522, 0.31002552, 0.40131234,  // 0.0-0.4
     0.50000000, 0.59868766, 0.68997448, 0.76852478, 0.83201839,  // 0.5-0.9

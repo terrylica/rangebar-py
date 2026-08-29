@@ -233,15 +233,15 @@ fn parse_output_statistics(output: &str) -> (Option<u64>, Option<u64>) {
     let mut total_bars = None;
 
     for line in output.lines() {
-        if line.contains("Total Trades:") {
-            if let Some(trades_str) = line.split(':').nth(1) {
-                total_trades = trades_str.trim().replace(',', "").parse().ok();
-            }
+        if line.contains("Total Trades:")
+            && let Some(trades_str) = line.split(':').nth(1)
+        {
+            total_trades = trades_str.trim().replace(',', "").parse().ok();
         }
-        if line.contains("Total Bars:") {
-            if let Some(bars_str) = line.split(':').nth(1) {
-                total_bars = bars_str.trim().replace(',', "").parse().ok();
-            }
+        if line.contains("Total Bars:")
+            && let Some(bars_str) = line.split(':').nth(1)
+        {
+            total_bars = bars_str.trim().replace(',', "").parse().ok();
         }
     }
 

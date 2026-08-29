@@ -43,6 +43,8 @@ fn benchmark_feature_computation(window_size: usize, num_bars: usize) {
         lookback_mode: LookbackMode::FixedCount(window_size),
         compute_tier2: true,  // Enable intermediate buffer allocations
         compute_tier3: true,
+        // Issue #128 per-feature overrides; None = follow compute_tier3 (pre-#128 behaviour).
+        ..Default::default()
     });
 
     let trades = create_test_trades(window_size);
@@ -113,6 +115,8 @@ fn benchmark_memory_efficiency() {
             lookback_mode: LookbackMode::FixedCount(window_size),
             compute_tier2: true,
             compute_tier3: true,
+            // Issue #128 per-feature overrides; None = follow compute_tier3 (pre-#128 behaviour).
+            ..Default::default()
         });
 
         let trades = create_test_trades(window_size);

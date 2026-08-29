@@ -46,6 +46,8 @@ fn benchmark_tier1_small_window() {
         lookback_mode: LookbackMode::FixedCount(50),
         compute_tier2: false,
         compute_tier3: false,
+        // Issue #128 per-feature overrides; None = follow compute_tier3 (pre-#128 behaviour).
+        ..Default::default()
     });
 
     let trades = create_test_trades(50);
@@ -85,6 +87,8 @@ fn benchmark_tier1_medium_window() {
         lookback_mode: LookbackMode::FixedCount(500),
         compute_tier2: false,
         compute_tier3: false,
+        // Issue #128 per-feature overrides; None = follow compute_tier3 (pre-#128 behaviour).
+        ..Default::default()
     });
 
     let trades = create_test_trades(500);
@@ -123,6 +127,8 @@ fn benchmark_tier1_large_window() {
         lookback_mode: LookbackMode::FixedCount(1000),
         compute_tier2: false,
         compute_tier3: false,
+        // Issue #128 per-feature overrides; None = follow compute_tier3 (pre-#128 behaviour).
+        ..Default::default()
     });
 
     let trades = create_test_trades(1000);
@@ -161,6 +167,8 @@ fn benchmark_feature_mix() {
         lookback_mode: LookbackMode::FixedCount(100),
         compute_tier2: false,
         compute_tier3: false,
+        // Issue #128 per-feature overrides; None = follow compute_tier3 (pre-#128 behaviour).
+        ..Default::default()
     });
 
     let trades = create_test_trades(100);

@@ -9,7 +9,6 @@
 //! - RANGEBAR_RAYON_THREADS: Number of threads (default: num_cpus)
 //! - RANGEBAR_RAYON_STACK_SIZE: Stack size in bytes (default: rayon default)
 
-use num_cpus;
 use std::env;
 
 /// Initialize rayon global thread pool with performance-optimal settings
@@ -26,7 +25,7 @@ pub fn initialize_rayon_pool() -> Result<(), Box<dyn std::error::Error>> {
     let num_threads = env::var("RANGEBAR_RAYON_THREADS")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or_else(|| num_cpus::get());
+        .unwrap_or_else(num_cpus::get);
 
     // Get stack size from env or use rayon default (2MB)
     let stack_size = env::var("RANGEBAR_RAYON_STACK_SIZE")

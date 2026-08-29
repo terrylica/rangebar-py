@@ -36,6 +36,8 @@ fn benchmark_trade_push_overhead(window_size: usize, num_trades: usize) {
         lookback_mode: LookbackMode::FixedCount(window_size),
         compute_tier2: false,
         compute_tier3: false,
+        // Issue #128 per-feature overrides; None = follow compute_tier3 (pre-#128 behaviour).
+        ..Default::default()
     });
 
     // Warmup: add initial trades
@@ -77,6 +79,8 @@ fn benchmark_pruning_efficiency(window_size: usize) {
         lookback_mode: LookbackMode::FixedCount(window_size),
         compute_tier2: false,
         compute_tier3: false,
+        // Issue #128 per-feature overrides; None = follow compute_tier3 (pre-#128 behaviour).
+        ..Default::default()
     });
 
     // Add trades to trigger multiple prune cycles

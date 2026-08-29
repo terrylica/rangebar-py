@@ -168,6 +168,11 @@ impl<T: Clone + Send + 'static> ConcurrentRingBuffer<T> {
         self.inner.lock().len()
     }
 
+    /// Returns `true` if the buffer currently holds no items.
+    pub fn is_empty(&self) -> bool {
+        self.inner.lock().is_empty()
+    }
+
     /// Get capacity
     pub fn capacity(&self) -> usize {
         self.inner.lock().capacity()

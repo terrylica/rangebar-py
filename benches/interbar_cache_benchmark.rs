@@ -41,6 +41,8 @@ fn benchmark_cache_hit_rate(window_size: usize, num_computations: usize) {
         lookback_mode: LookbackMode::FixedCount(window_size),
         compute_tier2: false,
         compute_tier3: false,
+        // Issue #128 per-feature overrides; None = follow compute_tier3 (pre-#128 behaviour).
+        ..Default::default()
     });
 
     let trades = create_test_trades(window_size);
@@ -80,6 +82,8 @@ fn benchmark_cache_miss_rate(window_size: usize) {
         lookback_mode: LookbackMode::FixedCount(window_size),
         compute_tier2: false,
         compute_tier3: false,
+        // Issue #128 per-feature overrides; None = follow compute_tier3 (pre-#128 behaviour).
+        ..Default::default()
     });
 
     let trades = create_test_trades(window_size);

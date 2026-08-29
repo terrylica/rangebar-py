@@ -228,7 +228,8 @@ impl StreamingProcessor {
         // Process trade using existing algorithm (single trade at a time)
         // Note: Clone is acceptable here since this is the bounded-memory streaming processor
         // (not the main hot path; LiveBarEngine uses non-cloning path via live_engine.rs)
-        self.processor.process_trades_continuously(&[trade.clone()]);
+        self.processor
+            .process_trades_continuously(std::slice::from_ref(trade));
 
         // Extract completed bars immediately (prevents accumulation)
         let mut completed_bars = self.processor.get_all_completed_bars();

@@ -149,9 +149,9 @@ pub fn warm_up_entropy_cache() {
 
     // Try to acquire write lock without blocking. If contention exists, skip warm-up.
     // This ensures warm-up doesn't block the main processing thread.
-    let mut cache_guard = match cache.try_write() {
-        Some(guard) => guard,
-        None => return, // Skip warm-up if cache is locked
+    // Skip warm-up if cache is locked
+    let Some(mut cache_guard) = cache.try_write() else {
+        return;
     };
 
     // Pattern 1: Stable consolidation (0.5% volatility)

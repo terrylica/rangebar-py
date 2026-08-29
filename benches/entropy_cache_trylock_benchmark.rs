@@ -43,6 +43,8 @@ fn benchmark_single_threaded_cache() {
         lookback_mode: LookbackMode::FixedCount(100),
         compute_tier2: true,  // Enable entropy computation (Tier 3)
         compute_tier3: true,
+        // Issue #128 per-feature overrides; None = follow compute_tier3 (pre-#128 behaviour).
+        ..Default::default()
     });
 
     let trades = create_test_trades(0, 150);
@@ -80,6 +82,8 @@ fn benchmark_multi_threaded_contention() {
         lookback_mode: LookbackMode::FixedCount(200),
         compute_tier2: true,
         compute_tier3: true,
+        // Issue #128 per-feature overrides; None = follow compute_tier3 (pre-#128 behaviour).
+        ..Default::default()
     })));
 
     // Initialize with trades
