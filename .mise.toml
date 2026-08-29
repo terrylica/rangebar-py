@@ -152,6 +152,20 @@ RANGEBAR_TELEGRAM_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/range
 RANGEBAR_TELEGRAM_CHAT_ID = "90417581"
 
 # =============================================================================
+# Pushover Alerts (names only -- NEVER commit values)
+# =============================================================================
+# Supply these out-of-band (Doppler, ~/.claude/.secrets, or your shell env).
+# All Pushover call sites skip sending silently when unset.
+#
+#   PUSHOVER_USER_KEY           - Pushover account user key (shared)
+#   PUSHOVER_CHECKSUM_APP_TOKEN - app token, "RB Checksum Fail"
+#                                 (python/rangebar/notify/pushover.py)
+#   PUSHOVER_GATE_APP_TOKEN     - app token, "RB runtime failures"
+#                                 (python/rangebar/symbol_registry.py)
+#   PUSHOVER_API_TOKEN          - app token used by threshold-violation alerts
+#                                 (python/rangebar/threshold.py)
+
+# =============================================================================
 # ClickHouse Cache Configuration
 # =============================================================================
 RANGEBAR_CH_HOSTS = "bigblack"

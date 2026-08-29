@@ -507,19 +507,22 @@ def _log_gate_violation_ndjson(
 def _send_gate_pushover_alert(symbol: str, operation: str) -> None:
     """Send Pushover EMERGENCY alert for gate violation.
 
-    Hardcoded credentials (safe to share -- Pushover app tokens are not secrets).
     App: "RB runtime failures" on Pushover dashboard.
     Sound: "dune" (custom uploaded sound).
     Priority: 2 (Emergency) -- repeats every 30s until acknowledged, expires 1hr.
 
-    Pushover dashboard: https://pushover.net/apps/aii416kz1pc1rmeftgo58fekifj4fm
-    User key source: Pushover account settings page
-    Also in 1Password: item hkrtw4piagud72r7ukp64y72ne (vault: Employee)
+    Credentials come from the environment (Doppler / mise ``[env]`` / .env):
+
+        PUSHOVER_GATE_APP_TOKEN - App token for "RB runtime failures"
+        PUSHOVER_USER_KEY - Pushover account user key
+
+    If either is unset the alert is skipped -- alerting is secondary and must
+    never break the caller.
     """
-    # Hardcoded: Pushover "RB runtime failures" app token + user key
-    # These are NOT secrets -- Pushover tokens only allow sending notifications
-    app_token = "aii416kz1pc1rmeftgo58fekifj4fm"  # App: "RB runtime failures"
-    user_key = "ury88s1def6v16seeueoefqn1zbua1"
+    app_token = os.environ.get("PUSHOVER_GATE_APP_TOKEN")
+    user_key = os.environ.get("PUSHOVER_USER_KEY")
+    if not app_token or not user_key:
+        return
 
     import httpx
 

@@ -6,19 +6,55 @@ Pushover alerts are used for CRITICAL data integrity issues that require
 immediate attention, such as:
 - SHA-256 checksum mismatches (data corruption detected)
 - Tier 1 cache integrity failures
+
+Configuration
+-------------
+Set environment variables (via Doppler, mise ``[env]``, or .env):
+
+    PUSHOVER_CHECKSUM_APP_TOKEN - App token for the "RB Checksum Fail" app
+    PUSHOVER_USER_KEY - Pushover account user key
+
+If either is unset, alerts are skipped (logged, never raised) -- alerting is
+secondary and must never break a data pipeline.
 """
 
 from __future__ import annotations
 
+import os
 import sys
+from functools import lru_cache
 
 import requests
 
-# Pushover API configuration
-# These credentials are for the "RB Checksum Fail" app
-PUSHOVER_APP_TOKEN = "asxuepwiaqkwc5e749xj1qx2eg1e3b"
-PUSHOVER_USER_KEY = "ury88s1def6v16seeueoefqn1zbua1"
 PUSHOVER_API_URL = "https://api.pushover.net/1/messages.json"
+
+
+@lru_cache(maxsize=1)
+def get_pushover_config() -> dict[str, str | None]:
+    """Load Pushover configuration from environment.
+
+    Returns
+    -------
+    dict
+        Configuration with 'token' and 'user_key' keys.
+        Values may be None if not configured.
+    """
+    return {
+        "token": os.environ.get("PUSHOVER_CHECKSUM_APP_TOKEN"),
+        "user_key": os.environ.get("PUSHOVER_USER_KEY"),
+    }
+
+
+def is_configured() -> bool:
+    """Check if Pushover alerting is configured.
+
+    Returns
+    -------
+    bool
+        True if both app token and user key are available.
+    """
+    config = get_pushover_config()
+    return bool(config.get("token") and config.get("user_key"))
 
 
 def send_critical_alert(
@@ -43,9 +79,17 @@ def send_critical_alert(
     Returns:
         True if alert was sent successfully, False otherwise
     """
+    config = get_pushover_config()
+    if not is_configured():
+        _log_alert_failure(
+            "Pushover not configured: set PUSHOVER_CHECKSUM_APP_TOKEN "
+            "and PUSHOVER_USER_KEY"
+        )
+        return False
+
     payload = {
-        "token": PUSHOVER_APP_TOKEN,
-        "user": PUSHOVER_USER_KEY,
+        "token": config["token"],
+        "user": config["user_key"],
         "title": title,
         "message": message,
         "priority": 2,  # Emergency - requires acknowledgment
@@ -138,10 +182,18 @@ Unverified: {unverified_count}/{total_count} dates
 Consider re-downloading with verify_checksum=True
 to ensure data integrity."""
 
+    config = get_pushover_config()
+    if not is_configured():
+        _log_alert_failure(
+            "Pushover not configured: set PUSHOVER_CHECKSUM_APP_TOKEN "
+            "and PUSHOVER_USER_KEY"
+        )
+        return
+
     # Use lower priority (1) for audit warnings vs checksum failures (2)
     payload = {
-        "token": PUSHOVER_APP_TOKEN,
-        "user": PUSHOVER_USER_KEY,
+        "token": config["token"],
+        "user": config["user_key"],
         "title": title,
         "message": message,
         "priority": 1,  # High priority but not emergency
